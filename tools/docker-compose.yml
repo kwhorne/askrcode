@@ -1,0 +1,44 @@
+# Databaser å utvikle Urd mot.
+#
+# Egne instanser på egne porter, slik at de ikke kolliderer med andre
+# prosjekter på maskinen. Alt her er kastbart: ingen volumer, ingen data som
+# skal overleve en `docker compose down`.
+#
+#   docker compose -f tools/docker-compose.yml up -d
+#   docker compose -f tools/docker-compose.yml down
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: askr-postgres
+    environment:
+      POSTGRES_USER: askr
+      POSTGRES_PASSWORD: askr
+      POSTGRES_DB: askr_dev
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U askr -d askr_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  mysql:
+    image: mysql:8.4
+    container_name: askr-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: askr
+      MYSQL_USER: askr
+      MYSQL_PASSWORD: askr
+      MYSQL_DATABASE: askr_dev
+    ports:
+      - "3308:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uaskr", "-paskr"]
+      interval: 3s
+      timeout: 5s
+      retries: 30

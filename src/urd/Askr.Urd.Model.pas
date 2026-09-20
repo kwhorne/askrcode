@@ -1,0 +1,1602 @@
+{ Askr.Urd.Model — modeller, skjema og RTTI-mapping.
+
+  En modell er en vanlig klasse. published-seksjonen er ikke pynt: det er der
+  Free Pascal legger RTTI, og det er nøkkelen til at Urd kan mappe felter uten
+  kodegenerering.
+
+      type
+        TCustomer = class(TModel)
+        published
+          property Id: Int64 read FId write FId;
+          property Name: string read FName write FName;
+        public
+          class procedure Describe(S: TSchema); override;
+        end;
+
+  Konvensjonene er de vanlige og kan overstyres i Describe: klassenavnet uten
+  T, snake_case og flertall blir tabellnavn, property-navn i snake_case blir
+  kolonnenavn, og «id» er primærnøkkel.
+
+  Modeller er arena-objekter. At de kan ha string-properties uten å lekke
+  skyldes finaliseringen i Askr.Core.Arena: klasser med felter kompilatoren
+  håndterer får en Defer som kjører ved Reset. }
+unit Askr.Urd.Model;
+
+{$mode Delphi}{$H+}
+
+interface
+
+uses
+  SysUtils, TypInfo, SyncObjs,
+  Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Json,
+  Askr.Urd.Driver;
+
+type
+  TModel = class;
+  TModelClass = class of TModel;
+
+  { Ikke-generisk base for TModelList<M>.
+
+    Finnes for at serialisering og eager loading skal kunne behandle en liste
+    uten å kjenne elementtypen. Uten den måtte hver konsument spesialiseres
+    per modell, og det er nettopp den boilerplaten generics skulle fjerne. }
+  TModelListBase = class(TArenaObject)
+  protected
+    FItems: PPointer;
+    FCount: Integer;
+    FCapacity: Integer;
+    procedure AddPointer(P: Pointer);
+  public
+    { Legger til uten å kjenne elementtypen. Brukes av eager loading, som
+      bygger lista før den vet hvilken statisk type den får. }
+    procedure AddModel(AModel: TModel);
+    function Count: Integer;
+    { Elementet som TModel. Den generiske underklassen gir samme element
+      med riktig statisk type. }
+    function Item(Index: Integer): TModel;
+    function IsEmpty: Boolean;
+  end;
+
+  EModelError = class(EDbError);
+
+  TColumnKind = (ckInteger, ckString, ckCurrency, ckFloat, ckBoolean,
+                 ckDateTime, ckEnum);
+
+  TColumnInfo = record
+    PropName: string;
+    ColumnName: string;
+    Prop: PPropInfo;
+    Kind: TColumnKind;
+    { False for en autogenerert primærnøkkel: den settes av databasen. }
+    Insertable: Boolean;
+  end;
+
+  TRelationKind = (rkHasMany, rkBelongsTo, rkHasOne);
+
+  TRelationInfo = record
+    Name: string;
+    Kind: TRelationKind;
+    Target: TModelClass;
+    { Kolonnen på «mange»-siden som peker tilbake. }
+    ForeignKey: string;
+    { Kolonnen på «én»-siden det pekes til, normalt primærnøkkelen. }
+    LocalKey: string;
+  end;
+
+  TModelMeta = class
+  private
+    FModelClass: TModelClass;
+    FTable: string;
+    FPrimaryKey: string;
+    FAutoIncrement: Boolean;
+    FColumns: array of TColumnInfo;
+    FRelations: array of TRelationInfo;
+    FHasTimestamps: Boolean;
+    FCreatedAtColumn: string;
+    FUpdatedAtColumn: string;
+    FSoftDeletes: Boolean;
+    FDeletedAtColumn: string;
+    function GetColumn(Index: Integer): TColumnInfo;
+    function GetRelation(Index: Integer): TRelationInfo;
+  public
+    function ColumnCount: Integer;
+    function RelationCount: Integer;
+    function IndexOfColumn(const AColumnName: string): Integer;
+    function IndexOfProp(const APropName: string): Integer;
+    function IndexOfRelation(const AName: string): Integer;
+    function PrimaryKeyIndex: Integer;
+
+    property ModelClass: TModelClass read FModelClass;
+    property Table: string read FTable;
+    property PrimaryKey: string read FPrimaryKey;
+    property AutoIncrement: Boolean read FAutoIncrement;
+    property Columns[Index: Integer]: TColumnInfo read GetColumn;
+    property Relations[Index: Integer]: TRelationInfo read GetRelation;
+
+    { Skjemabyggeren i Norn kan skrive created_at og updated_at, men fram
+      til nå rørte ikke modellen dem: databasens DEFAULT satte created_at
+      ved INSERT, og updated_at ble stående på den verdien for alltid. }
+    property HasTimestamps: Boolean read FHasTimestamps;
+    property CreatedAtColumn: string read FCreatedAtColumn;
+    property UpdatedAtColumn: string read FUpdatedAtColumn;
+    property SoftDeletes: Boolean read FSoftDeletes;
+    property DeletedAtColumn: string read FDeletedAtColumn;
+  end;
+
+  { Gis til Describe. Alt her overstyrer konvensjonene. }
+  TSchema = class
+  private
+    FMeta: TModelMeta;
+  public
+    constructor Create(AMeta: TModelMeta);
+    procedure Table(const AName: string);
+    { AutoIncrement = False når appen setter nøkkelen selv, f.eks. en UUID. }
+    procedure PrimaryKey(const AName: string; AAutoIncrement: Boolean = True);
+    { Overstyrer kolonnenavnet for en property. }
+    procedure Column(const APropName, AColumnName: string);
+    { Property-en mappes ikke mot noen kolonne. }
+    procedure Ignore(const APropName: string);
+
+    { Modellen setter created_at ved INSERT og updated_at ved begge deler.
+
+      Kolonnene må finnes som published TDateTime-properties på modellen —
+      CreatedAt og UpdatedAt etter konvensjonen. Gjør de ikke det, kaster
+      Describe med en gang i stedet for at tidsstemplene stille lar være å
+      bli satt. }
+    procedure Timestamps(const ACreatedAt: string = 'created_at';
+      const AUpdatedAt: string = 'updated_at');
+
+    { Delete setter deleted_at i stedet for å slette raden, og spørringer
+      utelater de slettede med mindre noen ber om dem.
+
+      Poenget er ikke å gjøre sletting reversibel for moro skyld: det er at
+      en rad andre rader peker på ikke skal forsvinne under dem. Kolonnen
+      må finnes som en published TDateTime-property, normalt DeletedAt. }
+    procedure SoftDeletes(const AColumn: string = 'deleted_at');
+    procedure HasMany(const AName: string; ATarget: TModelClass;
+      const AForeignKey: string; const ALocalKey: string = '');
+    procedure HasOne(const AName: string; ATarget: TModelClass;
+      const AForeignKey: string; const ALocalKey: string = '');
+    procedure BelongsTo(const AName: string; ATarget: TModelClass;
+      const AForeignKey: string; const AOwnerKey: string = '');
+  end;
+
+  EValidationError = class(EDbError);
+
+  TErrorEntry = record
+    Field: string;
+    Message: string;
+  end;
+
+  { Feilene fra én validering. Ligger i arenaen og forsvinner med requesten. }
+  TErrors = class(TArenaObject)
+  private
+    FItems: array of TErrorEntry;
+  public
+    procedure Add(const AField, AMessage: string);
+    function Count: Integer;
+    function IsEmpty: Boolean;
+    function Field(Index: Integer): string;
+    function Message(Index: Integer): string;
+    function Has(const AField: string): Boolean;
+    { Første melding for feltet, eller tom streng. }
+    function First(const AField: string): string;
+    { Skriver feilene som et JSON-objekt: felt til melding. Det er formen
+      Inertia forventer i props.errors. }
+    procedure WriteJson(var W: TJsonWriter);
+  end;
+
+  TValidator = class;
+
+  { Kjeden av regler for ett felt. Hver regel returnerer Self. }
+  TFieldRules = class
+  private
+    FValidator: TValidator;
+    FPropName: string;
+    FColumn: string;
+    FCol: TColumnInfo;
+    FFound: Boolean;
+    FFailed: Boolean;
+    FLastMessage: string;
+    function AsStr: string;
+    function AsNum: Currency;
+    function IsBlank: Boolean;
+    procedure Fail(const AMessage: string);
+  public
+    function Required: TFieldRules;
+    function MinLen(N: Integer): TFieldRules;
+    function MaxLen(N: Integer): TFieldRules;
+    function Email: TFieldRules;
+    function Min(V: Currency): TFieldRules;
+    function Max(V: Currency): TFieldRules;
+    function Between(Lo, Hi: Currency): TFieldRules;
+    function OneOf(const Values: array of string): TFieldRules;
+    { Samme verdi som et annet felt — passord og bekreftelse. }
+    function SameAs(const OtherProp: string): TFieldRules;
+    { Ingen annen rad i tabellen har denne verdien. Bruker den omgivende
+      forbindelsen, og hopper over raden selv når modellen er lagret. }
+    function UniqueIn(const ATable: string; const AColumn: string = ''): TFieldRules;
+    { Overstyrer meldingen til regelen rett foran. }
+    function Says(const AMessage: string): TFieldRules;
+    property Column: string read FColumn;
+  end;
+
+  TValidator = class
+  private
+    FModel: TModel;
+    FMeta: TModelMeta;
+    FErrors: TErrors;
+    FRules: array of TFieldRules;
+  public
+    constructor Create(AModel: TModel; AErrors: TErrors);
+    destructor Destroy; override;
+    function Field(const APropName: string): TFieldRules;
+    property Errors: TErrors read FErrors;
+    property Model: TModel read FModel;
+  end;
+
+  { $M+ er det som gir modellene lov til å ha en published-seksjon i det hele
+    tatt, og som får Free Pascal til å legge RTTI der. Uten dette ville hele
+    mappingen krevd kodegenerering. }
+  {$M+}
+  TModel = class(TArenaObject)
+  private
+    FPersisted: Boolean;
+    FErrors: TErrors;
+  public
+    { Overstyres av modellen for å endre tabellnavn, kolonner og relasjoner. }
+    class procedure Describe(S: TSchema); virtual;
+    { Bygges én gang per klasse og caches. }
+    class function Meta: TModelMeta;
+
+    { Fyller feltene fra én rad. Kolonner som ikke finnes i resultatet røres
+      ikke, slik at en SELECT med færre kolonner virker. }
+    procedure Hydrate(R: TDbResult; Row: Integer);
+
+    function PrimaryKeyValue: Int64;
+    procedure SetPrimaryKeyValue(Value: Int64);
+
+    { Reglene for modellen, slik PRD-en skriver dem:
+
+        procedure TCustomer.Rules(V: TValidator);
+        begin
+          V.Field('Name').Required.MaxLen(120);
+        end; }
+    procedure Rules(V: TValidator); virtual;
+    { Kjører Rules. False når noe feilet; feilene ligger da i Errors. }
+    function Validate: Boolean;
+    function Errors: TErrors;
+
+    { INSERT når raden er ny, ellers UPDATE. Bruker den omgivende
+      forbindelsen når ingen er oppgitt. }
+    procedure Save(Conn: TDbConnection = nil);
+    { Sletter raden — eller setter deleted_at når modellen har SoftDeletes. }
+    procedure Delete(Conn: TDbConnection = nil);
+    { Sletter raden for godt, også når modellen har SoftDeletes. }
+    procedure ForceDelete(Conn: TDbConnection = nil);
+    { Tar en myktslettet rad tilbake. Kaster når modellen ikke har
+      SoftDeletes — å kalle Restore der er en misforståelse, ikke en no-op. }
+    procedure Restore(Conn: TDbConnection = nil);
+    { True når deleted_at er satt. False for en modell uten SoftDeletes. }
+    function IsTrashed: Boolean;
+
+    { Hendelser. Virtuelle metoder, ikke observers registrert i runtime:
+      kompilatoren ser dem, og det finnes ingen refleksjon å gå gjennom.
+
+      Kjøres i denne rekkefølgen:
+        Save:    BeforeSave, BeforeInsert|BeforeUpdate, SQL,
+                 AfterInsert|AfterUpdate, AfterSave
+        Delete:  BeforeDelete, SQL, AfterDelete
+
+      For å avbryte: kast. Det er den ene måten i Pascal som ikke kan
+      overses av kallstedet, og en Save som stille lot være å lagre ville
+      vært verre enn en exception. }
+    procedure BeforeSave; virtual;
+    procedure AfterSave; virtual;
+    procedure BeforeInsert; virtual;
+    procedure AfterInsert; virtual;
+    procedure BeforeUpdate; virtual;
+    procedure AfterUpdate; virtual;
+    procedure BeforeDelete; virtual;
+    procedure AfterDelete; virtual;
+
+    { True når raden finnes i databasen — satt av Hydrate og av Save. }
+    property Persisted: Boolean read FPersisted write FPersisted;
+  end;
+  {$M-}
+
+{ Omgivende forbindelse for gjeldende tråd, etter samme mønster som
+  UseArena. Verten setter den ved starten av en request, slik at
+  Model.Save kan skrives uten argumenter. }
+function CurrentDb: TDbConnection;
+function UseDb(C: TDbConnection): TDbConnection;
+
+{ Konvensjonene, eksponert fordi Norn skal bruke de samme i steg 3. }
+function SnakeCase(const S: string): string;
+function Pluralize(const S: string): string;
+function TableNameFor(AClass: TClass): string;
+
+implementation
+
+threadvar
+  GCurrentDb: TDbConnection;
+
+{ TModelListBase }
+
+procedure TModelListBase.AddPointer(P: Pointer);
+var
+  NewCap: Integer;
+  NewItems: PPointer;
+begin
+  if FCount >= FCapacity then
+  begin
+    if FCapacity = 0 then
+      NewCap := 16
+    else
+      NewCap := FCapacity * 2;
+    NewItems := PPointer(Arena.Alloc(PtrUInt(NewCap) * SizeOf(Pointer)));
+    if FCount > 0 then
+      Move(FItems^, NewItems^, PtrUInt(FCount) * SizeOf(Pointer));
+    FItems := NewItems;
+    FCapacity := NewCap;
+  end;
+  PPointer(PByte(FItems) + PtrUInt(FCount) * SizeOf(Pointer))^ := P;
+  Inc(FCount);
+end;
+
+procedure TModelListBase.AddModel(AModel: TModel);
+begin
+  AddPointer(Pointer(AModel));
+end;
+
+function TModelListBase.Count: Integer;
+begin
+  Result := FCount;
+end;
+
+function TModelListBase.Item(Index: Integer): TModel;
+begin
+  if (Index < 0) or (Index >= FCount) then
+    Exit(nil);
+  Result := TModel(PPointer(PByte(FItems) + PtrUInt(Index) * SizeOf(Pointer))^);
+end;
+
+function TModelListBase.IsEmpty: Boolean;
+begin
+  Result := FCount = 0;
+end;
+
+var
+  GMetaLock: TCriticalSection;
+  GMetas: array of TModelMeta;
+
+function CurrentDb: TDbConnection;
+begin
+  Result := GCurrentDb;
+end;
+
+function UseDb(C: TDbConnection): TDbConnection;
+begin
+  Result := GCurrentDb;
+  GCurrentDb := C;
+end;
+
+function IsUpper(C: Char): Boolean; inline;
+begin
+  Result := (C >= 'A') and (C <= 'Z');
+end;
+
+function IsLowerOrDigit(C: Char): Boolean; inline;
+begin
+  Result := ((C >= 'a') and (C <= 'z')) or ((C >= '0') and (C <= '9'));
+end;
+
+function SnakeCase(const S: string): string;
+var
+  I, N: Integer;
+  NeedsUnderscore: Boolean;
+begin
+  Result := '';
+  N := Length(S);
+  for I := 1 to N do
+  begin
+    if IsUpper(S[I]) and (I > 1) then
+    begin
+      { Skille foran en stor bokstav som følger en liten — CreatedAt — og
+        foran den siste i en forkortelse — HTTPCode blir http_code. }
+      NeedsUnderscore := IsLowerOrDigit(S[I - 1]) or
+        ((I < N) and IsUpper(S[I - 1]) and not IsUpper(S[I + 1]) and
+         (S[I + 1] <> '_'));
+      if NeedsUnderscore and (Result <> '') and
+         (Result[Length(Result)] <> '_') then
+        Result := Result + '_';
+    end;
+    Result := Result + LowerCase(S[I]);
+  end;
+end;
+
+function EndsWithStr(const S, Suffix: string): Boolean;
+begin
+  Result := (Length(S) >= Length(Suffix)) and
+    (Copy(S, Length(S) - Length(Suffix) + 1, Length(Suffix)) = Suffix);
+end;
+
+function Pluralize(const S: string): string;
+var
+  Last: Char;
+begin
+  if S = '' then
+    Exit('');
+  Last := S[Length(S)];
+  if (Last = 'y') and (Length(S) > 1) and
+     not (S[Length(S) - 1] in ['a', 'e', 'i', 'o', 'u']) then
+    Result := Copy(S, 1, Length(S) - 1) + 'ies'
+  else if (Last in ['s', 'x', 'z']) or EndsWithStr(S, 'ch') or
+          EndsWithStr(S, 'sh') then
+    Result := S + 'es'
+  else
+    Result := S + 's';
+end;
+
+function TableNameFor(AClass: TClass): string;
+var
+  N: string;
+begin
+  N := AClass.ClassName;
+  { Ledende T foran stor bokstav er Pascal-konvensjon, ikke en del av navnet. }
+  if (Length(N) > 1) and (N[1] = 'T') and IsUpper(N[2]) then
+    N := Copy(N, 2, Length(N) - 1);
+  Result := Pluralize(SnakeCase(N));
+end;
+
+{ TModelMeta }
+
+function TModelMeta.ColumnCount: Integer;
+begin
+  Result := Length(FColumns);
+end;
+
+function TModelMeta.RelationCount: Integer;
+begin
+  Result := Length(FRelations);
+end;
+
+function TModelMeta.GetColumn(Index: Integer): TColumnInfo;
+begin
+  Result := FColumns[Index];
+end;
+
+function TModelMeta.GetRelation(Index: Integer): TRelationInfo;
+begin
+  Result := FRelations[Index];
+end;
+
+function TModelMeta.IndexOfColumn(const AColumnName: string): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FColumns) do
+    if SameText(FColumns[I].ColumnName, AColumnName) then
+      Exit(I);
+  Result := -1;
+end;
+
+function TModelMeta.IndexOfProp(const APropName: string): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FColumns) do
+    if SameText(FColumns[I].PropName, APropName) then
+      Exit(I);
+  Result := -1;
+end;
+
+function TModelMeta.IndexOfRelation(const AName: string): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FRelations) do
+    if SameText(FRelations[I].Name, AName) then
+      Exit(I);
+  Result := -1;
+end;
+
+function TModelMeta.PrimaryKeyIndex: Integer;
+begin
+  Result := IndexOfColumn(FPrimaryKey);
+end;
+
+{ TSchema }
+
+constructor TSchema.Create(AMeta: TModelMeta);
+begin
+  inherited Create;
+  FMeta := AMeta;
+end;
+
+procedure TSchema.Table(const AName: string);
+begin
+  FMeta.FTable := AName;
+end;
+
+procedure TSchema.PrimaryKey(const AName: string; AAutoIncrement: Boolean);
+begin
+  FMeta.FPrimaryKey := AName;
+  FMeta.FAutoIncrement := AAutoIncrement;
+end;
+
+procedure TSchema.Column(const APropName, AColumnName: string);
+var
+  I: Integer;
+begin
+  I := FMeta.IndexOfProp(APropName);
+  if I < 0 then
+    raise EModelError.CreateFmt('%s has no published property "%s"',
+      [FMeta.FModelClass.ClassName, APropName]);
+  FMeta.FColumns[I].ColumnName := AColumnName;
+end;
+
+procedure TSchema.Ignore(const APropName: string);
+var
+  I, J: Integer;
+begin
+  I := FMeta.IndexOfProp(APropName);
+  if I < 0 then
+    Exit;
+  for J := I to High(FMeta.FColumns) - 1 do
+    FMeta.FColumns[J] := FMeta.FColumns[J + 1];
+  SetLength(FMeta.FColumns, Length(FMeta.FColumns) - 1);
+end;
+
+{ Felles for Timestamps og SoftDeletes: kolonnen må finnes som en mappet
+  TDateTime-property. Uten sjekken ville feltet stille latt være å bli satt,
+  og det ville sett ut som at tidsstemplene virket. }
+procedure KrevDateTimeKolonne(Meta: TModelMeta; const AColumn, AHva: string);
+var
+  I: Integer;
+begin
+  I := Meta.IndexOfColumn(AColumn);
+  if I < 0 then
+    raise EModelError.CreateFmt(
+      '%s.%s needs a mapped column "%s". Add a published TDateTime ' +
+      'property for it (the convention maps %s to "%s").',
+      [Meta.ModelClass.ClassName, AHva, AColumn,
+       'CreatedAt/UpdatedAt/DeletedAt', AColumn]);
+  if Meta.Columns[I].Kind <> ckDateTime then
+    raise EModelError.CreateFmt(
+      '%s.%s needs "%s" to be a TDateTime property, not %s.',
+      [Meta.ModelClass.ClassName, AHva, AColumn,
+       GetEnumName(TypeInfo(TColumnKind), Ord(Meta.Columns[I].Kind))]);
+end;
+
+procedure TSchema.Timestamps(const ACreatedAt, AUpdatedAt: string);
+begin
+  KrevDateTimeKolonne(FMeta, ACreatedAt, 'Timestamps');
+  KrevDateTimeKolonne(FMeta, AUpdatedAt, 'Timestamps');
+  FMeta.FHasTimestamps := True;
+  FMeta.FCreatedAtColumn := ACreatedAt;
+  FMeta.FUpdatedAtColumn := AUpdatedAt;
+end;
+
+procedure TSchema.SoftDeletes(const AColumn: string);
+begin
+  KrevDateTimeKolonne(FMeta, AColumn, 'SoftDeletes');
+  FMeta.FSoftDeletes := True;
+  FMeta.FDeletedAtColumn := AColumn;
+end;
+
+procedure AddRelation(Meta: TModelMeta; Kind: TRelationKind;
+  const AName: string; ATarget: TModelClass;
+  const AForeignKey, ALocalKey: string);
+var
+  N: Integer;
+begin
+  N := Length(Meta.FRelations);
+  SetLength(Meta.FRelations, N + 1);
+  Meta.FRelations[N].Name := AName;
+  Meta.FRelations[N].Kind := Kind;
+  Meta.FRelations[N].Target := ATarget;
+  Meta.FRelations[N].ForeignKey := AForeignKey;
+  if ALocalKey <> '' then
+    Meta.FRelations[N].LocalKey := ALocalKey
+  else
+    Meta.FRelations[N].LocalKey := Meta.FPrimaryKey;
+end;
+
+procedure TSchema.HasMany(const AName: string; ATarget: TModelClass;
+  const AForeignKey: string; const ALocalKey: string);
+begin
+  AddRelation(FMeta, rkHasMany, AName, ATarget, AForeignKey, ALocalKey);
+end;
+
+procedure TSchema.HasOne(const AName: string; ATarget: TModelClass;
+  const AForeignKey: string; const ALocalKey: string);
+begin
+  AddRelation(FMeta, rkHasOne, AName, ATarget, AForeignKey, ALocalKey);
+end;
+
+procedure TSchema.BelongsTo(const AName: string; ATarget: TModelClass;
+  const AForeignKey: string; const AOwnerKey: string);
+var
+  Owner: string;
+begin
+  { På eiersiden peker fremmednøkkelen ut fra denne modellen, og LocalKey er
+    kolonnen i måltabellen. }
+  Owner := AOwnerKey;
+  if Owner = '' then
+    Owner := ATarget.Meta.PrimaryKey;
+  AddRelation(FMeta, rkBelongsTo, AName, ATarget, AForeignKey, Owner);
+end;
+
+{ Bygging av meta }
+
+function ColumnKindOf(Prop: PPropInfo; out Kind: TColumnKind): Boolean;
+var
+  TI: PTypeInfo;
+  TypeName: string;
+begin
+  TI := Prop^.PropType;
+  TypeName := string(TI^.Name);
+  case TI^.Kind of
+    tkInteger, tkInt64, tkQWord:
+      Kind := ckInteger;
+    tkAString, tkUString, tkString, tkWString:
+      Kind := ckString;
+    tkBool:
+      Kind := ckBoolean;
+    tkEnumeration:
+      Kind := ckEnum;
+    tkFloat:
+      begin
+        if GetTypeData(TI)^.FloatType = ftCurr then
+          Kind := ckCurrency
+        else if SameText(TypeName, 'TDateTime') or SameText(TypeName, 'TDate') or
+                SameText(TypeName, 'TTime') then
+          Kind := ckDateTime
+        else
+          Kind := ckFloat;
+      end;
+  else
+    { Klasser, records, sett og arrays mappes ikke. De er ikke kolonner. }
+    Kind := ckString;
+    Exit(False);
+  end;
+  Result := True;
+end;
+
+function BuildMeta(AClass: TModelClass): TModelMeta;
+var
+  Props: PPropList;
+  Count, I, N: Integer;
+  Kind: TColumnKind;
+  S: TSchema;
+  PkIndex: Integer;
+begin
+  Result := TModelMeta.Create;
+  Result.FModelClass := AClass;
+  Result.FTable := TableNameFor(AClass);
+  Result.FPrimaryKey := 'id';
+  Result.FAutoIncrement := True;
+
+  Props := nil;
+  Count := GetPropList(AClass.ClassInfo, Props);
+  try
+    for I := 0 to Count - 1 do
+    begin
+      if not ColumnKindOf(Props^[I], Kind) then
+        Continue;
+      N := Length(Result.FColumns);
+      SetLength(Result.FColumns, N + 1);
+      Result.FColumns[N].PropName := string(Props^[I]^.Name);
+      Result.FColumns[N].ColumnName := SnakeCase(string(Props^[I]^.Name));
+      Result.FColumns[N].Prop := Props^[I];
+      Result.FColumns[N].Kind := Kind;
+      Result.FColumns[N].Insertable := True;
+    end;
+  finally
+    if Props <> nil then
+      FreeMem(Props);
+  end;
+
+  S := TSchema.Create(Result);
+  try
+    AClass.Describe(S);
+  finally
+    S.Free;
+  end;
+
+  { Etter Describe, fordi primærnøkkelen kan ha blitt endret der. }
+  PkIndex := Result.PrimaryKeyIndex;
+  if (PkIndex >= 0) and Result.FAutoIncrement then
+    Result.FColumns[PkIndex].Insertable := False;
+end;
+
+class function TModel.Meta: TModelMeta;
+var
+  I: Integer;
+  M: TModelMeta;
+begin
+  GMetaLock.Acquire;
+  try
+    for I := 0 to High(GMetas) do
+      if GMetas[I].FModelClass = TModelClass(Self) then
+        Exit(GMetas[I]);
+  finally
+    GMetaLock.Release;
+  end;
+
+  { Bygges utenfor låsen: Describe er brukerkode og kan slå opp meta for
+    andre modeller, noe som ville låst seg selv. }
+  M := BuildMeta(TModelClass(Self));
+
+  GMetaLock.Acquire;
+  try
+    for I := 0 to High(GMetas) do
+      if GMetas[I].FModelClass = TModelClass(Self) then
+      begin
+        { En annen tråd rakk det først. }
+        M.Free;
+        Exit(GMetas[I]);
+      end;
+    SetLength(GMetas, Length(GMetas) + 1);
+    GMetas[High(GMetas)] := M;
+    Result := M;
+  finally
+    GMetaLock.Release;
+  end;
+end;
+
+class procedure TModel.Describe(S: TSchema);
+begin
+  { Konvensjonene holder. Modeller som trenger noe annet overstyrer. }
+end;
+
+{ TErrors }
+
+procedure TErrors.Add(const AField, AMessage: string);
+var
+  N: Integer;
+begin
+  N := Length(FItems);
+  SetLength(FItems, N + 1);
+  FItems[N].Field := AField;
+  FItems[N].Message := AMessage;
+end;
+
+function TErrors.Count: Integer;
+begin
+  Result := Length(FItems);
+end;
+
+function TErrors.IsEmpty: Boolean;
+begin
+  Result := Length(FItems) = 0;
+end;
+
+function TErrors.Field(Index: Integer): string;
+begin
+  Result := FItems[Index].Field;
+end;
+
+function TErrors.Message(Index: Integer): string;
+begin
+  Result := FItems[Index].Message;
+end;
+
+function TErrors.Has(const AField: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FItems) do
+    if SameText(FItems[I].Field, AField) then
+      Exit(True);
+  Result := False;
+end;
+
+function TErrors.First(const AField: string): string;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FItems) do
+    if SameText(FItems[I].Field, AField) then
+      Exit(FItems[I].Message);
+  Result := '';
+end;
+
+procedure TErrors.WriteJson(var W: TJsonWriter);
+var
+  I, J: Integer;
+  Seen: Boolean;
+begin
+  W.BeginObject;
+  for I := 0 to High(FItems) do
+  begin
+    { Første melding per felt vinner, som i Laravel. }
+    Seen := False;
+    for J := 0 to I - 1 do
+      if SameText(FItems[J].Field, FItems[I].Field) then
+      begin
+        Seen := True;
+        Break;
+      end;
+    if Seen then
+      Continue;
+    W.Field(FItems[I].Field, FItems[I].Message);
+  end;
+  W.EndObject;
+end;
+
+{ TFieldRules }
+
+procedure TFieldRules.Fail(const AMessage: string);
+begin
+  { Bare første feil per felt rapporteres. Ellers får brukeren fem meldinger
+    om det samme tomme feltet. }
+  if FFailed then
+    Exit;
+  FFailed := True;
+  FLastMessage := AMessage;
+  FValidator.Errors.Add(FColumn, AMessage);
+end;
+
+function TFieldRules.AsStr: string;
+begin
+  if not FFound then
+    Exit('');
+  case FCol.Kind of
+    ckString: Result := GetStrProp(FValidator.Model, FCol.Prop);
+    ckInteger: Result := IntToStr(GetInt64Prop(FValidator.Model, FCol.Prop));
+    ckCurrency: Result := CurrencyToSql(
+      Currency(GetFloatProp(FValidator.Model, FCol.Prop)));
+    ckFloat: Result := FloatToSql(GetFloatProp(FValidator.Model, FCol.Prop));
+    ckDateTime: Result := DateTimeToSql(GetFloatProp(FValidator.Model, FCol.Prop));
+    ckBoolean:
+      if GetOrdProp(FValidator.Model, FCol.Prop) <> 0 then
+        Result := '1'
+      else
+        Result := '0';
+    ckEnum: Result := IntToStr(GetOrdProp(FValidator.Model, FCol.Prop));
+  end;
+end;
+
+function TFieldRules.AsNum: Currency;
+begin
+  Result := 0;
+  if not FFound then
+    Exit;
+  case FCol.Kind of
+    ckInteger: Result := GetInt64Prop(FValidator.Model, FCol.Prop);
+    ckCurrency, ckFloat: Result := GetFloatProp(FValidator.Model, FCol.Prop);
+    ckBoolean, ckEnum: Result := GetOrdProp(FValidator.Model, FCol.Prop);
+    ckString: SqlToCurrency(Str(AsStr), Result);
+    ckDateTime: Result := GetFloatProp(FValidator.Model, FCol.Prop);
+  end;
+end;
+
+function TFieldRules.IsBlank: Boolean;
+begin
+  case FCol.Kind of
+    ckString: Result := Trim(GetStrProp(FValidator.Model, FCol.Prop)) = '';
+    ckInteger, ckCurrency, ckFloat: Result := AsNum = 0;
+    ckDateTime: Result := GetFloatProp(FValidator.Model, FCol.Prop) = 0;
+  else
+    Result := False;
+  end;
+end;
+
+function TFieldRules.Required: TFieldRules;
+begin
+  Result := Self;
+  if not FFound then
+    Exit;
+  if IsBlank then
+    Fail(FColumn + ' is required');
+end;
+
+function TFieldRules.MinLen(N: Integer): TFieldRules;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if Length(AsStr) < N then
+    Fail(Format('%s must be at least %d characters', [FColumn, N]));
+end;
+
+function TFieldRules.MaxLen(N: Integer): TFieldRules;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if Length(AsStr) > N then
+    Fail(Format('%s can be at most %d characters', [FColumn, N]));
+end;
+
+{ Bevisst romslig. En streng validering av e-post avviser gyldige adresser,
+  og den eneste måten å vite om en adresse virker er å sende til den. }
+function LooksLikeEmail(const S: string): Boolean;
+var
+  At, Dot, I: Integer;
+begin
+  At := 0;
+  for I := 1 to Length(S) do
+  begin
+    if S[I] = '@' then
+    begin
+      if At <> 0 then
+        Exit(False);
+      At := I;
+    end;
+    if S[I] <= ' ' then
+      Exit(False);
+  end;
+  if (At < 2) or (At = Length(S)) then
+    Exit(False);
+  Dot := 0;
+  for I := At + 1 to Length(S) do
+    if S[I] = '.' then
+      Dot := I;
+  Result := (Dot > At + 1) and (Dot < Length(S));
+end;
+
+function TFieldRules.Email: TFieldRules;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if AsStr = '' then
+    Exit;
+  if not LooksLikeEmail(AsStr) then
+    Fail(FColumn + ' is not a valid email address');
+end;
+
+{ CurrencyToSql gir 0.0000. I en feilmelding til en bruker er det 0. }
+function Lesbart(V: Currency): string;
+begin
+  Result := CurrencyToSql(V);
+  if Pos('.', Result) > 0 then
+  begin
+    while (Length(Result) > 0) and (Result[Length(Result)] = '0') do
+      Delete(Result, Length(Result), 1);
+    if (Length(Result) > 0) and (Result[Length(Result)] = '.') then
+      Delete(Result, Length(Result), 1);
+  end;
+end;
+
+function TFieldRules.Min(V: Currency): TFieldRules;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if AsNum < V then
+    Fail(Format('%s cannot be less than %s',
+      [FColumn, Lesbart(V)]));
+end;
+
+function TFieldRules.Max(V: Currency): TFieldRules;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if AsNum > V then
+    Fail(Format('%s cannot be greater than %s',
+      [FColumn, Lesbart(V)]));
+end;
+
+function TFieldRules.Between(Lo, Hi: Currency): TFieldRules;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if (AsNum < Lo) or (AsNum > Hi) then
+    Fail(Format('%s must be between %s and %s',
+      [FColumn, Lesbart(Lo), Lesbart(Hi)]));
+end;
+
+function TFieldRules.OneOf(const Values: array of string): TFieldRules;
+var
+  I: Integer;
+  V: string;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  V := AsStr;
+  for I := 0 to High(Values) do
+    if Values[I] = V then
+      Exit;
+  Fail(FColumn + ' has a value that is not allowed');
+end;
+
+function TFieldRules.SameAs(const OtherProp: string): TFieldRules;
+var
+  Idx: Integer;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  Idx := FValidator.FMeta.IndexOfProp(OtherProp);
+  if Idx < 0 then
+    raise EValidationError.CreateFmt(
+      '%s has no published property "%s"',
+      [FValidator.FMeta.ModelClass.ClassName, OtherProp]);
+  if GetStrProp(FValidator.Model, FValidator.FMeta.Columns[Idx].Prop) <> AsStr then
+    Fail(FColumn + ' does not match ' +
+      FValidator.FMeta.Columns[Idx].ColumnName);
+end;
+
+function TFieldRules.UniqueIn(const ATable: string;
+  const AColumn: string): TFieldRules;
+var
+  C: TDbConnection;
+  A: TArena;
+  B: TStrBuilder;
+  R: TDbResult;
+  Col: string;
+  Mark: TArenaMark;
+  Pk: Int64;
+  Sql: string;
+begin
+  Result := Self;
+  if FFailed or not FFound then
+    Exit;
+  if AsStr = '' then
+    Exit;
+
+  C := CurrentDb;
+  if C = nil then
+    raise EValidationError.Create(
+      'UniqueIn needs a database connection. Set the ambient one with UseDb.');
+
+  Col := AColumn;
+  if Col = '' then
+    Col := FColumn;
+  A := FValidator.Model.Arena;
+  Pk := FValidator.Model.PrimaryKeyValue;
+
+  Mark := A.Mark;
+  try
+    B.Init(A, 192);
+    B.Append('SELECT 1 FROM ');
+    C.AppendIdentStr(B, ATable);
+    B.Append(' WHERE ');
+    C.AppendIdentStr(B, Col);
+    B.Append(' = ');
+    C.AppendPlaceholder(B, 1);
+    { En lagret rad skal ikke kollidere med seg selv. }
+    if FValidator.Model.Persisted and (Pk <> 0) then
+    begin
+      B.Append(' AND ');
+      C.AppendIdentStr(B, FValidator.FMeta.PrimaryKey);
+      B.Append(' <> ');
+      C.AppendPlaceholder(B, 2);
+    end;
+    B.Append(' LIMIT 1');
+    Sql := B.ToString;
+  finally
+    A.Rewind(Mark);
+  end;
+
+  if FValidator.Model.Persisted and (Pk <> 0) then
+    R := C.ExecParams(A, Sql, [DbParam(A, AsStr), DbParam(A, Pk)])
+  else
+    R := C.ExecParams(A, Sql, [DbParam(A, AsStr)]);
+
+  if not R.IsEmpty then
+    Fail(FColumn + ' is already taken');
+end;
+
+function TFieldRules.Says(const AMessage: string): TFieldRules;
+var
+  I: Integer;
+begin
+  Result := Self;
+  if not FFailed then
+    Exit;
+  { Erstatter den sist lagte meldingen for dette feltet. }
+  for I := FValidator.Errors.Count - 1 downto 0 do
+    if FValidator.Errors.FItems[I].Field = FColumn then
+    begin
+      FValidator.Errors.FItems[I].Message := AMessage;
+      Break;
+    end;
+end;
+
+{ TValidator }
+
+constructor TValidator.Create(AModel: TModel; AErrors: TErrors);
+begin
+  inherited Create;
+  FModel := AModel;
+  FMeta := AModel.Meta;
+  FErrors := AErrors;
+end;
+
+destructor TValidator.Destroy;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FRules) do
+    FRules[I].Free;
+  inherited Destroy;
+end;
+
+function TValidator.Field(const APropName: string): TFieldRules;
+var
+  Idx, N: Integer;
+begin
+  Result := TFieldRules.Create;
+  Result.FValidator := Self;
+  Result.FPropName := APropName;
+
+  Idx := FMeta.IndexOfProp(APropName);
+  if Idx < 0 then
+    raise EValidationError.CreateFmt(
+      '%s has no published property "%s". Rules are written with the ' +
+      'property name, not the column name.',
+      [FMeta.ModelClass.ClassName, APropName]);
+
+  Result.FCol := FMeta.Columns[Idx];
+  Result.FColumn := Result.FCol.ColumnName;
+  Result.FFound := True;
+
+  N := Length(FRules);
+  SetLength(FRules, N + 1);
+  FRules[N] := Result;
+end;
+
+{ Validering av en modell }
+
+procedure TModel.Rules(V: TValidator);
+begin
+  { Ingen regler med mindre modellen sier noe annet. }
+end;
+
+{ Hendelsene. Tomme her; modellen overstyrer det den trenger. }
+procedure TModel.BeforeSave; begin end;
+procedure TModel.AfterSave; begin end;
+procedure TModel.BeforeInsert; begin end;
+procedure TModel.AfterInsert; begin end;
+procedure TModel.BeforeUpdate; begin end;
+procedure TModel.AfterUpdate; begin end;
+procedure TModel.BeforeDelete; begin end;
+procedure TModel.AfterDelete; begin end;
+
+function TModel.IsTrashed: Boolean;
+var
+  M: TModelMeta;
+  I: Integer;
+begin
+  M := Meta;
+  if not M.SoftDeletes then
+    Exit(False);
+  I := M.IndexOfColumn(M.DeletedAtColumn);
+  if I < 0 then
+    Exit(False);
+  Result := GetFloatProp(Self, M.Columns[I].Prop) <> 0;
+end;
+
+function TModel.Validate: Boolean;
+var
+  V: TValidator;
+  Prev: TArena;
+begin
+  if Arena = nil then
+    raise EValidationError.Create(
+      'Validation requires the model to live in an arena');
+
+  Prev := UseArena(Arena);
+  try
+    FErrors := TErrors.Create;
+  finally
+    UseArena(Prev);
+  end;
+
+  V := TValidator.Create(Self, FErrors);
+  try
+    Rules(V);
+  finally
+    V.Free;
+  end;
+  Result := FErrors.IsEmpty;
+end;
+
+function TModel.Errors: TErrors;
+begin
+  if FErrors = nil then
+    Validate;
+  Result := FErrors;
+end;
+
+procedure TModel.Hydrate(R: TDbResult; Row: Integer);
+var
+  M: TModelMeta;
+  I, Col: Integer;
+  V: TStr;
+  I64: Int64;
+  Cur: Currency;
+  Dbl: Double;
+  Bool: Boolean;
+  Dt: TDateTime;
+begin
+  M := Meta;
+  for I := 0 to M.ColumnCount - 1 do
+  begin
+    Col := R.IndexOfField(M.Columns[I].ColumnName);
+    if Col < 0 then
+      Continue;
+    if R.IsNull(Row, Col) then
+      Continue;   { feltet er allerede nullstilt av InitInstance }
+
+    V := R.Value(Row, Col);
+    case M.Columns[I].Kind of
+      ckInteger:
+        if SqlToInt64(V, I64) then
+          SetInt64Prop(Self, M.Columns[I].Prop, I64);
+      ckString:
+        SetStrProp(Self, M.Columns[I].Prop, V.ToString);
+      ckCurrency:
+        if SqlToCurrency(V, Cur) then
+          SetFloatProp(Self, M.Columns[I].Prop, Cur);
+      ckFloat:
+        if SqlToFloat(V, Dbl) then
+          SetFloatProp(Self, M.Columns[I].Prop, Dbl);
+      ckBoolean:
+        if SqlToBool(V, Bool) then
+          SetOrdProp(Self, M.Columns[I].Prop, Ord(Bool));
+      ckDateTime:
+        if SqlToDateTime(V, Dt) then
+          SetFloatProp(Self, M.Columns[I].Prop, Dt);
+      ckEnum:
+        if SqlToInt64(V, I64) then
+          SetOrdProp(Self, M.Columns[I].Prop, LongInt(I64));
+    end;
+  end;
+  FPersisted := True;
+end;
+
+function TModel.PrimaryKeyValue: Int64;
+var
+  M: TModelMeta;
+  I: Integer;
+begin
+  M := Meta;
+  I := M.PrimaryKeyIndex;
+  if I < 0 then
+    Exit(0);
+  Result := GetInt64Prop(Self, M.Columns[I].Prop);
+end;
+
+procedure TModel.SetPrimaryKeyValue(Value: Int64);
+var
+  M: TModelMeta;
+  I: Integer;
+begin
+  M := Meta;
+  I := M.PrimaryKeyIndex;
+  if I >= 0 then
+    SetInt64Prop(Self, M.Columns[I].Prop, Value);
+end;
+
+function ParamFor(A: TArena; Model: TModel; const Col: TColumnInfo): TDbParam;
+var
+  S: string;
+begin
+  case Col.Kind of
+    ckInteger:
+      Result := DbParam(A, GetInt64Prop(Model, Col.Prop));
+    ckString:
+      begin
+        S := GetStrProp(Model, Col.Prop);
+        Result := DbParam(A, S);
+      end;
+    ckCurrency:
+      Result := DbParam(A, Currency(GetFloatProp(Model, Col.Prop)));
+    ckFloat:
+      Result := DbParam(A, FloatToSql(GetFloatProp(Model, Col.Prop)));
+    ckBoolean:
+      Result := DbParam(A, GetOrdProp(Model, Col.Prop) <> 0);
+    ckDateTime:
+      { En TDateTime på null betyr «ikke satt». Pascal har ingen null, og
+        0 er 30. desember 1899 — en dato ingen mener. Før dette havnet den
+        i databasen som en ekte verdi, og en nullbar kolonne ble aldri
+        NULL. Det er nettopp det soft deletes hviler på: deleted_at IS NULL
+        er forskjellen på slettet og ikke.
+
+        Er kolonnen NOT NULL, gir dette en constraint-feil i stedet for en
+        stille gal dato. Det er den riktige veien å feile. }
+      if GetFloatProp(Model, Col.Prop) = 0 then
+        Result := DbNull
+      else
+        Result := DbParamDateTime(A, GetFloatProp(Model, Col.Prop));
+    ckEnum:
+      Result := DbParam(A, Int64(GetOrdProp(Model, Col.Prop)));
+  end;
+  { Ingen else: alle TColumnKind er dekket. Kommer det en ny, blir det en
+    advarsel om uinitialisert resultat i stedet for en stille DbNull. }
+end;
+
+function RequireDb(Conn: TDbConnection): TDbConnection;
+begin
+  if Conn <> nil then
+    Exit(Conn);
+  Result := CurrentDb;
+  if Result = nil then
+    raise EModelError.Create(
+      'No database connection. Pass one in, or set the ambient one with ' +
+      'UseDb — the host normally does that at the start of a request.');
+end;
+
+procedure TModel.Save(Conn: TDbConnection);
+var
+  C: TDbConnection;
+  M: TModelMeta;
+  A: TArena;
+  B: TStrBuilder;
+  Params: array of TDbParam;
+  I, N, PkIdx, TsIdx: Integer;
+  Sql: string;
+  NewId: Int64;
+  Mark: TArenaMark;
+  Naa: TDateTime;
+  VarNy: Boolean;
+begin
+  C := RequireDb(Conn);
+  M := Meta;
+  A := Arena;
+  if A = nil then
+    raise EModelError.Create('Save requires the model to live in an arena');
+
+  PkIdx := M.PrimaryKeyIndex;
+  { Leses før SQL-en kjører: INSERT setter FPersisted, og etterpå ser alt
+    ut som en oppdatering. }
+  VarNy := not FPersisted;
+
+  BeforeSave;
+  if FPersisted then
+    BeforeUpdate
+  else
+    BeforeInsert;
+
+  { Tidsstemplene settes her, ikke av databasens DEFAULT. Før dette ble
+    created_at satt av DEFAULT og updated_at aldri rørt igjen — en rad som
+    var oppdatert ti ganger så like fersk ut som da den ble laget. }
+  if M.HasTimestamps then
+  begin
+    Naa := UtcNow;
+    if not FPersisted then
+    begin
+      TsIdx := M.IndexOfColumn(M.CreatedAtColumn);
+      { Bare når den ikke alt er satt: en import som bevarer opprinnelige
+        tidspunkter skal ikke få dem overskrevet. }
+      if (TsIdx >= 0) and (GetFloatProp(Self, M.Columns[TsIdx].Prop) = 0) then
+        SetFloatProp(Self, M.Columns[TsIdx].Prop, Naa);
+    end;
+    TsIdx := M.IndexOfColumn(M.UpdatedAtColumn);
+    if TsIdx >= 0 then
+      SetFloatProp(Self, M.Columns[TsIdx].Prop, Naa);
+  end;
+
+  Mark := A.Mark;
+  try
+    SetLength(Params, 0);
+    B.Init(A, 256);
+
+    if not FPersisted then
+    begin
+      B.Append('INSERT INTO ');
+      C.AppendIdentStr(B, M.Table);
+      B.Append(' (');
+      N := 0;
+      for I := 0 to M.ColumnCount - 1 do
+      begin
+        if not M.Columns[I].Insertable then
+          Continue;
+        if N > 0 then
+          B.Append(', ');
+        C.AppendIdentStr(B, M.Columns[I].ColumnName);
+        Inc(N);
+      end;
+      B.Append(') VALUES (');
+      SetLength(Params, N);
+      N := 0;
+      for I := 0 to M.ColumnCount - 1 do
+      begin
+        if not M.Columns[I].Insertable then
+          Continue;
+        if N > 0 then
+          B.Append(', ');
+        C.AppendPlaceholder(B, N + 1);
+        Params[N] := ParamFor(A, Self, M.Columns[I]);
+        Inc(N);
+      end;
+      B.AppendByte(Ord(')'));
+      Sql := B.ToString;
+
+      if M.AutoIncrement and (PkIdx >= 0) then
+      begin
+        NewId := C.InsertGetId(A, Sql, Params, M.PrimaryKey);
+        if NewId <> 0 then
+          SetPrimaryKeyValue(NewId);
+      end
+      else
+        C.ExecParams(A, Sql, Params);
+      FPersisted := True;
+    end
+    else
+    begin
+      if PkIdx < 0 then
+        raise EModelError.CreateFmt(
+          '%s has no primary key "%s" and cannot be updated',
+          [M.ModelClass.ClassName, M.PrimaryKey]);
+
+      B.Append('UPDATE ');
+      C.AppendIdentStr(B, M.Table);
+      B.Append(' SET ');
+      N := 0;
+      SetLength(Params, M.ColumnCount);
+      for I := 0 to M.ColumnCount - 1 do
+      begin
+        if I = PkIdx then
+          Continue;
+        if N > 0 then
+          B.Append(', ');
+        C.AppendIdentStr(B, M.Columns[I].ColumnName);
+        B.Append(' = ');
+        C.AppendPlaceholder(B, N + 1);
+        Params[N] := ParamFor(A, Self, M.Columns[I]);
+        Inc(N);
+      end;
+      B.Append(' WHERE ');
+      C.AppendIdentStr(B, M.PrimaryKey);
+      B.Append(' = ');
+      C.AppendPlaceholder(B, N + 1);
+      Params[N] := ParamFor(A, Self, M.Columns[PkIdx]);
+      Inc(N);
+      SetLength(Params, N);
+      Sql := B.ToString;
+      C.ExecParams(A, Sql, Params);
+    end;
+  finally
+    { SQL-teksten og parametrene trengs ikke etter kallet. }
+    A.Rewind(Mark);
+  end;
+
+  if VarNy then
+    AfterInsert
+  else
+    AfterUpdate;
+  AfterSave;
+end;
+
+{ Felles for Delete, ForceDelete og Restore: sett en TDateTime-kolonne og
+  skriv raden. Alle tre er «oppdater én kolonne på én rad». }
+procedure SettDatoOgLagre(Model: TModel; C: TDbConnection; A: TArena;
+  M: TModelMeta; ColIdx, PkIdx: Integer; Verdi: TDateTime);
+var
+  B: TStrBuilder;
+  Mark: TArenaMark;
+begin
+  SetFloatProp(Model, M.Columns[ColIdx].Prop, Verdi);
+  Mark := A.Mark;
+  try
+    B.Init(A, 160);
+    B.Append('UPDATE ');
+    C.AppendIdentStr(B, M.Table);
+    B.Append(' SET ');
+    C.AppendIdentStr(B, M.Columns[ColIdx].ColumnName);
+    B.Append(' = ');
+    C.AppendPlaceholder(B, 1);
+    B.Append(' WHERE ');
+    C.AppendIdentStr(B, M.PrimaryKey);
+    B.Append(' = ');
+    C.AppendPlaceholder(B, 2);
+    C.ExecParams(A, B.ToString,
+      [ParamFor(A, Model, M.Columns[ColIdx]),
+       ParamFor(A, Model, M.Columns[PkIdx])]);
+  finally
+    A.Rewind(Mark);
+  end;
+end;
+
+procedure TModel.ForceDelete(Conn: TDbConnection);
+var
+  C: TDbConnection;
+  M: TModelMeta;
+  A: TArena;
+  B: TStrBuilder;
+  Mark: TArenaMark;
+  PkIdx: Integer;
+begin
+  C := RequireDb(Conn);
+  M := Meta;
+  A := Arena;
+  if A = nil then
+    raise EModelError.Create('Delete requires the model to live in an arena');
+  PkIdx := M.PrimaryKeyIndex;
+  if PkIdx < 0 then
+    raise EModelError.CreateFmt('%s has no primary key',
+      [M.ModelClass.ClassName]);
+
+  BeforeDelete;
+  Mark := A.Mark;
+  try
+    B.Init(A, 128);
+    B.Append('DELETE FROM ');
+    C.AppendIdentStr(B, M.Table);
+    B.Append(' WHERE ');
+    C.AppendIdentStr(B, M.PrimaryKey);
+    B.Append(' = ');
+    C.AppendPlaceholder(B, 1);
+    C.ExecParams(A, B.ToString, [ParamFor(A, Self, M.Columns[PkIdx])]);
+  finally
+    A.Rewind(Mark);
+  end;
+  FPersisted := False;
+  AfterDelete;
+end;
+
+procedure TModel.Restore(Conn: TDbConnection);
+var
+  C: TDbConnection;
+  M: TModelMeta;
+  A: TArena;
+  PkIdx, DelIdx: Integer;
+begin
+  M := Meta;
+  if not M.SoftDeletes then
+    raise EModelError.CreateFmt(
+      '%s has no soft deletes; there is nothing to restore. Add ' +
+      'S.SoftDeletes in Describe if that is what you meant.',
+      [M.ModelClass.ClassName]);
+  C := RequireDb(Conn);
+  A := Arena;
+  if A = nil then
+    raise EModelError.Create('Restore requires the model to live in an arena');
+  PkIdx := M.PrimaryKeyIndex;
+  DelIdx := M.IndexOfColumn(M.DeletedAtColumn);
+  if (PkIdx < 0) or (DelIdx < 0) then
+    raise EModelError.CreateFmt('%s cannot be restored',
+      [M.ModelClass.ClassName]);
+  { 0 er «ikke satt» for en TDateTime her, og ParamFor skriver NULL for
+    den. Det er samme regel som resten av datolaget bruker. }
+  SettDatoOgLagre(Self, C, A, M, DelIdx, PkIdx, 0);
+end;
+
+procedure TModel.Delete(Conn: TDbConnection);
+var
+  C: TDbConnection;
+  M: TModelMeta;
+  A: TArena;
+  PkIdx, DelIdx: Integer;
+begin
+  M := Meta;
+  if not M.SoftDeletes then
+  begin
+    ForceDelete(Conn);
+    Exit;
+  end;
+
+  C := RequireDb(Conn);
+  A := Arena;
+  if A = nil then
+    raise EModelError.Create('Delete requires the model to live in an arena');
+  PkIdx := M.PrimaryKeyIndex;
+  DelIdx := M.IndexOfColumn(M.DeletedAtColumn);
+  if (PkIdx < 0) or (DelIdx < 0) then
+    raise EModelError.CreateFmt('%s has no primary key',
+      [M.ModelClass.ClassName]);
+
+  BeforeDelete;
+  SettDatoOgLagre(Self, C, A, M, DelIdx, PkIdx, UtcNow);
+  { Raden finnes fortsatt. Persisted blir stående, slik at en påfølgende
+    Save oppdaterer den og ikke setter inn en ny. }
+  AfterDelete;
+end;
+
+initialization
+  GMetaLock := TCriticalSection.Create;
+
+finalization
+  GMetaLock.Free;
+
+end.

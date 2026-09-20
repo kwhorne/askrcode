@@ -1,0 +1,110 @@
+# Askr
+
+Askr is an application framework for Free Pascal. It gives you what Rails
+and Laravel give you — routing, models, migrations, validation, sessions,
+auth, queues, mail, a console — on a compiled stack that ships as **one
+binary with no sidecars**.
+
+Three things make it different from the frameworks it borrows from, and
+they shape everything else in this documentation:
+
+**Memory is an arena per request.** A worker owns one arena and resets it
+before each request. Everything allocated during the request is freed in a
+single operation. No per-object cleanup, no refcounting, no GC. Measured:
+flat memory across 500 requests, and the first success criterion in the
+PRD depends on it. See [The arena](arena.md).
+
+**The schema is checked at compile time.** `askr schema` reads your real
+database and generates typed column constants. `Where(Customers.Email, Eq, 42)`
+is a compile error, not a runtime surprise. See [Typed columns](schema.md).
+
+**The binary is the deployment.** No PHP-FPM, no Redis, no supervisor, no
+Composer. The queue, cache and scheduler run in the same process. A durable
+queue uses the database you already have. See [Deployment](deployment.md).
+
+---
+
+## Start here
+
+| | |
+|---|---|
+| [Getting started](getting-started.md) | Install the toolchain, create a project, serve it |
+| [The CLI](cli.md) | Every command, and what it does |
+| [Configuration](configuration.md) | `.env`, `askr.toml`, and which one wins |
+| [The arena](arena.md) | The memory model, and the rules it imposes on your code |
+
+## HTTP
+
+| | |
+|---|---|
+| [Routing](routing.md) | Routes, parameters, middleware, response filters |
+| [Requests](requests.md) | Query, form, JSON, headers, route parameters |
+| [Responses](responses.md) | Status, headers, cookies, redirects, JSON |
+| [File uploads](uploads.md) | `multipart/form-data`, and why the client's filename is not to be trusted |
+| [Inertia and Svelte](inertia.md) | Server-driven pages without an API |
+
+## Data
+
+| | |
+|---|---|
+| [Databases](database.md) | Postgres, MySQL, SQLite; connections and pooling |
+| [Models](models.md) | Mapping, timestamps, soft deletes, lifecycle events |
+| [Queries](queries.md) | The typed query builder, eager loading, pagination |
+| [Validation](validation.md) | Rules on the model, errors keyed by column |
+| [Migrations](migrations.md) | The schema builder and the migrator |
+| [Typed columns](schema.md) | `askr schema`, generated from the live database |
+| [Rún](run.md) | The optional query language with comptime schema checking |
+
+## Security
+
+| | |
+|---|---|
+| [Sessions](sessions.md) | Cookies, flash, and what a session costs |
+| [CSRF](csrf.md) | On by default in a new project |
+| [Authentication](auth.md) | Login, "remember me", gates |
+| [Cryptography](crypto.md) | Hashing, password storage, signing, the app key |
+| [TLS](tls.md) | HTTPS in the server, verification in the client |
+
+## Runtime
+
+| | |
+|---|---|
+| [Queues](queue.md) | Background jobs, in-process or durable |
+| [Scheduler](scheduler.md) | Recurring work |
+| [Cache](cache.md) | A sharded LRU in the process |
+| [Mail](mail.md) | SMTP with STARTTLS |
+| [Logging](logging.md) | Levels, fields, text or JSON |
+| [HTTP client](http-client.md) | Calling other services, with certificate verification |
+| [AI](ai.md) | Claude: text, streaming, tools, structured output |
+
+## Tools
+
+| | |
+|---|---|
+| [Testing](testing.md) | The test framework, and testing without a socket |
+| [Desktop](desktop.md) | The same app in a native window |
+| [Deployment](deployment.md) | Shipping the binary |
+
+---
+
+## What is not here
+
+Askr is honest about what has not been done. Two things are **written but
+never run**, and they are marked as such everywhere they appear:
+
+- **The Windows WebView2 shell.** Compiled and type-checked against FPC's
+  own `rtl/win` declarations; never started on a Windows machine.
+- **The AI layer with a real API key.** The wire path is proven — a real
+  call to `api.anthropic.com` returns a 401 with Anthropic's own error JSON,
+  correctly parsed — but no call with a valid key has been made from this
+  repository.
+
+Things that exist in Laravel and deliberately do **not** exist here, with
+reasons, are listed in each relevant page and collected in `LARAVEL.md` at
+the repository root.
+
+## Version
+
+This documentation describes Askr 0.6.0. The framework builds and passes
+its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on macOS and
+Linux.

@@ -1,0 +1,477 @@
+#!/usr/bin/env sh
+# askr — byggskript for selve rammeverket.
+#
+# Ikke å forveksle med CLI-en fra PRD-en, som nå finnes: den er et
+# Pascal-program i cli/askr.lpr, den bygges med `./askr cli`, og den brukes
+# i en *app*. Dette skriptet bygger og tester rammeverket selv, som ikke er
+# en app og derfor ikke har noen askr.toml.
+#
+# Bruker fpc fra PATH når den finnes, ellers docker-imaget fra
+# tools/Dockerfile.fpc. Intet annet oppsett.
+
+set -e
+
+ROOT=$(cd "$(dirname "$0")" && pwd)
+BUILD="$ROOT/.build"
+UNITS="$BUILD/units"
+BIN="$BUILD/bin"
+IMAGE=askr-fpc:bookworm
+
+# Finner en lokal fpc. ASKR_FPC peker på en bestemt kompilator; ellers brukes
+# den som står på PATH. En fpcupdeluxe-installasjon legger fpc.cfg ved siden av
+# binæren, og der leter ikke FPC selv på Unix — derfor settes PPC_CONFIG_PATH.
+LOCAL_FPC=""
+if [ -n "$ASKR_FPC" ] && [ -x "$ASKR_FPC" ]; then
+  LOCAL_FPC="$ASKR_FPC"
+elif command -v fpc >/dev/null 2>&1; then
+  LOCAL_FPC=$(command -v fpc)
+fi
+
+if [ -n "$LOCAL_FPC" ]; then
+  FPCDIR=$(dirname "$LOCAL_FPC")
+  if [ -f "$FPCDIR/fpc.cfg" ]; then
+    PPC_CONFIG_PATH="$FPCDIR"
+    export PPC_CONFIG_PATH
+  fi
+  # RTL-objektene fra fpcupdeluxe er bygget for macOS 11, mens FPC sender
+  # -macosx_version_min 10.15 til linkeren. -WM retter det ved kilden.
+  if [ "$(uname -s)" = "Darwin" ]; then
+    DARWIN_FLAGS="-WM11.0"
+  fi
+fi
+
+have_local_fpc() {
+  [ -n "$LOCAL_FPC" ]
+}
+
+# -B    : bygg alt. Avhengighetssjekken mot .ppu-ene er ikke til å stole på
+#         her, og steg 6 erstatter dette skriptet med ekte inkrementell
+#         kompilering. Fram til da er korrekt viktigere enn raskt.
+# -Sh   : ansistrings
+# -O2   : optimalisering uten å gjøre feilsøking ubrukelig
+# -gl   : linjenummer i stacktrace
+# -vewn : feil, advarsler og notiser — resten er støy
+FPCFLAGS="-B -Sh -O2 -gl -vewn $DARWIN_FLAGS -Fu$ROOT/src/cli -Fu$ROOT/src/core -Fu$ROOT/src/http -Fu$ROOT/src/urd -Fu$ROOT/src/norn -Fu$ROOT/src/inertia -Fu$ROOT/src/desktop -Fu$ROOT/src/runtime -Fu$ROOT/src/run -FU$UNITS -FE$BIN"
+
+ensure_image() {
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "Bygger $IMAGE (én gang) ..."
+    docker build -f "$ROOT/tools/Dockerfile.fpc" -t "$IMAGE" "$ROOT/tools"
+  fi
+}
+
+# Kjører fpc med argumentene som følger, lokalt eller i container.
+# Avbryter ved kompileringsfeil. Uten det kjører neste steg videre på den
+# forrige binæren, og en suite kan melde grønt på kode som ikke kompilerer.
+fpc_run() {
+  if have_local_fpc; then
+    ( cd "$ROOT" && "$LOCAL_FPC" $FPCFLAGS "$@" )
+  else
+    ensure_image
+    docker run --rm -v "$ROOT":/work -w /work "$IMAGE" \
+      fpc $(echo "$FPCFLAGS" | sed "s|$ROOT|/work|g") "$@"
+  fi
+  status=$?
+  if [ $status -ne 0 ]; then
+    echo "askr: kompileringen feilet for $* — stopper." >&2
+    exit $status
+  fi
+}
+
+# Kjører en ferdig binær, lokalt eller i container. Porter videreføres.
+bin_run_quiet() {
+  target=$1
+  shift
+  if have_local_fpc; then
+    "$BIN/$target" "$@"
+  else
+    ensure_image
+    docker run --rm -v "$ROOT":/work -w /work "$IMAGE" \
+      "/work/.build/bin/$target" "$@"
+  fi
+}
+
+COMPOSE="$ROOT/tools/docker-compose.yml"
+DB_NET=tools_default
+
+cmd_db_up() {
+  docker compose -f "$COMPOSE" up -d
+  echo "Venter på Postgres ..."
+  until docker exec askr-postgres pg_isready -U askr -d askr_dev >/dev/null 2>&1; do
+    sleep 1
+  done
+  echo "Postgres klar på 127.0.0.1:5433 (bruker askr, base askr_dev)"
+  echo "Venter på MySQL ..."
+  until docker exec askr-mysql \
+      mysqladmin ping -h 127.0.0.1 -uaskr -paskr >/dev/null 2>&1; do
+    sleep 1
+  done
+  echo "MySQL klar på 127.0.0.1:3308 (bruker askr, base askr_dev)"
+}
+
+cmd_db_down() {
+  docker compose -f "$COMPOSE" down
+}
+
+cmd_urd() {
+  prepare
+  DB_SRC=/work/examples/urddemo/urddemo.lpr
+  fpc_run examples/urddemo/urddemo.lpr
+  run_against_db urddemo
+}
+
+# Frontend bygges med Vite; Askr serverer resultatet statisk.
+cmd_web() {
+  prepare
+  if [ ! -f "$ROOT/examples/inertia/public/build/.vite/manifest.json" ] \
+     || [ "$1" = "--build" ]; then
+    echo "Bygger frontend ..."
+    ( cd "$ROOT/examples/inertia/frontend" && npm install --silent --no-fund --no-audit && npm run build )
+  fi
+  fpc_run examples/inertia/inertiademo.lpr
+  port=${2:-8080}
+  if have_local_fpc; then
+    ASKR_WEB_ROOT="$ROOT/examples/inertia" "$BIN/inertiademo" "$port"
+  else
+    ensure_image
+    docker run --rm -it -p "$port:$port" -v "$ROOT":/work -w /work \
+      -e ASKR_WEB_ROOT=/work/examples/inertia \
+      "$IMAGE" /work/.build/bin/inertiademo "$port" 0.0.0.0
+  fi
+}
+
+cmd_schema() {
+  prepare
+  SCHEMA_OUT="$BUILD/schema"
+  ASKR_SCHEMA_OUT="$SCHEMA_OUT"
+  export ASKR_SCHEMA_OUT
+  DB_SRC=/work/examples/norndemo/norndemo.lpr
+  fpc_run -Fu"$ROOT/examples/norndemo" examples/norndemo/norndemo.lpr
+  run_against_db norndemo
+
+  # Det avgjørende steget: kompiler koden Norn nettopp genererte, og bruk den.
+  echo
+  echo "Kompilerer mot generert skjema ..."
+  DB_SRC=/work/examples/norndemo/verify.lpr
+  fpc_run -Fu"$SCHEMA_OUT" examples/norndemo/verify.lpr
+  run_against_db verify
+}
+
+# Spiken trenger en database. Kjører fpc lokalt, går den mot porten på
+# hosten; i container må den inn på compose-nettverket og bruke tjenestenavnet.
+# Driveren laster libpq med dlopen ved første bruk. Finnes den ikke lokalt,
+# kan ikke en nativ binaer snakke med databasen, og da bygges og kjores
+# demoen i containeren i stedet.
+have_local_libpq() {
+  for p in /opt/homebrew/opt/libpq/lib/libpq.5.dylib \
+           /usr/local/opt/libpq/lib/libpq.5.dylib \
+           /Applications/Postgres.app/Contents/Versions/latest/lib/libpq.5.dylib \
+           /usr/lib/libpq.so.5 /usr/lib/x86_64-linux-gnu/libpq.so.5 \
+           /usr/lib/aarch64-linux-gnu/libpq.so.5; do
+    [ -e "$p" ] && return 0
+  done
+  return 1
+}
+
+run_against_db() {
+  target=$1
+  if ! docker ps --format '{{.Names}}' | grep -qx askr-postgres; then
+    echo "askr-postgres kjører ikke. Kjør: ./askr db:up" >&2
+    exit 1
+  fi
+  if have_local_fpc && ! have_local_libpq; then
+    echo "(ingen libpq lokalt — bygger og kjører $target i container)"
+    ensure_image
+    docker run --rm --network "$DB_NET" -v "$ROOT":/work -w /work \
+      -e ASKR_PG_DSN="${ASKR_PG_DSN:-postgresql://askr:askr@askr-postgres:5432/askr_dev}" \
+      -e ASKR_SCHEMA_OUT="/work/.build/schema" \
+      "$IMAGE" sh -c "fpc $(echo "$FPCFLAGS" | sed "s|$ROOT|/work|g" | sed 's/-WM11.0//') -Fu/work/examples/norndemo -Fu/work/.build/schema $DB_SRC >/dev/null 2>&1 && /work/.build/bin/$target"
+    return
+  fi
+  if have_local_fpc; then
+    ASKR_PG_DSN=${ASKR_PG_DSN:-postgresql://askr:askr@127.0.0.1:5433/askr_dev} \
+      "$BIN/$target"
+  else
+    ensure_image
+    docker run --rm --network "$DB_NET" -v "$ROOT":/work -w /work \
+      -e ASKR_PG_DSN="${ASKR_PG_DSN:-postgresql://askr:askr@askr-postgres:5432/askr_dev}" \
+      "$IMAGE" "/work/.build/bin/$target"
+  fi
+}
+
+cmd_spike() {
+  prepare
+  DB_SRC=/work/examples/pgspike/pgspike.lpr
+  fpc_run examples/pgspike/pgspike.lpr
+  run_against_db pgspike
+}
+
+prepare() {
+  mkdir -p "$UNITS" "$BIN"
+}
+
+cmd_build() {
+  prepare
+  fpc_run src/http/Askr.Http.Server.pas
+  fpc_run src/urd/Askr.Urd.Query.pas
+  fpc_run src/urd/Askr.Urd.MySql.pas
+  fpc_run src/norn/Askr.Norn.Codegen.pas
+  fpc_run src/inertia/Askr.Inertia.pas
+  fpc_run src/http/Askr.Http.Static.pas
+  fpc_run examples/hello/hello.lpr
+  echo "Bygget: .build/bin/hello"
+}
+
+# Selvsignerte sertifikater til TLS-testene. De ligger i .build og hører
+# ikke hjemme noe annet sted.
+cmd_tls_certs() {
+  out="$BUILD/tls"
+  mkdir -p "$out"
+  if [ -f "$out/cert.pem" ] && [ "${1:-}" != "--force" ]; then
+    echo "Finnes allerede: $out/cert.pem (--force for å lage nye)"
+    return 0
+  fi
+  openssl req -x509 -newkey rsa:2048 -keyout "$out/key.pem" \
+    -out "$out/cert.pem" -days 365 -nodes -subj "/CN=localhost" \
+    -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>/dev/null
+  # Et par som ikke hører sammen, til feilstien i testene.
+  openssl req -x509 -newkey rsa:2048 -keyout "$out/other-key.pem" \
+    -out "$out/other-cert.pem" -days 365 -nodes -subj "/CN=annen" 2>/dev/null
+  echo "Sertifikater i $out"
+}
+
+# MySQL-suiten må nå serveren. Natively holder den publiserte porten 3308;
+# i container må vi inn på compose-nettet og bruke tjenestenavnet.
+mysql_dsn_and_net() {
+  MYSQL_NET=""
+  MYSQL_DSN="mysql://askr:askr@127.0.0.1:3308/askr_dev"
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^askr-mysql$'; then
+    return 0
+  fi
+  if ! have_local_fpc; then
+    net=$(docker inspect askr-mysql \
+      --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>/dev/null)
+    if [ -n "$net" ]; then
+      MYSQL_NET="$net"
+      MYSQL_DSN="mysql://askr:askr@askr-mysql:3306/askr_dev"
+    fi
+  fi
+}
+
+cmd_mysql() {
+  prepare
+  mysql_dsn_and_net
+  fpc_run tests/askr_mysql_tests.lpr
+  if have_local_fpc; then
+    ASKR_MYSQL_DSN="$MYSQL_DSN" "$BIN/askr_mysql_tests"
+  else
+    ensure_image
+    docker run --rm ${MYSQL_NET:+--network "$MYSQL_NET"} \
+      -e ASKR_MYSQL_DSN="$MYSQL_DSN" \
+      -v "$ROOT":/work -w /work "$IMAGE" /work/.build/bin/askr_mysql_tests
+  fi
+}
+
+cmd_pg() {
+  prepare
+  net=""
+  dsn="postgresql://askr:askr@127.0.0.1:5433/askr_dev"
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^askr-postgres$' \
+     && ! have_local_fpc; then
+    net=$(docker inspect askr-postgres \
+      --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>/dev/null)
+    [ -n "$net" ] && dsn="postgresql://askr:askr@askr-postgres:5432/askr_dev"
+  fi
+  fpc_run tests/askr_pg_tests.lpr
+  if have_local_fpc; then
+    ASKR_PG_DSN="$dsn" "$BIN/askr_pg_tests"
+  else
+    ensure_image
+    docker run --rm ${net:+--network "$net"} -e ASKR_PG_DSN="$dsn" \
+      -v "$ROOT":/work -w /work "$IMAGE" /work/.build/bin/askr_pg_tests
+  fi
+}
+
+# GTK-imaget er separat fordi WebKitGTK drar inn noen hundre megabyte, og
+# ./askr test skal ikke betale for det.
+ensure_gtk_image() {
+  if ! docker image inspect askr-fpc:gtk >/dev/null 2>&1; then
+    ensure_image
+    echo "Bygger askr-fpc:gtk (GTK3 + WebKitGTK) ..."
+    docker build -t askr-fpc:gtk -f "$ROOT/tools/Dockerfile.gtk" "$ROOT/tools" \
+      >/dev/null
+  fi
+}
+
+# Kjører Linux-webviewen på ordentlig, under Xvfb.
+cmd_desktop_linux() {
+  prepare
+  ensure_gtk_image
+  docker run --rm -v "$ROOT":/work -w /work askr-fpc:gtk sh -c '
+    fpc -B -Sh -O2 -vew -Fu/work/src/core -Fu/work/src/http -Fu/work/src/urd \
+      -Fu/work/src/runtime -Fu/work/src/desktop \
+      -FU/work/.build/units-gtk -FE/work/.build/bin \
+      /work/tests/askr_desktop_tests.lpr >/tmp/c.log 2>&1 \
+      || { grep -E "Error|Fatal" /tmp/c.log | head -5; exit 1; }
+    Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
+    sleep 2
+    DISPLAY=:99 /work/.build/bin/askr_desktop_tests
+  ' 2>&1 | grep -vE "dbind-WARNING|AT-SPI"
+}
+
+# Samme suiter, men med område-, overflyt- og I/O-kontroll slått på.
+#
+# Dette er ikke bare strengere kompilering: -Co gjør enhver tilsiktet
+# heltallsoverflyt til en feil, og det avslørte at fire FNV-hasher hvilte på
+# wraparound uten å si fra. De er nå merket med {$R-}{$Q-}. Kjør denne når du
+# har rørt aritmetikk eller indeksering.
+cmd_check() {
+  FPCFLAGS="$FPCFLAGS -Cr -Co -Ci"
+  echo "askr: bygger med -Cr -Co -Ci (område, overflyt, I/O)"
+  echo
+  cmd_test "$@"
+}
+
+# Rún ende-til-ende: kilde -> introspeksjon av en ekte database -> typesjekk
+# -> Pascal -> fpc -> binær som spør den samme databasen. Testsuiten dekker
+# transpileren; dette dekker at leddene etter den henger sammen, og er
+# samtidig målingen av hva comptime-introspeksjonen koster.
+cmd_run_demo() {
+  prepare
+  fpc_run examples/run/setupdb.lpr
+  bin_run_quiet setupdb "${1:-0}"
+
+  echo
+  echo "— transpilering (comptime leser skjemaet her)"
+  fpc_run examples/run/transpile.lpr
+  bin_run_quiet transpile examples/run/shop.run "$BUILD/run/Shop.Gen.pas" Shop.Gen
+
+  echo
+  echo "— generert Pascal gjennom fpc, og kjørt"
+  fpc_run -Fu.build/run examples/run/rundemo.lpr
+  bin_run_quiet rundemo
+}
+
+cmd_test() {
+  prepare
+  fpc_run tests/askr_tests.lpr
+  bin_run_quiet askr_tests || return 1
+  echo
+  # Den andre suiten er skrevet med Askr.Testing, og tester samtidig
+  # rammeverket den er skrevet med.
+  fpc_run tests/askr_runtime_tests.lpr
+  bin_run_quiet askr_runtime_tests || return 1
+  echo
+  # Krypto mot offisielle vektorer. Denne suiten er ikke som de andre: en
+  # SHA-256 med feil byterekkefølge er stabil, konsistent og verdiløs, og
+  # ingenting i en app ville sagt fra. Vektorene er hele dekningen.
+  fpc_run tests/askr_crypto_tests.lpr
+  bin_run_quiet askr_crypto_tests || return 1
+  echo
+  # Rún: transpileren mot en ekte SQLite-database, inkludert at hver av de
+  # seks comptime-feilene fortsatt sier det den skal.
+  fpc_run tests/askr_run_tests.lpr
+  bin_run_quiet askr_run_tests || return 1
+  echo
+  # TLS-suiten hopper over seg selv der OpenSSL ikke finnes, og sier hvorfor.
+  cmd_tls_certs >/dev/null
+  fpc_run tests/askr_tls_tests.lpr
+  bin_run_quiet askr_tls_tests || return 1
+  echo
+  # De to serversuitene hopper over seg selv uten klientbibliotek eller
+  # server å snakke med.
+  cmd_pg || return 1
+  echo
+  cmd_mysql || return 1
+  echo
+  # Desktop-suiten hopper over seg selv uten WebKitGTK. Den ekte kjøringen,
+  # med vindu og skjerm, er ./askr desktop:linux.
+  fpc_run tests/askr_desktop_tests.lpr
+  bin_run_quiet askr_desktop_tests || return 1
+  echo
+  # WebView2-bindingen kan ikke kjøres herfra. Dette sjekker det som kan
+  # sjekkes: at COM-deklarasjonene og callback-klassene typesjekker.
+  fpc_run tools/probes/webview2_vtable.lpr
+  bin_run_quiet webview2_vtable
+}
+
+cmd_run() {
+  cmd_build
+  port=${1:-8080}
+  if have_local_fpc; then
+    bin_run hello "$port"
+  else
+    # I container må appen lytte på 0.0.0.0 for at -p skal nå fram.
+    ensure_image
+    echo "Askr på http://127.0.0.1:$port (i container)"
+    docker run --rm -it -p "$port:$port" -v "$ROOT":/work -w /work "$IMAGE" \
+      /work/.build/bin/hello "$port" 0.0.0.0
+  fi
+}
+
+# CLI-en fra PRD-en: askr new, askr serve, askr build, askr make.
+cmd_cli() {
+  prepare
+  fpc_run cli/askr.lpr
+  echo "Bygget .build/bin/askr"
+  echo
+  echo "Legg den på PATH, og sett ASKR_HOME hit:"
+  echo "  export PATH=\"$BIN:\$PATH\""
+  echo "  export ASKR_HOME=\"$ROOT\""
+}
+
+cmd_clean() {
+  rm -rf "$BUILD"
+  echo "Ryddet .build"
+}
+
+case "${1:-}" in
+  build) shift; cmd_build "$@" ;;
+  spike) shift; cmd_spike "$@" ;;
+  urd)   shift; cmd_urd "$@" ;;
+  schema) shift; cmd_schema "$@" ;;
+  web)   shift; cmd_web "$@" ;;
+  db:up) shift; cmd_db_up "$@" ;;
+  db:down) shift; cmd_db_down "$@" ;;
+  test)  shift; cmd_test "$@" ;;
+  check) shift; cmd_check "$@" ;;
+  tls:certs) shift; cmd_tls_certs "$@" ;;
+  mysql) shift; cmd_mysql "$@" ;;
+  pg)    shift; cmd_pg "$@" ;;
+  desktop:linux) shift; cmd_desktop_linux "$@" ;;
+  run:demo) shift; cmd_run_demo "$@" ;;
+  run)   shift; cmd_run "$@" ;;
+  cli)   shift; cmd_cli "$@" ;;
+  clean) shift; cmd_clean "$@" ;;
+  *)
+    cat <<USAGE
+askr — byggskript for rammeverket (midlertidig, se steg 6)
+
+  ./askr build    bygg alle units og eksempelappen
+  ./askr test     bygg og kjør testsuiten
+  ./askr check    samme, med område- og overflytkontroll slått på
+  ./askr tls:certs
+                  lag selvsignerte sertifikater i .build/tls
+  ./askr run [port]
+                  bygg og start eksempelappen (standard port 8080)
+  ./askr spike    bygg og kjør libpq-spiken mot Postgres
+  ./askr run:demo [n]
+                  Rún ende-til-ende mot SQLite: transpiler, kompiler,
+                  kjør. n = ekstra tabeller å måle introspeksjonen mot
+  ./askr urd      bygg og kjør Urd ende-til-ende mot Postgres
+  ./askr schema   migrer, introspiser og generer typede kolonner
+  ./askr web      bygg frontend og start Inertia-demoen (Svelte 5)
+  ./askr desktop:linux
+                  bygg GTK-imaget og kjør Linux-webviewen under Xvfb
+  ./askr pg       kjør Postgres-suiten (krever ./askr db:up)
+  ./askr mysql    kjør MySQL-suiten (krever ./askr db:up)
+  ./askr db:up    start Postgres (5433) og MySQL (3308) for utvikling
+  ./askr db:down  stopp den igjen
+  ./askr cli      bygg CLI-en (askr new / serve / build / make)
+  ./askr clean    slett .build
+
+Bruker fpc fra PATH hvis den finnes, ellers docker ($IMAGE).
+USAGE
+    exit 1
+    ;;
+esac

@@ -1,0 +1,4 @@
+db "sqlite:@DB@"
+model Customer from customers
+
+query<M> ById(id: int) -> M

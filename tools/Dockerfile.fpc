@@ -1,0 +1,37 @@
+# Free Pascal-verktøykjede for Askr.
+#
+# Det offisielle freepascal/fpc-imaget er musl-basert, og FPC 3.2.2 sin
+# cprt0.o er bygget mot glibc. Kombinasjonen linker ikke så snart cthreads
+# drar inn libc. Debians egen fpc-pakke er bygget mot den glibc som ligger i
+# samme image, og er derfor det som faktisk fungerer.
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      fpc \
+      binutils \
+      libc6-dev \
+      gcc \
+      curl \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# gcc er med for crtbegin.o/crtend.o, som FPC advarer om uten å feile — og
+# fordi steg 2 uansett trenger en C-verktøykjede for libpq og OpenSSL.
+
+WORKDIR /work
+
+# libpq i eget lag, slik at fpc-laget over beholder cachen når driverne
+# utvides. Headerne trengs ikke — bindingen deklareres mot C-ABI-et direkte
+# og lastes med dlopen ved første bruk.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libpq5 postgresql-client \
+ && rm -rf /var/lib/apt/lists/*
+
+# MySQL-klienten er MariaDBs connector. Den er ABI-kompatibel med
+# libmysqlclient, ligger i Debian, og finnes på Homebrew som
+# mariadb-connector-c — altså én binding som dekker begge serverne.
+# mariadb-client er med for å sette opp skjema i testene.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libmariadb3 mariadb-client \
+ && rm -rf /var/lib/apt/lists/*

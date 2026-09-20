@@ -1,0 +1,6 @@
+db "sqlite:@DB@"
+model Customer from customers
+
+query Feil(name: text) -> [Customer]:
+  from Customer
+  where balance >= name

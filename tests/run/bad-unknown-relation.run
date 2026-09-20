@@ -1,0 +1,7 @@
+db "sqlite:@DB@"
+model Customer from customers
+model Order from orders
+
+query Bad() -> [Customer]:
+  from Customer
+  with ordrs

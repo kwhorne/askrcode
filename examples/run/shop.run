@@ -1,0 +1,40 @@
+# Rún v0.1.
+#
+# Det språket gir som Pascal ikke kan: én generisk erklæring som blir
+# konkrete, typede funksjoner — og «with», som er et reservert ord i Pascal
+# og derfor umulig som navn på eager loading der.
+#
+# Ingen kolonner, typer eller relasjoner er skrevet her. Alt leses av
+# databasen mens dette oversettes.
+
+db "sqlite:.build/run/shop.db"
+
+model Customer from customers
+model Order    from orders
+
+# Én erklæring, to typede funksjoner: CustomerById og OrderById.
+# I Pascal ville dette krevd to nesten like funksjoner, eller en generisk
+# metode kompilatoren nekter å ta imot.
+query<M> ById(id: int) -> M for Customer, Order
+
+query ActiveCustomers(minBalance: money) -> [Customer]:
+  from Customer
+  where balance >= minBalance and active == true
+  with orders
+  order by balance desc, name
+  limit 10
+
+query CustomersMissingWeight() -> [Customer]:
+  from Customer
+  where weight is null
+
+query LargeOrders(floor: money) -> [Order]:
+  from Order
+  where amount >= floor
+  order by amount desc
+  limit 5
+
+query SearchCustomers(pattern: text) -> [Customer]:
+  from Customer
+  where email like pattern
+  order by name

@@ -1,0 +1,6 @@
+db "sqlite:@DB@"
+model Customer from customers
+
+query Feil() -> [Customer]:
+  from Customer
+  where emial == "ada@example.com"

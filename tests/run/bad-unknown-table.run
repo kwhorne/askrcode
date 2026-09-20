@@ -1,0 +1,6 @@
+db "sqlite:@DB@"
+model Customer from customer
+
+query Feil() -> [Customer]:
+  from Customer
+  where id == 1

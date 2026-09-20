@@ -1,0 +1,10 @@
+name = "notater"
+main = "webmain.lpr"
+main_desktop = "desktopmain.lpr"
+frontend = ""
+port = 8080
+backend_port = 8081
+units = "."
+watch = "."
+askr = "/Users/kh/code/askrcode"
+flags = "-Sh -O1 -vw -WM11.0"

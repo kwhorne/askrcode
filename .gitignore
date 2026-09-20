@@ -1,0 +1,11 @@
+.build/
+*.o
+*.ppu
+*.a
+*.compiled
+*.res
+/examples/*/hello
+/tests/askr_tests
+.DS_Store
+node_modules/
+examples/inertia/public/build/
