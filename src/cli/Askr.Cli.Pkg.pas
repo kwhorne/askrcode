@@ -509,7 +509,7 @@ end;
 
 function Fetch(const Source, Version: string; out Commit, Feil: string): Boolean;
 var
-  Maal, Midl, Ut, Fant: string;
+  Maal, Midl, Ut, Fant, Klonelogg: string;
 begin
   Result := False;
   Commit := '';
@@ -539,10 +539,17 @@ begin
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
 
   Si('  fetching Askr ' + Version + ' from ' + Source);
-  if RunThrough('/usr/bin/env',
+  { Fanges i stedet for å slippes ut. En annotert tag får git til å
+    skrive «refs/tags/v0.6.0 <sha> is not a commit!» under --depth 1:
+    tag-objektet har sin egen sha, og klonen blir riktig likevel —
+    commit-en leses ut av utsjekkingen etterpå. Advarselen sier
+    ingenting en bruker kan gjøre noe med. Feiler klonen, vises alt,
+    for da er det nettopp utdataene man trenger. }
+  if RunCapture('/usr/bin/env',
        ['git', '-c', 'advice.detachedHead=false', 'clone', '--depth', '1',
-        '--branch', 'v' + Version, '--quiet', Source, Midl], '') <> 0 then
+        '--branch', 'v' + Version, '--quiet', Source, Midl], '', Klonelogg) <> 0 then
   begin
+    Si(Klonelogg);
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
     Feil := 'could not fetch v' + Version + ' from ' + Source + '.' +
             LineEnding + LineEnding +
@@ -582,30 +589,36 @@ end;
 
 { Skriver @askrcode/lauf-versjonen inn i frontend/package.json.
 
-  Finner den ikke linja, gjetter den ikke: den skriver ut hva som skal
-  stå. Samme regel som InstallerRuter i stillaset — å redigere en fil
-  noen har skrevet selv, på et sted man har gjettet seg til, er verre
-  enn å be om hjelp. }
+  Bare selve verdien byttes. Første utgave tok Pos(':', Linje) — den
+  FØRSTE kolonen på linja — og på en kompakt package.json tilhører den
+  "dependencies", ikke "@askrcode/lauf". Resultatet var at hele
+  dependencies-objektet ble erstattet av én streng: @inertiajs/svelte
+  forsvant, og JSON-en ble ugyldig. Den skrev altså over en fil brukeren
+  eier, uten å si fra.
+
+  Nå finnes kolonen etter nøkkelen, og bare den siterte verdien etter
+  den byttes ut. Ser linja ikke ut som forventet, gjettes det ikke:
+  funksjonen sier hva som skal stå. Samme regel som InstallerRuter i
+  stillaset. }
 function SettLaufAvhengighet(P: TProject; const LaufSpec: string;
   out Endret: Boolean): Boolean;
+const
+  Nokkel = '"@askrcode/lauf"';
 var
-  Sti, S: string;
+  Sti, S, Ny: string;
   F: TStringList;
-  I, A: Integer;
-  Ny: string;
+  I, PN, A, V1, V2: Integer;
 begin
   Endret := False;
   { FrontendDir er allerede absolutt. Å legge Root foran ga en sti som
     aldri fantes, og da gjorde denne funksjonen ingenting og meldte
-    suksess — install sa «lauf 0.6.0» mens package.json sto urørt. }
+    suksess. }
   if P.FrontendDir = '' then
     Exit(True);   { prosjektet har ingen frontend }
   Sti := IncludeTrailingPathDelimiter(P.FrontendDir) + 'package.json';
   if not FileExists(Sti) then
   begin
-    { Konfigurert frontend uten package.json er noe annet enn ingen
-      frontend, og skal ikke passere i stillhet. }
-    Si('  no package.json in ' + P.FrontendDir + ' — skipping the Lauf pin.');
+    Si('  no package.json in ' + P.FrontendDir + ' -- skipping the Lauf pin.');
     Exit(True);
   end;
 
@@ -615,16 +628,32 @@ begin
     for I := 0 to F.Count - 1 do
     begin
       S := F[I];
-      if Pos('"@askrcode/lauf"', S) = 0 then
+      PN := Pos(Nokkel, S);
+      if PN = 0 then
         Continue;
-      A := Pos(':', S);
+
+      { Kolonen som hører til NØKKELEN, ikke den første på linja. }
+      A := Pos(':', S, PN + Length(Nokkel));
       if A = 0 then
-        Continue;
-      Ny := Copy(S, 1, A) + ' ' + LaufSpec;
-      { Kommaet bak må beholdes, ellers blir package.json ugyldig. }
-      if Pos(',', Copy(S, A, Length(S))) > 0 then
-        Ny := Ny + ',';
-      if Trim(Ny) <> Trim(S) then
+        Break;
+
+      (* Verdien maa vaere en sitert streng, og det maa sjekkes paa det
+         FOERSTE tegnet etter kolonen. Lette man bare etter neste
+         anfoerselstegn, traff man inn i et objekt: en verdi som selv er
+         et objekt med et version-felt ble da skrevet over i stedet for
+         avvist. *)
+      V1 := A + 1;
+      while (V1 <= Length(S)) and (S[V1] in [' ', #9]) do
+        Inc(V1);
+      if (V1 > Length(S)) or (S[V1] <> '"') then
+        Break;
+      V2 := Pos('"', S, V1 + 1);
+      if V2 = 0 then
+        Break;
+
+      { Anførselstegnene beholdes: LaufSpec er verdien uten dem. }
+      Ny := Copy(S, 1, V1) + LaufSpec + Copy(S, V2, Length(S));
+      if Ny <> S then
       begin
         F[I] := Ny;
         F.SaveToFile(Sti);
@@ -636,25 +665,23 @@ begin
     F.Free;
   end;
 
-  Si('  could not find "@askrcode/lauf" in ' + Sti);
-  Si('  add this line to its "dependencies" yourself:');
+  Si('  could not find ' + Nokkel + ' in ' + Sti);
+  Si('  add this to its "dependencies" yourself:');
   Si('');
-  Si('    "@askrcode/lauf": ' + LaufSpec);
+  Si('    ' + Nokkel + ': ' + LaufSpec);
   Si('');
   Result := False;
 end;
 
 { Setter [askr] version i askr.toml. Finner den ikke linja, gjetter den
-  ikke — den sier hva som skal stå. Samme regel som InstallerRuter i
-  stillaset: å redigere en fil noen har skrevet selv, på et sted man har
-  gjettet seg til, er verre enn a be om hjelp. }
+  ikke -- den sier hva som skal stå. Samme regel som InstallerRuter i
+  stillaset. }
 function SettPinnetVersjon(P: TProject; const Versjon: string): Boolean;
 var
   F: TStringList;
   I, A: Integer;
-  S2: string;
+  S2, Sti: string;
   ISeksjon: Boolean;
-  Sti: string;
 begin
   Result := False;
   Sti := IncludeTrailingPathDelimiter(P.Root) + 'askr.toml';
@@ -803,8 +830,8 @@ begin
   { Lauf er ikke publisert på npm ennå, så avhengigheten peker inn i den
     versjonen vi nettopp installerte. Naar pakka er publisert, blir dette
     versjonsnummeret og ingenting annet endrer seg. }
-  if not SettLaufAvhengighet(P, '"file:' +
-       IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf"', Endret) then
+  if not SettLaufAvhengighet(P, 'file:' +
+       IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf', Endret) then
     Result := 1;
 
   L.Version := Onsket;

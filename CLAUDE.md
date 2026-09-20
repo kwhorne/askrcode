@@ -365,6 +365,15 @@ som sendes opp mot det den skal være.
   tuklet lock aldri oppdages — altså i det vanlige tilfellet. `CommitOf`
   leser commit-en ut av utsjekkingen i stedet. Mutasjonssjekket: riktig
   commit gir 0, tuklet gir 1.
+* **Bare verdien byttes i package.json.** Første utgave tok
+  `Pos(':', Linje)` — den *første* kolonen på linja — og på en kompakt
+  package.json tilhører den `"dependencies"`, ikke `"@askrcode/lauf"`.
+  Hele dependencies-objektet ble da erstattet av én streng:
+  `@inertiajs/svelte` forsvant og JSON-en ble ugyldig. Den skrev altså
+  over en fil brukeren eier, uten å si fra. Nå finnes kolonen etter
+  nøkkelen, og det sjekkes at første tegn etter den er et anførselstegn
+  — ellers avvises linja i stedet for å gjettes på. Prøvd mot tre
+  former: kompakt, stillasets, og en verdi som selv er et objekt.
 * **`FrontendDir` er allerede absolutt.** Å legge `Root` foran ga en sti
   som aldri fantes, og funksjonen som pinner Lauf gjorde da ingenting og
   meldte suksess. «Fant ikke fila» skal ikke bety «alt i orden».
