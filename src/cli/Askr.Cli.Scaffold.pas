@@ -217,7 +217,7 @@ end;
 procedure NyttProsjekt(const ForeldreMappe, Name: string;
   MedAuth: Boolean);
 var
-  Rot, Rammeverk: string;
+  Rot, Rammeverk, LaufDep: string;
 begin
   Rot := IncludeTrailingPathDelimiter(ForeldreMappe) + Name;
   if DirectoryExists(Rot) then
@@ -452,6 +452,15 @@ begin
   OppdaterIndeks(Rot, 'database', 'App.Migrations', 'App.Migrations.');
   OppdaterIndeks(Rot, 'database', 'App.Seeders', 'App.Seeders.');
 
+  { Lauf er frontendlaget i Askr, ikke en valgfri pakke ved siden av. Til
+    den er publisert på npm peker avhengigheten på rammeverkskatalogen —
+    samme sti som askr.toml allerede kjenner. Når den er publisert, byttes
+    denne linja mot et versjonsnummer og ingenting annet endrer seg. }
+  if Rammeverk <> '' then
+    LaufDep := '"file:' + IncludeTrailingPathDelimiter(Rammeverk) + 'frontend/lauf"'
+  else
+    LaufDep := '"^0.1.0"';
+
   Skriv(Rot + '/frontend/package.json',
     '{' + #10 +
     '  "name": "' + Name + '-frontend",' + #10 +
@@ -462,11 +471,14 @@ begin
     '    "build": "vite build"' + #10 +
     '  },' + #10 +
     '  "dependencies": {' + #10 +
+    '    "@askrcode/lauf": ' + LaufDep + ',' + #10 +
     '    "@inertiajs/svelte": "^3.0.0"' + #10 +
     '  },' + #10 +
     '  "devDependencies": {' + #10 +
     '    "@sveltejs/vite-plugin-svelte": "^5.0.0",' + #10 +
+    '    "@tailwindcss/vite": "^4.0.0",' + #10 +
     '    "svelte": "^5.0.0",' + #10 +
+    '    "tailwindcss": "^4.0.0",' + #10 +
     '    "vite": "^6.0.0"' + #10 +
     '  }' + #10 +
     '}' + #10);
@@ -474,9 +486,20 @@ begin
   Skriv(Rot + '/frontend/vite.config.js',
     'import { defineConfig } from ' + Q + 'vite' + Q + #10 +
     'import { svelte } from ' + Q + '@sveltejs/vite-plugin-svelte' + Q + #10 +
+    'import tailwindcss from ' + Q + '@tailwindcss/vite' + Q + #10 +
     #10 +
+    '// Lauf ligger som file:-avhengighet til den er publisert, altså en' + #10 +
+    '// symlink ut av dette treet, og har sine egne kopier av svelte og' + #10 +
+    '// @inertiajs for testing. Uten dedupe løser Vite dem hver for seg, og' + #10 +
+    '// createInertiaApp setter opp en annen router enn <Form> importerer.' + #10 +
+    '// Feilen blir «Cannot read properties of undefined (reading visit)»,' + #10 +
+    '// langt fra årsaken.' + #10 +
     'export default defineConfig({' + #10 +
-    '  plugins: [svelte()],' + #10 +
+    '  plugins: [tailwindcss(), svelte()],' + #10 +
+    '  resolve: {' + #10 +
+    '    dedupe: [' + Q + 'svelte' + Q + ', ' + Q + '@inertiajs/svelte' + Q +
+      ', ' + Q + '@inertiajs/core' + Q + '],' + #10 +
+    '  },' + #10 +
     '  base: ' + Q + '/build/' + Q + ',' + #10 +
     '  server: { port: 5173, strictPort: true },' + #10 +
     '  build: {' + #10 +
@@ -487,9 +510,38 @@ begin
     '  },' + #10 +
     '})' + #10);
 
+  { Tailwind ser ikke inn i node_modules av seg selv. Uten @source mangler
+    hver klasse Lauf bruker fra stilarket, og komponentene kommer ut uten
+    styling uten at noe sier hvorfor. }
+  Skriv(Rot + '/frontend/src/app.css',
+    '@import ' + Q + 'tailwindcss' + Q + ';' + #10 +
+    '@import ' + Q + '@askrcode/lauf/theme.css' + Q + ';' + #10 +
+    '@source ' + Q + '../node_modules/@askrcode/lauf/src' + Q + ';' + #10 + #10 +
+    '/* Tokenene er semantiske. Overstyr dem her for ditt eget uttrykk;' + #10 +
+    '   mørk modus følger med, fordi ingen komponent skriver dark:. */' + #10 +
+    'body {' + #10 +
+    '  background: var(--color-surface);' + #10 +
+    '  color: var(--color-fg);' + #10 +
+    '  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;' + #10 +
+    '}' + #10);
+
+  Skriv(Rot + '/frontend/src/Layout.svelte',
+    '<script>' + #10 +
+    '  import { Flash } from ' + Q + '@askrcode/lauf/inertia' + Q + #10 +
+    '  let { children } = $props()' + #10 +
+    '</script>' + #10 + #10 +
+    '<!-- Flash setter opp live-omradene en gang og gjor flash fra Askr om' + #10 +
+    '     til toasts. Den ma sta utenfor sidene, ellers byttes omradet ut' + #10 +
+    '     ved hver navigering og meldingen leses ikke opp. -->' + #10 +
+    '<Flash />' + #10 + #10 +
+    '<main class="mx-auto max-w-3xl px-4 pt-10 pb-16">' + #10 +
+    '  {@render children?.()}' + #10 +
+    '</main>' + #10);
+
   Skriv(Rot + '/frontend/src/main.js',
     'import { createInertiaApp } from ' + Q + '@inertiajs/svelte' + Q + #10 +
-    'import { mount } from ' + Q + 'svelte' + Q + #10 + #10 +
+    'import { mount } from ' + Q + 'svelte' + Q + #10 +
+    'import ' + Q + './app.css' + Q + #10 + #10 +
     'createInertiaApp({' + #10 +
     '  resolve: (name) => {' + #10 +
     '    const pages = import.meta.glob(' + Q + './pages/**/*.svelte' + Q +
@@ -503,16 +555,24 @@ begin
 
   Skriv(Rot + '/frontend/src/pages/Home.svelte',
     '<script>' + #10 +
+    '  import { Heading, Text, Card, Button } from ' + Q + '@askrcode/lauf' + Q + #10 +
+    '  import Layout from ' + Q + '../Layout.svelte' + Q + #10 + #10 +
     '  let { name = ' + Q + Q + ' } = $props()' + #10 +
     '</script>' + #10 + #10 +
-    '<main>' + #10 +
-    '  <h1>{name}</h1>' + #10 +
-    '  <p>Edit this file, or app/Http/App.Http.HomeController.pas.</p>' + #10 +
-    '</main>' + #10 + #10 +
-    '<style>' + #10 +
-    '  main { font-family: system-ui, sans-serif; max-width: 40rem;' + #10 +
-    '         margin: 4rem auto; padding: 0 1rem; }' + #10 +
-    '</style>' + #10);
+    '<Layout>' + #10 +
+    '  <Heading level={1}>{name}</Heading>' + #10 +
+    '  <Text muted class="mb-6">' + #10 +
+    '    Served by Askr, rendered by Svelte 5, styled with Lauf.' + #10 +
+    '  </Text>' + #10 + #10 +
+    '  <Card class="flex flex-col gap-3">' + #10 +
+    '    <Text>' + #10 +
+    '      Edit <code>frontend/src/pages/Home.svelte</code>, or the' + #10 +
+    '      controller in <code>app/Http/App.Http.HomeController.pas</code>.' + #10 +
+    '    </Text>' + #10 +
+    '    <Button variant="primary" class="self-start"' + #10 +
+    '            href="https://github.com/askrcode">Read the docs</Button>' + #10 +
+    '  </Card>' + #10 +
+    '</Layout>' + #10);
 
   { .env holder hemmeligheter og sjekkes aldri inn. .env.example gjør det,
     og er lista over hva en ny utvikler må fylle ut. }
@@ -583,6 +643,19 @@ begin
     WriteLn('  askr build && askr migrate');
   WriteLn('  (cd frontend && npm install)');
   WriteLn('  askr serve');
+
+  { Laufs ikoner genereres fra heroicons og sjekkes ikke inn. Er de ikke
+    laget, feiler byggingen med at @askrcode/lauf/icons/micro ikke finnes —
+    en feilmelding som ikke sier noe om hvorfor. }
+  if (Rammeverk <> '') and
+     not DirectoryExists(IncludeTrailingPathDelimiter(Rammeverk) +
+       'frontend/lauf/src/icons') then
+  begin
+    WriteLn;
+    WriteLn('  NOTE      Lauf''s icons are generated and are not in git.');
+    WriteLn('            Run this once, in the framework checkout:');
+    WriteLn('              (cd ', Rammeverk, '/frontend/lauf && npm install)');
+  end;
 end;
 
 { -------------------------------------------------------- askr make -- }

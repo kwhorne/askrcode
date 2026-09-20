@@ -35,17 +35,23 @@ registreres og bekreftes før navnet brukes noe sted.
 Lauf er **et komponentbibliotek for frontend**, distribuert over npm, som en
 Askr-app installerer på samme måte som den installerer `@inertiajs/svelte`.
 
-Lauf er **ikke** en del av rammeverksbinæren, og det er det viktigste å holde
-fast ved. Askrs løfte er én binærfil uten sidevogn. Det løftet handler om
-serveren. Nettleseren har alltid hatt npm, Vite og Svelte i denne stakken, og
-Lauf gjør ikke den situasjonen verre. Men grensen må stå skrevet, for den er
-lett å viske ut:
+**Lauf er frontendlaget i Askr**, slik Urd er datalaget. `askr new` setter
+det opp, og demosiden i et nytt prosjekt er skrevet i det. Det er ikke en
+valgfri pakke ved siden av.
+
+Lauf er likevel **ikke en del av rammeverksbinæren**, og det er forskjellen
+som må holdes fast. Askrs løfte er én binærfil uten sidevogn. Det løftet
+handler om serveren. Nettleseren har alltid hatt npm, Vite og Svelte i denne
+stakken, og Lauf gjør ikke den situasjonen verre. Men grensen må stå
+skrevet, for den er lett å viske ut:
 
 * **Ingenting i `src/` får avhenge av Lauf.** Samme regel som for `Askr.Run`.
-* **Velkomstsiden og auth-stillaset blir liggende som ren HTML.** De virker i
-  dag uten npm, uten nett og uten filer ved siden av binæren, og det er en
-  testet egenskap, ikke en tilfeldighet. Et nytt prosjekt skal kunne logge inn
-  før `npm install` er kjørt.
+* **Velkomstsiden og auth-stillaset blir liggende som ren HTML.** De virker
+  uten npm, uten nett og uten filer ved siden av binæren, og det er en testet
+  egenskap, ikke en tilfeldighet. Et nytt prosjekt skal svare på `/` og kunne
+  logge inn før `npm install` er kjørt. Prøvd på nytt etter at Lauf ble
+  frontendlaget: `askr new` + `askr build`, ingen npm, `/` svarer 200 uten en
+  eneste ekstern ressurs.
 * En app som ikke bruker Inertia skal ikke merke at Lauf finnes.
 
 Senere kan `askr make auth --lauf` generere Inertia-sider i stedet for HTML.
@@ -705,16 +711,20 @@ må det finnes en port, ikke en god intensjon.
 ## Åpne spørsmål
 
 1. **npm-scopet `@askrcode` må registreres.** Ingen pakker er publisert under
-   det i dag, men det er ikke bevis på at det er ledig.
+   det i dag, men det er ikke bevis på at det er ledig. **Dette haster nå:**
+   `askr new` skriver `"@askrcode/lauf": "file:<rammeverkssti>"` fordi
+   pakken ikke finnes på npm. Det virker for et prosjekt på samme maskin som
+   rammeverket, og ikke for noen andre. Når den publiseres, byttes den ene
+   linja mot et versjonsnummer og ingenting annet endrer seg.
 2. **Fri eller betalt?** Flux tar 149–799 dollar. Lauf kan være MIT som
    resten av Askr, og det er det svaret som passer et rammeverk som vil bli
    brukt. Men det bør være et valg noen tar bevisst, ikke noe som skjer.
 3. ~~**`Icon` med navn kontra importert komponent.**~~ Avgjort i bolk 0:
    komponent. Tallene står over.
-4. **Skal `askr new` installere Lauf som standard?** Argumentet for er at et
-   nytt prosjekt da ser bra ut med én gang. Argumentet mot er at malene i
-   `askr new` med vilje er små, og at et stillas som genererer femten filer
-   man ikke forstår er verre enn ingen stillas.
+4. ~~**Skal `askr new` installere Lauf som standard?**~~ Avgjort: ja. Lauf er
+   frontendlaget, ikke et tillegg. Malene er fortsatt små — Home.svelte er
+   nitten linjer — og de bruker fire komponenter, ikke femten filer man ikke
+   forstår.
 
 ## En feil som ble rettet på veien
 

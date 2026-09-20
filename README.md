@@ -74,7 +74,7 @@ Windows-webviewen, og AI-laget med en gyldig API-nøkkel.
 
 | Frontend | Innhold | Status |
 |---|---|---|
-| | Lauf — UI-komponenter i Svelte 5 | ferdig, 37 komponenter — se `LAUF.md` |
+| | Lauf — frontendlaget, 37 komponenter | ferdig, satt opp av `askr new` |
 | | DataGrid, med serversiden i `Askr.Urd.Grid` | ferdig, sortering og søk i databasen |
 
 Fire ting står ikke der en fersk leser ville lett etter dem, og det er med

@@ -946,10 +946,24 @@ serveren. Slutter de å holde, er det arena-modellen som svikter, ikke testen.
 Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
 `LAUF.md`; her er bare det man må vite for å endre koden.
 
-* **Ingenting i `src/` får avhenge av Lauf, noen gang.** Samme regel som for
-  `Askr.Run`. Velkomstsiden og auth-stillaset skal fortsette å virke uten
-  npm, uten nett og uten filer ved siden av binæren — det er testet, og det
-  er ikke en tilfeldighet.
+* **Lauf er frontendlaget, ikke et tillegg.** `askr new` setter det opp:
+  package.json, Tailwind, `app.css` med tokens og `@source`, en Layout med
+  `<Flash />`, og en Home-side skrevet i Lauf.
+* **Ingenting i `src/` får likevel avhenge av Lauf.** Samme regel som for
+  `Askr.Run`, og den er uendret. Velkomstsiden og auth-stillaset skal
+  fortsette å virke uten npm, uten nett og uten filer ved siden av binæren —
+  det er testet, og det er ikke en tilfeldighet. «Frontendlaget» handler om
+  sidene appen bygger, ikke om at binæren slutter å svare alene.
+* **`askr new` skriver `file:`-stien til rammeverket**, fordi `@askrcode/lauf`
+  ikke er publisert. Den kommer fra samme `Rammeverk` som askr.toml bruker.
+  Når pakken publiseres, er det én linje i `Askr.Cli.Scaffold` som endres.
+* **En `file:`-avhengighet krever `resolve.dedupe`** på `svelte`,
+  `@inertiajs/svelte` og `@inertiajs/core` i den genererte vite.config.
+  Uten den får appen og Lauf hver sin kopi. Malen har den.
+* **Laufs ikoner er ikke i git.** Et rammeverk som er sjekket ut på nytt må
+  kjøre `npm install` i `frontend/lauf` én gang, ellers feiler en generert
+  app på at `@askrcode/lauf/icons/micro` ikke finnes. `askr new` sier fra når
+  katalogen mangler.
 * Porten er `./askr lauf`, ikke `./askr test`. Den hopper over seg selv når
   `node` mangler, på samme måte som desktop-suiten uten GTK. `./askr test`
   skal ikke kreve npm.
