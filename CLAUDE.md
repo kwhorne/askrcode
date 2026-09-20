@@ -368,10 +368,10 @@ som sendes opp mot det den skal være.
 
 ## Dokumentasjonen i docs/
 
-* **`docs/` er produkt og er på engelsk.** Det er utviklerdokumentasjon —
-  det en bruker av rammeverket leser — og faller derfor inn under regelen
-  under. README.md, CLAUDE.md og LARAVEL.md er arbeidsnotater og blir
-  værende norske.
+* **`docs/` og README.md er produkt og er på engelsk.** Det er det en
+  bruker av rammeverket leser, og faller derfor inn under regelen under.
+  README-en er inngangsdøra til et offentlig repo; CLAUDE.md, LAUF.md og
+  LARAVEL.md er arbeidsnotater og blir værende norske.
 * **Signaturene skal verifiseres, ikke huskes.** Første utkast hadde
   `Back.WithErrors` (heter `BackWithErrors`), `Mail.Send(tekst, emne)`
   (tar en `TMailMessage`), tre valideringsregler som ikke finnes
@@ -392,9 +392,16 @@ valideringsmeldinger, CLI-utskrift, velkomstsiden og alt `askr new` genererer.
 Askr er et internasjonalt rammeverk, og en norsk feilmelding er ubrukelig for
 de fleste som treffer den.
 
-**Kommentarer, README og denne fila er norske.** De er arbeidsnotater, ikke
-produkt. Skriver du en ny melding som kan nå en bruker, skriv den på engelsk —
-skriver du en kommentar om hvorfor koden er som den er, skriv den på norsk.
+**Kommentarer og arbeidsnotatene er norske** — CLAUDE.md, LAUF.md og
+LARAVEL.md. De er ikke produkt. Skriver du en ny melding som kan nå en
+bruker, skriv den på engelsk — skriver du en kommentar om hvorfor koden er
+som den er, skriv den på norsk.
+
+**README.md er unntaket som flyttet.** Den var et arbeidsnotat på norsk til
+repoet ble offentlig. Nå er den det første noen ser på GitHub, altså
+produkt, og den er engelsk og kort. Statustabellene som lå der er borte;
+det som må holdes oppdatert er de to forbeholdene — Windows og AI-laget
+uten en ekte nøkkel — og de står fortsatt der.
 
 Valideringsmeldingene er de mest synlige av alle: de havner i skjemaer.
 `' is required'`, `'%s must be at least %d characters'`, og så videre.
@@ -621,8 +628,8 @@ grunn; den slår av en reell typesjekk.
   direkte. Uten `destroy`-signalet koblet til `gtk_main_quit` henger
   prosessen etter at vinduet er lukket.
 * **Windows-skallet er skrevet, men aldri kjørt, og er parkert.** Det er det
-  eneste stedet i Askr der det er sant, og det skal stå i status og i README
-  — ikke gjemmes bak at koden finnes. Et forsøk på å bygge en win64-kryss-kompilator fra
+  eneste stedet i Askr der det er sant sammen med AI-laget, og det skal stå
+  i README — ikke gjemmes bak at koden finnes. Et forsøk på å bygge en win64-kryss-kompilator fra
   Debians FPC-kilder strandet: `crossall` finnes ikke som mål, og `fpcmake`
   genererer ikke `rtl/Makefile` der. Har noen en Windows-maskin, er det den
   neste testen.
@@ -1145,5 +1152,4 @@ Rekkefølgen videre og begrunnelsene står i LARAVEL.md, ikke her.
 Datalaget er komplett for alle tre dialektene: drivere, introspeksjon,
 migrasjoner og prepared statements med cache. Cachen hører til **steg 2** i
 PRD-en, ikke til fase 2 — den ble bare stående igjen til etter at fase 2 var
-ferdig, og statustabellen i README plasserer den der den hører hjemme. MySQL
-står ikke i PRD-en i det hele tatt; den kom inn etterpå.
+ferdig. MySQL står ikke i PRD-en i det hele tatt; den kom inn etterpå.
