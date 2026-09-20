@@ -69,7 +69,7 @@ and `aria-invalid`, and the button shows a spinner while the request is out.
 
 Phases 1 and 2 are complete on **macOS and Linux**. The data layer is
 complete for all three dialects. The CLI has 22 commands. Documentation is
-33 pages under [`docs/`](docs/).
+34 pages under [`docs/`](docs/).
 
 Two things are **written and have never been run**, and they will say so
 until someone runs them:
