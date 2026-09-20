@@ -341,6 +341,50 @@ requestformen og feilhåndteringen — ikke at et svar med innhold kommer
 tilbake. Alt annet er testet mot `TFakeAiTransport`, som holder JSON-en
 som sendes opp mot det den skal være.
 
+## Versjoner og pakkelaget
+
+* **En utgivelse er ett tall over to økosystemer.** Pascal-kilden og
+  `@askrcode/lauf` på npm må si det samme. De *hadde* allerede drevet fra
+  hverandre — CLI-en sto på 0.6.0, package.json på 0.1.0 — og ingenting
+  sa fra. `Askr.Core.Version` eier tallet nå, og en test i
+  `askr_runtime_tests` leser package.json og feiler hvis de er ulike.
+  Driver de, får du en `DataGrid.svelte` som ikke passer `Askr.Urd.Grid`,
+  og det merkes først når en kolonne slutter å sortere.
+* **Kilden er artefakten.** 2,2 MB som kompilerer på 1,43 s, så det
+  distribueres ingen binærer. `.ppu`-filer er dessuten bundet til
+  nøyaktig FPC-versjon, så en delt cache av dem ville vært en felle, ikke
+  en optimalisering.
+* **`path` i askr.toml vinner over `version`**, samme rolle som `replace`
+  i go.mod. Den gamle toppnivåformen `askr = "..."` leses fortsatt som
+  `[askr] path`, slik at prosjekter fra før versjonering bygger urørt.
+* **`[askr]` må stå sist i det stillaset skriver**, sammen med `[app]`.
+  En seksjon gjelder alt under seg — samme grunn som at `[app]` allerede
+  sto sist.
+* **Integritetssjekken sammenlignet verdien med seg selv.** `CmdInstall`
+  falt tilbake til `L.Commit` når cachen alt var full, og da kunne en
+  tuklet lock aldri oppdages — altså i det vanlige tilfellet. `CommitOf`
+  leser commit-en ut av utsjekkingen i stedet. Mutasjonssjekket: riktig
+  commit gir 0, tuklet gir 1.
+* **`FrontendDir` er allerede absolutt.** Å legge `Root` foran ga en sti
+  som aldri fantes, og funksjonen som pinner Lauf gjorde da ingenting og
+  meldte suksess. «Fant ikke fila» skal ikke bety «alt i orden».
+* **Delegering løser at `AskrUnits` er kompilert inn i verktøyet.** Et
+  0.6.0-verktøy som bygger mot 0.7.0 ville ikke lagt en ny unit-katalog
+  på søkestien, og feilen hadde vært «unit not found» langt fra årsaken.
+  `askr` bygger derfor den pinnede versjonens CLI én gang og kjører den
+  — `ASKR_DELEGATED=1` hindrer ring. `install`, `update`, `outdated` og
+  `new` delegerer aldri; de styrer pinnen. En lokal `path` delegerer
+  heller ikke, ellers kunne man ikke teste en endring i CLI-en.
+* Byggingen av delegaten **fanges og vises bare ved feil**. Byggskriptet
+  `./askr` er et arbeidsverktøy og skriver norsk; det skal ikke havne
+  foran en som bare ville kjøre `askr build`.
+* **En nøyaktig pin gjør at `update` aldri flytter seg.** Det er riktig,
+  men uten forklaring motsier det `askr outdated`, som nettopp sa at noe
+  nyere finnes. Kommandoen sier hva den fant og hva man skriver.
+* Versjonsområder skrives som i package.json — `^`, `~`, `*` — med
+  vilje. `^0.6.0` følger npm-regelen for nullmajor og slipper ikke
+  `0.7.0` gjennom.
+
 ## Kommandolinja
 
 * **`Askr.Console` ligger i rammeverket, ikke i den genererte app.lpr.**

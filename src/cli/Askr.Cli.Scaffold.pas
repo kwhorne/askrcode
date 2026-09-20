@@ -11,7 +11,7 @@ unit Askr.Cli.Scaffold;
 interface
 
 uses
-  SysUtils, Classes, Askr.Core.Crypto;
+  SysUtils, Classes, Askr.Core.Crypto, Askr.Core.Version;
 
 procedure NyttProsjekt(const ForeldreMappe, Name: string;
   MedAuth: Boolean = False);
@@ -217,7 +217,7 @@ end;
 procedure NyttProsjekt(const ForeldreMappe, Name: string;
   MedAuth: Boolean);
 var
-  Rot, Rammeverk, LaufDep: string;
+  Rot, Rammeverk, LaufDep, Pin: string;
 begin
   Rot := IncludeTrailingPathDelimiter(ForeldreMappe) + Name;
   if DirectoryExists(Rot) then
@@ -226,6 +226,13 @@ begin
     Halt(1);
   end;
   Rammeverk := AskrRot;
+  { Finnes en utsjekking ved siden av, peker prosjektet på den — det er
+    slik rammeverket utvikles. Ellers står bare versjonen, og `askr
+    install` henter den. }
+  if Rammeverk <> '' then
+    Pin := 'path = "' + Rammeverk + '"'
+  else
+    Pin := '# path = "/path/to/askrcode"';
 
   WriteLn('Lager ', Name);
   WriteLn;
@@ -245,17 +252,29 @@ begin
     '# Directories the dev server watches.' + #10 +
     'watch = "app,database,frontend/src"' + #10 +
     '' + #10 +
-    '# Where the framework lives. `askr new` fills this in when it can' + #10 +
-    '# find it; otherwise set it by hand.' + #10 +
-    'askr = "' + Rammeverk + '"' + #10 +
-    '' + #10 +
+
     '# The app reads these as app.port and app.backend_port. A real' + #10 +
     '# environment variable — APP_PORT — wins over what is here, so a' + #10 +
     '# deployment can change it without touching this file.' + #10 +
     '# See what actually applies with: askr config' + #10 +
     '[app]' + #10 +
     'port = 8080' + #10 +
-    'backend_port = 8081' + #10);
+    'backend_port = 8081' + #10 +
+    '' + #10 +
+    '# Which Askr release this project builds against.' + #10 +
+    '#' + #10 +
+    '#   askr install    fetch it into ~/.askr/pkg' + #10 +
+    '#   askr outdated   see what else is published' + #10 +
+    '#   askr update     move, after reading what changes' + #10 +
+    '#' + #10 +
+    '# askr.lock records the exact commit and the matching' + #10 +
+    '# @askrcode/lauf version. Commit that file.' + #10 +
+    '[askr]' + #10 +
+    'version = "' + AskrVersion + '"' + #10 +
+    '# path overrides the version. It is for working on the' + #10 +
+    '# framework itself, and is what `askr new` sets when it' + #10 +
+    '# finds a checkout beside you.' + #10 +
+    Pin + #10);
 
   if Rammeverk = '' then
   begin

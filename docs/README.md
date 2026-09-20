@@ -31,6 +31,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Getting started](getting-started.md) | Install the toolchain, create a project, serve it |
 | [The CLI](cli.md) | Every command, and what it does |
 | [Configuration](configuration.md) | `.env`, `askr.toml`, and which one wins |
+| [Versions](versions.md) | Pinning a release, `askr install` and `askr update` |
 | [The arena](arena.md) | The memory model, and the rules it imposes on your code |
 
 ## HTTP

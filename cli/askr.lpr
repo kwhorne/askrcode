@@ -14,12 +14,9 @@ uses
   cthreads,
 {$ENDIF}
   SysUtils, Classes, Process, TermIO,
-  Askr.Core.Crypto, Askr.Core.Config,
+  Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
-  Askr.Cli.Auth;
-
-const
-  AskrVersion = '0.6.0';
+  Askr.Cli.Auth, Askr.Cli.Pkg;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
   ved siden av binæren. En fpcupdeluxe-installasjon legger den ved binæren,
@@ -172,6 +169,9 @@ begin
   Si('  askr queue:work|queue:status');
   Si('  askr schedule:list|schedule:run');
   Si('  askr cache:clear   askr down   askr up');
+  Si('  askr install             fetch the pinned framework version');
+  Si('  askr update [version]    move to a newer release');
+  Si('  askr outdated            what is published, what you have');
   Si('  askr key:generate        print a new APP_KEY');
   Si('  askr config [--values]   show the effective configuration');
   Si('  askr test                build and run the app test suite');
@@ -256,7 +256,8 @@ const
 var
   Stier: TStringArray;
   I: Integer;
-  Ramme, Cfg: string;
+  Ramme, Cfg, Feil: string;
+  Opphav: TPkgOrigin;
 begin
   Result := P.CompilerFlags;
 
@@ -264,12 +265,13 @@ begin
   if Cfg <> '' then
     Result := Cfg + ' ' + Result;
 
-  Ramme := P.AskrPath;
-  if (Ramme = '') or not DirectoryExists(IncludeTrailingPathDelimiter(Ramme) +
-     'src' + PathDelim + 'core') then
+  { Stien løses av pakkelaget: en lokal sti hvis prosjektet har pekt ut
+    én, ellers den låste versjonen fra ~/.askr/pkg. Byggingen skal ikke
+    vite forskjellen. }
+  Ramme := ResolveFramework(P, Opphav, Feil);
+  if Ramme = '' then
   begin
-    Si('askr.toml does not point at the framework.');
-    Si('Set  askr = "/path/to/askrcode"  in askr.toml.');
+    Si('askr: ' + Feil);
     Halt(1);
   end;
   if Ramme <> '' then
@@ -310,7 +312,7 @@ begin
   end;
   if Target <> 'web' then
   begin
-    Si('Ukjent target: ' + Target + '. Bruk web eller desktop.');
+    Si('Unknown target: ' + Target + '. Use web or desktop.');
     Halt(1);
   end;
   Result := P.MainFile;
@@ -414,7 +416,7 @@ begin
       Write(Lines.Text);
       Halt(1);
     end;
-    Si('Bygget .build/bin/' + ChangeFileExt(ExtractFileName(Hoved), ''));
+    Si('Built .build/bin/' + ChangeFileExt(ExtractFileName(Hoved), ''));
   finally
     Params.Free;
     Lines.Free;
@@ -594,7 +596,7 @@ begin
     LagAuth(P.Root, HarFlagg('force'))
   else
   begin
-    Si('Ukjent: ' + Slag);
+    Si('Unknown: ' + Slag);
     Halt(1);
   end;
 end;
@@ -602,6 +604,7 @@ end;
 var
   Kommando: string;
   P: TProject;
+  Delegert: Integer;
 begin
   Kommando := LowerCase(ParamStr(1));
 
@@ -614,8 +617,15 @@ begin
 
   if (Kommando = 'version') or (Kommando = '-v') or (Kommando = '--version') then
   begin
-    Si('askr ' + AskrVersion);
-    Exit;
+    { Utenfor et prosjekt er det bare verktøyet som har en versjon. Inne
+      i ett er spørsmålet nesten alltid hvilket rammeverk som faktisk
+      bygges mot, og det er et annet tall. }
+    P := TProject.Find(GetCurrentDir);
+    try
+      Halt(CmdVersionInfo(P));
+    finally
+      P.Free;
+    end;
   end;
 
   { key:generate trenger ikke et prosjekt. Den skriver bare nøkkelen ut, og
@@ -632,7 +642,7 @@ begin
   begin
     if ParamStr(2) = '' then
     begin
-      Si('Bruk: askr new <navn>');
+      Si('Usage: askr new <name>');
       Halt(1);
     end;
     NyttProsjekt(GetCurrentDir, ParamStr(2), VilHaAuth);
@@ -641,6 +651,13 @@ begin
 
   P := FinnProsjekt;
   try
+    { Kommandoene som styrer selve pinnen må kjøres av verktøyet man
+      startet. De andre skal kjøres av versjonen prosjektet peker på. }
+    if (Kommando <> 'install') and (Kommando <> 'update') and
+       (Kommando <> 'outdated') and (Kommando <> 'new') then
+      if DelegateIfNeeded(P, Delegert) then
+        Halt(Delegert);
+
     if Kommando = 'build' then
       CmdBuild(P)
     else if Kommando = 'serve' then
@@ -652,6 +669,12 @@ begin
         rutene, jobbene og planen er kompilert inn i binæren. Argumentene
         sendes med, slik at --step og --seed virker. }
       Halt(KjorApp(P, '--' + Kommando))
+    else if Kommando = 'install' then
+      Halt(CmdInstall(P))
+    else if Kommando = 'update' then
+      Halt(CmdUpdate(P, ParamStr(2)))
+    else if Kommando = 'outdated' then
+      Halt(CmdOutdated(P))
     else if Kommando = 'make' then
       CmdMake(P)
     else if Kommando = 'test' then
@@ -680,7 +703,7 @@ begin
     end
     else
     begin
-      Si('Ukjent kommando: ' + Kommando);
+      Si('Unknown command: ' + Kommando);
       Si('');
       Bruk;
       Halt(1);

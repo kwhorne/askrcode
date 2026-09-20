@@ -39,8 +39,15 @@ type
     function BackendPort: Word;
     function Compiler: string;
     function CompilerFlags: string;
-    { Rammeverkets rot. Unitene under src/ legges på søkestien. }
+    { Rammeverkets rot, når prosjektet peker på en lokal utsjekking.
+      Tom når prosjektet i stedet pinner en versjon. }
     function AskrPath: string;
+    { Versjonen prosjektet ber om, fra [askr] version. Kan være en
+      npm-formet spesifikasjon: 0.6.0, ^0.6.0, ~0.6.0. }
+    function AskrWantedVersion: string;
+    { Hvor versjoner hentes fra. Standard er det offentlige repoet; en
+      gaffel eller et speil settes med [askr] source. }
+    function AskrSource: string;
     function UnitPaths: TStringArray;
     function WatchDirs: TStringArray;
     property Root: string read FRoot;
@@ -169,7 +176,22 @@ end;
 
 function TProject.AskrPath: string;
 begin
-  Result := Get('askr', '');
+  { [askr] path vinner. Den gamle formen — askr = "..." på toppnivå —
+    leses fortsatt, fordi prosjekter laget før versjonering fantes
+    skal fortsette å bygge. }
+  Result := Get('askr.path', '');
+  if Result = '' then
+    Result := Get('askr', '');
+end;
+
+function TProject.AskrWantedVersion: string;
+begin
+  Result := Get('askr.version', '');
+end;
+
+function TProject.AskrSource: string;
+begin
+  Result := Get('askr.source', 'https://github.com/kwhorne/askrcode.git');
 end;
 
 function TProject.UnitPaths: TStringArray;

@@ -19,7 +19,68 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
-  Askr.Auth, Askr.Mail, Askr.Ai, Askr.Inertia, Askr.Testing;
+  Askr.Auth, Askr.Mail, Askr.Ai, Askr.Inertia, Askr.Testing,
+  Askr.Core.Version;
+
+{ -------------------------------------------------------------- versjon -- }
+
+{ En utgivelse er ett tall over to økosystemer: Pascal-kilden og
+  @askrcode/lauf på npm. Driver de fra hverandre, får man en komponent
+  hvis klienthalvdel ikke passer serverhalvdelen, og ingenting sier fra
+  før noe slutter å virke. Det HADDE drevet: CLI-en sto på 0.6.0 mens
+  package.json sto på 0.1.0. Denne testen er grunnen til at det ikke kan
+  skje igjen. }
+procedure TestLaufFoelgerRammeverket;
+var
+  F: TStringList;
+  I, A, B: Integer;
+  Linje, Fant, Sti: string;
+begin
+  Fant := '';
+  { Kjøres fra repo-rota av ./askr test. Finner vi ikke fila, er det
+    ikke en grunn til å påstå at versjonene stemmer. }
+  Sti := 'frontend/lauf/package.json';
+  AssertTrue(FileExists(Sti), 'package.json finnes (kjør fra repo-rota)');
+  F := TStringList.Create;
+  try
+    F.LoadFromFile(Sti);
+    for I := 0 to F.Count - 1 do
+    begin
+      Linje := Trim(F[I]);
+      if Pos('"version"', Linje) <> 1 then
+        Continue;
+      A := Pos(':', Linje);
+      A := Pos('"', Linje, A);
+      B := Pos('"', Linje, A + 1);
+      Fant := Copy(Linje, A + 1, B - A - 1);
+      Break;
+    end;
+  finally
+    F.Free;
+  end;
+  AssertEqual(Fant, AskrVersion,
+    'frontend/lauf/package.json må ha samme versjon som Askr.Core.Version');
+end;
+
+procedure TestSemVerSammenligning;
+begin
+  AssertTrue(CompareSemVer('0.6.0', '0.7.0') < 0, '0.6.0 < 0.7.0');
+  AssertTrue(CompareSemVer('0.10.0', '0.9.0') > 0, '0.10.0 > 0.9.0 (ikke tekst)');
+  AssertEqual(CompareSemVer('1.2.3', 'v1.2.3'), 0, 'v-prefiks er samme versjon');
+  { Semver-regelen som er lett å bomme på: rc kommer FØR utgivelsen. }
+  AssertTrue(CompareSemVer('0.7.0-rc.1', '0.7.0') < 0, 'rc før utgivelsen');
+  AssertTrue(not ParseSemVer('ikke-en-versjon').Valid, 'søppel er ugyldig');
+  AssertTrue(not ParseSemVer('1.2.3.4').Valid, 'fire ledd er ikke semver');
+
+  { npm-regelen for nullmajor: ^0.6.0 låser minor, fordi et
+    nullmajor-prosjekt bryter ting i minor. }
+  AssertTrue(SatisfiesRange('0.6.3', '^0.6.0'), '0.6.3 passer ^0.6.0');
+  AssertTrue(not SatisfiesRange('0.7.0', '^0.6.0'), '0.7.0 passer ikke ^0.6.0');
+  AssertTrue(SatisfiesRange('1.9.0', '^1.2.0'), '1.9.0 passer ^1.2.0');
+  AssertTrue(not SatisfiesRange('0.5.0', '^0.6.0'), 'eldre passer aldri');
+  AssertTrue(SatisfiesRange('0.6.9', '~0.6.0'), '~ låser major.minor');
+  AssertTrue(not SatisfiesRange('0.7.0', '~0.6.0'), '~ slipper ikke minor');
+end;
 
 { ------------------------------------------------------------ scheduler -- }
 
@@ -2891,6 +2952,8 @@ end;
 
 begin
   Group('Scheduler');
+  Test('lauf har samme versjon som rammeverket', @TestLaufFoelgerRammeverket);
+  Test('semver sammenlignes som tall, ikke som tekst', @TestSemVerSammenligning);
   Test('intervall kjører når det forfaller', @TestIntervall);
   Test('daglig kjører én gang per døgn', @TestDaglig);
   Test('ukentlig kjører én gang per uke', @TestUkentlig);
