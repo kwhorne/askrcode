@@ -35,7 +35,7 @@ Run `askr list` to see what your binary answers to.
 
 ## Project
 
-| Command | |
+| Command | What it does
 |---|---|
 | `askr new <name> [--auth\|--no-auth]` | Create a project; asks about sign-in when run from a terminal |
 | `askr build [--target web\|desktop]` | Compile it |
@@ -99,7 +99,7 @@ or deleted cannot become invisible.
 
 ## Migrations
 
-| Command | |
+| Command | What it does
 |---|---|
 | `askr migrate` | Run everything pending |
 | `askr migrate --step=N` | Run the next N only |
@@ -121,7 +121,7 @@ Version            State      Title
 
 ## Database
 
-| Command | |
+| Command | What it does
 |---|---|
 | `askr db:seed [Name]` | Run the seeders, or one of them |
 | `askr db:show` | Tables, with column and index counts |
@@ -145,7 +145,7 @@ not be possible to run it by accident.
 
 ## Runtime
 
-| Command | |
+| Command | What it does
 |---|---|
 | `askr queue:work` | Run the queue until interrupted |
 | `askr queue:status` | Counters: pending, processed, retried, failed |
@@ -160,7 +160,7 @@ want to scale them separately.
 
 ## Maintenance
 
-| Command | |
+| Command | What it does
 |---|---|
 | `askr down` | Maintenance mode on |
 | `askr up` | Maintenance mode off |
@@ -173,7 +173,7 @@ restart needed.
 
 ## Inspection
 
-| Command | |
+| Command | What it does
 |---|---|
 | `askr about` | Environment, config files, database, routes, queue, schedule |
 | `askr routes` | The routing table, sorted by specificity |

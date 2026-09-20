@@ -124,7 +124,7 @@ after the call.
 
 ## Reading the numbers
 
-| Property | |
+| Property | What it counts |
 |---|---|
 | `BytesLive` | Allocated right now |
 | `BytesReserved` | Held by the arena, across resets |

@@ -1235,6 +1235,20 @@ begin
     Check(Pos('<script data-page="app" type="application/json">', Raw) > 0,
       'Inertia 3 legger payloaden i et script-element');
     Check(Pos('<div id="app"></div>', Raw) > 0, 'tom monteringsdiv');
+
+    { En side uten tittel er et alvorlig tilgjengelighetsbrudd, og det
+      gjaldt hver eneste Inertia-side til dette kom på plass. Oppdaget ved
+      å kjøre axe mot et nettsted bygget med rammeverket. }
+    Check(Pos('<title>', Raw) > 0, 'skallet har en tittel');
+    Check(Pos('<title></title>', Raw) = 0, 'og den er ikke tom');
+    { lang må ikke være hardkodet norsk i et internasjonalt rammeverk. }
+    Check(Pos('lang="en"', Raw) > 0, 'og lang er en, ikke no');
+
+    TInertia.SetTitle('Ada & <Co>');
+    Raw := Svar(A, Inertia('Customers/Index', ['antall', Int64(1)]));
+    Check(Pos('<title>Ada &amp; &lt;Co&gt;</title>', Raw) > 0,
+      'tittelen escapes — den er brukerkontrollert');
+    TInertia.SetTitle('Askr');
     Check(Pos('"component":"Customers\/Index"', Raw) > 0,
       'skråstrek er escapet også i vanlige verdier');
     Check(Pos('Vary: X-Inertia', Raw) > 0, 'Vary settes også på HTML');

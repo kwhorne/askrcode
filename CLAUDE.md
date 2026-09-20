@@ -760,6 +760,13 @@ grunn; den slår av en reell typesjekk.
   nettleseren metoden mot den nye adressen.
 * `Vary: X-Inertia` må med på både HTML- og JSON-svar, ellers cacher
   mellomledd feil svar til feil klient.
+* **Skallet har en `<title>` og `lang="en"`.** Begge manglet, og begge ble
+  funnet ved å kjøre axe mot et nettsted bygget med rammeverket — ikke ved
+  å lese koden. En side uten tittel er et alvorlig brudd, og det gjaldt hver
+  eneste Inertia-side i hver eneste Askr-app. `lang="no"` fikk en skjermleser
+  til å uttale engelsk tekst med norske fonemer, i et rammeverk som skal
+  være internasjonalt. `TInertia.SetTitle` setter den; `askr new` fyller inn
+  appens navn. Tittelen er brukerkontrollert og escapes.
 * Flash er trådlokal og gjelder **det svaret som bygges nå**. Den overlever
   ikke en omdirigering: de to requestene kan havne på hver sin worker, og
   uten sesjoner finnes det ingen felles lagring. Rendre siden direkte i

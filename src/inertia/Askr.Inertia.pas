@@ -76,6 +76,12 @@ type
 
     class procedure SetShare(AHandler: TInertiaShare); static;
 
+    { Tittelen i HTML-skallet, der malen har plassholderen title.
+      Klienten setter vanligvis sin egen per side; denne er den som står
+      der til den gjør det, og den som står der hvis den aldri gjør det. }
+    class procedure SetTitle(const ATitle: string); static;
+    class function Title: string; static;
+
     (* Taggene som settes inn der malen har plassholderen {{head}} — typisk
        script- og link-taggene fra Vite. Uten dette blir plassholderen
        stående i HTML-en, og frontend laster aldri. *)
@@ -136,12 +142,21 @@ implementation
 const
   (* Inertia 3-formen: payloaden i et script-element, og en tom
      monteringsdiv. Plassholderen {{root}} byttes ut med rot-id-en. *)
+  { lang er `en`, ikke `no`. Askr er et internasjonalt rammeverk, og et
+    hardkodet norsk språk får en skjermleser til å uttale engelsk tekst med
+    norske fonemer. Appen setter sitt eget språk med SetRootTemplate.
+
+    <title> må stå her. Uten den mangler hver eneste Inertia-side en
+    tittel til klienten har rukket å sette en — og gjør den det aldri, har
+    siden ingen. axe kaller det document-title og regnerdet som alvorlig;
+    det ble oppdaget ved å kjøre axe mot et nettsted bygget med Askr. }
   DefaultRootTemplate =
     '<!DOCTYPE html>' + #10 +
-    '<html lang="no">' + #10 +
+    '<html lang="en">' + #10 +
     '<head>' + #10 +
     '  <meta charset="utf-8">' + #10 +
     '  <meta name="viewport" content="width=device-width, initial-scale=1">' + #10 +
+    '  <title>{{title}}</title>' + #10 +
     '  {{head}}' + #10 +
     '</head>' + #10 +
     '<body>' + #10 +
@@ -160,6 +175,9 @@ var
   GVersion: string = '1';
   GRootTemplate: string = '';
   GRootId: string = 'app';
+  { Standarden er rammeverkets navn, ikke tomt: en tom <title> er det
+    samme bruddet som ingen <title>. `askr new` setter appens eget. }
+  GTitle: string = 'Askr';
   GHead: string = '';
   GEncryptHistory: Boolean = False;
   GClearHistory: Boolean = False;
@@ -468,6 +486,16 @@ begin
   Result := W.ToStr;
 end;
 
+class procedure TInertia.SetTitle(const ATitle: string);
+begin
+  GTitle := ATitle;
+end;
+
+class function TInertia.Title: string;
+begin
+  Result := GTitle;
+end;
+
 function RenderShell(A: TArena; const Payload: TStr): TStr;
 var
   Tpl: string;
@@ -478,6 +506,10 @@ begin
   Tpl := StringReplace(TInertia.RootTemplate, '{{root}}', TInertia.RootId,
     [rfReplaceAll]);
   Tpl := StringReplace(Tpl, '{{head}}', TInertia.Head, [rfReplaceAll]);
+  { Tittelen er brukerkontrollert og havner i et HTML-element. }
+  Tpl := StringReplace(Tpl, '{{title}}',
+    HtmlAttrEscape(A, Askr.Core.Text.Str(TInertia.Title)).ToString,
+    [rfReplaceAll]);
   { Inne i et script-element er det JSON-escaping som gjelder, ikke
     HTML-escaping. Se JsonScriptEscape. }
   Escaped := JsonScriptEscape(A, Payload);

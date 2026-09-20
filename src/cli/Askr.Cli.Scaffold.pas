@@ -344,6 +344,10 @@ begin
     '  { In development Vite serves the modules itself. For a production' + #10 +
     '    build, read public/build/.vite/manifest.json instead and set the' + #10 +
     '    tags from there — see examples/inertia in the framework. }' + #10 +
+    '  { Tittelen i HTML-skallet. Klienten setter vanligvis sin egen per' + #10 +
+    '    side med <svelte:head>; denne er den som star der til den gjor' + #10 +
+    '    det, og den som star der hvis den aldri gjor det. }' + #10 +
+    '  TInertia.SetTitle(' + Q + Name + Q + ');' + #10 + #10 +
     '  TInertia.SetHead(' + #10 +
     '    ' + Q + '<script type="module" ' + Q + ' +' + #10 +
     '    ' + Q + 'src="http://localhost:5173/build/@vite/client"></script>' + Q + ' +' + #10 +
