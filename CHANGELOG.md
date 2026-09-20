@@ -14,7 +14,18 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **`askr make auth` scaffolds the pages after sign-in too.** Signing in
+  lands on `/dashboard` rather than `/`, and there is a `/settings/profile`
+  for name and email and a `/settings/security` for changing a password.
+  They are plain HTML like the rest of the auth scaffold, so a new project
+  can sign in and look around before `npm install` has been run.
+- `/settings/security` has a **Passkeys** section that says it is not
+  available yet, and why. WebAuthn needs ECDSA P-256 verification, a CBOR
+  decoder and COSE key parsing written in Pascal first, because the crypto
+  here does not depend on OpenSSL. A section that explains itself beats a
+  button that does nothing.
 
 ## 0.6.1 — 2026-09-20
 

@@ -8,9 +8,16 @@ askr make auth              # into a project that already exists
 askr build && askr migrate
 ```
 
-That writes a `User` model, two migrations, and an `AuthController` with
-`/login`, `/register`, `/logout`, `/forgot-password` and
-`/reset-password/:token` — and wires them into `app.lpr`.
+That writes a `User` model, two migrations, and an `AuthController` — and
+wires it into `app.lpr`. You get eight routes:
+
+| | |
+|---|---|
+| `/login`, `/register`, `/logout` | Signing in and out |
+| `/forgot-password`, `/reset-password/:token` | Resetting a forgotten one |
+| `/dashboard` | Where signing in lands you |
+| `/settings/profile` | Name and email |
+| `/settings/security` | Change password, and where passkeys will go |
 
 `askr new` asks when it is run from a terminal. `--auth` and `--no-auth`
 answer for a script; without a terminal and without a flag the answer is no,
@@ -21,6 +28,26 @@ If it cannot find its markers in `app.lpr` — because you have edited it, as
 you should be able to — it writes the files and prints the lines to add
 yourself. Guessing at where to insert code in a file someone wrote is worse
 than asking.
+
+## After signing in
+
+Signing in lands on `/dashboard`, not on `/`. It is a real page with a
+sidebar, a profile form and a security page — not a placeholder, and not a
+redirect into your app's own routes, because a new project does not have
+any yet.
+
+**It is yours to replace.** The point is that `askr new shop --auth`
+produces something you can sign into and look around in, rather than a
+login form that dumps you on the welcome page. When you build the real
+thing in Inertia, point `/dashboard` at your own handler and delete these
+three.
+
+`/settings/security` has a **Passkeys** section that says it is not
+available yet and why, rather than showing a button that does nothing.
+WebAuthn needs ECDSA P-256 verification, a CBOR decoder and COSE key
+parsing, and the crypto here deliberately does not depend on OpenSSL — so
+all of it has to be written in Pascal first. Passwords and password
+changes work today.
 
 ### What you get, and why it looks like that
 

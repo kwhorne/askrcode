@@ -1024,6 +1024,24 @@ serveren. Slutter de å holde, er det arena-modellen som svikter, ikke testen.
   har endret fila, som de skal kunne — skriver den filene og skriver ut
   linjene som må inn. Å gjette på hvor kode skal inn i en fil noen har
   skrevet selv, er verre enn å spørre.
+* **Stillaset lager også sidene ETTER innlogging.** `/dashboard`,
+  `/settings/profile` og `/settings/security`. Grunnen er den samme som at
+  innloggingen finnes: `askr new shop --auth` skal gi noe man kan logge
+  inn i og se seg om i, ikke et skjema som dumper deg på velkomstsida.
+  De er ment å byttes ut — `/dashboard` pekes på appens eget når den
+  finnes.
+* **Passkeys står oppført som «ikke tilgjengelig ennå», med begrunnelsen.**
+  En knapp som ikke gjør noe er verre enn en setning som sier hvorfor.
+  WebAuthn krever ECDSA P-256-verifisering, en CBOR-dekoder og
+  COSE-nøkkelparsing skrevet i Pascal, fordi kryptoen her ikke skal
+  avhenge av OpenSSL. Ingenting av det finnes i dag.
+* **Lenker i app-skallet må ha farge.** En `<a>` uten `color` arver
+  nettleserens `#0000ee`, som gir 2,01:1 mot mørk bakgrunn. `main a
+  {color:inherit}` — ikke `--accent`, som er grønn og faller under kravet
+  mot hvitt i lyst tema. Funnet av axe mot de genererte sidene, ikke ved
+  lesing.
+* **Kortene på dashbordet bruker `h2`, ikke `h3`.** `h1` etterfulgt av
+  `h3` hopper over et nivå, og axe felte det.
 * Auth-sidene er ren HTML, ikke Inertia. Et nytt prosjekt har Inertia satt
   opp, men ikke installert; å kreve `npm install` før man kan logge inn ville
   gjort innloggingen ubrukelig akkurat i det vinduet der den trengs. Samme
