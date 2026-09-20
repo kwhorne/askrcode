@@ -15,6 +15,16 @@ import TableBody from './TableBody.svelte'
 import TableRow from './TableRow.svelte'
 import TableHeader from './TableHeader.svelte'
 import TableCell from './TableCell.svelte'
+import DropdownBase from './Dropdown.svelte'
+import DropdownItem from './DropdownItem.svelte'
+import DropdownSeparator from './DropdownSeparator.svelte'
+import DropdownGroup from './DropdownGroup.svelte'
+import TabsBase from './Tabs.svelte'
+import TabPanel from './TabPanel.svelte'
+import AccordionBase from './Accordion.svelte'
+import AccordionItem from './AccordionItem.svelte'
+import SidebarBase from './Sidebar.svelte'
+import SidebarItem from './SidebarItem.svelte'
 
 export { cn } from './utils.js'
 export { FORM, FIELD } from './context.js'
@@ -37,12 +47,30 @@ export { default as Radio } from './Radio.svelte'
 export { default as Switch } from './Switch.svelte'
 export { default as Pagination } from './Pagination.svelte'
 
+// Bolk 2. Alt som åpner og lukker seg ligger på Bits UI, som eier
+// fokusfelle, roving tabindex, Escape, klikk utenfor og plassering.
+export { default as Modal } from './Modal.svelte'
+export { default as Popover } from './Popover.svelte'
+export { default as Tooltip } from './Tooltip.svelte'
+export { default as Avatar } from './Avatar.svelte'
+export { default as Callout } from './Callout.svelte'
+export { default as Breadcrumbs } from './Breadcrumbs.svelte'
+export { default as Skeleton } from './Skeleton.svelte'
+export { default as Navbar } from './Navbar.svelte'
+export { default as Toaster } from './Toaster.svelte'
+export { toast, toasts, dismiss } from './toast.svelte.js'
+
 // Sammensatt eksport. Flux skriver <flux:button.group>; Svelte har ikke
 // punktnotasjon på komponenter, men en komponent er en funksjon, og en
 // funksjon kan bære felter. <Button.Group> leses som en member-uttrykk og
 // virker. Delene eksporteres også hver for seg, for den som heller vil det.
-export const Button = Object.assign(ButtonBase, { Group: ButtonGroup })
-export const Table = Object.assign(TableBase, {
+//
+// /*#__PURE__*/ er ikke pynt. Object.assign muterer første argument, så en
+// bundler kan ikke bevise at kallet er trygt å fjerne — og da holdes både
+// komponenten og alt den importerer. Uten merkingen dro en enkelt <Button>
+// med seg hele Bits UI: 221 kB i stedet for 74. Premisstesten fanget det.
+export const Button = /*#__PURE__*/ Object.assign(ButtonBase, { Group: ButtonGroup })
+export const Table = /*#__PURE__*/ Object.assign(TableBase, {
   Head: TableHead,
   Body: TableBody,
   Row: TableRow,
@@ -50,4 +78,14 @@ export const Table = Object.assign(TableBase, {
   Cell: TableCell,
 })
 
+export const Dropdown = /*#__PURE__*/ Object.assign(DropdownBase, {
+  Item: DropdownItem,
+  Separator: DropdownSeparator,
+  Group: DropdownGroup,
+})
+export const Tabs = /*#__PURE__*/ Object.assign(TabsBase, { Panel: TabPanel })
+export const Accordion = /*#__PURE__*/ Object.assign(AccordionBase, { Item: AccordionItem })
+export const Sidebar = /*#__PURE__*/ Object.assign(SidebarBase, { Item: SidebarItem })
+
 export { ButtonGroup, TableHead, TableBody, TableRow, TableHeader, TableCell }
+export { DropdownItem, DropdownSeparator, DropdownGroup, TabPanel, AccordionItem, SidebarItem }

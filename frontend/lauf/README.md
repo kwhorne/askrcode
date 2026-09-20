@@ -2,9 +2,10 @@
 
 UI components for [Askr](../../README.md) apps, built on Svelte 5.
 
-**Blocks 0 and 1 of the plan in [`LAUF.md`](../../LAUF.md) are done:** the
-infrastructure, and the sixteen components a CRUD app needs. Blocks 2 and 3
-— modal, dropdown, toast, tabs, and the expensive ones — do not exist yet.
+**Blocks 0, 1 and 2 of the plan in [`LAUF.md`](../../LAUF.md) are done:** the
+infrastructure, the sixteen components a CRUD app needs, and the overlay
+layer. Block 3 — command palette, autocomplete, date picker, file upload —
+does not exist yet.
 
 Lauf is not part of the Askr binary and never will be. The server's promise
 is one binary with no sidecar; that promise is about the server. Nothing in
@@ -101,8 +102,71 @@ mechanical copy of a dependency that is already in `node_modules`.
 
 `Button` (`.Group`), `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`,
 `Switch`, `Field`, `Heading`, `Text`, `Icon`, `Badge`, `Card`, `Separator`,
-`Table` (`.Head`, `.Body`, `.Row`, `.Header`, `.Cell`), `Pagination` — and
-`Form` from `@askrcode/lauf/inertia`.
+`Table` (`.Head`, `.Body`, `.Row`, `.Header`, `.Cell`), `Pagination`,
+`Modal`, `Dropdown` (`.Item`, `.Group`, `.Separator`), `Popover`, `Tooltip`,
+`Tabs` (`.Panel`), `Accordion` (`.Item`), `Avatar`, `Callout`,
+`Breadcrumbs`, `Navbar`, `Sidebar` (`.Item`), `Skeleton`, `Toaster` — and
+`Form` and `Flash` from `@askrcode/lauf/inertia`.
+
+### What opens and closes
+
+`Modal`, `Dropdown`, `Popover`, `Tooltip`, `Tabs` and `Accordion` are built
+on [Bits UI](https://bits-ui.com) (MIT), which owns the part that is hard
+and has nothing to do with Askr: focus trapping and restoring, roving
+tabindex, typeahead, dismiss ordering, floating placement with collision
+detection, scroll locking, and screen-reader behaviour. Lauf owns how they
+look and the parts Bits leaves out.
+
+Bits never appears in Lauf's public API, so it can be replaced underneath
+without an app noticing. Do not import from `bits-ui` yourself.
+
+```svelte
+<Dropdown>
+  {#snippet trigger(props)}
+    <Button {...props} icon={EllipsisHorizontal} label="Actions" />
+  {/snippet}
+  <Dropdown.Group label="Customer">
+    <Dropdown.Item icon={PencilSquare} href="/customers/1">Open</Dropdown.Item>
+  </Dropdown.Group>
+  <Dropdown.Separator />
+  <Dropdown.Item icon={Trash} variant="danger" onclick={remove}>Delete</Dropdown.Item>
+</Dropdown>
+```
+
+The menu heading has to live inside the group it names — a heading connected
+to nothing is just text in the middle of a menu, and a screen reader cannot
+say which items it covers.
+
+`Modal` requires a `title`. A dialog without a name is announced as
+"dialog", and that is everything the person who cannot see it gets. Pass
+`hideTitle` if the heading is already visible in the content: it is hidden
+visually, not removed.
+
+### Toasts
+
+```svelte
+<script>
+  import { Toaster, toast } from '@askrcode/lauf'
+</script>
+
+<Toaster />
+<Button onclick={() => toast.success('Saved')}>Save</Button>
+```
+
+In an Inertia app use `Flash` instead — it renders the `Toaster` and turns
+Askr's flash into toasts, carrying whatever keys your app sets:
+
+```svelte
+import { Flash } from '@askrcode/lauf/inertia'
+<Flash />   <!-- once, in your layout -->
+```
+
+Two live regions, not one: confirmations are `polite` so they do not
+interrupt, errors are `assertive` so they do. Both are in the DOM before any
+message arrives — add the region and the text at the same time and a screen
+reader never notices the change, so nothing is announced. `toast.error`
+defaults to staying until dismissed, because a message you must read should
+not disappear while you are reading it.
 
 ### Forms
 
@@ -173,8 +237,20 @@ require npm to be green.
 
 One of these is a **premise test**, not a unit test: `tree-shaking.test.js`
 runs a real Vite build of an app that uses one icon and asserts the neighbour
-in the same barrel file is absent from the output. If it stops holding, the
-icon model is wrong, not the test.
+in the same barrel file is absent from the output — and that no Bits UI came
+along. If it stops holding, the packaging is wrong, not the test.
+
+It has already earned its place twice. Adding the overlay components made a
+single `Button` cost 221 kB instead of 74, because `Object.assign` at module
+scope — how `Button.Group` and `Table.Cell` are attached — is a call a
+bundler cannot prove is safe to drop, so the barrel file kept the whole
+library alive. `/*#__PURE__*/` on those exports is the fix, and
+`"sideEffects"` in `package.json` is the other half.
+
+**Some things cannot be tested here at all.** jsdom has no layout, so focus
+trapping, floating placement, scroll locking and "Escape returns focus to
+the trigger" are checked by driving a real Chrome over CDP against the demo
+app. Twelve Tab presses inside an open modal, and focus never leaves it.
 
 Accessibility is half of what this library delivers, so `axe-core` runs
 against every component in every state it supports. A `Field` whose label is

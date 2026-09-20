@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "UI components for Askr apps, built on Svelte 5 and Inertia.",
   "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "private": true,
   "files": [
     "src",
@@ -26,12 +29,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "bits-ui": "^2.19.2",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.7.0"
   },
   "peerDependencies": {
-    "svelte": "^5.0.0",
-    "@inertiajs/svelte": "^3.0.0"
+    "@inertiajs/svelte": "^3.0.0",
+    "svelte": "^5.0.0"
   },
   "devDependencies": {
     "@inertiajs/svelte": "^3.7.1",

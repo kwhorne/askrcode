@@ -6,3 +6,4 @@
 // eller et desktop-skall uten Inertia skal slippe.
 
 export { default as Form } from './Form.svelte'
+export { default as Flash } from './Flash.svelte'

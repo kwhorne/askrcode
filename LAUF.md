@@ -1,8 +1,9 @@
 # Lauf — UI-komponenter for Askr
 
-Arbeidsnotat. **Bolk 0 og 1 er bygget** og ligger i `frontend/lauf/`:
-infrastrukturen, og de seksten komponentene en CRUD-app trenger.
-`examples/inertia` er skrevet om i Lauf. Bolk 2 og 3 er fortsatt konsept.
+Arbeidsnotat. **Bolk 0, 1 og 2 er bygget** og ligger i `frontend/lauf/`:
+infrastrukturen, de seksten komponentene en CRUD-app trenger, og laget som
+åpner og lukker seg. `examples/inertia` bruker dem. Bolk 3 er fortsatt
+konsept.
 Ingenting i `src/` avhenger av noe her, og det skal det aldri gjøre.
 
 Askr har i dag et komplett serverlag og en Svelte-demo på fem sider der hvert
@@ -480,13 +481,48 @@ Tre feller fra denne bolken, alle skrevet ned i CLAUDE.md:
   er riktig HTML-oppførsel, men det er verdt å vite at de to
   valideringene ikke er enige om når de gjelder.
 
-### Bolk 2 — gjør appen behagelig
+### Bolk 2 — gjør appen behagelig — **ferdig**
 
 `Modal`, `Dropdown`, `Tooltip`, `Toast`, `Tabs`, `Avatar`, `Callout`,
 `Breadcrumbs`, `Navbar`, `Sidebar`, `Skeleton`, `Accordion`, `Popover`.
 
-Her tjener Bits UI seg inn. Dette er også bolken der
-tilgjengelighetsgaten under må være på plass før noe kalles ferdig.
+Her tjente Bits UI seg inn, og den gjorde det med en gang. Fokusfelle,
+fokus tilbake til utløseren, roving tabindex, typeahead, rekkefølgen lag
+lukkes i, flytende plassering med kollisjonsdeteksjon og rullelås virket
+fra første forsøk. 124 tester i `./askr lauf`.
+
+**Verifisert i en ekte nettleser**, fordi jsdom ikke legger ut noe og
+derfor ikke kan bevise noe av det: meny åpnet med Enter, fokus inn i
+menyen, ArrowDown uthever, Escape lukker og gir fokus tilbake til
+utløseren. Modal åpnet med fokus inni, `overflow: hidden` på body, **tolv
+Tab-trykk uten at fokus forlot dialogen én eneste gang**, Escape lukker og
+rullelåsen løftes. Og hele flash-kjeden: `InertiaFlash('success', …)` i
+Pascal, gjennom Inertias event, til en toast i det høflige live-området.
+
+**Bits setter ikke `aria-controls` på trekkspill**, selv om den gjør det på
+faner. Det er en luke mot WAI-ARIAs eget mønster, og `AccordionItem` lager
+id-en selv og kobler begge veier. Det er nettopp det lag 3 er til for: Bits
+eier oppførselen, vi eier at den er komplett.
+
+**Overskriften i en meny må ligge inne i gruppa den navngir.** Bits kaster
+hvis den ikke gjør det, og den har rett — en overskrift som ikke er koblet
+til noe er bare tekst midt i en meny. API-et ble `Dropdown.Group label=…`
+i stedet for en løs `Dropdown.Heading`.
+
+**Trekkspillets overskrift er et ekte `<h3>`**, ikke Bits' `<div
+role="heading">`. Begge er riktige for en skjermleser, men et element
+holder også der ARIA ikke gjør det — lesemodus, utskrift, verktøy som
+leser strukturen uten å kjøre JavaScript. `child`-snippeten gjør det mulig.
+
+**Den dyreste feilen var i pakkingen, ikke i koden.** Bolk 2 la Bits under
+sju komponenter, og plutselig kostet en enkelt `<Button>` 221 kB i stedet
+for 74 — hele Bits fulgte med. Årsaken er `Object.assign` på modulnivå,
+som er måten `Button.Group` og `Table.Cell` henges på: en bundler kan ikke
+bevise at et kall som muterer sitt første argument er trygt å fjerne, så
+barrel-fila holdt hele biblioteket i live. `/*#__PURE__*/` på de
+sammensatte eksportene er fiksen, og `"sideEffects"` i package.json er den
+andre halvdelen. **Premisstesten fanget det**, og den sjekker nå også at
+ingen Bits-kode finnes i en bunt som bare bruker et ikon.
 
 ### Bolk 3 — de dyre
 
@@ -527,7 +563,9 @@ må det finnes en port, ikke en god intensjon.
   av i stillhet. Kontrasten må derfor sjekkes i en ekte nettleser, og det
   gjenstår.
 * **Tastaturgjennomgang for alt i bolk 2.** Åpne, navigere, lukke, og fokus
-  tilbake dit det kom fra — uten mus. Skrives som test, ikke som sjekkliste.
+  tilbake dit det kom fra — uten mus. Gjort, delvis i jsdom og delvis mot
+  en ekte Chrome over CDP, fordi fokusfelle og rullelås ikke finnes i
+  jsdom. Skriptet driver demoen, ikke en fiksturside.
 * **Premisstest på bunten:** en side som importerer `Button` og ett ikon skal
   gi en bunt med ett ikon i, ikke tre hundre. Tallet måles og holdes, på samme
   måte som `BytesReserved` holdes flat i arena-testene. Ryker den, er

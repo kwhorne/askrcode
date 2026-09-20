@@ -28,6 +28,12 @@ const fixture = join(here, 'fixtures', 'one-icon')
 //     ett ikon via barrel-fila        29,5 kB   (mest runtime)
 //     hele micro-settet, 316 ikoner  225,9 kB
 //
+// Etter bolk 2, gjennom barrel-fila, med et ekte mount:
+//
+//     Button                          74,7 kB   (uten Bits)
+//     Table                           71,3 kB   (uten Bits)
+//     Modal                          129,3 kB   (med Bits' Dialog)
+//
 // Fikseturet under lander på rundt 81 kB. Taket er satt til 100 kB: løst nok
 // til at en runtime-oppgradering ikke gjør testen rød uten grunn, stramt nok
 // til at et ikonsett på avveie ikke får plass.
@@ -63,6 +69,14 @@ describe('tree-shaking', () => {
 
     // Og ingen av de tre andre variantene drar seg med.
     expect(code).not.toContain('M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21')
+
+    // Bolk 2 la Bits UI under Modal, Dropdown, Tooltip, Popover, Tabs,
+    // Accordion og Avatar. En app som bare bruker et ikon skal ikke betale
+    // for noe av det. Det gjorde den: Object.assign på modulnivå er et kall
+    // en bundler ikke kan bevise er trygt å fjerne, så barrel-fila holdt
+    // hele biblioteket i live — 221 kB for en knapp i stedet for 74.
+    // /*#__PURE__*/ på de sammensatte eksportene er det som fikser det.
+    expect(code).not.toMatch(/bits-ui|accordion-root|dialog-content/i)
 
     const bytes = Buffer.byteLength(code, 'utf8')
     expect(bytes).toBeLessThan(100 * 1024)

@@ -1002,6 +1002,25 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
 * **axe kan ikke måle kontrast i jsdom.** Regelen er slått av i
   `tests/axe.js` med begrunnelse, ikke i stillhet. Kontrast må sjekkes i en
   ekte nettleser.
+* **`Object.assign` på modulnivå må merkes `/*#__PURE__*/`.** Det er slik
+  `Button.Group` og `Table.Cell` henges på, og en bundler kan ikke bevise at
+  et kall som muterer sitt første argument er trygt å fjerne. Uten merkingen
+  holder barrel-fila hele biblioteket i live: en enkelt `<Button>` kostet
+  221 kB i stedet for 74 da Bits UI kom inn under sju komponenter.
+  `"sideEffects"` i package.json er den andre halvdelen.
+* **Alt som åpner og lukker seg ligger på Bits UI**, og Bits skal aldri
+  lekke ut i Laufs offentlige API. Ingen app importerer fra `bits-ui`.
+* **Bits setter ikke `aria-controls` på trekkspill**, bare på faner.
+  `AccordionItem` lager id-en selv og kobler begge veier. Der Bits er
+  ufullstendig, er det lag 3 som fyller ut — det er hele grunnen til at
+  laget finnes.
+* En menyoverskrift må ligge inne i `DropdownMenu.Group`; Bits kaster ellers
+  «Context not found». Derfor `Dropdown.Group label=…` og ingen løs
+  `Dropdown.Heading`.
+* **Fokusfelle, rullelås, flytende plassering og «Escape gir fokus tilbake»
+  kan ikke testes i jsdom.** Det finnes ingen layout der. De sjekkes ved å
+  drive en ekte Chrome over CDP mot demoen — tolv Tab-trykk i en åpen modal
+  skal ikke slippe fokus ut.
 
 ## Neste steg
 
