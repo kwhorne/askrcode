@@ -369,6 +369,77 @@ begin
   end;
 end;
 
+{ Sesjonen må ikke overleve requesten som en threadvar.
+
+  Den lever i request-arenaen og forsvinner ved Reset. Blir den stående,
+  ser neste request på den workeren en peker inn i minne arenaen har
+  gjenbrukt — og da leser den et objekt som ikke finnes lenger.
+
+  Utgangen som slapp forbi var den vanligste av dem alle: en anonym
+  besøkende som starter en sesjon uten å skrive til den. Den ble oppdaget
+  som EAccessViolation da en nettleser hentet en css-fil rett etter en
+  side på samme tilkobling, på et ekte nettsted bygget med rammeverket.
+  Den store fila fikk en ny arenablokk og gikk stille forbi; den lille
+  havnet oppå det gamle objektet.
+
+  Testen går gjennom ruteren, altså den veien en ekte request går. }
+function TomHandler(Req: TRequest): TResponse;
+begin
+  Result := RespondText('ok');
+end;
+
+function SkrivOgSvar(Req: TRequest): TResponse;
+begin
+  CurrentSession.Put('x', '1');
+  Result := RespondText('ok');
+end;
+
+procedure TestSesjonenLekkerIkkeUtAvRequesten;
+var
+  A: TArena;
+  Prev: TArena;
+  PrevS: TSession;
+  R: TRouter;
+  Req: TRequest;
+  Res: TResponse;
+begin
+  Store := TSessionStore.Create(3600);
+  SetSessions(Store);
+  A := TArena.Create(16 * 1024);
+  Prev := UseArena(A);
+  PrevS := UseSession(nil);
+  R := TRouter.Create;
+  try
+    UseSessions(R);
+    R.Get('/', TomHandler);
+
+    { 1. Anonym besøkende: sesjonen startes og skrives aldri til. Den skal
+         verken lagres eller få en kake — og den skal ikke bli stående. }
+    Req := LagReq(A, '');
+    Res := R.Handle(Req);
+    AssertStatus(Res, 200, 'requesten gikk gjennom');
+    AssertNil(CurrentSession,
+      'en sesjon ingen skrev til blir ikke stående etter requesten');
+
+    { 2. Og en som ble skrevet til, ryddes også. }
+    A.Reset;
+    Req := LagReq(A, '');
+    R.Free;
+    R := TRouter.Create;
+    UseSessions(R);
+    R.Get('/', SkrivOgSvar);
+    Res := R.Handle(Req);
+    AssertNil(CurrentSession, 'også når den ble lagret');
+    AssertTrue(KakeFra(Res, A) <> '', 'og den fikk en kake');
+  finally
+    R.Free;
+    UseSession(PrevS);
+    UseArena(Prev);
+    A.Free;
+    Store.Free;
+  end;
+end;
+
 procedure TestValideringsfeilOverlevererOmdirigering;
 var
   A: TArena;
@@ -2840,6 +2911,8 @@ begin
   Test('valideringsfeil overlever omdirigering',
     @TestValideringsfeilOverlevererOmdirigering);
   Test('Inertia tar med flash uansett nøkkel', @TestInertiaFlashUansettNokkel);
+  Test('sesjonen lekker ikke ut av requesten',
+    @TestSesjonenLekkerIkkeUtAvRequesten);
 
   Group('CSRF');
   Test('avviser uten token', @TestCsrfAvviserUtenToken);

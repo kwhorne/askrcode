@@ -590,6 +590,21 @@ var
 begin
   Result := Res;
   S := CurrentSession;
+
+  { Threadvar-en ryddes FØRST, ikke til slutt.
+
+    Sesjonen lever i request-arenaen og forsvinner ved Reset; threadvar-en
+    gjør ikke det. Sto oppryddingen nederst, slapp to utganger forbi den —
+    og den ene er helt vanlig: en anonym besøkende som starter en sesjon
+    uten å skrive til den. Neste request på den workeren fikk da en peker
+    inn i minne arenaen hadde gjenbrukt.
+
+    Den feilen viste seg som EAccessViolation når en nettleser hentet en
+    css-fil rett etter en side på samme tilkobling — og bare når fila fikk
+    plass i blokka som alt var i bruk. En stor fil fikk en ny blokk, det
+    gamle minnet lå urørt, og den samme feilen gikk stille forbi. }
+  UseSession(nil);
+
   if S = nil then
     Exit;
   { En ny sesjon ingen skrev til, lagres ikke og får ingen kake. Uten dette
@@ -603,10 +618,6 @@ begin
   if S.IsNew and not S.Dirty then
     Exit;
   Sessions.Commit(S, Res);
-  { Sesjonen lever i request-arenaen og forsvinner ved Reset, men
-    threadvar-en gjør ikke det. Blir den stående, ser neste request på
-    denne workeren en peker inn i minne som er gjenbrukt. }
-  UseSession(nil);
 end;
 
 procedure UseSessions(R: TRouter);

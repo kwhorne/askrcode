@@ -14,7 +14,7 @@ uses
   SysUtils, StrUtils, Classes, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Server,
-  Askr.Http.Multipart, Askr.Core.Log,
+  Askr.Http.Multipart, Askr.Http.Static, Askr.Core.Log,
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
@@ -3186,11 +3186,25 @@ end;
 type
   TE2EHandler = class
   public
+    Statisk: TStaticFiles;
     function Handle(Req: TRequest): TResponse;
   end;
 
+{ Størrelsen er hele poenget. Fila må få plass i arenablokka som alt er i
+  bruk av requesten — er den større, får den en ny blokk, og den veien
+  virker. Suiten kjører med 16 kB blokker, så 6000 byte lander på riktig
+  side: hodet og TRequest tar et par kB, og resten er ledig. }
+const
+  StatiskStorrelse = 6000;
+
 function TE2EHandler.Handle(Req: TRequest): TResponse;
 begin
+  if Statisk <> nil then
+  begin
+    Result := Statisk.Serve(Req);
+    if Result <> nil then
+      Exit;
+  end;
   if Req.Path.EqualsStr('/') then
     Exit(RespondText('rot'));
   if Req.Path.EqualsStr('/ekko') then
@@ -3223,6 +3237,7 @@ var
   I: Integer;
   Reserved1, Reserved2: PtrUInt;
   MpKropp, MpInnhold: string;
+  StatiskFil: TStringList;
 begin
   Group('Ende-til-ende over socket');
   { Innhold med CRLF i, og med noe som ligner grensen. Går det hele veien
@@ -3234,6 +3249,19 @@ begin
   Opts.Workers := 2;
   Opts.ArenaBlockSize := 16 * 1024;
   H := TE2EHandler.Create;
+  { En fil på disk å servere. Katalogen er under .build, så den forsvinner
+    med resten når noen rydder. }
+  ForceDirectories('.build' + PathDelim + 'e2e-statisk' + PathDelim + 'statisk');
+  StatiskFil := TStringList.Create;
+  try
+    StatiskFil.Text := StringOfChar('a', StatiskStorrelse - 1);
+    StatiskFil.SaveToFile('.build' + PathDelim + 'e2e-statisk' + PathDelim +
+      'statisk' + PathDelim + 'stor.css');
+  finally
+    StatiskFil.Free;
+  end;
+  H.Statisk := TStaticFiles.Create('.build' + PathDelim + 'e2e-statisk');
+
   Server := TAskrServer.Create(Opts);
   try
     Server.SetHandler(H.Handle);
@@ -3255,6 +3283,30 @@ begin
     C.SendRaw('GET /finnes-ikke HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
     Check(Pos('HTTP/1.1 404 Not Found', Head) = 1, '404');
+
+    { En statisk fil som oppfølging på samme tilkobling.
+
+      Dette er formen enhver nettleser bruker: hent siden, hent så css-en
+      og js-en over den samme tilkoblingen. Den krasjet med
+      EAccessViolation på et ekte nettsted bygget med rammeverket, og bare
+      når fila fikk plass i arenablokka som alt var i bruk — en stor fil
+      fikk en ny blokk og gikk fint, en liten fikk det ikke. Alene gikk
+      begge. }
+    C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'side før den statiske fila');
+    C.SendRaw('GET /statisk/stor.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'fikk svar på den statiske fila');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1,
+      'statisk fil etter en side på samme tilkobling');
+    CheckEqI(Length(Body), StatiskStorrelse, 'og hele fila kom med');
+    Check(Pos('text/css', Head) > 0, 'med riktig innholdstype');
+
+    { Og én gang til, for å vise at det ikke var én tilfeldig gang. }
+    C.SendRaw('GET /name?name=x HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    C.SendRaw('GET /statisk/stor.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'og igjen');
 
     C.SendRaw('HEAD / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body, True);
@@ -3336,9 +3388,9 @@ begin
     CheckEqI(Reserved2, Reserved1, 'arenaen vokser ikke under vedvarende last');
     Check(Server.TotalArenaHighWater < 64 * 1024,
       'toppforbruket per request holder seg lite');
-    { 9 gyldige requests over, så 50 + 1 + 500 her. De to avviste (400 og 501)
-      telles ikke, fordi de aldri nådde en handler. }
-    CheckEqI(Server.TotalRequests, 561, 'alle gyldige requests ble talt');
+    { 13 gyldige requests over, så 50 + 1 + 500 her. De to avviste (400 og
+      501) telles ikke, fordi de aldri nådde en handler. }
+    CheckEqI(Server.TotalRequests, 565, 'alle gyldige requests ble talt');
     C.Close;
   finally
     Server.Free;

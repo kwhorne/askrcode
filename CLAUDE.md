@@ -85,6 +85,21 @@ Alle seks feiler fortsatt på trunk.
   Filtrene kjører i motsatt rekkefølge av registreringen, og de kjører også
   når middleware kortsluttet requesten — ellers mister en 401 fra en guard
   kaka si.
+* **Threadvar-en for sesjonen ryddes FØRST i `Commit`, ikke sist.**
+  Sesjonen lever i request-arenaen og forsvinner ved `Reset`; threadvar-en
+  gjør ikke det. Sto oppryddingen nederst, slapp to utganger forbi den — og
+  den ene er helt vanlig: en anonym besøkende som starter en sesjon uten å
+  skrive til den. Neste request på den workeren fikk da en peker inn i
+  minne arenaen hadde gjenbrukt.
+
+  **Den krasjet bare noen ganger, og det er det verste ved den.** Feilen
+  viste seg som `EAccessViolation` da en nettleser hentet en css-fil rett
+  etter en side på samme tilkobling. Bare css-en: 39 kB fikk plass i
+  arenablokka som alt var i bruk og skrev oppå det gamle sesjonsobjektet,
+  mens js-en på 330 kB fikk en ny blokk — det gamle minnet lå urørt, og
+  samme bruk-etter-frigjøring gikk stille forbi. Funnet ved å kjøre et ekte
+  nettsted på rammeverket, ikke av en test. Testen finnes nå, går gjennom
+  ruteren, og er mutasjonssjekket.
 * **En ny sesjon ingen skrev til, lagres ikke.** `UseSessions` hopper over
   `Commit` når sesjonen er ny og ikke dirty. Uten det fikk hver robot og
   hvert helsesjekk-kall en plass i lageret, som ligger i prosessen — altså
