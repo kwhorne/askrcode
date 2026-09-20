@@ -72,6 +72,10 @@ Windows-webviewen, og AI-laget med en gyldig API-nøkkel.
 | | Rún v0.1 — transpiler i `Askr.Run` | ferdig, bygget inn i `askr build` |
 | | Rún som standard datalag | **nei** — se kostnaden under Fase 3 |
 
+| Frontend | Innhold | Status |
+|---|---|---|
+| | Lauf — UI-komponenter i Svelte 5 | **konsept**, ingenting bygget — se `LAUF.md` |
+
 Fire ting står ikke der en fersk leser ville lett etter dem, og det er med
 vilje:
 
