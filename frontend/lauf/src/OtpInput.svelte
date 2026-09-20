@@ -30,7 +30,14 @@
   }
 </script>
 
+<!-- inputId gjør at <label for> i Field peker på den ekte inputen. Bits
+     sprer resten av propsene på inputen og ikke på roten, så aria-verdier
+     havner også riktig. -->
 <PinInput.Root
+  inputId={field?.id}
+  aria-labelledby={field?.labelId}
+  aria-invalid={field?.invalid ? 'true' : undefined}
+  aria-describedby={field?.describedBy}
   value={current}
   onValueChange={endre}
   onComplete={oncomplete}

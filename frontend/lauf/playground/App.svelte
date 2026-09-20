@@ -3,6 +3,7 @@
     Heading, Text, Field, Button, Card, Separator,
     Progress, Slider, OtpInput, Autocomplete, Command, DatePicker, FileUpload,
   } from '../src/index.js'
+  import Grid from './Grid.svelte'
 
   const alle = [
     { value: '1', label: 'Ada Lovelace' },
@@ -60,6 +61,9 @@
       </Command.Group>
     </Command>
   </Card>
+
+  <Separator />
+  <Grid />
 
   <p class="text-xs text-muted" id="lauf-state">
     customer={kunde} due={dato} volume={volum} code={kode} files={filer.length}

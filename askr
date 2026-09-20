@@ -181,6 +181,63 @@ cmd_lauf_play() {
   ( cd "$LAUF" && npm run --silent play )
 }
 
+# Kontrast og skjermdump i en ekte nettleser.
+#
+# axe kan ikke måle kontrast i jsdom — det legges ikke ut noe og fargene
+# regnes ikke ut — så kontrastregelen er slått av i enhetstestene og kjøres
+# her i stedet. Seks kombinasjoner: lys, mørk via prefers-color-scheme og
+# mørk via data-theme, hver på 390 og 1280 px. Skjermdumpene havner i
+# frontend/lauf/.shots.
+cmd_lauf_check() {
+  LAUF="$ROOT/frontend/lauf"
+  CHROME=${ASKR_CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+  if ! command -v node >/dev/null 2>&1; then
+    echo "askr — lauf:check"
+    echo
+    echo "HOPPET OVER: node finnes ikke."
+    return 0
+  fi
+  if [ ! -x "$CHROME" ] && ! command -v "$CHROME" >/dev/null 2>&1; then
+    echo "askr — lauf:check"
+    echo
+    echo "HOPPET OVER: fant ingen Chrome på $CHROME."
+    echo "  Sett ASKR_CHROME til stien, eller installer Chrome."
+    echo "  Dette er den eneste sjekken som kan måle kontrast —"
+    echo "  jsdom legger ikke ut noe og kan ikke gjøre det."
+    return 0
+  fi
+  [ -d "$LAUF/node_modules" ] || ( cd "$LAUF" && npm install --silent --no-fund --no-audit )
+  [ -d "$LAUF/src/icons" ] || ( cd "$LAUF" && npm run --silent icons )
+
+  ( cd "$LAUF" && npx vite build --config playground/vite.config.js >/dev/null ) || return 1
+
+  PORT=${ASKR_LAUF_PORT:-4173}
+  ( cd "$LAUF/playground/dist" && python3 -m http.server "$PORT" >/dev/null 2>&1 ) &
+  SRV=$!
+  PROFILE=$(mktemp -d)
+  "$CHROME" --headless --disable-gpu --remote-debugging-port=9222 \
+    --user-data-dir="$PROFILE" about:blank >/dev/null 2>&1 &
+  BROWSER=$!
+  # Vent til begge svarer, i stedet for å gjette på en sleep.
+  n=0
+  until curl -s "http://127.0.0.1:9222/json/list" >/dev/null 2>&1 && \
+        curl -s "http://127.0.0.1:$PORT/" >/dev/null 2>&1; do
+    n=$((n + 1))
+    [ $n -gt 60 ] && { echo "askr: nettleser eller server startet ikke" >&2; break; }
+    sleep 0.5
+  done
+
+  LAUF_URL="http://127.0.0.1:$PORT/" node "$LAUF/tests/browser/check.mjs"
+  status=$?
+
+  # Vent til begge faktisk er borte før profilen slettes — Chrome skriver
+  # fortsatt til den et øyeblikk etter SIGTERM, og da feiler rm halvveis.
+  kill "$SRV" "$BROWSER" 2>/dev/null
+  wait "$SRV" "$BROWSER" 2>/dev/null
+  rm -rf "$PROFILE" 2>/dev/null
+  return $status
+}
+
 cmd_schema() {
   prepare
   SCHEMA_OUT="$BUILD/schema"
@@ -474,6 +531,7 @@ case "${1:-}" in
   web)   shift; cmd_web "$@" ;;
   lauf)  shift; cmd_lauf "$@" ;;
   lauf:play) shift; cmd_lauf_play "$@" ;;
+  lauf:check) shift; cmd_lauf_check "$@" ;;
   db:up) shift; cmd_db_up "$@" ;;
   db:down) shift; cmd_db_down "$@" ;;
   test)  shift; cmd_test "$@" ;;
@@ -507,6 +565,8 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
   ./askr lauf     kjør Lauf-suiten (UI-komponentene, krever node)
   ./askr lauf:play
                   bygg og server lekegrinda på 4173
+  ./askr lauf:check
+                  kontrast og skjermdump i ekte Chrome, lys og mørk
   ./askr desktop:linux
                   bygg GTK-imaget og kjør Linux-webviewen under Xvfb
   ./askr pg       kjør Postgres-suiten (krever ./askr db:up)

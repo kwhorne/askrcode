@@ -42,11 +42,16 @@
       <B.Range class="absolute h-full bg-accent" />
     </span>
     <!-- Knotten er det fokuserbare elementet, og Bits gir den rollen,
-         verdien og piltastene. aria-label settes fra Field-etiketten når
-         den står i et, ellers må kalleren sende en. -->
+         verdien og piltastene — men ikke et navn.
+
+         <label for> virker ikke her: en <span role="slider"> er ikke et
+         «labelable» element, så koblingen må gå gjennom aria-labelledby mot
+         Field-etikettens id. Uten den har slideren ingen tilgjengelig navn,
+         og axe i nettleseren sa nettopp det — mens jsdom-suiten var grønn,
+         fordi den aldri spurte etter navnet. -->
     <B.Thumb
       index={0}
-      aria-labelledby={field ? undefined : rest['aria-labelledby']}
+      aria-labelledby={field?.labelId ?? rest['aria-labelledby']}
       class={cn(
         'block size-4 rounded-full border border-accent bg-surface shadow',
         'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',

@@ -70,6 +70,20 @@ type
     property Depth: Integer read FDepth;
   end;
 
+  { Et objekt som kan skrive seg selv inn i en payload.
+
+    Festet finnes for at en app skal kunne sende sine egne objekter som
+    Inertia-props uten at Inertia må lære dem å kjenne. Før dette var lista
+    lukket — TModel, TModelList, TErrors — og alt annet ble en feilmelding.
+    TGrid er den første som bruker det, men ingenting ved det er spesielt
+    for griden.
+
+    Arver TArenaObject, fordi en prop lever ut requesten og ikke lenger. }
+  TJsonWritable = class(TArenaObject)
+  public
+    procedure WriteJson(var W: TJsonWriter); virtual; abstract;
+  end;
+
   { ----------------------------------------------------------------- les --- }
 
   TJsonKind = (jkNull, jkBool, jkNumber, jkString, jkArray, jkObject);

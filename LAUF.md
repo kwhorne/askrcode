@@ -587,6 +587,60 @@ slideren går 40 → 45 med piltast, kalenderen åpner med fokus i rutenettet
 og ArrowRight + Enter gir `2026-09-21` tilbake som streng, seks tastetrykk
 fyller engangskoden, og paletten filtrerer på det som vises.
 
+## DataGrid
+
+Bygget etter bolk 3, på bestilling. Den er den vanskeligste komponenten i
+et hvilket som helst bibliotek, og den har **to halvdeler** — det er det
+viktigste ved den.
+
+**Serversiden er `Askr.Urd.Grid`**, ikke Lauf. Sortering, søk og
+paginering skjer i databasen. En grid som henter hundre tusen rader for å
+sortere dem i JavaScript er feil svar for Askr: databasen står der
+allerede, har indeksene, og er raskere enn nettverket. Klientmodus finnes
+for lister på noen tusen rader, og er ikke standarden.
+
+**`Sortable` er en hviteliste, og det er ikke en sjekk noen har husket å
+skrive.** `TQuery.OrderBy` tar en typet `TCol`, ikke en streng, så en
+kolonne som ikke er registrert finnes rett og slett ikke å sortere på.
+Formen `'ORDER BY ' + parameter` lar seg ikke skrive. Testen kjører
+`sort=email); DROP TABLE sq_customers;--` og teller radene etterpå.
+
+**To luker i Urd måtte tettes først**, og begge var ekte feil i datalaget,
+ikke i griden:
+
+* **`TQuery` hadde bare AND.** «Finn Ada i navn eller e-post» lot seg ikke
+  uttrykke. `WhereAnyLike` gir én OR-gruppe i parentes, slik at et `Where`
+  kalleren allerede hadde lagt på fortsatt gjelder. Med vilje smal — én
+  operator, ingen nøsting — fordi et generelt grupperingsspråk er et
+  større spørsmål enn det en liste trenger.
+* **`ILike` ble sendt ordrett til alle tre dialektene**, og SQLite svarte
+  «near "ILIKE": syntax error». Den oversettes nå til `LIKE` utenfor
+  Postgres, der `LIKE` er ufølsom fra før — i MySQL av kollasjonen, i
+  SQLite for ASCII. Det siste er en reell forskjell: SQLite skiller
+  fortsatt «é» fra «É», og det står skrevet i stedet for å oppdages.
+
+**`TJsonWritable` er et nytt feste i `Askr.Core.Json`.** Før var lista over
+hva som kunne være en Inertia-prop lukket — TModel, TModelList, TErrors —
+og alt annet var en feilmelding. Nå kan enhver app sende sine egne objekter.
+TGrid er den første som bruker det, men ingenting ved festet er spesielt
+for griden.
+
+**Én API-felle ble funnet og fjernet.** `PerPage` etter `Read` overskrev
+det klienten hadde bedt om, altså endret kallrekkefølgen oppførselen i
+stillhet. Det klienten ber om holdes nå for seg og slås sammen med
+standarden og taket først når siden hentes.
+
+**Målt i ekte nettleser, 10 000 rader, klientmodus med virtualisering:**
+24 rader i DOM-en, `aria-rowcount` 10001, absolutt radnummer riktig etter
+rulling til rad 486, nøyaktig én celle i tabbrekkefølgen, pilene flytter
+markøren, to klikk på overskriften sorterer synkende, og «velg alle» tar
+de 500 på siden.
+
+**Virtualisering er valgfri, ikke på.** Den koster nettleserens eget
+Ctrl+F og utskrift. `aria-rowcount` og `aria-rowindex` settes uansett, og
+i tjenermodus er indeksen radens plass i *hele* settet — det er den som
+gjør at en skjermleser kan si «rad 4013 av 91000» når tjue rader finnes.
+
 ## Hva vi ikke bygger
 
 * **Editor.** En rik-tekst-editor er et eget produkt. Om noen trenger en, er
@@ -597,6 +651,10 @@ fyller engangskoden, og paletten filtrerer på det som vises.
   UI-komponent på samme måte som en knapp er det.
 * **Fargevelger.** Begrunnet over — den eneste fra bolk 3 som ble vurdert
   og forkastet.
+* **I griden:** kolonneomstokking og festing ved dragning, gruppering,
+  redigering i cellene, uendelig rulling og eksport. Hver av dem er sitt
+  eget prosjekt, og dragning med tastaturstøtte er like vanskelig som
+  resten til sammen.
 * **Klientvalidering.** Begrunnet over.
 * **Et temabygger-verktøy.** Tokenene er ett CSS-blokk. Et verktøy for å
   redigere ett CSS-blokk er seremoni.
@@ -615,8 +673,9 @@ må det finnes en port, ikke en god intensjon.
   en feil, ikke en detalj. På plass for bolk 1.
 * **Kontrast kan ikke måles av axe i jsdom** — det legges ikke ut noe, og
   fargene regnes ikke ut. Regelen er slått av i `tests/axe.js`, ikke slått
-  av i stillhet. Kontrasten må derfor sjekkes i en ekte nettleser, og det
-  gjenstår.
+  av i stillhet. **Gjort:** `./askr lauf:check` kjører hele axe, kontrast
+  inkludert, i en ekte Chrome. Ingen brudd i noen av de seks
+  kombinasjonene.
 * **Tastaturgjennomgang for alt i bolk 2.** Åpne, navigere, lukke, og fokus
   tilbake dit det kom fra — uten mus. Gjort, delvis i jsdom og delvis mot
   en ekte Chrome over CDP, fordi fokusfelle og rullelås ikke finnes i
@@ -626,9 +685,22 @@ må det finnes en port, ikke en god intensjon.
   måte som `BytesReserved` holdes flat i arena-testene. Ryker den, er
   tree-shaking brutt, og det merkes ellers ikke før noen klager på
   lastetiden.
-* **Skjermdump i lys og mørk modus, på 390 px og på skrivebord.** Headless
-  Chrome klemmer viewporten til rundt 500 px, så den smale varianten må inn i
-  en `<iframe width="390">` — samme knep som velkomstsiden allerede bruker.
+* **Skjermdump i lys og mørk modus, på 390 px og på skrivebord.** **Gjort**,
+  av den samme kommandoen. `Emulation.setDeviceMetricsOverride` over CDP gir
+  en ekte 390 px viewport, så iframe-knepet fra velkomstsiden trengs ikke
+  her. Seks bilder i `frontend/lauf/.shots`: lys, mørk via
+  `prefers-color-scheme` og mørk via `data-theme`, hver på 390 og 1280.
+  Mørk sjekkes begge veier fordi tokenene håndterer tre tilstander, og én
+  kan ryke uten at den andre gjør det.
+
+  **Kjøringen fant tre brudd som jsdom-suiten hadde sluppet gjennom**, og
+  ingen av dem handlet om farge: slider-knotten hadde ikke noe navn
+  (`<label for>` binder ikke mot en `<span role="slider">`, så den må ha
+  `aria-labelledby`), kommandopalettens input manglet `aria-controls` som
+  rollen krever, og engangskodefeltet hadde ingen etikett i det hele tatt.
+  Alle tre er rettet: `Field` eksponerer nå id-en til etiketten sin, for
+  kontroller som ikke kan merkes på vanlig måte. Det er det beste
+  argumentet for at denne porten måtte finnes.
 
 ## Åpne spørsmål
 

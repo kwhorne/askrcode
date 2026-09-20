@@ -70,16 +70,25 @@ export { default as OtpInput } from './OtpInput.svelte'
 export { default as Autocomplete } from './Autocomplete.svelte'
 export { default as DatePicker } from './DatePicker.svelte'
 export { default as FileUpload } from './FileUpload.svelte'
+export { default as DataGrid } from './DataGrid.svelte'
+export {
+  compare, sortRows, filterRows, clampPage, pageSlice,
+  windowFor, selectionState, nextSort,
+} from './datagrid.svelte.js'
 
 // Sammensatt eksport. Flux skriver <flux:button.group>; Svelte har ikke
 // punktnotasjon på komponenter, men en komponent er en funksjon, og en
 // funksjon kan bære felter. <Button.Group> leses som en member-uttrykk og
 // virker. Delene eksporteres også hver for seg, for den som heller vil det.
 //
-// /*#__PURE__*/ er ikke pynt. Object.assign muterer første argument, så en
-// bundler kan ikke bevise at kallet er trygt å fjerne — og da holdes både
-// komponenten og alt den importerer. Uten merkingen dro en enkelt <Button>
-// med seg hele Bits UI: 221 kB i stedet for 74. Premisstesten fanget det.
+// Pure-merkingen foran hvert Object.assign er ikke pynt. Object.assign
+// muterer første argument, så en bundler kan ikke bevise at kallet er trygt
+// å fjerne — og da holdes både komponenten og alt den importerer. Uten
+// merkingen dro en enkelt <Button> med seg hele Bits UI: 221 kB i stedet
+// for 74. Premisstesten fanget det.
+//
+// Merkingen skrives ikke ut i klartekst i en linjekommentar: Rollup leser
+// den som en ekte annotasjon på feil plass og advarer om at den fjernes.
 export const Button = /*#__PURE__*/ Object.assign(ButtonBase, { Group: ButtonGroup })
 export const Table = /*#__PURE__*/ Object.assign(TableBase, {
   Head: TableHead,

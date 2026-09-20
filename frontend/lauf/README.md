@@ -207,6 +207,80 @@ one where the answer was no.
 Also still absent, and on purpose: rich-text editor, kanban board, charts,
 client-side validation, and a theme builder. The reasons are in `LAUF.md`.
 
+### DataGrid
+
+A grid has two modes, and choosing between them is the whole point.
+
+**Server mode** — pass the `grid` prop from `TGrid<M>` in Pascal. Sorting,
+searching and paging happen in the database. The component owns no data
+logic: it reports state through `onstate` and renders what it is given.
+This is the default for Askr, because the database is already there, has
+the indexes, and is faster than the network.
+
+```pascal
+G := TGrid<TCustomer>.New;
+G.Read(Req)
+ .Sortable('name', Customers.Name)
+ .Sortable('balance', Customers.Balance)
+ .Searchable([Customers.Name, Customers.Email])
+ .DefaultSort('name')
+ .PerPage(25);
+
+Result := Inertia('Customers/Index',
+  ['rows', G.Rows(TQuery<TCustomer>.New), 'grid', G]);
+```
+
+```svelte
+<DataGrid
+  caption="Customers"
+  rows={rows} {grid}
+  columns={[
+    { key: 'name', label: 'Name', sortable: true },
+    { key: 'balance', label: 'Balance', align: 'right', sortable: true, format: money },
+    { key: 'active', label: 'Status', cell: statusBadge },
+  ]}
+  onstate={(s) => router.get('/customers', s, { preserveState: true, preserveScroll: true })}
+  selectable bind:selected
+/>
+```
+
+**`Sortable` is an allowlist, and it is not a check somebody remembered to
+write.** `TQuery.OrderBy` takes a typed `TCol`, not a string, so a column
+that was never registered simply does not exist to sort by — the shape
+`'ORDER BY ' + param` cannot be written here. A sort key of
+`email); DROP TABLE customers;--` falls back to the default; there is a
+test that runs exactly that and then counts the rows still in the table.
+
+**Client mode** — leave `grid` off and the grid sorts, filters and pages the
+array itself. Fine up to a few thousand rows; beyond that you are pulling a
+table across the network to do what the database just did.
+
+Sorting is stable, empty values sort last in both directions (otherwise
+they fill the first page), and numbers inside text sort the way people
+expect — `Item 9` before `Item 10`.
+
+**Virtualisation is opt-in** (`virtual` with `rowHeight`). It keeps the DOM
+small — 24 rows in the document out of 10 000, measured — but it costs the
+browser's own Ctrl+F and printing, so it is not the default.
+`aria-rowcount` and `aria-rowindex` are set either way, and in server mode
+the index is the row's place in the *whole* set, not in the page. That is
+what lets a screen reader say "row 4013 of 91000" when twenty rows exist.
+
+Keyboard follows the WAI-ARIA grid pattern: one cell in the tab order,
+arrows between cells, `Home`/`End` for the row, `Ctrl` with them for the
+grid, `PageUp`/`PageDown` by ten, `Enter` to activate a row. Arrow-up from
+the first row lands on the column header rather than nowhere.
+
+Select-all has three states, not two. A checkbox that looks empty while
+twelve rows are selected is worse than no checkbox, so the header box goes
+`indeterminate` with `aria-checked="mixed"` when only some are selected,
+and it only ever means *this page*.
+
+**What it does not do**, on purpose: column reordering and pinning by drag,
+grouping, cell editing, infinite scroll, and export. Each is its own
+project, and dragging with keyboard support is as hard as the rest put
+together.
+
 ### Toasts
 
 ```svelte
@@ -329,6 +403,34 @@ ArrowRight then Enter in the calendar giving `2026-09-21` back as a string.
 `matchMedia`, pointer capture, `scrollIntoView`. A stub lets the code run;
 it does not make the measurement real. Anything that depends on actual
 sizes is covered in the browser or not at all, and the file says so.
+
+### Contrast and screenshots
+
+```sh
+./askr lauf:check
+```
+
+Runs the full axe suite — **including colour contrast**, the one rule jsdom
+cannot evaluate — in a real Chrome, and writes a screenshot of each
+combination to `.shots/`. Six of them: light, dark through
+`prefers-color-scheme`, and dark through `data-theme`, each at 390 px and
+1280 px. Dark is checked both ways because the tokens handle three states,
+and one can break without the other.
+
+It also asserts the page background actually differs between light and
+dark. Without that, all three themes could be identical and contrast would
+still pass.
+
+The first run found three violations the jsdom suite had passed, and none
+of them were about colour: the slider thumb had no accessible name
+(`<label for>` does not bind to a `<span role="slider">`, so it needs
+`aria-labelledby`), the command input was missing the `aria-controls` its
+role requires, and the one-time-code input had no label at all. All three
+are fixed; `Field` now exposes its label's id for controls that cannot be
+labelled the ordinary way.
+
+It skips itself, saying why, when Chrome or node is missing. Point
+`ASKR_CHROME` at the binary if it lives somewhere unusual.
 
 Accessibility is half of what this library delivers, so `axe-core` runs
 against every component in every state it supports. A `Field` whose label is

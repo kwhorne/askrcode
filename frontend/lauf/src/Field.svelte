@@ -38,6 +38,11 @@
   const form = getContext(FORM)
   const base = uid('lauf-field')
   const controlId = `${base}-control`
+  // Brukes av kontroller som ikke er «labelable» — <label for> virker bare
+  // mot input, select, textarea og noen få til. En slider er en <span
+  // role="slider">, og den må peke på etiketten med aria-labelledby i
+  // stedet. Uten det har den ingen tilgjengelig navn i det hele tatt.
+  const labelId = `${base}-label`
   const descId = `${base}-desc`
   const errId = `${base}-error`
 
@@ -66,6 +71,9 @@
     get required() {
       return required
     },
+    get labelId() {
+      return label ? labelId : undefined
+    },
   })
 </script>
 
@@ -77,11 +85,11 @@
 >
   {#if label}
     {#if as === 'fieldset'}
-      <legend class="text-sm font-medium text-fg p-0">
+      <legend id={labelId} class="text-sm font-medium text-fg p-0">
         {label}{#if required}<span class="text-danger" aria-hidden="true">&nbsp;*</span>{/if}
       </legend>
     {:else}
-      <label for={controlId} class="text-sm font-medium text-fg">
+      <label id={labelId} for={controlId} class="text-sm font-medium text-fg">
         {label}{#if required}<span class="text-danger" aria-hidden="true">&nbsp;*</span>{/if}
       </label>
     {/if}

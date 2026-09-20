@@ -3,4 +3,7 @@ node_modules/
 # 1288 genererte filer i git ville gjort enhver diff uleselig, og de er en
 # mekanisk kopi av en avhengighet som allerede ligger i node_modules.
 src/icons/
+# Lekegrinda bygges på forespørsel, og skjermdumpene er utdata fra
+# ./askr lauf:check — begge lages på nytt av kommandoen.
 playground/dist/
+.shots/

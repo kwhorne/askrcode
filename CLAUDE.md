@@ -1026,6 +1026,19 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
   Setup-fila kjører også for premisstesten, som går i node-miljø fordi
   esbuild nekter å starte i jsdom. Uten vakten feiler hele den fila på en
   ReferenceError som ikke nevner miljøet med et ord.
+* **`./askr lauf:check` er den eneste som måler kontrast.** Hele axe kjøres
+  i en ekte Chrome, i seks kombinasjoner: lys, mørk via
+  `prefers-color-scheme` og mørk via `data-theme`, hver på 390 og 1280 px.
+  Den sjekker også at bakgrunnen faktisk endrer seg mellom temaene — uten
+  den kontrollen kunne alle tre vært like og kontrasten likevel grønn.
+* **`<label for>` binder bare mot «labelable» elementer** — input, select,
+  textarea og noen få til. En `<span role="slider">` er ikke en av dem, og
+  trenger `aria-labelledby` mot etikettens id. Derfor eksponerer
+  `Field`-konteksten `labelId`. Det var ett av tre brudd nettleserporten
+  fant og jsdom-suiten ikke så.
+* **Ikke skriv pure-annotasjonen i klartekst i en linjekommentar.** Rollup
+  leser den som en ekte annotasjon på feil plass og advarer om at den
+  fjernes — en advarsel som ser ut som at merkingen din er ødelagt.
 * **En stub er ikke en måling.** `ResizeObserver`, `matchMedia`,
   pekerfangst og `scrollIntoView` stubbes fordi jsdom mangler dem, og da
   kan koden kjøre — men ingenting som avhenger av faktiske størrelser er
@@ -1040,6 +1053,38 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
   Pascal gir `YYYY-MM-DD`, og det er formen som skal gå rett inn og rett ut.
 * Bits' `Command` filtrerer på `value` og `keywords`, ikke på teksten i
   elementet. `CommandItem` legger derfor `label` i `keywords` selv.
+
+## DataGrid
+
+* **Serversiden er `Askr.Urd.Grid`, ikke Lauf.** Sortering, søk og
+  paginering skjer i databasen. Klientmodus finnes for noen tusen rader og
+  er ikke standarden.
+* **`Sortable` er hvitelisten, og typene håndhever den.** `OrderBy` tar en
+  `TCol`, ikke en streng, så `'ORDER BY ' + parameter` lar seg ikke skrive.
+  En ukjent kolonne faller tilbake til standarden i stillhet — en gammel
+  bokmerket URL skal ikke velte siden.
+* **`Count` må kjøres før siden hentes.** Den bygger sin egen
+  `SELECT count(*)` og ser bort fra limit og offset, men gjør man det
+  motsatt, teller man raden på siden.
+* **Det klienten ber om holdes for seg fra standarden.** `PerPage` etter
+  `Read` overskrev `per` fra URL-en, altså endret kallrekkefølgen
+  oppførselen i stillhet. `EffectivePer` slår dem sammen først når siden
+  hentes.
+* **`TQuery.WhereAnyLike` er den eneste OR-en i datalaget**, og den er
+  smal med vilje: én operator, én gruppe, ingen nøsting. Parentesen rundt
+  gruppa er det som betyr noe — uten den binder et `Where` som står fra
+  før seg til bare første ledd, og søket lekker rader.
+* **`ILike` oversettes til `LIKE` utenfor Postgres.** SQLite har ingen
+  ILIKE i det hele tatt. `LIKE` er ufølsom der fra før, men bare for
+  ASCII — «é» og «É» er fortsatt forskjellige.
+* **`TJsonWritable` i `Askr.Core.Json` er festet for egne props.** Inertia
+  skal ikke lære seg hver type som kan være en prop; lista der skal ikke
+  vokse.
+* **`aria-rowindex` er radens plass i hele settet**, ikke i siden eller i
+  det virtualiserte vinduet. Det er hele grunnen til at attributtet finnes.
+* Svelte-lintern advarer om `tabindex` på `td` og `span`, fordi den ikke
+  ser `role="grid"`. Der er det mønsteret som krever det. Advarselen er
+  slått av på hvert enkelt sted med begrunnelsen ved siden av.
 
 ## Neste steg
 

@@ -9,6 +9,11 @@
 
   let {
     checked = $bindable(),
+    /** «Noen, men ikke alle». Tredje tilstand, som bare finnes som en
+        DOM-egenskap — det finnes ikke noe attributt for den, så den må
+        settes på elementet. aria-checked="mixed" er det en skjermleser
+        leser. Uten den ser boksen tom ut mens tolv rader er valgt. */
+    indeterminate = false,
     /** Navnet i <Form>. Faller tilbake til feltets navn. */
     name,
     label,
@@ -28,6 +33,15 @@
   const id = $derived(field && !name ? field.id : own)
   const descId = `${own}-desc`
 
+  let el = $state(null)
+
+  // indeterminate finnes bare som egenskap, ikke som attributt. Den må
+  // settes etter at elementet står i DOM-en, og settes på nytt hver gang
+  // den endrer seg.
+  $effect(() => {
+    if (el) el.indeterminate = !!indeterminate
+  })
+
   function onChange(e) {
     const v = e.currentTarget.checked
     if (bound) form.set(key, v)
@@ -39,7 +53,9 @@
   <input
     {id}
     type="checkbox"
+    bind:this={el}
     checked={current}
+    aria-checked={indeterminate ? 'mixed' : undefined}
     {disabled}
     onchange={onChange}
     aria-invalid={field?.invalid ? 'true' : undefined}
@@ -51,7 +67,7 @@
     )}
     {...rest}
   />
-  {#if label || description}
+  {#if (label && label !== '') || description}
     <div class="flex flex-col gap-0.5">
       {#if label}
         <label for={id} class="text-sm text-fg leading-tight">{label}</label>

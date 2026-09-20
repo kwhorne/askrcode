@@ -73,6 +73,10 @@ type
     InList: Boolean;
     ParamFirst: Integer;
     ParamCount: Integer;
+    { Bindes med OR til leddet foran i stedet for AND. En gruppe slike
+      settes i parentes ved bygging, slik at presedensen blir
+      `a = 1 AND (b ILIKE x OR c ILIKE x)` og ikke noe annet. }
+    OrPrev: Boolean;
   end;
 
   POrderTerm = ^TOrderTerm;
@@ -150,6 +154,16 @@ type
     function Where(const Col: TColBool; Op: TSqlOp; Value: Boolean): TQuery<M>; overload;
     function Where(const Col: TColDateTime; Op: TSqlOp; Value: TDateTime): TQuery<M>; overload;
 
+    { Fritekstsøk over flere kolonner: ett uttrykk, OR mellom kolonnene.
+
+      Uten denne har TQuery bare AND, og «finn Ada i navn eller e-post» lar
+      seg ikke uttrykke. Den er med vilje smal — én operator, ett uttrykk,
+      ingen nøsting — fordi et generelt grupperingsspråk er et større
+      spørsmål enn det en liste trenger. Tom tekst eller tom kolonneliste
+      legger ikke på noe ledd. }
+    function WhereAnyLike(const Cols: array of TColStr;
+      const Text: string; CaseSensitive: Boolean = False): TQuery<M>;
+
     function WhereIn(const Col: TColInt64; const Values: array of Int64): TQuery<M>; overload;
     function WhereIn(const Col: TColStr; const Values: array of string): TQuery<M>; overload;
 
@@ -194,7 +208,7 @@ type
 
 { Ligger i interface fordi generiske metoder i FPC 3.2.2 ikke får referere
   symboler som bare finnes i implementation-seksjonen. }
-function OpText(Op: TSqlOp): string;
+function OpText(Op: TSqlOp; Dialect: TSqlDialect): string;
 
 { Hjelper til å skrive kolonnekonstanter for hånd inntil Norn genererer dem. }
 function ColInt64(const ATable, AName: string): TColInt64;
@@ -242,7 +256,18 @@ begin
   Result.Name := AName;
 end;
 
-function OpText(Op: TSqlOp): string;
+{ ILIKE finnes bare i Postgres.
+
+  I MySQL og SQLite er LIKE allerede ufølsomt for store og små bokstaver —
+  i MySQL fordi kollasjonen er det (utf8mb4 med ai_ci, som er standarden), i
+  SQLite fordi den innebygde LIKE er det for ASCII. Den siste er verdt å
+  vite: SQLite skiller fortsatt «é» fra «É», fordi ICU ikke er med i den
+  vanlige byggingen. Det er en reell forskjell mellom dialektene, og den
+  skal stå skrevet i stedet for å oppdages.
+
+  Før dette ble ILIKE sendt ordrett til alle tre, og en spørring med ILike
+  mot SQLite feilet med «near "ILIKE": syntax error». }
+function OpText(Op: TSqlOp; Dialect: TSqlDialect): string;
 begin
   case Op of
     Eq:    Result := ' = ';
@@ -252,7 +277,11 @@ begin
     LT:    Result := ' < ';
     LTE:   Result := ' <= ';
     Like:  Result := ' LIKE ';
-    ILike: Result := ' ILIKE ';
+    ILike:
+      if Dialect = sdPostgres then
+        Result := ' ILIKE '
+      else
+        Result := ' LIKE ';
   end;
   { Ingen else: alle TSqlOp er dekket. Se kommentaren i Askr.Urd.Model. }
 end;
@@ -435,6 +464,37 @@ begin
   Result := Self;
 end;
 
+function TQuery<M>.WhereAnyLike(const Cols: array of TColStr;
+  const Text: string; CaseSensitive: Boolean): TQuery<M>;
+var
+  I: Integer;
+  W: PWhereTerm;
+  Op: TSqlOp;
+  Moenster: string;
+begin
+  Result := Self;
+  if (Length(Cols) = 0) or (Text = '') then
+    Exit;
+
+  if CaseSensitive then
+    Op := Like
+  else
+    Op := ILike;
+  Moenster := '%' + Text + '%';
+
+  for I := 0 to High(Cols) do
+  begin
+    W := AddWhere;
+    W^.Table := Cols[I].Table;
+    W^.Column := Cols[I].Name;
+    W^.Op := Op;
+    W^.Param := DbParam(Arena, Moenster);
+    { Første ledd i gruppa bindes som vanlig til det som står foran; de
+      andre med OR. Parentesen settes ved bygging. }
+    W^.OrPrev := I > 0;
+  end;
+end;
+
 function TQuery<M>.WhereIn(const Col: TColInt64; const Values: array of Int64): TQuery<M>;
 var
   W: PWhereTerm;
@@ -614,6 +674,20 @@ var
   W: PWhereTerm;
   C: TDbConnection;
   Filter, BareSlettede, Foerste: Boolean;
+
+  { Lukker en OR-gruppe når leddet vi nettopp skrev var det siste i den. }
+  procedure LukkGruppe(Idx: Integer);
+  var
+    IGruppe, SisteIGruppe: Boolean;
+  begin
+    IGruppe := (FWheres + Idx)^.OrPrev or
+      ((Idx + 1 < FWhereCount) and (FWheres + Idx + 1)^.OrPrev);
+    SisteIGruppe := (Idx + 1 >= FWhereCount) or
+      not (FWheres + Idx + 1)^.OrPrev;
+    if IGruppe and SisteIGruppe then
+      B.AppendByte(Ord(')'));
+  end;
+
 begin
   Filter := SoftDeleteLedd(BareSlettede);
   if (FWhereCount = 0) and not Filter then
@@ -639,9 +713,18 @@ begin
   for I := 0 to FWhereCount - 1 do
   begin
     W := FWheres + I;
-    if not Foerste then
-      B.Append(' AND ');
-    Foerste := False;
+    if W^.OrPrev then
+      B.Append(' OR ')
+    else
+    begin
+      if not Foerste then
+        B.Append(' AND ');
+      Foerste := False;
+      { Starten på en OR-gruppe: parentesen må rundt hele gruppa, ellers
+        binder AND seg til det første leddet alene. }
+      if (I + 1 < FWhereCount) and (FWheres + I + 1)^.OrPrev then
+        B.AppendByte(Ord('('));
+    end;
     if W^.Table <> '' then
     begin
       C.AppendIdentStr(B, string(W^.Table));
@@ -655,6 +738,7 @@ begin
         B.Append(' IS NULL')
       else
         B.Append(' IS NOT NULL');
+      LukkGruppe(I);
       Continue;
     end;
 
@@ -677,14 +761,16 @@ begin
         Params[ParamNo - 1] := FInParams[W^.ParamFirst + J];
       end;
       B.AppendByte(Ord(')'));
+      LukkGruppe(I);
       Continue;
     end;
 
-    B.Append(OpText(W^.Op));
+    B.Append(OpText(W^.Op, C.Dialect));
     Inc(ParamNo);
     C.AppendPlaceholder(B, ParamNo);
     SetLength(Params, ParamNo);
     Params[ParamNo - 1] := W^.Param;
+    LukkGruppe(I);
   end;
 end;
 

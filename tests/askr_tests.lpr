@@ -17,7 +17,7 @@ uses
   Askr.Http.Multipart, Askr.Core.Log,
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
-  Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite,
+  Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
   Askr.Cache, Askr.Queue;
 
 var
@@ -2638,6 +2638,10 @@ var
   R2: TDbResult;
   ForPrep, ForHits: Int64;
   ForApne: Integer;
+  Sql: string;
+  G: TGrid<TSqCustomer>;
+  GW: TJsonWriter;
+  GJson: string;
   Feilet_: Boolean;
   T0, Uten, Med: Int64;
   Kr: Integer;
@@ -2736,6 +2740,132 @@ begin
     Check(Liste[0].Balance = 500, 'sortert synkende');
     CheckEqS(Liste[0].Name, 'Customer 5', 'riktig rad hydrert');
     Check(Liste[0].Active = False, 'boolean hydrert fra INTEGER');
+
+    { OR-gruppe: fritekstsøk over flere kolonner.
+
+      Uten den har TQuery bare AND, og «finn Ada i navn eller e-post» lar
+      seg ikke uttrykke. Parentesen er det som betyr noe: uten den binder
+      et Where som står fra før seg til bare det første leddet i gruppa, og
+      søket lekker rader. }
+    Sql := TQuery<TSqCustomer>.New
+      .Where(SqCustomers.Balance, GT, 100)
+      .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ada')
+      .ToSql;
+    Check(Pos(' OR ', Sql) > 0, 'OR mellom søkekolonnene');
+    Check(Pos(' AND (', Sql) > 0, 'AND binder mot hele gruppa, ikke bare første ledd');
+    Check(Sql[Length(Sql)] = ')', 'og gruppa lukkes');
+    { SQLite har ingen ILIKE. LIKE der er ufølsom for ASCII fra før. }
+    Check(Pos('ILIKE', Sql) = 0, 'ILIKE oversettes bort utenfor Postgres');
+    Check(Pos(' LIKE ', Sql) > 0, 'til LIKE');
+
+    { Ett ledd i gruppa skal ikke få parentes den ikke trenger, og tom
+      tekst skal ikke legge på noe ledd i det hele tatt. }
+    CheckEqS(TQuery<TSqCustomer>.New.WhereAnyLike([SqCustomers.Name], '').ToSql,
+      TQuery<TSqCustomer>.New.ToSql, 'tomt søk legger ikke på noe');
+
+    Liste := TQuery<TSqCustomer>.New
+      .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ada')
+      .Get;
+    CheckEqI(Liste.Count, 1, 'søket treffer Ada på navnet');
+
+    { Treffer på e-post selv om navnet ikke inneholder søkeordet. Det er
+      hele poenget med OR-en. }
+    Liste := TQuery<TSqCustomer>.New
+      .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'customer3@')
+      .Get;
+    CheckEqI(Liste.Count, 1, 'og treffer på e-post når navnet ikke passer');
+
+    { Ufølsom for store bokstaver, også utenfor Postgres. }
+    Liste := TQuery<TSqCustomer>.New
+      .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ADA')
+      .Get;
+    CheckEqI(Liste.Count, 1, 'søket bryr seg ikke om store bokstaver');
+
+    { ---- TGrid: sortering, søk og paginering i databasen ---- }
+    begin
+      { Tellingen leses fra databasen i stedet for å antas. Fiksturen over
+        endrer seg, og en test som hardkoder antallet ryker av grunner som
+        ikke har noe med griden å gjøre. }
+      Antall := TQuery<TSqCustomer>.New.Count;
+      { Standardtilstand: ingen parametre i det hele tatt. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name)
+       .Sortable('balance', SqCustomers.Balance)
+       .Searchable([SqCustomers.Name, SqCustomers.Email])
+       .DefaultSort('name')
+       .PerPage(2);
+      Liste := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqI(Liste.Count, 2, 'griden gir én side');
+      CheckEqI(G.Total, Antall, 'men teller hele settet');
+      CheckEqS(Liste[0].Name, 'Ada', 'standardsorteringen gjelder');
+
+      { Side to. }
+      Sql := Liste[1].Name;   { siste rad på side én }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A, 'GET /c?page=2 HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2);
+      Liste := G.Rows(TQuery<TSqCustomer>.New);
+      Check(Liste[0].Name > Sql, 'side to fortsetter der side én sluttet');
+
+      { Sortering fra URL-en. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A, 'GET /c?sort=balance&dir=desc HTTP/1.1'#13#10'Host: t'))
+       .Sortable('balance', SqCustomers.Balance).DefaultSort('balance').PerPage(10);
+      Liste := G.Rows(TQuery<TSqCustomer>.New);
+      Check(Liste[0].Balance = 500, 'synkende på balance');
+
+      { **Kolonnen fra URL-en er hvitelistet.** En kolonne som ikke er
+        registrert faller tilbake til standarden i stedet for å havne i
+        SQL-en. Det er ikke en sjekk vi har skrevet — OrderBy tar en typet
+        TCol, så formen finnes ikke å skrive. Dette holder bare fast at
+        fallbacken virker. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A,
+        'GET /c?sort=email); DROP TABLE sq_customers;-- HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(10);
+      Liste := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqS(Liste[0].Name, 'Ada', 'ukjent sorteringskolonne faller tilbake');
+      CheckEqI(TQuery<TSqCustomer>.New.Count, Antall, 'og tabellen står der fortsatt');
+
+      { Søk over flere kolonner. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A, 'GET /c?q=ada@ HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name)
+       .Searchable([SqCustomers.Name, SqCustomers.Email])
+       .DefaultSort('name').PerPage(10);
+      Liste := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqI(Liste.Count, 1, 'søket treffer på e-post');
+      CheckEqI(G.Total, 1, 'og totalen teller treffene, ikke tabellen');
+
+      { Søket må gjelde sammen med kallerens eget Where, ikke i stedet for.
+        Det er parentesen rundt OR-gruppa som avgjør det. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A, 'GET /c?q=customer HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name)
+       .Searchable([SqCustomers.Name, SqCustomers.Email])
+       .DefaultSort('name').PerPage(10);
+      Liste := G.Rows(TQuery<TSqCustomer>.New.Where(SqCustomers.Balance, GT, 300));
+      CheckEqI(Liste.Count, 2, 'søk og eget Where gjelder samtidig');
+
+      { Taket på sidestørrelse. Uten det er per=1000000 en måte å be om
+        hele tabellen på. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(LagRequest(A, 'GET /c?per=100000 HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2, 3);
+      Liste := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqI(Liste.Count, 3, 'sidestørrelsen klemmes ned til taket');
+
+      { Payloaden frontend leser. }
+      GW.Init(A, 256);
+      G.WriteJson(GW);
+      GJson := GW.ToString;
+      Check(Pos('"total":' + IntToStr(Antall), GJson) > 0,
+        'grid-proppen bærer totalen');
+      Check(Pos('"pages":', GJson) > 0, 'og antall sider');
+      Check(Pos('"per":3', GJson) > 0, 'og sidestørrelsen etter taket');
+      Check(Pos('"sort":"name"', GJson) > 0, 'og hvilken kolonne som er sortert');
+    end;
 
     { Ada er aktiv, og av Customer 2..5 er 2 og 4 det. Tre til sammen. }
     CheckEqI(TQuery<TSqCustomer>.New.Where(SqCustomers.Active, Eq, True).Count, 3,

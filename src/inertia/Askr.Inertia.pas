@@ -323,6 +323,11 @@ begin
             fra en sesjonsbåret omdirigering. Derfor kan en validering som
             feiler rendre siden på nytt med feilene som prop. }
           TErrors(O).WriteJson(W)
+        else if O is TJsonWritable then
+          { Appens eget objekt. Festet ligger i Askr.Core.Json, slik at
+            Inertia slipper å kjenne hver type som kan være en prop —
+            TGrid var den første, og lista skal ikke vokse her. }
+          TJsonWritable(O).WriteJson(W)
         else if O is TModelListBase then
           WriteModelList(W, TModelListBase(O))
         else if O is TModel then
@@ -330,7 +335,8 @@ begin
         else
           raise EInertiaError.CreateFmt(
             '%s cannot be serialised as a prop. Pass a TModel, a ' +
-            'TModelListBase or a simple value.', [O.ClassName]);
+            'TModelListBase, a TJsonWritable or a simple value.',
+            [O.ClassName]);
       end;
   else
     raise EInertiaError.Create('Ukjent proptype i Inertia-kall');
