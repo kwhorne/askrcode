@@ -383,15 +383,15 @@ begin
       begin
         GCurrentFailed := True;
         Inc(GFailures);
-        WriteLn('    FEIL ', GTests[I].Name_);
+        WriteLn('    FAIL ', GTests[I].Name_);
         WriteLn('         ', E.Message);
       end;
       on E: Exception do
       begin
         GCurrentFailed := True;
         Inc(GFailures);
-        WriteLn('    FEIL ', GTests[I].Name_);
-        WriteLn('         uventet ', E.ClassName, ': ', E.Message);
+        WriteLn('    FAIL ', GTests[I].Name_);
+        WriteLn('         unexpected ', E.ClassName, ': ', E.Message);
       end;
     end;
     if not GCurrentFailed then
@@ -402,7 +402,7 @@ begin
   CloseTestDatabase;
 
   WriteLn;
-  WriteLn(Format('%d tester, %d påstander, %d feil  (%d ms)',
+  WriteLn(Format('%d tests, %d assertions, %d failures  (%d ms)',
     [Kjort, GAsserts, GFailures, MonotonicMs - T0]));
   Result := GFailures;
 end;

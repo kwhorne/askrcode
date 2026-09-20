@@ -190,8 +190,8 @@ begin
     S.DailyAt(3, 30, 'nattjobb');
     S.Describe(L);
     AssertEqual(L.Count, 2, 'to linjer');
-    AssertContains(L.Text, 'hvert 5. minutt', 'intervall beskrives lesbart');
-    AssertContains(L.Text, 'daglig 03:30', 'daglig beskrives lesbart');
+    AssertContains(L.Text, 'every 5 minutes', 'intervall beskrives lesbart');
+    AssertContains(L.Text, 'daily at 03:30', 'daglig beskrives lesbart');
   finally
     L.Free;
     SchedulerRydd;

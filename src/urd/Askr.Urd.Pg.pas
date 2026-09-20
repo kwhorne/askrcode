@@ -276,7 +276,7 @@ begin
     if GLibHandle = NilHandle then
     begin
       GLoadError := 'Could not find libpq. Tried: ' + Tried +
-        '. Installer Postgres-klientbiblioteket, eller sett stien i ' +
+        '. Install the Postgres client library, or put its path in ' +
         'DYLD_LIBRARY_PATH / LD_LIBRARY_PATH.';
       raise EDbUnavailable.Create(GLoadError);
     end;

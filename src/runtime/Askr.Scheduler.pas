@@ -373,18 +373,18 @@ begin
       case E.Kind of
         skInterval:
           if E.IntervalSec mod 3600 = 0 then
-            Naar := Format('hver %d. time', [E.IntervalSec div 3600])
+            Naar := Format('every %d hours', [E.IntervalSec div 3600])
           else if E.IntervalSec mod 60 = 0 then
-            Naar := Format('hvert %d. minutt', [E.IntervalSec div 60])
+            Naar := Format('every %d minutes', [E.IntervalSec div 60])
           else
-            Naar := Format('hvert %d. sekund', [E.IntervalSec]);
-        skDaily:   Naar := Format('daglig %.2d:%.2d', [E.Hour, E.Minute]);
-        skWeekly:  Naar := Format('ukentlig dag %d %.2d:%.2d',
+            Naar := Format('every %d seconds', [E.IntervalSec]);
+        skDaily:   Naar := Format('daily at %.2d:%.2d', [E.Hour, E.Minute]);
+        skWeekly:  Naar := Format('weekly on day %d at %.2d:%.2d',
                      [E.Day, E.Hour, E.Minute]);
-        skMonthly: Naar := Format('månedlig den %d. %.2d:%.2d',
+        skMonthly: Naar := Format('monthly on the %dth at %.2d:%.2d',
                      [E.Day, E.Hour, E.Minute]);
       end;
-      Lines.Add(Format('%-22s %-28s neste: %s', [E.JobName, Naar,
+      Lines.Add(Format('%-22s %-28s next: %s', [E.JobName, Naar,
         FormatDateTime('yyyy-mm-dd hh:nn:ss', UnixToDateTime(E.NextRun))]));
     end;
   finally

@@ -317,7 +317,7 @@ cmd_build() {
   fpc_run src/inertia/Askr.Inertia.pas
   fpc_run src/http/Askr.Http.Static.pas
   fpc_run examples/hello/hello.lpr
-  echo "Bygget: .build/bin/hello"
+  echo "Built: .build/bin/hello"
 }
 
 # Selvsignerte sertifikater til TLS-testene. De ligger i .build og hører
@@ -511,9 +511,9 @@ cmd_run() {
 cmd_cli() {
   prepare
   fpc_run cli/askr.lpr
-  echo "Bygget .build/bin/askr"
+  echo "Built .build/bin/askr"
   echo
-  echo "Legg den på PATH, og sett ASKR_HOME hit:"
+  echo "Put it on PATH, and point ASKR_HOME here:"
   echo "  export PATH=\"$BIN:\$PATH\""
   echo "  export ASKR_HOME=\"$ROOT\""
 }

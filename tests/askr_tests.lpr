@@ -3430,7 +3430,7 @@ begin
   TestEndToEnd;
 
   WriteLn;
-  WriteLn(Format('%d ok, %d feil', [Passed, Failed]));
+  WriteLn(Format('%d ok, %d failed', [Passed, Failed]));
   if Failed > 0 then
     Halt(1);
 end.

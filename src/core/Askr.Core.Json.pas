@@ -158,7 +158,7 @@ end;
 procedure TJsonWriter.Push(IsObject: Boolean);
 begin
   if FDepth > High(FInObject) then
-    raise EJsonError.Create('JSON nestet dypere enn 64 nivåer');
+    raise EJsonError.Create('JSON nested deeper than 64 levels');
   FInObject[FDepth] := IsObject;
   Inc(FDepth);
   FNeedComma := False;

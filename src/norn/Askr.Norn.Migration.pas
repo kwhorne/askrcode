@@ -300,8 +300,8 @@ begin
       if UseTransaction then
         FConn.Rollback
       else
-        Say('    ADVARSEL: ' + M.Version +
-            ' feilet midt i, og dialekten støtter ikke DDL i transaksjon.');
+        Say('    WARNING: ' + M.Version +
+            ' failed halfway, and this dialect cannot roll back DDL.');
       raise;
     end;
   finally
@@ -350,7 +350,7 @@ begin
       N := Length(Result);
       SetLength(Result, N + 1);
       Result[N].Version := Applied[I];
-      Result[N].Title := '(migrasjonen finnes ikke i koden)';
+      Result[N].Title := '(this migration is not in the code)';
       Result[N].Applied := True;
       Result[N].Registered := False;
     end;
@@ -398,7 +398,7 @@ begin
     Applied.Free;
   end;
   if Result = 0 then
-    Say('  ingenting å gjøre');
+    Say('  nothing to do');
 end;
 
 function TMigrator.Down(Steps: Integer): Integer;
@@ -438,7 +438,7 @@ begin
     Applied.Free;
   end;
   if Result = 0 then
-    Say('  ingenting å rulle tilbake');
+    Say('  nothing to roll back');
 end;
 
 initialization

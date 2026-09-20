@@ -1146,7 +1146,7 @@ initialization
   GLock := TCriticalSection.Create;
   { Layouten er verifisert med offsetof mot libmariadbs header. Endrer noen
     recorden, skal det smelle her og ikke i en tilfeldig kolonne. }
-  Assert(SizeOf(TMysqlBind) = 112, 'TMysqlBind må være 112 bytes');
+  Assert(SizeOf(TMysqlBind) = 112, 'TMysqlBind must be 112 bytes');
   RegisterDbDriver('mysql', MakeMySql);
   RegisterDbDriver('mariadb', MakeMySql);
 

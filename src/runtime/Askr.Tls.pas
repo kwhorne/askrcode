@@ -318,7 +318,7 @@ begin
   if Assigned(OpenSSL_version) then
     Result := string(OpenSSL_version(0))
   else
-    Result := '(ukjent)';
+    Result := '(unknown)';
 end;
 
 function TlsLastError: string;

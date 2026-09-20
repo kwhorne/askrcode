@@ -357,7 +357,7 @@ begin
             [O.ClassName]);
       end;
   else
-    raise EInertiaError.Create('Ukjent proptype i Inertia-kall');
+    raise EInertiaError.Create('Unknown prop type in an Inertia call');
   end;
 end;
 

@@ -390,7 +390,7 @@ begin
     if fpConnect(Backend, @Addr, SizeOf(Addr)) <> 0 then
     begin
       CloseSocket(Backend);
-      SendErrorPage('Appen svarer ikke på port ' +
+      SendErrorPage('The app is not answering on port ' +
         IntToStr(FProxy.BackendPort) + '.');
       Exit;
     end;

@@ -341,6 +341,19 @@ requestformen og feilhåndteringen — ikke at et svar med innhold kommer
 tilbake. Alt annet er testet mot `TFakeAiTransport`, som holder JSON-en
 som sendes opp mot det den skal være.
 
+## Changelog
+
+* **CHANGELOG.md og UPGRADE.md er ikke det samme.** Changeloggen er hele
+  regnskapet — added, changed, fixed. UPGRADE.md er den korte: bare det
+  som kan brekke koden din, og det er den `askr update` skriver ut.
+  Blander man dem, blir enten oppgraderingsnotatene uleselige eller
+  changeloggen ufullstendig.
+* Nettstedet leser CHANGELOG.md gjennom `content/build.mjs` og lagrer
+  **én rad per versjon**, ikke én klump. Det gir hver utgivelse sitt eget
+  anker og lar søket treffe en enkelt versjon.
+* En tom `## Unreleased` hoppes over i byggingen. En utgivelsesside som
+  åpner med «Nothing yet» er støy.
+
 ## Versjoner og pakkelaget
 
 * **En utgivelse er ett tall over to økosystemer.** Pascal-kilden og
@@ -374,6 +387,12 @@ som sendes opp mot det den skal være.
   nøkkelen, og det sjekkes at første tegn etter den er et anførselstegn
   — ellers avvises linja i stedet for å gjettes på. Prøvd mot tre
   former: kompakt, stillasets, og en verdi som selv er et objekt.
+* **Urd serialiserer en modell med KOLONNENAVNET, ikke property-navnet.**
+  `ReleasedOn` i Pascal kommer ut som `released_on` i Inertia-payloaden.
+  Det merkes ikke på ettordsfelter, som er alt doc_pages har, og det er
+  derfor det sto uoppdaget: `Components/Index.svelte` leste `needsBits`
+  mens serveren sendte `needs_bits`, så «Bits UI»-merket hadde **aldri**
+  vist seg på komponentoversikten. Tretten komponenter skal ha det.
 * **`FrontendDir` er allerede absolutt.** Å legge `Root` foran ga en sti
   som aldri fantes, og funksjonen som pinner Lauf gjorde da ingenting og
   meldte suksess. «Fant ikke fila» skal ikke bety «alt i orden».
@@ -459,6 +478,11 @@ som sendes opp mot det den skal være.
 valideringsmeldinger, CLI-utskrift, velkomstsiden og alt `askr new` genererer.
 Askr er et internasjonalt rammeverk, og en norsk feilmelding er ubrukelig for
 de fleste som treffer den.
+
+**Commit-meldinger er engelske.** Historikken før 2026-09-20 er norsk og
+blir stående; alt nytt skrives på engelsk. Det samme gjelder alle
+`.md`-filer i repoet utenom de tre arbeidsnotatene: CHANGELOG.md,
+UPGRADE.md, README.md og docs/.
 
 **Kommentarer og arbeidsnotatene er norske** — CLAUDE.md, LAUF.md og
 LARAVEL.md. De er ikke produkt. Skriver du en ny melding som kan nå en

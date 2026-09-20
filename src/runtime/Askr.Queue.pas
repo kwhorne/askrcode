@@ -598,7 +598,7 @@ begin
     begin
       InterLockedIncrement64(Int64(FQueue.FDropped));
       if Assigned(FQueue.FOnError) then
-        FQueue.FOnError(J.Name, 'ingen handler registrert');
+        FQueue.FOnError(J.Name, 'no handler registered');
       FQueue.FStore.Drop(J, 'no handler registered');
       Continue;
     end;

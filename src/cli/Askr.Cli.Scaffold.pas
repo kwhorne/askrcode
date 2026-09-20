@@ -56,7 +56,7 @@ begin
   finally
     L.Free;
   end;
-  WriteLn('  ny   ', Sti);
+  WriteLn('  new  ', Sti);
 end;
 
 function PascalNavn(const S: string): string;
@@ -428,9 +428,9 @@ begin
     '    fpSignal(SIGTERM, @Stopp);' + #10 +
     '    Server.Start;' + #10 +
     '    if Server.UsesTls then' + #10 +
-    '      WriteLn(' + Q + Name + ' på https://' + Q + ', Opts.Host, ' + Q + ':' + Q + ', Server.BoundPort)' + #10 +
+    '      WriteLn(' + Q + Name + ' on https://' + Q + ', Opts.Host, ' + Q + ':' + Q + ', Server.BoundPort)' + #10 +
     '    else' + #10 +
-    '      WriteLn(' + Q + Name + ' på http://' + Q + ', Opts.Host, ' + Q + ':' + Q + ', Server.BoundPort);' + #10 +
+    '      WriteLn(' + Q + Name + ' on http://' + Q + ', Opts.Host, ' + Q + ':' + Q + ', Server.BoundPort);' + #10 +
     '    Flush(Output);' + #10 +
     '    while Server.Running do' + #10 +
     '      Sleep(50);' + #10 +

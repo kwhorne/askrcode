@@ -233,7 +233,7 @@ begin
   FVite.Options := [];
   try
     FVite.Execute;
-    WriteLn('  vite      kjører i ', FOpts.FrontendDir);
+    WriteLn('  vite      running in ', FOpts.FrontendDir);
   except
     on E: Exception do
     begin
@@ -270,7 +270,7 @@ begin
   if not Ok then
   begin
     WriteLn;
-    WriteLn('  FEIL      ', ExtractFileName(ChangedPath));
+    WriteLn('  FAIL      ', ExtractFileName(ChangedPath));
     Write(Output);
     FProxy.Resume(Output);
     Exit;
@@ -290,7 +290,7 @@ begin
   begin
     StopProcess(FApp);
     FApp := Gammel;
-    FProxy.Resume('Appen startet, men svarer ikke på port ' +
+    FProxy.Resume('The app started but is not answering on port ' +
       IntToStr(NyPort) + '.');
     Exit;
   end;
@@ -354,7 +354,7 @@ begin
   Write('  bygger    ');
   if not Build(Output) then
   begin
-    WriteLn('feilet');
+    WriteLn('failed');
     Write(Output);
     Halt(1);
   end;
@@ -387,7 +387,7 @@ begin
 
   StartVite;
 
-  WriteLn('  følger    ', FWatcher.FileCount, ' filer');
+  WriteLn('  watching  ', FWatcher.FileCount, ' filer');
   WriteLn;
   WriteLn('  http://127.0.0.1:', FOpts.PublicPort);
   WriteLn('  Ctrl-C to stop.');

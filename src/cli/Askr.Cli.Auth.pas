@@ -792,7 +792,7 @@ begin
       end;
 
     L.SaveToFile(Sti);
-    WriteLn('  endret app.lpr');
+    WriteLn('  edited app.lpr');
     Result := True;
   finally
     L.Free;

@@ -376,7 +376,7 @@ var
 begin
   Scheme := DsnScheme(Dsn);
   if Scheme = '' then
-    raise EDbError.Create('DSN mangler skjema: ' + Dsn);
+    raise EDbError.Create('DSN has no scheme: ' + Dsn);
 
   F := nil;
   GDriverLock.Acquire;

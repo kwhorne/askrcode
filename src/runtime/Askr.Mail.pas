@@ -306,7 +306,7 @@ var
   I: Integer;
 begin
   if FFrom.Address = '' then
-    raise EMailError.Create('Meldingen mangler avsender');
+    raise EMailError.Create('The message has no sender');
   if Length(FTo) + Length(FCc) + Length(FBcc) = 0 then
     raise EMailError.Create('The message has no recipients');
 
