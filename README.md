@@ -98,15 +98,48 @@ cd askrcode
 Then put `.build/bin` on your `PATH`, point `ASKR_HOME` at the checkout, and
 create a project. [Getting started](docs/getting-started.md) has the rest.
 
-> `@askrcode/lauf` is not published yet, so `askr new` points a new
-> project's frontend at your checkout. A generated project therefore works
-> on a machine that has the framework.
+## Versions
+
+A project names the release it builds against, and `askr` fetches it:
+
+```toml
+# askr.toml
+[askr]
+version = "0.6.0"
+```
+
+```sh
+askr install     # fetch it into ~/.askr/pkg
+askr outdated    # what is published, and what you have
+askr update      # move, after showing you what changes
+askr version     # what this project actually builds against
+```
+
+`askr.lock` records the exact commit, and belongs in git. A cloned
+project needs `askr install` before it will build — the lock names a
+release, and the source for it is not in the repository.
+
+A release is **one number across two ecosystems**: the Pascal source and
+`@askrcode/lauf` on npm. If those drift apart you get a component whose
+client half does not match its server half, and nothing says so until
+something stops working — so the lock pins both, `askr install` writes
+the matching npm version into `frontend/package.json`, and a test fails
+if a checkout's two halves disagree.
+
+[Versions](docs/versions.md) has the upgrade procedure step by step;
+[`UPGRADE.md`](UPGRADE.md) has what changes between releases, and
+`askr update` prints the relevant part of it before touching anything.
+
+> `@askrcode/lauf` is not published to npm yet, so `askr install` points
+> the frontend at the release it just fetched rather than at a version
+> number. Everything else about versioning works as described.
 
 ## Documentation
 
 Start at [`docs/README.md`](docs/README.md). The pages worth reading first:
 
 - [Getting started](docs/getting-started.md) — a project from nothing
+- [Versions](docs/versions.md) — pinning a release, and upgrading
 - [The arena](docs/arena.md) — the one idea the rest follows from
 - [Database](docs/database.md) and [Models](docs/models.md)
 - [Lauf](docs/lauf.md) — the frontend layer
