@@ -16,6 +16,37 @@ with the zero-major caveat that minor releases may break things until
 
 Nothing yet.
 
+## 0.6.1 — 2026-09-20
+
+A patch release, tagged because 0.6.0 shipped without this file and
+without a consistent language in the output a user sees.
+
+### Added
+
+- **This file.** `CHANGELOG.md` is the full record; `UPGRADE.md` stays
+  the short one and carries only what can break your code, which is what
+  `askr update` prints before it touches your project.
+
+### Changed
+
+- **28 user-facing strings across 14 files are English.** They were
+  Norwegian, against the framework's own rule that everything a user sees
+  is English. The ones worth naming:
+  - Norn's generated file header, which is written into every schema unit
+    in every project.
+  - `askr migrate` and its rollback, which printed `ingenting å gjøre`.
+  - `Askr.Testing`'s own output — `FEIL`, and the
+    `%d tester, %d påstander, %d feil` summary — which every app sees
+    from `askr test`.
+  - `askr schedule:list`, which described a schedule in Norwegian.
+  - `askr serve` and `askr new`, and the line a generated app prints when
+    it starts.
+  - Exception messages in Urd, Mail, Json and Inertia.
+
+  **If you grep the output of `askr test` in CI, this will break it.**
+  The summary is now `%d tests, %d assertions, %d failures` and a failing
+  test prints `FAIL` rather than `FEIL`.
+
 ## 0.6.0 — 2026-09-20
 
 The first tagged release. Everything before this has no version: the

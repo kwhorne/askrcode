@@ -8,6 +8,17 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.6.1
+
+**Test output is English.** If anything of yours greps `askr test`, it
+breaks here. The summary line changed from
+`%d tester, %d påstander, %d feil` to
+`%d tests, %d assertions, %d failures`, and a failing test prints `FAIL`
+instead of `FEIL`.
+
+Nothing else in 0.6.1 can affect your code: the rest is output strings
+in commands you read rather than parse.
+
 ## 0.6.0
 
 First release with a version number, so there is nothing to upgrade
