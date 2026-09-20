@@ -157,6 +157,60 @@ HexEncode(B);         HexDecode(S);
 
 base64url is the form that belongs in a URL, a filename or a cookie value.
 
+## Elliptic curves
+
+`Askr.Core.Ec` verifies ECDSA signatures on P-256, on top of the 256-bit
+arithmetic in `Askr.Core.BigInt`. It exists for WebAuthn — Askr **verifies
+signatures, it does not produce them.**
+
+```pascal
+if EcdsaVerifyP256(Qx, Qy, R, S, Hash) then
+```
+
+All five arguments are 32-byte big-endian.
+
+Verification is a much smaller problem than signing, and the difference is
+worth knowing: it operates entirely on public values — the signature and
+the public key — so it does not have to be constant-time. Signing would,
+and none of this code would be fit for it.
+
+Two decisions shape the implementation:
+
+**Limbs are 32 bits, not 64.** A 32x32 product plus two carries fits in a
+`UInt64` exactly, so nothing in the arithmetic overflows and the unit needs
+no overflow-check suppression. The 64-bit alternative would need a 128-bit
+type Free Pascal does not have. It costs roughly twice the operations, and
+buys an entire class of silent bug that cannot be found by reading.
+
+**Reduction modulo p is not long division.** One verification is around
+8000 field multiplications; the generic path would make that hundreds of
+millions of operations. P-256 was chosen with a Solinas prime so the
+reduction is nine word shuffles added and subtracted (FIPS 186-4, D.2.3).
+Modulo *n* is generic, because it happens two or three times per
+verification.
+
+A verification takes about **5 ms**.
+
+### What is not here
+
+**No signing, no key generation, no ECDH.** Only what WebAuthn
+verification needs.
+
+**No other curve.** P-256 only. Ed25519 is a different implementation, not
+a parameter.
+
+**The vectors are generated, not NIST's.** They come from
+python-cryptography, which verifies through OpenSSL — an independent
+implementation of the same spec. That shows Askr agrees with OpenSSL on
+those cases; it does not show that both follow the standard. The
+adversarial rows are the interesting half: tampered `r`, tampered `s`,
+`r = 0`, `s = n`, a mirrored `y`, a point off the curve, and another
+key's signature.
+
+**WebAuthn itself is not here yet.** This is the floor it needs. A CBOR
+decoder and COSE key parsing still have to be written before a passkey can
+be registered.
+
 ## Low level
 
 ```pascal

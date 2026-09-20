@@ -49,6 +49,42 @@ Alle seks feiler fortsatt på trunk.
 * En `#` uten mellomrom foran er en del av verdien, ikke en kommentar — ellers
   ville et passord med `#` i seg blitt kuttet i to.
 
+## Elliptiske kurver
+
+* **Lemmene i `Askr.Core.BigInt` er 32 bit, ikke 64.** Et 32x32-produkt
+  pluss to bærere får akkurat plass i `UInt64`, så ingenting flyter over
+  og uniten trenger ingen avskrudd overflytkontroll. Med 64-bits lemmer
+  måtte produktet vært 128 bit, og den typen finnes ikke i FPC. Prisen er
+  omtrent dobbelt så mange operasjoner. `./askr check` er beviset på at
+  valget holder.
+* **Reduksjon modulo p må være Solinas, ikke langdivisjon.** En
+  verifisering er rundt 8000 feltmultiplikasjoner; den generiske veien
+  ville gitt over hundre millioner operasjoner. Modulo n er generisk,
+  fordi den brukes to-tre ganger per verifisering.
+* **Barrett ble prøvd og forkastet.** `q1 * mu` blir 545 bit, så en
+  avkortet 512-bits multiplikasjon kaster nettopp leddet man trenger. Det
+  ville krevd en 1024-bits type for to operasjoner.
+* **Verifisering trenger ikke være konstant-tid.** Den regner bare på
+  offentlige verdier. Signering ville krevd det, og denne koden duger
+  ikke til det.
+* **`EcDouble`, `EcAdd` og `EcMul` må tåle at R er samme variabel som
+  inndata.** Den første utgaven kalte `EcSetInfinity(R)` med én gang, og
+  da var punktet borte før første runde leste det. Fiksen er at
+  akkumulatoren er lokal og R skrives først til slutt. Testen
+  «20G + G = 21G» fanget det.
+* **Doblingsgrenen i `EcAdd` nås aldri av tilfeldige signaturer.** To
+  uavhengige punkter har praktisk talt aldri samme x, så uten `EcAdd(G,G)`
+  og `G + (-G)` som egne tester er den udekket — og en feil der ville
+  dukket opp sjelden og uforklarlig. Begge er mutasjonssjekket.
+* **To sjekker er dybdeforsvar og kan ikke bevises av vektorene:** at
+  r og s ligger i [1, n-1], og at nøkkelen er på kurven. Med r = 0 blir
+  u2 null og signaturen avvises uansett av regnestykket; et punkt utenfor
+  kurven gir bare feil svar. Mutasjonstesten viste at begge overlever at
+  sjekken fjernes. De står likevel.
+* Vektorene er **generert med python-cryptography (OpenSSL)**, ikke
+  hentet fra NIST. Det viser at Askr er enig med OpenSSL, ikke at begge
+  følger standarden. Sies rett ut i suiten og i docs.
+
 ## Krypto, CSRF og auth
 
 * **Kryptoen er ren Pascal, uten OpenSSL, og det er ikke en smakssak.**

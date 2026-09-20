@@ -9,7 +9,16 @@
     HMAC-SHA256  RFC 4231, alle syv
     PBKDF2       RFC 6070-tilfellene regnet om til SHA-256 (de står i
                  draft-josefsson-scrypt-kdf / RFC 7914s referanser)
-    base64       RFC 4648 sine egne teststrenger }
+    base64       RFC 4648 sine egne teststrenger
+    ECDSA P-256  signaturer laget med python-cryptography, altsaa
+                 OpenSSL: en uavhengig implementasjon av samme spek
+
+  Vektorfila for ECDSA ligger i tests/vectors/ og er generert, ikke
+  hentet fra NIST. Det er verdt aa si rett ut: den viser at Askr er enig
+  med OpenSSL om de samme tilfellene, ikke at begge foelger standarden.
+  De ugyldige radene er de interessante - tuklet r, tuklet s, r = 0,
+  s = n, speilet y, punkt utenfor kurven, og en annen noekkels
+  signatur. }
 program AskrCryptoTests;
 
 {$mode Delphi}{$H+}
@@ -18,8 +27,8 @@ uses
 {$IFDEF UNIX}
   cthreads,
 {$ENDIF}
-  SysUtils,
-  Askr.Core.Crypto;
+  SysUtils, Classes,
+  Askr.Core.Crypto, Askr.Core.BigInt, Askr.Core.Ec;
 
 var
   Bestatt: Integer = 0;
@@ -97,6 +106,119 @@ var
   D: TSha256Digest;
   T0: TDateTime;
   Ms: Int64;
+{ ------------------------------------------------------ ECDSA P-256 -- }
+
+function HexBytes(const Hex: string): TBytes;
+var
+  I: Integer;
+  B: TBytes;
+begin
+  B := nil;
+  SetLength(B, Length(Hex) div 2);
+  for I := 0 to High(B) do
+    B[I] := StrToInt('$' + Copy(Hex, I * 2 + 1, 2));
+  Result := B;
+end;
+
+procedure EcdsaTester;
+var
+  L: TStringList;
+  I, K, Godt, Avvist, Gale: Integer;
+  S, Felt: string;
+  F: array[0..5] of string;
+  Vent: Boolean;
+  P1, P2: TEcPoint;
+  X, Y, Kk: TU256;
+begin
+  Start('ECDSA P-256: punktaritmetikk');
+
+  EcSetAffine(EcGx, EcGy, P1);
+  EcDouble(P1, P2);
+  EcToAffine(P2, X, Y);
+  Ok('2G har riktig x', U256ToHex(X) =
+    '7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978');
+  Ok('2G har riktig y', U256ToHex(Y) =
+    '07775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1');
+
+  { n*G = uendelig. Den ene identiteten som fanger nesten alt galt i
+    punktaritmetikken paa en gang. }
+  EcSetAffine(EcGx, EcGy, P1);
+  Kk := EcN;
+  EcMul(Kk, P1, P2);
+  Ok('n*G er uendelig', EcIsInfinity(P2));
+
+  { Doblingsgrenen i EcAdd naas aldri av tilfeldige signaturer: to
+    uavhengige punkter har praktisk talt aldri samme x. Uten disse to er
+    den udekket, og en feil der ville dukket opp sjelden og uforklarlig.
+    Mutasjonssjekket: fjernes grenen, feiler begge. }
+  EcSetAffine(EcGx, EcGy, P1);
+  EcAdd(P1, P1, P2);
+  EcToAffine(P2, X, Y);
+  Ok('EcAdd(G, G) gir 2G', U256ToHex(X) =
+    '7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978');
+
+  EcSetAffine(EcGx, EcGy, P1);
+  FpSub(EcP, EcGy, Y);
+  EcSetAffine(EcGx, Y, P2);
+  EcAdd(P1, P2, P2);
+  Ok('G + (-G) er uendelig', EcIsInfinity(P2));
+
+  { Aliasing: R kan vaere samme variabel som P. Forrige utgave nullstilte
+    out-parameteren foerst, og da var punktet borte foer foerste runde. }
+  U256SetU32(Kk, 21);
+  EcSetAffine(EcGx, EcGy, P1);
+  EcMul(Kk, P1, P1);
+  Ok('EcMul(K, P, P) taaler aliasing', EcToAffine(P1, X, Y));
+
+  Ok('G ligger paa kurven', EcOnCurve(EcGx, EcGy));
+  Y := EcGy; Y.L[0] := Y.L[0] xor 1;
+  Ok('et punkt utenfor kurven avvises', not EcOnCurve(EcGx, Y));
+
+  Start('ECDSA P-256: signaturer mot OpenSSL-genererte vektorer');
+  L := TStringList.Create;
+  try
+    if not FileExists('tests/vectors/ecdsa_p256.txt') then
+    begin
+      Ok('vektorfila finnes (kjoer fra repo-rota)', False);
+      Exit;
+    end;
+    L.LoadFromFile('tests/vectors/ecdsa_p256.txt');
+    Godt := 0; Avvist := 0; Gale := 0;
+    for I := 0 to L.Count - 1 do
+    begin
+      S := Trim(L[I]);
+      if (S = '') or (S[1] = '#') then
+        Continue;
+      for K := 0 to 5 do
+      begin
+        if Pos(' ', S) > 0 then
+        begin
+          Felt := Copy(S, 1, Pos(' ', S) - 1);
+          S := Trim(Copy(S, Pos(' ', S) + 1, Length(S)));
+        end
+        else
+          Felt := S;
+        F[K] := Felt;
+      end;
+      Vent := F[5] = '1';
+      if EcdsaVerifyP256(HexBytes(F[0]), HexBytes(F[1]), HexBytes(F[2]),
+                         HexBytes(F[3]), HexBytes(F[4])) <> Vent then
+        Inc(Gale)
+      else if Vent then
+        Inc(Godt)
+      else
+        Inc(Avvist);
+    end;
+    Ok(Format('%d gyldige signaturer godtatt', [Godt]),
+      (Godt > 0) and (Gale = 0));
+    Ok(Format('%d ugyldige signaturer avvist', [Avvist]),
+      (Avvist > 0) and (Gale = 0));
+  finally
+    L.Free;
+  end;
+end;
+
+
 begin
   WriteLn('askr — krypto');
 
@@ -425,6 +547,7 @@ begin
   Ok('men ikke så mye at innlogging blir en DoS-vektor (< 2000 ms)',
     Ms < 2000);
   Ok('og hashen fra den virker', VerifyPassword('et passord', H1));
+  EcdsaTester;
 
   WriteLn;
   WriteLn(Format('— %d bestått, %d feilet', [Bestatt, Feilet]));

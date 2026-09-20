@@ -16,6 +16,17 @@ with the zero-major caveat that minor releases may break things until
 
 ### Added
 
+- **ECDSA P-256 verification, in pure Pascal.** `Askr.Core.BigInt` is
+  256-bit arithmetic and `Askr.Core.Ec` is the curve; together they are
+  the floor WebAuthn needs. Verification runs in about 5 ms and is
+  checked against 91 vectors — 40 valid signatures and 51 that must be
+  rejected. Nothing else in the framework depends on OpenSSL, and this
+  does not either.
+
+  It verifies; it does not sign. That is what WebAuthn needs, and it
+  means the code operates only on public values and does not have to be
+  constant-time.
+
 - **`askr make auth` scaffolds the pages after sign-in too.** Signing in
   lands on `/dashboard` rather than `/`, and there is a `/settings/profile`
   for name and email and a `/settings/security` for changing a password.
