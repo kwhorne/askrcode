@@ -750,6 +750,15 @@ grunn; den slår av en reell typesjekk.
   ikke en omdirigering: de to requestene kan havne på hver sin worker, og
   uten sesjoner finnes det ingen felles lagring. Rendre siden direkte i
   stedet for å omdirigere til den.
+* **Vakten foran `flash`-objektet må spørre om det samme som
+  `WriteFlashInto` skriver.** Den spurte etter én hardkodet nøkkel —
+  `Sess.HasFlash('suksess')` — mens skrivingen tar alle nøkler unntatt
+  `_errors`. Alt annet enn den ene nøkkelen ble stille forkastet, og
+  `Session.Flash('error', …)` fra auth-stillaset var nettopp et slikt
+  tilfelle. `TSession.HasAnyFlash` svarer nå på det samme utvalget. To feil i
+  én linje: en norsk nøkkel i rammeverkskode, og en vakt som var smalere enn
+  det den voktet. Testen er mutasjonssjekket — settes den gamle vakten
+  tilbake, feiler den.
 
 ## Fallgruver som allerede er truffet
 

@@ -62,6 +62,10 @@ type
     procedure Flash(const Key, Value: string);
     function GetFlash(const Key: string; const Default: string = ''): string;
     function HasFlash(const Key: string): Boolean;
+    { Om det finnes noe lesbart flash i det hele tatt. Valideringsfeilene
+      teller ikke med — de er en egen prop i Inertia-payloaden, ikke en
+      melding, og HasErrors svarer for dem. }
+    function HasAnyFlash: Boolean;
     { Beholder det som kom inn, slik at det også er der neste gang. }
     procedure Reflash;
 
@@ -313,6 +317,18 @@ end;
 function TSession.HasFlash(const Key: string): Boolean;
 begin
   Result := IndexIn(FFlashIn, Key) >= 0;
+end;
+
+function TSession.HasAnyFlash: Boolean;
+var
+  I: Integer;
+begin
+  { Samme utvalg som WriteFlashInto skriver. Skiller de to lag, blir vakten
+    stående og si nei til noe som ville blitt skrevet. }
+  for I := 0 to High(FFlashIn) do
+    if FFlashIn[I].Key <> ErrorsFlashKey then
+      Exit(True);
+  Result := False;
 end;
 
 procedure TSession.Reflash;

@@ -334,7 +334,7 @@ begin
   { Rendrer lista direkte i stedet for å omdirigere til den. Flash overlever
     ikke en omdirigering uten sesjoner, og de to requestene ville dessuten
     kunne havnet på hver sin worker. Se kommentaren ved InertiaFlash. }
-  InertiaFlash('suksess', 'Customer ' + K.Name + ' created_at');
+  InertiaFlash('success', 'Customer ' + K.Name + ' was created.');
   Result := Index(Req);
 end;
 

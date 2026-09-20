@@ -64,6 +64,21 @@ InertiaFlash('notice', 'Saved.');
 > **Render the page directly instead of redirecting to it** — or use
 > [session flash](sessions.md), which is what `BackWithErrors` does.
 
+Both sources end up in the same `flash` prop, and **any key you set is
+carried**, not a fixed list of them:
+
+```pascal
+Session.Flash('error', 'That link is no longer valid.');
+```
+
+```js
+$page.props.flash.error
+```
+
+Validation errors are the one exception. They are stored as session flash
+internally, but they arrive as their own `errors` prop rather than inside
+`flash` — see [Validation](validation.md).
+
 ## Shared props
 
 ```pascal

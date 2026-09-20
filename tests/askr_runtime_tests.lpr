@@ -19,7 +19,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
-  Askr.Auth, Askr.Mail, Askr.Ai, Askr.Testing;
+  Askr.Auth, Askr.Mail, Askr.Ai, Askr.Inertia, Askr.Testing;
 
 { ------------------------------------------------------------ scheduler -- }
 
@@ -260,6 +260,110 @@ begin
     AssertFalse(Sess.HasFlash('suksess'), 'borte i tredje request');
   finally
     UseArena(Prev);
+    A.Free;
+    Store.Free;
+  end;
+end;
+
+{ Enhver flash-nøkkel skal ut i Inertia-payloaden, ikke bare én bestemt.
+
+  Vakten i BuildPayload spurte før etter nøkkelen 'suksess' bokstavelig talt,
+  mens WriteFlashInto skriver alle nøkler unntatt _errors. En app som gjorde
+  Session.Flash('error', ...) — slik det genererte auth-stillaset gjør — fikk
+  meldingen stille forkastet. Testen bruker med vilje en annen nøkkel enn den
+  som sto der. }
+procedure TestInertiaFlashUansettNokkel;
+var
+  A: TArena;
+  PrevA: TArena;
+  PrevR: TRequest;
+  PrevS: TSession;
+  Req: TRequest;
+  Sess: TSession;
+  R: TResponse;
+  Kake, Body: string;
+
+  function InertiaReq(const MedKake: string): TRequest;
+  var
+    P: TArena;
+  begin
+    P := UseArena(A);
+    try
+      Result := TRequest.Create;
+      Result.ParseHead(StrDup(A, 'GET / HTTP/1.1'#13#10'Host: t'#13#10 +
+        'X-Inertia: true' +
+        IfThen(MedKake <> '', #13#10'Cookie: askr_session=' + MedKake, '')),
+        DefaultMaxBodyBytes);
+    finally
+      UseArena(P);
+    end;
+  end;
+
+begin
+  Store := TSessionStore.Create(3600);
+  A := TArena.Create(32 * 1024);
+  PrevA := UseArena(A);
+  PrevR := UseRequest(nil);
+  PrevS := UseSession(nil);
+  try
+    TInertia.SetVersion('t');
+
+    { Skriv en flash under en annen nøkkel enn 'suksess'. }
+    Req := LagReq(A, '');
+    Sess := Store.Start(Req);
+    Sess.Flash('error', 'That link is no longer valid.');
+    R := Respond(200);
+    Store.Commit(Sess, R);
+    Kake := KakeFra(R, A);
+
+    { Neste request: den skal være med i payloaden. }
+    A.Reset;
+    Req := InertiaReq(Kake);
+    UseRequest(Req);
+    Sess := Store.Start(Req);
+    UseSession(Sess);
+    AssertTrue(Sess.HasAnyFlash, 'sesjonen har en lesbar flash');
+    Body := Inertia('Home', ['x', Int64(1)]).Body.ToString;
+    AssertContains(Body, '"error":"That link is no longer valid."',
+      'en flash under en annen nøkkel enn suksess kommer med');
+
+    { Og vakten skal fortsatt vokte: uten flash og uten feil, ingen
+      flash-nøkkel i det hele tatt. }
+    A.Reset;
+    UseSession(nil);
+    Req := InertiaReq('');
+    UseRequest(Req);
+    Sess := Store.Start(Req);
+    UseSession(Sess);
+    AssertFalse(Sess.HasAnyFlash, 'ny sesjon har ingen flash');
+    Body := Inertia('Home', ['x', Int64(1)]).Body.ToString;
+    AssertNotContains(Body, '"flash"',
+      'uten flash skrives ikke flash-objektet');
+
+    { _errors teller ikke som en melding — den er en egen prop. }
+    A.Reset;
+    UseSession(nil);
+    Req := LagReq(A, '');
+    Sess := Store.Start(Req);
+    Sess.FlashErrorsJson(Str('{"name":"is required"}'));
+    R := Respond(302);
+    Store.Commit(Sess, R);
+    Kake := KakeFra(R, A);
+
+    A.Reset;
+    Req := InertiaReq(Kake);
+    UseRequest(Req);
+    Sess := Store.Start(Req);
+    UseSession(Sess);
+    AssertFalse(Sess.HasAnyFlash,
+      'valideringsfeil er ikke en flash-melding');
+    AssertTrue(Sess.HasErrors, 'men de er der som feil');
+    Body := Inertia('Home', ['x', Int64(1)]).Body.ToString;
+    AssertContains(Body, '"errors"', 'og de kommer ut som errors');
+  finally
+    UseSession(PrevS);
+    UseRequest(PrevR);
+    UseArena(PrevA);
     A.Free;
     Store.Free;
   end;
@@ -2735,6 +2839,7 @@ begin
   Test('flash lever nøyaktig én request', @TestFlashLeverEnRequest);
   Test('valideringsfeil overlever omdirigering',
     @TestValideringsfeilOverlevererOmdirigering);
+  Test('Inertia tar med flash uansett nøkkel', @TestInertiaFlashUansettNokkel);
 
   Group('CSRF');
   Test('avviser uten token', @TestCsrfAvviserUtenToken);

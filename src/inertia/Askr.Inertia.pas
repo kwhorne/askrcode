@@ -439,9 +439,13 @@ begin
   W.Field('encryptHistory', GEncryptHistory);
 
   { To kilder til flash: det som ble satt på dette svaret, og det som kom
-    fra forrige request gjennom sesjonen. Begge skrives i samme objekt. }
+    fra forrige request gjennom sesjonen. Begge skrives i samme objekt.
+
+    Vakten må spørre om det samme som WriteFlashInto skriver. Den spurte før
+    etter én hardkodet nøkkel, og da ble enhver annen flash — for eksempel
+    Session.Flash('error', ...) fra auth-stillaset — stille forkastet. }
   if (Length(GFlashKeys) > 0) or
-     ((Sess <> nil) and (Sess.HasFlash('suksess') or Sess.HasErrors)) then
+     ((Sess <> nil) and (Sess.HasAnyFlash or Sess.HasErrors)) then
   begin
     W.Key('flash');
     W.BeginObject;

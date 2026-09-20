@@ -5,7 +5,7 @@ import './app.css'
 // Svelte 5 monteres med mount(), ikke med new App().
 // Inertia 3 har flash som eget felt på page-objektet og fyrer et event.
 router.on('flash', (event) => {
-  const melding = event.detail?.flash?.suksess
+  const melding = event.detail?.flash?.success
   if (melding) {
     const el = document.createElement('div')
     el.className = 'flash'
