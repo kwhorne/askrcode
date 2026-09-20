@@ -570,7 +570,7 @@ begin
     '      controller in <code>app/Http/App.Http.HomeController.pas</code>.' + #10 +
     '    </Text>' + #10 +
     '    <Button variant="primary" class="self-start"' + #10 +
-    '            href="https://github.com/askrcode">Read the docs</Button>' + #10 +
+    '            href="/demo">See the Inertia demo</Button>' + #10 +
     '  </Card>' + #10 +
     '</Layout>' + #10);
 

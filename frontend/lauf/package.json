@@ -1,14 +1,19 @@
 {
   "name": "@askrcode/lauf",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "UI components for Askr apps, built on Svelte 5 and Inertia.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "sideEffects": [
     "**/*.css"
   ],
-  "private": true,
   "files": [
     "src",
+    "LICENSE",
+    "NOTICE.md",
     "!src/**/*.test.js"
   ],
   "exports": {

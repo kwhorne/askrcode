@@ -967,6 +967,15 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
 * **En `file:`-avhengighet krever `resolve.dedupe`** på `svelte`,
   `@inertiajs/svelte` og `@inertiajs/core` i den genererte vite.config.
   Uten den får appen og Lauf hver sin kopi. Malen har den.
+* **Askr er MIT.** `LICENSE` i rota, og en kopi i `frontend/lauf` fordi npm
+  forventer den i pakka. Ikonene under `src/icons/` er kopier av
+  Heroicons-grafikk og ligger inne i tarballen, så Heroicons' opphavsvarsel
+  må reise med dem — det står i `frontend/lauf/NOTICE.md`, som er med i
+  `files`. Legger du inn noe annet som *kopieres* inn i pakka, hører varselet
+  hjemme der.
+* **`publishConfig.access` må være `public`.** Et scopet navn er
+  «restricted» som standard, og en restricted pakke krever betalt konto —
+  første publish feiler med 402 uten den.
 * **Laufs ikoner er ikke i git.** Et rammeverk som er sjekket ut på nytt må
   kjøre `npm install` i `frontend/lauf` én gang, ellers feiler en generert
   app på at `@askrcode/lauf/icons/micro` ikke finnes. `askr new` sier fra når

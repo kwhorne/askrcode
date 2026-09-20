@@ -710,15 +710,30 @@ må det finnes en port, ikke en god intensjon.
 
 ## Åpne spørsmål
 
-1. **npm-scopet `@askrcode` må registreres.** Ingen pakker er publisert under
-   det i dag, men det er ikke bevis på at det er ledig. **Dette haster nå:**
-   `askr new` skriver `"@askrcode/lauf": "file:<rammeverkssti>"` fordi
-   pakken ikke finnes på npm. Det virker for et prosjekt på samme maskin som
-   rammeverket, og ikke for noen andre. Når den publiseres, byttes den ene
-   linja mot et versjonsnummer og ingenting annet endrer seg.
-2. **Fri eller betalt?** Flux tar 149–799 dollar. Lauf kan være MIT som
-   resten av Askr, og det er det svaret som passer et rammeverk som vil bli
-   brukt. Men det bør være et valg noen tar bevisst, ikke noe som skjer.
+1. **npm-scopet `@askrcode` må registreres, og det er et nettlesersteg.**
+   `npm org` har bare `set`, `rm` og `ls` — den kan ikke opprette en
+   organisasjon. Det må gjøres på <https://www.npmjs.com/org/create>,
+   innlogget som den kontoen som skal eie den. Scopet er ledig: null pakker
+   publisert under det.
+
+   Alt annet er gjort. Pakka er `0.1.0`, MIT, `publishConfig.access` er
+   `public` — et scopet navn er «restricted» som standard, og første
+   publish feiler med 402 uten den — og tarballen er verifisert: 1359 filer,
+   230 kB, med LICENSE, NOTICE.md, alle 1288 ikonene og `src/inertia/`.
+
+   Til den er publisert skriver `askr new`
+   `"@askrcode/lauf": "file:<rammeverkssti>"`. Det virker for et prosjekt på
+   samme maskin som rammeverket, og ikke for noen andre.
+2. ~~**Fri eller betalt?**~~ Avgjort: **MIT, på hele Askr.** `LICENSE` ligger
+   i rota og i pakka. Det er forenlig med alt som er dratt inn — Bits UI,
+   Heroicons, clsx og tailwind-merge er MIT, `@internationalized/date` er
+   Apache-2.0.
+
+   **Heroicons' varsel måtte følge med.** Ikonene under `src/icons/` er
+   kopier av Heroicons-grafikk og ligger *inne i* tarballen, og MIT krever
+   at opphavsvarselet reiser med kopiene. `NOTICE.md` bærer det, og er med i
+   `files`. Avhengigheter som installeres fra npm er noe annet — de kopieres
+   ikke inn, så deres lisenser gjelder der de installeres.
 3. ~~**`Icon` med navn kontra importert komponent.**~~ Avgjort i bolk 0:
    komponent. Tallene står over.
 4. ~~**Skal `askr new` installere Lauf som standard?**~~ Avgjort: ja. Lauf er
