@@ -941,6 +941,43 @@ serveren. Slutter de å holde, er det arena-modellen som svikter, ikke testen.
   tåler at `CurrentDb` er nil — en request som aldri nådde `LeaseDb` skal
   ikke krasje på vei ut.
 
+## Lauf
+
+Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
+`LAUF.md`; her er bare det man må vite for å endre koden.
+
+* **Ingenting i `src/` får avhenge av Lauf, noen gang.** Samme regel som for
+  `Askr.Run`. Velkomstsiden og auth-stillaset skal fortsette å virke uten
+  npm, uten nett og uten filer ved siden av binæren — det er testet, og det
+  er ikke en tilfeldighet.
+* Porten er `./askr lauf`, ikke `./askr test`. Den hopper over seg selv når
+  `node` mangler, på samme måte som desktop-suiten uten GTK. `./askr test`
+  skal ikke kreve npm.
+* **Ingen komponent skriver `dark:`.** Tokenene i `src/theme.css` er
+  semantiske, og mørk modus redefinerer dem ett sted. Tre tilstander, ikke
+  to: media-blokka er vernet med `:root:not([data-theme="light"])`, og
+  `[data-theme="dark"]` gjentas etterpå slik at en bryter vinner begge veier.
+  En farge som bare finnes inne i én av blokkene, finnes ikke i den tredje
+  tilstanden.
+* **Alt som tar imot `class` må gjennom `cn()`, med kallerens klasse sist.**
+  Tailwind-klasser har lik spesifisitet, så rekkefølgen i stilarket avgjør,
+  ikke rekkefølgen i attributtet. Uten den kan ingen app overstyre noe, og
+  symptomet er at `class` «ikke virker».
+* **Ikoner er komponenter, ikke navn.** Et navn må slås opp i et kart, og et
+  kart holder alle 1288 i bunten. `tests/tree-shaking.test.js` er en
+  premisstest på nettopp det og skal ikke mykes opp.
+* De genererte ikonene sjekkes **ikke** inn — avvik fra Norn, med vilje:
+  1288 filer ville gjort enhver diff uleselig, og de er en mekanisk kopi av
+  noe som allerede ligger i `node_modules`.
+* **`vite.build()` laster `vite.config.js` av seg selv.** Sender man i
+  tillegg inn `plugins: [svelte()]`, kjører pluginen to ganger, og den andre
+  runden får kompilert JS der den venter Svelte-kilde. Feilen er
+  «Expected token }» i en komponent som varierer mellom kjøringer, og peker
+  ingen vei. `configFile: false`.
+* Testfila som bygger med Vite må ha `// @vitest-environment node`. esbuild
+  nekter å starte i jsdom, fordi jsdoms `TextEncoder` ikke gir en ekte
+  `Uint8Array` tilbake.
+
 ## Neste steg
 
 Fase 1 og fase 2 er ferdige på macOS og Linux. Fase 3 er **avgjort på

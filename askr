@@ -140,6 +140,33 @@ cmd_web() {
   fi
 }
 
+# Lauf — UI-komponentene. Egen suite fordi den trenger node, ikke fpc.
+#
+# Hopper over seg selv når node mangler, på samme måte som desktop-suiten
+# hopper over seg selv uten GTK. Et hopp som sier hvorfor, ikke et hopp i
+# stillhet — ./askr test skal ikke kreve npm for å være grønn.
+cmd_lauf() {
+  LAUF="$ROOT/frontend/lauf"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "askr — lauf"
+    echo
+    echo "HOPPET OVER: node finnes ikke på denne maskinen."
+    echo "  Lauf er frontend-biblioteket og bygges med npm, ikke med fpc."
+    echo "  Installer node og kjør ./askr lauf igjen."
+    return 0
+  fi
+  if [ ! -d "$LAUF/node_modules" ]; then
+    echo "Installerer avhengigheter ..."
+    ( cd "$LAUF" && npm install --silent --no-fund --no-audit ) || return 1
+  fi
+  # Ikonene er generert og sjekkes ikke inn; prepare lager dem ved install,
+  # men et tre som er sjekket ut på nytt har dem ikke.
+  if [ ! -d "$LAUF/src/icons" ]; then
+    ( cd "$LAUF" && npm run --silent icons ) || return 1
+  fi
+  ( cd "$LAUF" && npx vitest run "$@" )
+}
+
 cmd_schema() {
   prepare
   SCHEMA_OUT="$BUILD/schema"
@@ -431,6 +458,7 @@ case "${1:-}" in
   urd)   shift; cmd_urd "$@" ;;
   schema) shift; cmd_schema "$@" ;;
   web)   shift; cmd_web "$@" ;;
+  lauf)  shift; cmd_lauf "$@" ;;
   db:up) shift; cmd_db_up "$@" ;;
   db:down) shift; cmd_db_down "$@" ;;
   test)  shift; cmd_test "$@" ;;
@@ -461,6 +489,7 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
   ./askr urd      bygg og kjør Urd ende-til-ende mot Postgres
   ./askr schema   migrer, introspiser og generer typede kolonner
   ./askr web      bygg frontend og start Inertia-demoen (Svelte 5)
+  ./askr lauf     kjør Lauf-suiten (UI-komponentene, krever node)
   ./askr desktop:linux
                   bygg GTK-imaget og kjør Linux-webviewen under Xvfb
   ./askr pg       kjør Postgres-suiten (krever ./askr db:up)

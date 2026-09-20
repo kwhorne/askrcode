@@ -74,7 +74,7 @@ Windows-webviewen, og AI-laget med en gyldig API-nøkkel.
 
 | Frontend | Innhold | Status |
 |---|---|---|
-| | Lauf — UI-komponenter i Svelte 5 | **konsept**, ingenting bygget — se `LAUF.md` |
+| | Lauf — UI-komponenter i Svelte 5 | bolk 0 ferdig: tokens, `cn()`, `Icon` — se `LAUF.md` |
 
 Fire ting står ikke der en fersk leser ville lett etter dem, og det er med
 vilje:

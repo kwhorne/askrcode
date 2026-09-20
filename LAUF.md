@@ -1,7 +1,8 @@
 # Lauf — UI-komponenter for Askr
 
-Arbeidsnotat. Dette er konseptet, ikke kode som finnes. Ingenting i `src/`
-avhenger av noe her, og ingenting her er bygget ennå.
+Arbeidsnotat. **Bolk 0 er bygget** og ligger i `frontend/lauf/` — tokens,
+`cn()`, `Icon` og porten `./askr lauf`. Resten er fortsatt konsept.
+Ingenting i `src/` avhenger av noe her, og det skal det aldri gjøre.
 
 Askr har i dag et komplett serverlag og en Svelte-demo på fem sider der hvert
 skjema er skrevet for hånd. `examples/inertia/frontend/src/pages/Customers/New.svelte`
@@ -177,9 +178,10 @@ ikke det, men sammensatt eksport gir samme følelse:
 ```svelte
 <script>
   import { Button } from '@askrcode/lauf';
+  import { ArrowDownTray } from '@askrcode/lauf/icons/micro';
 </script>
 
-<Button variant="primary" icon="arrow-down-tray">Export</Button>
+<Button variant="primary" icon={ArrowDownTray}>Export</Button>
 
 <Button.Group>
   <Button>Oldest</Button>
@@ -229,6 +231,9 @@ Fire ting å merke seg, og de gjelder hele biblioteket:
 * Flux skriver `icon:trailing`. Kolon er ulovlig i JS-props, så det blir
   `iconTrailing`. Den slags oversettelser skal gjøres én gang og skrives ned,
   ikke oppfinnes per komponent.
+* **`icon` tar en komponent, ikke et navn.** Flux skriver
+  `icon="arrow-down-tray"`, og det var også det denne fila skrev først.
+  Bolk 0 avgjorde det motsatt, og begrunnelsen står under.
 * Slots er snippets i Svelte 5. `{@render children?.()}`, ikke `<slot />`.
 * **`cn()` er ikke valgfri.** Den er `clsx` + `tailwind-merge` (begge MIT), og
   uten den vinner ikke brukerens `class="w-full"` over komponentens egen
@@ -349,11 +354,32 @@ Hele settet lastet på én gang er 300+ kB, og en `<Icon name="...">` som slår
 opp i et kart holder hele kartet i bunten uansett hva som brukes. Én fil per
 ikon er det som gjør at tree-shaking faktisk virker.
 
-`<Icon name="arrow-down-tray">` med dynamisk navn kan da ikke slå opp i et
-kart. Løsningen er at `Icon` tar en importert komponent når man vil ha
-tree-shaking, og at navnevarianten finnes for det som er kjent på forhånd.
-Det er en avveining som må avgjøres når `Icon` skrives, ikke her — men den må
-avgjøres bevisst, for den avgjør buntstørrelsen for hele biblioteket.
+**Avgjort i bolk 0: `Icon` tar en komponent, ikke et navn.** Et navn må slås
+opp i et kart, og et kart holder hele settet i bunten uansett hvor få appen
+bruker. En import er den eneste formen en bundler kan følge. Tallene, målt
+minifisert uten gzip:
+
+| | |
+|---|---|
+| Svelte-runtime alene | 34,5 kB |
+| `cn()` (clsx 0,4 + tailwind-merge 27,5) | 27,9 kB |
+| ett ikon via barrel-fila | 29,5 kB (mest runtime) |
+| hele micro-settet, 316 ikoner | 225,9 kB |
+
+Ergonomien er dårligere enn Flux', og det er prisen. Premisstesten
+`tests/tree-shaking.test.js` bygger en app som bruker ett ikon og slår fast
+at naboen i den samme barrel-fila ikke er med i utdataet.
+
+**De genererte ikonene sjekkes ikke inn.** Det er et avvik fra Norn, som
+sjekker generert kode inn, og avviket har en grunn: Norns filer er typet
+Pascal som må kompilere sammen med appen, mens dette er en mekanisk kopi av
+en MIT-avhengighet som allerede ligger i `node_modules`. 1288 filer i git
+ville gjort enhver diff uleselig. `npm run icons` kjøres av `prepare`, og
+`./askr lauf` lager dem hvis de mangler.
+
+**`cn()` koster 28 kB i enhver app**, nesten alt `tailwind-merge`. Det er
+prisen for at `class` virker slik man tror, og den skal stå skrevet i stedet
+for å oppdages.
 
 En `askr lauf:icon <navn>`-kommando som henter ett Lucide-ikon inn i
 prosjektet er samme grep som Flux' egen artisan-kommando, og den er billig å
@@ -377,13 +403,30 @@ ikke et hopp i stillhet.
 
 Flux har rundt femti komponenter. Man trenger ikke alle for å ha noe brukbart.
 
-### Bolk 0 — infrastruktur
+### Bolk 0 — infrastruktur — **ferdig**
 
 Pakken, tokenene, `cn()`, `Icon` med generering fra SVG, testoppsettet og
 `./askr lauf`. Ingen synlige komponenter.
 
 Dette er en egen bolk fordi man ikke kan skrive `Button` før `cn()` og
 tokennavnene er bestemt — gjør man det motsatt, skrives `Button` to ganger.
+
+Ligger i `frontend/lauf/`. 15 tester: `cn()`, `Icon` med axe i begge
+tilstander, og premisstesten på bunten. Porten er `./askr lauf`, som hopper
+over seg selv når `node` mangler — samme form som desktop-suiten uten GTK, og
+grunnen er den samme: `./askr test` skal ikke kreve npm for å være grønn.
+
+Avgjørelsene bolken måtte ta, og som resten bygger på: semantiske tokens uten
+`dark:` i komponentene, `cn()` på alt, ikoner som komponenter, og pakken
+publisert som kildekode slik at konsumentens Vite kompilerer den. Det siste
+sparer et byggsteg og gjør tree-shaking lettere å resonnere om.
+
+**Én felle er verdt å huske:** `vite.build()` laster `vite.config.js` av seg
+selv. Bygger man noe programmatisk fra en test og også sender inn
+`plugins: [svelte()]`, kjører pluginen to ganger, og den andre runden får
+kompilert JS inn der den venter Svelte-kilde. Feilen kommer ut som
+«Expected token }» i en tilfeldig komponent som varierer mellom kjøringer, og
+peker ingen vei. `configFile: false`.
 
 ### Bolk 1 — gjør en CRUD-app mulig
 
@@ -458,8 +501,8 @@ må det finnes en port, ikke en god intensjon.
 2. **Fri eller betalt?** Flux tar 149–799 dollar. Lauf kan være MIT som
    resten av Askr, og det er det svaret som passer et rammeverk som vil bli
    brukt. Men det bør være et valg noen tar bevisst, ikke noe som skjer.
-3. **`Icon` med navn kontra importert komponent.** Avgjør buntstørrelsen for
-   hele biblioteket. Må bestemmes i bolk 0.
+3. ~~**`Icon` med navn kontra importert komponent.**~~ Avgjort i bolk 0:
+   komponent. Tallene står over.
 4. **Skal `askr new` installere Lauf som standard?** Argumentet for er at et
    nytt prosjekt da ser bra ut med én gang. Argumentet mot er at malene i
    `askr new` med vilje er små, og at et stillas som genererer femten filer

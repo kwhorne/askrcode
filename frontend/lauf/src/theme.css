@@ -1,0 +1,64 @@
+/* Lauf, lag 1: tokens.
+ *
+ * Alt annet i biblioteket konsumerer disse. Ingen komponent skriver en farge
+ * direkte, og ingen komponent skriver `dark:`. Mørk modus er ett sted: her.
+ * Skriver hver komponent `bg-white dark:bg-zinc-900`, ligger temaet spredt
+ * over femti filer, og en app som vil ha sitt eget fargesett må endre alle.
+ *
+ * Tokenene er semantiske — `--color-surface`, ikke `--color-zinc-800` — slik
+ * at det er rollen som er stabil og verdien som byttes.
+ *
+ * En app importerer denne etter Tailwind, og overstyrer det den vil ha annerledes.
+ */
+
+@theme {
+  --color-surface: #fbfaf8;
+  --color-raised: #ffffff;
+  --color-fg: #23201c;
+  --color-muted: #6f675d;
+  --color-line: #e6e0d8;
+  --color-accent: #7a5c3e;
+  --color-accent-fg: #fbfaf8;
+  --color-danger: #b3261e;
+  --color-danger-fg: #ffffff;
+
+  --radius-control: 0.375rem;
+  --radius-surface: 0.75rem;
+}
+
+/* Mørk modus i tre tilstander, ikke to.
+ *
+ * Et eksplisitt valg stempler data-theme på rotelementet. Standardvalget
+ * «følg systemet» stempler ingenting, og da er prefers-color-scheme det
+ * eneste som skiller. Media-blokka er derfor vernet med
+ * :root:not([data-theme="light"]), slik at et valgt lyst tema slår et mørkt
+ * operativsystem — og [data-theme="dark"] gjentas under, slik at bryteren
+ * vinner begge veier.
+ *
+ * Hver farge er definert i @theme over. En farge som bare finnes inne i en
+ * av blokkene under, finnes ikke i den tredje tilstanden. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-surface: #17150f;
+    --color-raised: #201d16;
+    --color-fg: #ece5da;
+    --color-muted: #a39887;
+    --color-line: #2f2a21;
+    --color-accent: #c9a274;
+    --color-accent-fg: #17150f;
+    --color-danger: #f2b8b5;
+    --color-danger-fg: #17150f;
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-surface: #17150f;
+  --color-raised: #201d16;
+  --color-fg: #ece5da;
+  --color-muted: #a39887;
+  --color-line: #2f2a21;
+  --color-accent: #c9a274;
+  --color-accent-fg: #17150f;
+  --color-danger: #f2b8b5;
+  --color-danger-fg: #17150f;
+}
