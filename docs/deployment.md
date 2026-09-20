@@ -74,12 +74,40 @@ The read buffer shrinks back after a large request, but **only when nothing
 is left in it** — a pipelined request arriving right after a big body must
 not be discarded.
 
+## Building on a clean machine
+
+A build host has no `~/.askr/pkg` the first time, so the framework has
+to be fetched before anything compiles:
+
+```sh
+askr install
+(cd frontend && npm install)
+askr build
+```
+
+`askr install` reads `askr.lock`, so the build is the version that file
+names and not whatever is newest. Point `ASKR_CACHE` at a cached
+directory and CI stops refetching on every run:
+
+```sh
+export ASKR_CACHE=/cache/askr
+```
+
+(`ASKR_HOME` is a different thing — it names a framework checkout, which
+a deploy host does not have.)
+
+It needs `git` and network for a version it has never seen, and neither
+afterwards. See [Versions](versions.md).
+
 ## Migrations on deploy
 
 ```sh
 askr build
 askr migrate
 ```
+
+A framework upgrade can add columns to the tables Askr owns, so a deploy
+that moves the version runs migrations like any other.
 
 `askr migrate:status` before and after is the cheap check.
 `askr db:wipe` refuses to run with `APP_ENV=production` unless you pass

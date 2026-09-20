@@ -41,7 +41,24 @@ Run `askr list` to see what your binary answers to.
 | `askr build [--target web\|desktop]` | Compile it |
 | `askr serve [port]` | Dev server with hot reload |
 | `askr test` | Build and run the app's test suite |
-| `askr version` | |
+| `askr version` | The tool's version, and the framework this project builds against |
+
+### Versions
+
+| Command | What it does
+|---|---|
+| `askr install` | Fetch the release `askr.toml` pins into `~/.askr/pkg` |
+| `askr outdated` | What is published, and what this project has |
+| `askr update` | Move to a newer release, showing what changes first |
+| `askr update <version>` | Take that release, and move the pin to match |
+
+A fresh clone needs `askr install` before it will build: the lock names
+a version, and the source for it is not in the repository. The full
+procedure, including what to do when a step refuses, is in
+[Versions](versions.md).
+
+These four never run through the delegated tool — they are what manages
+the pin, so they run as the `askr` you invoked.
 
 ### Which compiler
 

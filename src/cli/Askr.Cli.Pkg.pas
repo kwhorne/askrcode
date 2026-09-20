@@ -42,8 +42,13 @@ type
     forskjellen forklarer nesten alle «men det virket i går». }
   TPkgOrigin = (poNone, poPath, poCache);
 
-{ ~/.askr/pkg. Respekterer ASKR_HOME når den er satt, slik at CI kan
-  legge cachen et sted den kan mellomlagre. }
+{ ~/.askr/pkg, eller ASKR_CACHE når den er satt — CI vil ha den et sted
+  den kan mellomlagre.
+
+  IKKE ASKR_HOME. Den betyr allerede rammeverkets utsjekking, og
+  byggskriptet ber folk sette den dit. Leste cachen den samme variabelen,
+  ville alle som fulgte instruksjonen fått pakkene skrevet inn i sin egen
+  utsjekking. }
 function CacheRoot: string;
 function CacheDirFor(const Version: string): string;
 
@@ -202,10 +207,11 @@ function CacheRoot: string;
 var
   H: string;
 begin
-  H := GetEnvironmentVariable('ASKR_HOME');
-  if H = '' then
-    H := IncludeTrailingPathDelimiter(GetEnvironmentVariable('HOME')) + '.askr';
-  Result := IncludeTrailingPathDelimiter(H) + 'pkg';
+  H := GetEnvironmentVariable('ASKR_CACHE');
+  if H <> '' then
+    Exit(ExcludeTrailingPathDelimiter(H));
+  Result := IncludeTrailingPathDelimiter(
+    IncludeTrailingPathDelimiter(GetEnvironmentVariable('HOME')) + '.askr') + 'pkg';
 end;
 
 function CacheDirFor(const Version: string): string;

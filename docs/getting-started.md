@@ -73,6 +73,23 @@ askr serve
 `/login`, `/register` and `/reset-password` wired up — see
 [Authentication](auth.md). `--auth` and `--no-auth` answer for a script.
 
+### Cloning a project instead
+
+Someone else's Askr project does not carry the framework with it. It
+carries `askr.lock`, which names the release it was built against:
+
+```sh
+git clone …
+cd shop
+askr install              # fetch that release into ~/.askr/pkg
+(cd frontend && npm install)
+askr build
+```
+
+`askr install` also points `@askrcode/lauf` at the matching version, so
+the two halves of a release cannot drift apart. See
+[Versions](versions.md).
+
 `askr serve` builds the app and starts it behind a dev server that watches
 your source and rebuilds on change. The loop is measured at **247 ms** on
 the reference machine, against a 300 ms budget.
