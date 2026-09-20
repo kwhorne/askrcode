@@ -14,7 +14,28 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.6.2 — 2026-09-20
+
+Passkeys, from the arithmetic up.
+
 ### Added
+
+- **WebAuthn verification.** `Askr.WebAuthn` verifies both ceremonies —
+  registering a credential and signing in with one — on top of a CBOR
+  reader (`Askr.Core.Cbor`), COSE key parsing, and the ECDSA below.
+  [`docs/webauthn.md`](docs/webauthn.md) has the detail.
+
+  Checked: the ceremony type, the challenge, the origin (**exact**
+  string equality), the RP ID hash, user presence, that the key is
+  ES256 on P-256 and on the curve, and the signature over
+  `authData ‖ SHA-256(clientDataJSON)`.
+
+  Not checked: **attestation**. The statement saying which authenticator
+  the key came from is read past. Ordinary sign-in does not need it, and
+  requiring it locks out hardware you did not plan for. The unit says so
+  in its own header so nobody assumes otherwise.
 
 - **ECDSA P-256 verification, in pure Pascal.** `Askr.Core.BigInt` is
   256-bit arithmetic and `Askr.Core.Ec` is the curve; together they are

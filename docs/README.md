@@ -65,6 +65,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [CSRF](csrf.md) | On by default in a new project |
 | [Authentication](auth.md) | Login, "remember me", gates |
 | [Cryptography](crypto.md) | Hashing, password storage, signing, the app key |
+| [Passkeys](webauthn.md) | WebAuthn: registering a credential, and signing in with it |
 | [TLS](tls.md) | HTTPS in the server, verification in the client |
 
 ## Runtime

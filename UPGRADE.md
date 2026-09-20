@@ -8,6 +8,12 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.6.2
+
+Nothing in this release can break your code. It adds units; it changes
+none. The sign-in scaffold's Passkeys section changed wording, because
+it used to say Askr had no WebAuthn and that is no longer true.
+
 ## 0.6.1
 
 **Test output is English.** If anything of yours greps `askr test`, it

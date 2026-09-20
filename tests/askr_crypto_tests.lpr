@@ -12,6 +12,9 @@
     base64       RFC 4648 sine egne teststrenger
     ECDSA P-256  signaturer laget med python-cryptography, altsaa
                  OpenSSL: en uavhengig implementasjon av samme spek
+    WebAuthn     hele seremonien bygget fra speken med en ekte P-256
+                 noekkel: COSE-noekkel, authenticatorData,
+                 attestasjonsobjekt og DER-signatur
 
   Vektorfila for ECDSA ligger i tests/vectors/ og er generert, ikke
   hentet fra NIST. Det er verdt aa si rett ut: den viser at Askr er enig
@@ -28,7 +31,8 @@ uses
   cthreads,
 {$ENDIF}
   SysUtils, Classes,
-  Askr.Core.Crypto, Askr.Core.BigInt, Askr.Core.Ec;
+  Askr.Core.Crypto, Askr.Core.BigInt, Askr.Core.Ec,
+  Askr.Core.Cbor, Askr.WebAuthn;
 
 var
   Bestatt: Integer = 0;
@@ -219,6 +223,93 @@ begin
 end;
 
 
+{ ------------------------------------------------------- WebAuthn -- }
+
+procedure WebAuthnTester;
+var
+  L: TStringList;
+  I, K, RegOk, RegNei, AsrOk, AsrNei, Gale: Integer;
+  S: string;
+  F: array[0..9] of string;
+  O: TWebAuthnOptions;
+  Rg: TRegistration;
+  Asr: TAssertion;
+  Vent, Fikk: Boolean;
+begin
+  Start('WebAuthn: hele seremonien, mot data bygget fra speken');
+  RegOk := 0; RegNei := 0; AsrOk := 0; AsrNei := 0; Gale := 0;
+  L := TStringList.Create;
+  try
+    if not FileExists('tests/vectors/webauthn.txt') then
+    begin
+      Ok('vektorfila finnes (kjoer fra repo-rota)', False);
+      Exit;
+    end;
+    L.LoadFromFile('tests/vectors/webauthn.txt');
+    for I := 0 to L.Count - 1 do
+    begin
+      S := Trim(L[I]);
+      if (S = '') or (S[1] = '#') then
+        Continue;
+      for K := 0 to 9 do F[K] := '';
+      K := 0;
+      while (S <> '') and (K < 10) do
+      begin
+        if Pos(' ', S) > 0 then
+        begin
+          F[K] := Copy(S, 1, Pos(' ', S) - 1);
+          S := Trim(Copy(S, Pos(' ', S) + 1, Length(S)));
+        end
+        else
+        begin
+          F[K] := S;
+          S := '';
+        end;
+        Inc(K);
+      end;
+
+      Vent := F[1] = '1';
+      O.RpId := F[2];
+      O.Origin := F[3];
+      O.RequireUserVerification := False;
+
+      if F[0] = 'REG' then
+      begin
+        Rg := VerifyRegistration(O, HexBytes(F[5]), HexBytes(F[6]),
+                                 HexBytes(F[4]));
+        Fikk := Rg.Ok;
+        if Fikk and ((Length(Rg.PublicKeyX) <> 32) or
+                     (Length(Rg.CredentialId) = 0)) then
+          Fikk := False;
+      end
+      else
+      begin
+        Asr := VerifyAssertion(O, HexBytes(F[5]), HexBytes(F[6]),
+                 HexBytes(F[7]), HexBytes(F[4]), HexBytes(F[8]),
+                 HexBytes(F[9]), 0);
+        Fikk := Asr.Ok;
+      end;
+
+      if Fikk <> Vent then
+        Inc(Gale)
+      else if F[0] = 'REG' then
+      begin
+        if Vent then Inc(RegOk) else Inc(RegNei);
+      end
+      else
+      begin
+        if Vent then Inc(AsrOk) else Inc(AsrNei);
+      end;
+    end;
+
+    Ok(Format('%d registreringer godtatt', [RegOk]), (RegOk > 0) and (Gale = 0));
+    Ok(Format('%d registreringer avvist', [RegNei]), (RegNei > 0) and (Gale = 0));
+    Ok(Format('%d innlogginger godtatt', [AsrOk]), (AsrOk > 0) and (Gale = 0));
+    Ok(Format('%d innlogginger avvist', [AsrNei]), (AsrNei > 0) and (Gale = 0));
+  finally
+    L.Free;
+  end;
+end;
 begin
   WriteLn('askr — krypto');
 
@@ -548,6 +639,7 @@ begin
     Ms < 2000);
   Ok('og hashen fra den virker', VerifyPassword('et passord', H1));
   EcdsaTester;
+  WebAuthnTester;
 
   WriteLn;
   WriteLn(Format('— %d bestått, %d feilet', [Bestatt, Feilet]));

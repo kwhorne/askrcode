@@ -49,6 +49,41 @@ Alle seks feiler fortsatt på trunk.
 * En `#` uten mellomrom foran er en del av verdien, ikke en kommentar — ellers
   ville et passord med `#` i seg blitt kuttet i to.
 
+## WebAuthn
+
+* **Attestasjon verifiseres ikke, og det er et valg.** Uttalelsen sier
+  hvilken autentikator nøkkelen kom fra. Vanlig innlogging trenger ikke
+  vite det, og å kreve det låser ute utstyr man ikke har tenkt på. Det
+  står i unitens egen overskrift, i docs og i changeloggen, slik at
+  ingen tror det er gjort.
+* **Origin sammenlignes eksakt.** `https://example.com.evil.example`
+  starter med riktig origin, så en prefikssjekk ville sluppet den
+  gjennom. Mutasjonstesten avslørte at vektorene ikke fanget det — alle
+  de gale origin-ene mine startet med noe annet. Fire varianter som
+  *starter* med den rette står nå i fixturen nettopp for det.
+* **Signaturen er over `authData ‖ SHA-256(clientDataJSON)`**, i den
+  rekkefølgen. Byttes de om, feiler alle seks gyldige innlogginger —
+  mutasjonssjekket.
+* **ES256-signaturen kommer DER-kodet, ikke som rå r‖s.** DER skriver
+  heltall med fortegn, så en komponent med høyeste bit satt får en
+  ledende nullbyte, og små verdier er kortere enn 32 byte. Å kopiere
+  rått inn i et 32-bytes felt gjør at noen signaturer verifiserer og
+  andre ikke, tilsynelatende tilfeldig.
+* **CBOR-leseren avviser ubestemt lengde, tagger og flyttall.** CTAP2s
+  kanoniske form forbyr det første, så ingen ekte autentikator sender
+  det. Å godta det ville lagt til en tilstandsmaskin i kode som leser
+  data fra en angriper.
+* **Lengder fra CBOR sjekkes mot det som er igjen av bufferet** før de
+  brukes. En kartlengde på fire milliarder i en melding på hundre byte
+  er ellers en løkke som ikke stopper.
+* Telleren som skal avsløre kopierte nøkler er **et varsel, ikke en
+  dom**: de fleste plattformautentikatorer teller ikke i det hele tatt
+  og sender alltid null. Å nekte innlogging på det ville stengt ute det
+  vanligste utstyret.
+* **Stillaset wirer det ikke opp ennå.** Sikkerhetssida sier det rett
+  ut. Den sa før at Askr ikke hadde WebAuthn; det ble usant med 0.6.2
+  og måtte rettes i samme slengen.
+
 ## Elliptiske kurver
 
 * **Lemmene i `Askr.Core.BigInt` er 32 bit, ikke 64.** Et 32x32-produkt
