@@ -11,6 +11,10 @@ export default defineConfig({
     server: { deps: { inline: ['@testing-library/svelte'] } },
   },
   resolve: {
-    conditions: ['browser'],
+    // `browser` må med for at Svelte 5 skal løse til klientvarianten, men
+    // lista **erstatter** standardbetingelsene — uten `import`, `module` og
+    // `default` finner Vite ikke inngangen til vanlige pakker i det hele
+    // tatt, og feilen sier «No known conditions for "." specifier».
+    conditions: ['svelte', 'browser', 'import', 'module', 'default'],
   },
 })

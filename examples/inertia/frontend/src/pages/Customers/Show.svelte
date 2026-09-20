@@ -1,37 +1,39 @@
 <script>
-  import { Link } from '@inertiajs/svelte'
+  import { Heading, Text, Table, Badge } from '@askrcode/lauf'
+  import Layout from '../../Layout.svelte'
 
   let { customer = null } = $props()
 
-  const penger = (v) =>
-    new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK' }).format(v)
+  const money = (v) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v)
 </script>
 
-<main>
-  <nav>
-    <Link href="/">Forside</Link>
-    <Link href="/customers">Customers</Link>
-  </nav>
-
+<Layout>
   {#if customer}
-    <h1>{customer.name}</h1>
-    <p class="lead">{customer.email ?? 'ingen e-post'} · balance {penger(customer.balance)}</p>
+    <Heading level={1}>{customer.name}</Heading>
+    <Text muted class="mb-6">
+      {customer.email ?? 'no email'} · balance {money(customer.balance)}
+    </Text>
 
-    <table>
-      <thead>
-        <tr><th>Order</th><th>Status</th><th class="num">Beløp</th></tr>
-      </thead>
-      <tbody>
+    <Table caption="Orders">
+      <Table.Head>
+        <Table.Row>
+          <Table.Header>Order</Table.Header>
+          <Table.Header>Status</Table.Header>
+          <Table.Header align="right">Total</Table.Header>
+        </Table.Row>
+      </Table.Head>
+      <Table.Body>
         {#each customer.orders ?? [] as o (o.id)}
-          <tr>
-            <td>#{o.id}</td>
-            <td><span class="pill">{o.status}</span></td>
-            <td class="num">{penger(o.total)}</td>
-          </tr>
+          <Table.Row>
+            <Table.Cell>#{o.id}</Table.Cell>
+            <Table.Cell><Badge>{o.status}</Badge></Table.Cell>
+            <Table.Cell align="right">{money(o.total)}</Table.Cell>
+          </Table.Row>
         {/each}
-      </tbody>
-    </table>
+      </Table.Body>
+    </Table>
   {:else}
-    <h1>Fant ikke customer</h1>
+    <Heading level={1}>Customer not found</Heading>
   {/if}
-</main>
+</Layout>

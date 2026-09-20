@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/svelte'
-import axe from 'axe-core'
+import { violations } from './axe.js'
 
 import Icon from '../src/Icon.svelte'
 import { ArrowDownTray } from '../src/icons/micro/index.js'
@@ -76,12 +76,10 @@ describe('Icon', () => {
   // tilstand etter hvert som de kommer.
   it('har ingen axe-brudd, verken skjult eller navngitt', async () => {
     const dekorativ = render(Icon, { icon: ArrowDownTray })
-    let r = await axe.run(dekorativ.container, { rules: { region: { enabled: false } } })
-    expect(r.violations.map((v) => v.id)).toEqual([])
+    expect(await violations(dekorativ.container)).toEqual([])
     cleanup()
 
     const alene = render(Icon, { icon: ArrowDownTray, label: 'Download' })
-    r = await axe.run(alene.container, { rules: { region: { enabled: false } } })
-    expect(r.violations.map((v) => v.id)).toEqual([])
+    expect(await violations(alene.container)).toEqual([])
   }, 30000)
 })

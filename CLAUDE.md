@@ -977,6 +977,31 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
 * Testfila som bygger med Vite må ha `// @vitest-environment node`. esbuild
   nekter å starte i jsdom, fordi jsdoms `TextEncoder` ikke gir en ekte
   `Uint8Array` tilbake.
+* **`vite.config.js` sin `resolve.conditions` erstatter standardlista, den
+  legger ikke til.** Bare `['browser']` gjør at vanlige pakker ikke lar seg
+  løse i det hele tatt, og feilen er «No known conditions for "." specifier».
+  `['svelte', 'browser', 'import', 'module', 'default']`.
+* **`router[verb](...)`, aldri `const f = router[verb]; f(...)`.** Inertias
+  routermetoder kaller `this.visit()`, så en løsrevet referanse feiler med
+  «Cannot read properties of undefined (reading 'visit')» — en melding som
+  ikke nevner mottakeren. Mocken i `tests/form.test.js` bruker `this` med
+  vilje, nettopp for å kunne fange det; med frie funksjoner slapp den
+  gjennom.
+* **En app som bruker Lauf fra en symlink (`file:`, `npm link`) må dedupe**
+  `svelte`, `@inertiajs/svelte` og `@inertiajs/core` i sin vite.config.
+  Ellers har appen og Lauf hver sin kopi, `createInertiaApp` setter opp en
+  annen router enn den `<Form>` importerer, og ingenting sier fra. Det kuttet
+  dessuten demoens bunt fra 300 til 218 kB. Fra npm skjer det ikke.
+* **`<Form>` ligger i `@askrcode/lauf/inertia`, ikke i hovedinngangen.** Den
+  er den eneste komponenten som importerer Inertia, og ESM løser importen
+  ved bygging — lå den i `index.js`, måtte en ren JSON-tjeneste installere
+  Inertia for å få en knapp.
+* Tailwind v4 ser ikke inn i `node_modules`. En app må ha
+  `@source '../node_modules/@askrcode/lauf/src'`, ellers kommer komponentene
+  ut uten styling og ingenting sier hvorfor.
+* **axe kan ikke måle kontrast i jsdom.** Regelen er slått av i
+  `tests/axe.js` med begrunnelse, ikke i stillhet. Kontrast må sjekkes i en
+  ekte nettleser.
 
 ## Neste steg
 

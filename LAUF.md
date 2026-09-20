@@ -1,7 +1,8 @@
 # Lauf — UI-komponenter for Askr
 
-Arbeidsnotat. **Bolk 0 er bygget** og ligger i `frontend/lauf/` — tokens,
-`cn()`, `Icon` og porten `./askr lauf`. Resten er fortsatt konsept.
+Arbeidsnotat. **Bolk 0 og 1 er bygget** og ligger i `frontend/lauf/`:
+infrastrukturen, og de seksten komponentene en CRUD-app trenger.
+`examples/inertia` er skrevet om i Lauf. Bolk 2 og 3 er fortsatt konsept.
 Ingenting i `src/` avhenger av noe her, og det skal det aldri gjøre.
 
 Askr har i dag et komplett serverlag og en Svelte-demo på fem sider der hvert
@@ -428,18 +429,56 @@ kompilert JS inn der den venter Svelte-kilde. Feilen kommer ut som
 «Expected token }» i en tilfeldig komponent som varierer mellom kjøringer, og
 peker ingen vei. `configFile: false`.
 
-### Bolk 1 — gjør en CRUD-app mulig
+### Bolk 1 — gjør en CRUD-app mulig — **ferdig**
 
 `Button`, `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`, `Switch`,
 `Field`, `Form`, `Heading`, `Text`, `Badge`, `Card`, `Separator`, `Table`,
 `Pagination`.
 
-Seksten komponenter, og de er alle enkle. `Select` er den eneste som strengt
-tatt trenger Bits UI, og den kan starte som en stylet `<select>`.
+Seksten komponenter, og de er alle enkle. `Select` ble en stylet `<select>`
+— den innebygde er den eneste som virker med tastatur, skjermleser og
+berøring uten at vi skriver den selv, og en egen liste hører hjemme i bolk 2
+med Bits UI under seg.
 
-Målet på at bolken er ferdig: **`examples/inertia` skrives om i Lauf**, og
-`New.svelte` blir kortere enn tjue linjer uten at noe forsvinner —
-feilmeldinger, `aria-invalid` og spinner skal fortsatt være der.
+Målet var at **`examples/inertia` skrives om i Lauf**, og at `New.svelte`
+blir kortere enn tjue linjer uten at noe forsvinner. Den er nå **19 linjer,
+fra 66**, og `<style>`-blokka på 22 linjer er borte helt — tokenene gjør den
+jobben. Feilmeldingene, `aria-invalid` og spinneren er der fortsatt, og er
+verifisert i en ekte nettleser: POST går ut, serveren svarer
+«name is required», meldingen dukker opp som `role="alert"`, navnefeltet får
+`aria-invalid="true"` og `aria-describedby` som peker på den, e-postfeltet
+er urørt og beholder verdien sin, og knappen slippes igjen.
+
+78 tester i `./askr lauf`.
+
+**`Form` ligger bak `@askrcode/lauf/inertia`**, ikke i hovedinngangen. Den er
+den eneste komponenten som importerer Inertia, og ESM løser den importen ved
+bygging — lå den i `index.js`, måtte enhver app som vil ha en knapp også ha
+Inertia installert.
+
+**`Form` er et lag over `router`, ikke over `useForm`.** Det er et avvik fra
+det denne fila skrev først, og grunnen er reaktivitet: verdiene må kunne
+leses og skrives fra en annen komponent gjennom konteksten, og da er `$state`
+noe vi kontrollerer mens en store fra adapteren er noe vi håper på.
+`useForm` står fortsatt åpen — `Notes/Index.svelte` i demoen bruker den, med
+`error` som prop og `bind:value`, nettopp for at den veien skal være dekket.
+
+Tre feller fra denne bolken, alle skrevet ned i CLAUDE.md:
+
+* **`router[verb](...)`, ikke `const f = router[verb]; f(...)`.** Inertias
+  metoder kaller `this.visit()`, så en løsrevet referanse gir
+  «Cannot read properties of undefined (reading 'visit')» — en feilmelding
+  som ikke nevner mottakeren med et ord. Enhetstesten slapp den gjennom
+  fordi mocken var frie funksjoner; den bruker nå `this`, og er
+  mutasjonssjekket mot nettopp denne feilen.
+* **En app som bruker Lauf fra en symlink må dedupe** `svelte`,
+  `@inertiajs/svelte` og `@inertiajs/core`. Uten det får appen og Lauf hver
+  sin kopi, og `createInertiaApp` setter opp en annen router enn den `Form`
+  importerer. Dedupe kuttet dessuten demoens bunt fra 300 kB til 218 kB.
+* **`<Input type="email">` gjør at nettleseren nekter å sende i det hele
+  tatt** ved en ugyldig adresse, så serverens e-postregel aldri kjører. Det
+  er riktig HTML-oppførsel, men det er verdt å vite at de to
+  valideringene ikke er enige om når de gjelder.
 
 ### Bolk 2 — gjør appen behagelig
 
@@ -482,7 +521,11 @@ må det finnes en port, ikke en god intensjon.
 
 * **`axe-core` mot hver komponent i hver tilstand.** Vitest og
   `@testing-library/svelte`. En `Field` uten kobling mellom label og input er
-  en feil, ikke en detalj.
+  en feil, ikke en detalj. På plass for bolk 1.
+* **Kontrast kan ikke måles av axe i jsdom** — det legges ikke ut noe, og
+  fargene regnes ikke ut. Regelen er slått av i `tests/axe.js`, ikke slått
+  av i stillhet. Kontrasten må derfor sjekkes i en ekte nettleser, og det
+  gjenstår.
 * **Tastaturgjennomgang for alt i bolk 2.** Åpne, navigere, lukke, og fokus
   tilbake dit det kom fra — uten mus. Skrives som test, ikke som sjekkliste.
 * **Premisstest på bunten:** en side som importerer `Button` og ett ikon skal

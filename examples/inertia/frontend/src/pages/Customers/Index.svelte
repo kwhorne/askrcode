@@ -1,45 +1,49 @@
 <script>
   import { Link } from '@inertiajs/svelte'
+  import { Heading, Text, Table, Badge, Button } from '@askrcode/lauf'
+  import Layout from '../../Layout.svelte'
 
-  // Svelte 5 runes. Props kommer fra Inertia-payloaden.
-  let { customers = [], total = 0, generert = '', flash = null } = $props()
+  let { customers = [], total = 0, generert = '' } = $props()
 
-  const penger = (v) =>
-    new Intl.NumberFormat('nb-NO', { style: 'currency', currency: 'NOK' }).format(v)
+  const money = (v) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v)
 </script>
 
-<main>
-  <nav>
-    <Link href="/">Forside</Link>
-    <Link href="/customers">Customers</Link>
-  </nav>
+<Layout>
+  <div class="mb-6 flex items-end justify-between gap-4">
+    <div>
+      <Heading level={1}>Customers</Heading>
+      <Text muted>{total} rows, served by Askr and rendered by Svelte {generert}</Text>
+    </div>
+    <Button href="/customers/new" variant="primary">New customer</Button>
+  </div>
 
-  <h1>Customers</h1>
-  <p class="lead">
-    {total} rader, servert av Askr og rendret av Svelte {generert}
-    · <Link href="/customers/new">Ny customer</Link>
-  </p>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>E-post</th>
-        <th class="num">Balance</th>
-        <th class="num">Order</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
+  <Table caption="Customers">
+    <Table.Head>
+      <Table.Row>
+        <Table.Header>Name</Table.Header>
+        <Table.Header>Email</Table.Header>
+        <Table.Header align="right">Balance</Table.Header>
+        <Table.Header align="right">Orders</Table.Header>
+        <Table.Header>Status</Table.Header>
+      </Table.Row>
+    </Table.Head>
+    <Table.Body>
       {#each customers as c (c.id)}
-        <tr>
-          <td><Link href={`/customers/${c.id}`}>{c.name}</Link></td>
-          <td>{c.email ?? '—'}</td>
-          <td class="num">{penger(c.balance)}</td>
-          <td class="num">{c.orders ? c.orders.length : '—'}</td>
-          <td><span class="pill">{c.active ? 'active' : 'passiv'}</span></td>
-        </tr>
+        <Table.Row>
+          <Table.Cell>
+            <Link href={`/customers/${c.id}`} class="text-accent hover:underline">{c.name}</Link>
+          </Table.Cell>
+          <Table.Cell>{c.email ?? '—'}</Table.Cell>
+          <Table.Cell align="right">{money(c.balance)}</Table.Cell>
+          <Table.Cell align="right">{c.orders ? c.orders.length : '—'}</Table.Cell>
+          <Table.Cell>
+            <Badge color={c.active ? 'accent' : 'neutral'}>
+              {c.active ? 'active' : 'inactive'}
+            </Badge>
+          </Table.Cell>
+        </Table.Row>
       {/each}
-    </tbody>
-  </table>
-</main>
+    </Table.Body>
+  </Table>
+</Layout>

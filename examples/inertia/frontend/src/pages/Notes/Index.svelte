@@ -1,5 +1,17 @@
+<!-- Denne siden bruker Inertias useForm direkte, og ikke <Form>.
+
+     Det er med vilje: Lauf skal ikke kreve sitt eget skjemalag for å være
+     til nytte. <Field> tar da `error` som prop og kontrollen en
+     `bind:value`, og alt det andre — etiketten, aria-describedby,
+     aria-invalid — virker som før. Customers/New viser den andre veien.
+
+     Siden serveres av desktop-demoen (examples/desktop), ikke av
+     Inertia-demoen, og bruker derfor ikke den delte Layout-en: rutene der
+     er andre. -->
 <script>
   import { router, useForm } from '@inertiajs/svelte'
+  import { Heading, Text, Badge, Button, Field, Input, Table } from '@askrcode/lauf'
+  import { Star, Trash } from '@askrcode/lauf/icons/micro'
 
   let { notes = [], total = 0, errors = {}, skall = '' } = $props()
 
@@ -11,54 +23,40 @@
   }
 </script>
 
-<main>
-  <h1>Notes</h1>
-  <p class="lead">
-    {total} notes · lagret i SQLite · servert av
-    <span class="pill">{skall || 'ukjent skall'}</span>
-  </p>
+<main class="mx-auto max-w-3xl px-4 pt-10 pb-16">
+  <Heading level={1}>Notes</Heading>
+  <Text muted class="mb-6">
+    {total} notes · stored in SQLite · served by <Badge>{skall || 'unknown shell'}</Badge>
+  </Text>
 
-  <form onsubmit={submit}>
-    <input placeholder="Tittel" bind:value={$form.tittel} />
-    {#if errors.tittel}<span class="feil">{errors.tittel}</span>{/if}
-    <input placeholder="Tekst" bind:value={$form.tekst} />
-    <button type="submit" disabled={$form.processing}>Legg til</button>
+  <form onsubmit={submit} class="mb-8 flex flex-wrap items-start gap-2">
+    <Field name="tittel" error={errors.tittel} class="flex-1 min-w-40">
+      <Input placeholder="Title" bind:value={$form.tittel} />
+    </Field>
+    <Field name="tekst" class="flex-1 min-w-40">
+      <Input placeholder="Text" bind:value={$form.tekst} />
+    </Field>
+    <Button type="submit" variant="primary" loading={$form.processing}>Add</Button>
   </form>
 
-  <table>
-    <tbody>
+  <Table caption="Notes">
+    <Table.Body>
       {#each notes as n (n.id)}
-        <tr>
-          <td>
-            <strong class:viktig={n.viktig}>{n.tittel}</strong>
-            {#if n.tekst}<div class="tekst">{n.tekst}</div>{/if}
-          </td>
-          <td class="num">
-            <button class="liten" onclick={() => router.post(`/notes/${n.id}/toggle`)}>
-              {n.viktig ? '★' : '☆'}
-            </button>
-            <button class="liten" onclick={() => router.post(`/notes/${n.id}/delete`)}>
-              slett
-            </button>
-          </td>
-        </tr>
+        <Table.Row>
+          <Table.Cell>
+            <span class:text-accent={n.viktig} class="font-medium">{n.tittel}</span>
+            {#if n.tekst}<div class="text-xs text-muted mt-0.5">{n.tekst}</div>{/if}
+          </Table.Cell>
+          <Table.Cell align="right">
+            <Button.Group>
+              <Button size="sm" icon={Star} label={n.viktig ? 'Unstar' : 'Star'}
+                      onclick={() => router.post(`/notes/${n.id}/toggle`)} />
+              <Button size="sm" icon={Trash} label="Delete"
+                      onclick={() => router.post(`/notes/${n.id}/delete`)} />
+            </Button.Group>
+          </Table.Cell>
+        </Table.Row>
       {/each}
-    </tbody>
-  </table>
+    </Table.Body>
+  </Table>
 </main>
-
-<style>
-  form { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; }
-  input {
-    padding: 0.45rem 0.6rem; border: 1px solid var(--line); border-radius: 6px;
-    background: transparent; color: var(--fg); font: inherit; flex: 1 1 10rem;
-  }
-  button {
-    padding: 0.45rem 0.9rem; border: 1px solid var(--accent); border-radius: 6px;
-    background: var(--accent); color: var(--bg); font: inherit; cursor: pointer;
-  }
-  button.liten { background: transparent; color: var(--muted); border-color: var(--line); padding: 0.2rem 0.5rem; font-size: 0.8rem; }
-  .feil { color: #b3261e; font-size: 0.8rem; flex-basis: 100%; }
-  .viktig { color: var(--accent); }
-  .tekst { color: var(--muted); font-size: 0.85rem; margin-top: 0.15rem; }
-</style>

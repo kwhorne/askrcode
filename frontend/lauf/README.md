@@ -2,10 +2,9 @@
 
 UI components for [Askr](../../README.md) apps, built on Svelte 5.
 
-**This is block 0 of the plan in [`LAUF.md`](../../LAUF.md): infrastructure
-only.** Tokens, `cn()` and `Icon` are here. The components you would actually
-put on a page — `Button`, `Input`, `Field` — are block 1 and do not exist
-yet.
+**Blocks 0 and 1 of the plan in [`LAUF.md`](../../LAUF.md) are done:** the
+infrastructure, and the sixteen components a CRUD app needs. Blocks 2 and 3
+— modal, dropdown, toast, tabs, and the expensive ones — do not exist yet.
 
 Lauf is not part of the Askr binary and never will be. The server's promise
 is one binary with no sidecar; that promise is about the server. Nothing in
@@ -98,6 +97,70 @@ Icons are generated from [Heroicons](https://heroicons.com) (MIT) by
 1288 generated files would make every diff unreadable, and they are a
 mechanical copy of a dependency that is already in `node_modules`.
 
+## Components
+
+`Button` (`.Group`), `Input`, `Textarea`, `Select`, `Checkbox`, `Radio`,
+`Switch`, `Field`, `Heading`, `Text`, `Icon`, `Badge`, `Card`, `Separator`,
+`Table` (`.Head`, `.Body`, `.Row`, `.Header`, `.Cell`), `Pagination` — and
+`Form` from `@askrcode/lauf/inertia`.
+
+### Forms
+
+```svelte
+<script>
+  import { Field, Input, Button } from '@askrcode/lauf'
+  import { Form } from '@askrcode/lauf/inertia'
+  let { errors = {}, sendt = null } = $props()
+</script>
+
+<Form action="/customers" data={sendt ?? {}} {errors}>
+  <Field name="name" label="Name"><Input /></Field>
+  <Field name="email" label="Email"><Input type="email" /></Field>
+  <Button type="submit" variant="primary">Create</Button>
+</Form>
+```
+
+Three things happen without being wired up: `Field` finds its own error
+message by name, the control gets a matching `id`, `aria-describedby` and
+`aria-invalid`, and the submit button shows a spinner while the request is
+out. That is the coupling Flux gets from Livewire and Askr gets from
+Inertia.
+
+`Form` is optional. Use Inertia's `useForm` directly and give `Field` an
+`error` and the control a `bind:value` — everything else still works. The
+demo does it both ways on purpose.
+
+**`Form` lives behind `@askrcode/lauf/inertia`** because it is the only
+component that imports Inertia. A JSON service or a desktop shell that never
+installs Inertia should still be able to import a button.
+
+### Using it from a checkout rather than npm
+
+An app that depends on Lauf through `file:` or `npm link` gets a symlink out
+of its own tree, and Lauf has its own copies of `svelte` and
+`@inertiajs/svelte` for testing. Without deduping, Vite resolves them
+separately, `createInertiaApp` initialises the app's router while `Form`
+imports Lauf's, and you get
+`Cannot read properties of undefined (reading 'visit')` nowhere near the
+cause. Add this to the app's `vite.config.js`:
+
+```js
+resolve: { dedupe: ['svelte', '@inertiajs/svelte', '@inertiajs/core'] }
+```
+
+Installing from the registry does not need it — npm hoists one copy. Note
+that deduping also cut the demo's bundle from 300 kB to 218 kB, because the
+second Svelte runtime went with it.
+
+### What the browser validates first
+
+`<Input type="email">` means the browser refuses to submit a malformed
+address before the request is ever made, so your server-side email rule
+never sees it. That is standard HTML behaviour and usually what you want,
+but it does mean the two validations do not agree about when they run. If
+you want the server to be the only judge, use `type="text"` with
+`inputmode="email"`.
+
 ## Tests
 
 ```sh
@@ -116,3 +179,8 @@ icon model is wrong, not the test.
 Accessibility is half of what this library delivers, so `axe-core` runs
 against every component in every state it supports. A `Field` whose label is
 not connected to its input is a failure, not a detail.
+
+**axe cannot check colour contrast here.** jsdom does no layout and computes
+no colours, so that rule is turned off in `tests/axe.js` — it is not silently
+passing. Contrast has to be checked in a real browser, and that is listed as
+its own step in `LAUF.md`.

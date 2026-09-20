@@ -8,7 +8,12 @@ router.on('flash', (event) => {
   const melding = event.detail?.flash?.success
   if (melding) {
     const el = document.createElement('div')
-    el.className = 'flash'
+    // Klassene står her og ikke i app.css fordi Tailwind skanner denne fila
+    // også — og fordi en toast på fire linjer ikke trenger et eget stilark.
+    el.className =
+      'fixed bottom-5 left-1/2 -translate-x-1/2 rounded-full px-4 py-2 ' +
+      'text-sm bg-accent text-accent-fg shadow-lg'
+    el.setAttribute('role', 'status')
     el.textContent = melding
     document.body.appendChild(el)
     setTimeout(() => el.remove(), 4000)
