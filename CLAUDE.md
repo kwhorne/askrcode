@@ -333,6 +333,13 @@ som sendes opp mot det den skal være.
   planen er kompilert inn der, og verktøyet vet ikke hva som står i dem.
   `askr <noe>` kjører `app --noe`, og `RunConsole` tar imot i den andre
   enden. Et prosjekt laget i fjor får nye kommandoer ved å bygge på nytt.
+* **Kompilatoren slås opp i `FinnKompilator`, ikke ved å håpe på PATH.**
+  Rekkefølgen er `compiler` i askr.toml, så `ASKR_FPC`, så PATH — og
+  ASKR_FPC gjelder bare når prosjektet ikke har pekt ut noe selv. Før dette
+  døde app-CLI-en med `EProcess: Executable not found: "fpc"` og seks linjer
+  heksadesimale adresser, som ser ut som en krasj i verktøyet og ikke som
+  noe man kan gjøre noe med. Alle fire feilstiene sier nå hva den lette
+  etter, hvor, og hva man skal gjøre.
 * **Argumentene må videresendes.** `KjorApp` sendte bare flagget, og
   `askr db:table posts` kom fram uten `posts`. Alt etter kommandoen sendes
   nå med.

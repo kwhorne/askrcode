@@ -83,6 +83,74 @@ begin
   WriteLn(S);
 end;
 
+{ Finner Pascal-kompilatoren, eller sier hvorfor den ikke ble funnet.
+
+  Den gamle oppførselen var at TProcess kastet EProcess og prosessen døde
+  med et stakkspor i heksadesimale adresser. «Executable not found: "fpc"»
+  sto der riktignok, men omgitt av seks linjer som ser ut som en krasj i
+  verktøyet — og uten et ord om hva man skal gjøre.
+
+  Rekkefølgen: en `compiler` satt i askr.toml vinner, fordi det er
+  prosjektet som sier hvilken kompilator det skal bygges med. ASKR_FPC er
+  maskinens svar når prosjektet ikke har noe, og den finnes for at en
+  utvikler skal kunne peke på sin egen fpc uten å endre prosjektfila —
+  samme variabel som rammeverkets eget byggskript bruker. Til slutt PATH. }
+function FinnKompilator(P: TProject): string;
+var
+  Valgt, FraMiljo, Full: string;
+begin
+  Valgt := P.Compiler;
+  FraMiljo := GetEnvironmentVariable('ASKR_FPC');
+
+  { ASKR_FPC gjelder bare når prosjektet ikke har pekt ut noe selv. }
+  if (FraMiljo <> '') and (Valgt = 'fpc') then
+  begin
+    if FileExists(FraMiljo) then
+      Exit(FraMiljo);
+    Si('askr: ASKR_FPC points at a compiler that is not there.');
+    Si('');
+    Si('  ASKR_FPC   ' + FraMiljo);
+    Si('');
+    Si('Fix the path, or unset it to use fpc from PATH.');
+    Halt(1);
+  end;
+
+  { En sti med katalog i skal finnes som den er; et bart navn slås opp. }
+  if ExtractFilePath(Valgt) <> '' then
+  begin
+    if FileExists(Valgt) then
+      Exit(Valgt);
+    Si('askr: the compiler in askr.toml is not there.');
+    Si('');
+    Si('  compiler   ' + Valgt);
+    Si('');
+    Si('Fix the path in askr.toml, or remove the line to use fpc from PATH.');
+    Halt(1);
+  end;
+
+  Full := FinnPaaPath(Valgt);
+  if Full <> '' then
+    Exit(Full);
+
+  Si('askr: cannot find the Pascal compiler.');
+  Si('');
+  Si('  looked for   ' + Valgt + '   on PATH');
+  if FraMiljo = '' then
+    Si('  ASKR_FPC     not set')
+  else
+    Si('  ASKR_FPC     ' + FraMiljo + '   (ignored: askr.toml sets compiler)');
+  Si('');
+  Si('Askr builds your app with Free Pascal. Install it, then either put it');
+  Si('on PATH or point at it:');
+  Si('');
+  Si('  export ASKR_FPC=/path/to/fpc');
+  Si('');
+  Si('or set it for this project only, in askr.toml:');
+  Si('');
+  Si('  compiler = "/path/to/fpc"');
+  Halt(1);
+end;
+
 procedure Bruk;
 begin
   Si('askr ' + AskrVersion);
@@ -192,7 +260,7 @@ var
 begin
   Result := P.CompilerFlags;
 
-  Cfg := KompilatorConfigFlagg(P.Compiler);
+  Cfg := KompilatorConfigFlagg(FinnKompilator(P));
   if Cfg <> '' then
     Result := Cfg + ' ' + Result;
 
@@ -329,7 +397,7 @@ begin
     Params.Delimiter := ' ';
     Params.StrictDelimiter := True;
     Params.DelimitedText := ByggFlagg(P);
-    Proc.Executable := P.Compiler;
+    Proc.Executable := FinnKompilator(P);
     for I := 0 to Params.Count - 1 do
       if Params[I] <> '' then
         Proc.Parameters.Add(Params[I]);
@@ -381,7 +449,7 @@ begin
     Params.Delimiter := ' ';
     Params.StrictDelimiter := True;
     Params.DelimitedText := ByggFlagg(P);
-    Proc.Executable := P.Compiler;
+    Proc.Executable := FinnKompilator(P);
     for I := 0 to Params.Count - 1 do
       if Params[I] <> '' then
         Proc.Parameters.Add(Params[I]);
@@ -428,7 +496,7 @@ begin
   Opts.Root := P.Root;
   Opts.MainFile := P.MainFile;
   Opts.BinaryName := ChangeFileExt(ExtractFileName(P.MainFile), '');
-  Opts.Compiler := P.Compiler;
+  Opts.Compiler := FinnKompilator(P);
   Opts.CompilerFlags := ByggFlagg(P);
   Opts.PublicPort := P.Port;
   Opts.BackendPort := P.BackendPort;

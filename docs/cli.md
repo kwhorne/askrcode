@@ -43,6 +43,39 @@ Run `askr list` to see what your binary answers to.
 | `askr test` | Build and run the app's test suite |
 | `askr version` | |
 
+### Which compiler
+
+`askr build`, `askr serve` and `askr test` shell out to Free Pascal. They
+look for it in this order:
+
+1. `compiler` in `askr.toml`, if you set it — the project's own choice wins
+2. `ASKR_FPC`, for pointing at a compiler on your machine without editing
+   the project file
+3. `fpc` on `PATH`
+
+If none of them resolves, the command says what it looked for, where, and
+what to do about it. It does not stack-trace at you.
+
+```
+askr: cannot find the Pascal compiler.
+
+  looked for   fpc   on PATH
+  ASKR_FPC     not set
+
+Askr builds your app with Free Pascal. Install it, then either put it
+on PATH or point at it:
+
+  export ASKR_FPC=/path/to/fpc
+
+or set it for this project only, in askr.toml:
+
+  compiler = "/path/to/fpc"
+```
+
+> **A key in `askr.toml` must come before `[app]`.** Everything after a
+> section header belongs to it, so `compiler` written at the bottom becomes
+> `app.compiler` and is silently ignored.
+
 ## Scaffolding
 
 | Command | Writes |
