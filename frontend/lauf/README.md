@@ -2,10 +2,10 @@
 
 UI components for [Askr](../../README.md) apps, built on Svelte 5.
 
-**Blocks 0, 1 and 2 of the plan in [`LAUF.md`](../../LAUF.md) are done:** the
-infrastructure, the sixteen components a CRUD app needs, and the overlay
-layer. Block 3 — command palette, autocomplete, date picker, file upload —
-does not exist yet.
+**The plan in [`LAUF.md`](../../LAUF.md) is done through block 3:** the
+infrastructure, the sixteen components a CRUD app needs, the overlay layer,
+and the expensive ones. One component from that list was deliberately not
+built — see *What is missing* below.
 
 Lauf is not part of the Askr binary and never will be. The server's promise
 is one binary with no sidecar; that promise is about the server. Nothing in
@@ -105,8 +105,10 @@ mechanical copy of a dependency that is already in `node_modules`.
 `Table` (`.Head`, `.Body`, `.Row`, `.Header`, `.Cell`), `Pagination`,
 `Modal`, `Dropdown` (`.Item`, `.Group`, `.Separator`), `Popover`, `Tooltip`,
 `Tabs` (`.Panel`), `Accordion` (`.Item`), `Avatar`, `Callout`,
-`Breadcrumbs`, `Navbar`, `Sidebar` (`.Item`), `Skeleton`, `Toaster` — and
-`Form` and `Flash` from `@askrcode/lauf/inertia`.
+`Breadcrumbs`, `Navbar`, `Sidebar` (`.Item`), `Skeleton`, `Toaster`,
+`Progress`, `Slider`, `OtpInput`, `Autocomplete`, `Command`
+(`.Group`, `.Item`), `DatePicker`, `FileUpload` — and `Form` and `Flash`
+from `@askrcode/lauf/inertia`.
 
 ### What opens and closes
 
@@ -141,6 +143,69 @@ say which items it covers.
 "dialog", and that is everything the person who cannot see it gets. Pass
 `hideTitle` if the heading is already visible in the content: it is hidden
 visually, not removed.
+
+### Dates are ISO strings
+
+```svelte
+<Field name="due" label="Due date"><DatePicker /></Field>
+```
+
+`DatePicker` takes and gives back `YYYY-MM-DD`, which is what Askr's
+`DateTimeToSql` produces. Bits builds on `@internationalized/date`, and that
+type does not leak into Lauf's API — the conversion lives inside the
+component, and a malformed or empty value gives an empty picker rather than
+a blank page.
+
+### File upload
+
+```svelte
+<Field name="attachment" label="Attachment">
+  <FileUpload multiple maxSize={8 * 1024 * 1024} />
+</Field>
+```
+
+Bits has no primitive for this, but Askr's server side does: the multipart
+parser copies nothing, and `StoreIn` saves under a random name rather than
+the client's. That is why this was cheaper than it looks.
+
+It is built on a real `<input type="file">`, visually hidden but focusable —
+`hidden` would make it unreachable by keyboard. Drag and drop is added on
+top and is never the only way in. `maxSize` rejects oversized files with a
+message naming them, and never silently.
+
+### What each component costs
+
+With tree-shaking verified (see *Tests*), an expensive component is a choice
+the app makes, not a tax on everyone. Measured minified, mounted, without
+gzip — the floor is the Svelte runtime plus `cn`:
+
+| | |
+|---|---|
+| `Button` (the floor) | 75 kB |
+| `Progress` | 81 kB |
+| `FileUpload` | 84 kB |
+| `OtpInput` | 100 kB |
+| `Slider` | 103 kB |
+| `Command` | 115 kB |
+| `Modal` | 129 kB |
+| `Autocomplete` | 188 kB |
+| `DatePicker` | 274 kB |
+
+`DatePicker` is the one to think twice about: about 200 kB over the floor,
+because a correct calendar is a large amount of code. It is worth it on a
+booking form and not worth it on a sign-up page.
+
+### What is missing
+
+**No colour picker.** Bits has no primitive for one, so it would be written
+from scratch: a hue and saturation surface that works with a keyboard,
+colour-space conversion, and contrast reporting. That is its own project,
+almost no CRUD app needs one, and the apps that do want a real one. Block 3
+in `LAUF.md` says to weigh each of these components on its own; this is the
+one where the answer was no.
+
+Also still absent, and on purpose: rich-text editor, kanban board, charts,
+client-side validation, and a theme builder. The reasons are in `LAUF.md`.
 
 ### Toasts
 
@@ -248,9 +313,22 @@ library alive. `/*#__PURE__*/` on those exports is the fix, and
 `"sideEffects"` in `package.json` is the other half.
 
 **Some things cannot be tested here at all.** jsdom has no layout, so focus
-trapping, floating placement, scroll locking and "Escape returns focus to
-the trigger" are checked by driving a real Chrome over CDP against the demo
-app. Twelve Tab presses inside an open modal, and focus never leaves it.
+trapping, floating placement, scroll locking, dragging a slider, and
+"Escape returns focus to the trigger" are checked by driving a real Chrome
+over CDP — against the demo app, and against the playground:
+
+```sh
+./askr lauf:play      # builds and serves it on 4173
+```
+
+Twelve Tab presses inside an open modal and focus never leaves it;
+`aria-activedescendant` on the autocomplete pointing at a real option;
+ArrowRight then Enter in the calendar giving `2026-09-21` back as a string.
+
+`tests/setup.js` stubs the browser APIs jsdom lacks — `ResizeObserver`,
+`matchMedia`, pointer capture, `scrollIntoView`. A stub lets the code run;
+it does not make the measurement real. Anything that depends on actual
+sizes is covered in the browser or not at all, and the file says so.
 
 Accessibility is half of what this library delivers, so `axe-core` runs
 against every component in every state it supports. A `Field` whose label is

@@ -167,6 +167,20 @@ cmd_lauf() {
   ( cd "$LAUF" && npx vitest run "$@" )
 }
 
+# Lekegrinda: komponentene i en ekte nettleser. Den finnes fordi jsdom ikke
+# legger ut noe, og derfor ikke kan bevise fokusfelle, flytende plassering,
+# rullelås eller at en kalender lar seg styre med piltaster.
+cmd_lauf_play() {
+  LAUF="$ROOT/frontend/lauf"
+  if ! command -v node >/dev/null 2>&1; then
+    echo "askr: lekegrinda trenger node." >&2
+    return 1
+  fi
+  [ -d "$LAUF/node_modules" ] || ( cd "$LAUF" && npm install --silent --no-fund --no-audit )
+  [ -d "$LAUF/src/icons" ] || ( cd "$LAUF" && npm run --silent icons )
+  ( cd "$LAUF" && npm run --silent play )
+}
+
 cmd_schema() {
   prepare
   SCHEMA_OUT="$BUILD/schema"
@@ -459,6 +473,7 @@ case "${1:-}" in
   schema) shift; cmd_schema "$@" ;;
   web)   shift; cmd_web "$@" ;;
   lauf)  shift; cmd_lauf "$@" ;;
+  lauf:play) shift; cmd_lauf_play "$@" ;;
   db:up) shift; cmd_db_up "$@" ;;
   db:down) shift; cmd_db_down "$@" ;;
   test)  shift; cmd_test "$@" ;;
@@ -490,6 +505,8 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
   ./askr schema   migrer, introspiser og generer typede kolonner
   ./askr web      bygg frontend og start Inertia-demoen (Svelte 5)
   ./askr lauf     kjør Lauf-suiten (UI-komponentene, krever node)
+  ./askr lauf:play
+                  bygg og server lekegrinda på 4173
   ./askr desktop:linux
                   bygg GTK-imaget og kjør Linux-webviewen under Xvfb
   ./askr pg       kjør Postgres-suiten (krever ./askr db:up)

@@ -1019,8 +1019,27 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
   `Dropdown.Heading`.
 * **Fokusfelle, rullelås, flytende plassering og «Escape gir fokus tilbake»
   kan ikke testes i jsdom.** Det finnes ingen layout der. De sjekkes ved å
-  drive en ekte Chrome over CDP mot demoen — tolv Tab-trykk i en åpen modal
-  skal ikke slippe fokus ut.
+  drive en ekte Chrome over CDP mot demoen og mot lekegrinda
+  (`./askr lauf:play`) — tolv Tab-trykk i en åpen modal skal ikke slippe
+  fokus ut.
+* **`tests/setup.js` må vernes med `typeof Element !== 'undefined'`.**
+  Setup-fila kjører også for premisstesten, som går i node-miljø fordi
+  esbuild nekter å starte i jsdom. Uten vakten feiler hele den fila på en
+  ReferenceError som ikke nevner miljøet med et ord.
+* **En stub er ikke en måling.** `ResizeObserver`, `matchMedia`,
+  pekerfangst og `scrollIntoView` stubbes fordi jsdom mangler dem, og da
+  kan koden kjøre — men ingenting som avhenger av faktiske størrelser er
+  dekket. Det hører hjemme i nettleseren.
+* **Nøkler i `{#each}` må være unike, og datoer gjentar seg.** Smale
+  ukedagsnavn er «S M T W T F S», og «MM/DD/YYYY» har to segmenter med
+  `part === 'literal'`. Nøkle på indeks der.
+* **`bind:value` mot `undefined` er en feil** når mottakeren har en egen
+  fallback — Bits' `Command` har det. Bruk `value` og `onValueChange`.
+* **Laufs datoer er ISO-strenger utad.** `@internationalized/date` skal
+  ikke lekke ut i API-et, like lite som resten av Bits. `DateTimeToSql` i
+  Pascal gir `YYYY-MM-DD`, og det er formen som skal gå rett inn og rett ut.
+* Bits' `Command` filtrerer på `value` og `keywords`, ikke på teksten i
+  elementet. `CommandItem` legger derfor `label` i `keywords` selv.
 
 ## Neste steg
 

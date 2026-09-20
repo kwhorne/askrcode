@@ -1,9 +1,8 @@
 # Lauf — UI-komponenter for Askr
 
-Arbeidsnotat. **Bolk 0, 1 og 2 er bygget** og ligger i `frontend/lauf/`:
-infrastrukturen, de seksten komponentene en CRUD-app trenger, og laget som
-åpner og lukker seg. `examples/inertia` bruker dem. Bolk 3 er fortsatt
-konsept.
+Arbeidsnotat. **Alle fire bolkene er bygget** og ligger i `frontend/lauf/`.
+`examples/inertia` bruker dem, og `./askr lauf:play` viser resten i en ekte
+nettleser. Én komponent fra bolk 3 ble bevisst ikke bygget — se under.
 Ingenting i `src/` avhenger av noe her, og det skal det aldri gjøre.
 
 Askr har i dag et komplett serverlag og en Svelte-demo på fem sider der hvert
@@ -524,15 +523,69 @@ sammensatte eksportene er fiksen, og `"sideEffects"` i package.json er den
 andre halvdelen. **Premisstesten fanget det**, og den sjekker nå også at
 ingen Bits-kode finnes i en bunt som bare bruker et ikon.
 
-### Bolk 3 — de dyre
+### Bolk 3 — de dyre — **ferdig, minus én**
 
-`Command`, `Autocomplete`, `Date picker`, `Calendar`, `Slider`, `File upload`,
-`OTP input`, `Progress`, `Color picker`.
+`Command`, `Autocomplete`, `DatePicker`, `Slider`, `FileUpload`,
+`OtpInput`, `Progress`. **Ikke** fargevelger.
 
-Her er det riktig å spørre om det er verdt det, komponent for komponent.
-`File upload` er den som har mest støtte i Askr fra før — multipart-parseren
-er på plass, og `StoreIn` gjør det trygge valget — så den er billigere enn
-den ser ut.
+Her sa denne fila at man skal spørre om det er verdt det, komponent for
+komponent. Svaret ble ja på sju og nei på én.
+
+**Fargevelgeren droppes.** Bits har ingen primitiv, så den måtte skrives
+fra bunnen: en flate for kulør og metning som lar seg styre med tastatur,
+konvertering mellom fargerom, og kontrastavlesning. Det er et eget prosjekt.
+Nesten ingen CRUD-app trenger en, og de som gjør det vil ha en ordentlig.
+
+**Prisen per komponent er målt**, og det er det som gjør at de dyre kunne
+bli med i det hele tatt: med tree-shaking bevist er en dyr komponent et
+valg appen tar, ikke en avgift alle betaler. Minifisert, montert, uten
+gzip — gulvet er Svelte-runtime pluss `cn`:
+
+| | |
+|---|---|
+| `Button` (gulvet) | 75 kB |
+| `Progress` | 81 kB |
+| `FileUpload` | 84 kB |
+| `OtpInput` | 100 kB |
+| `Slider` | 103 kB |
+| `Command` | 115 kB |
+| `Modal` | 129 kB |
+| `Autocomplete` | 188 kB |
+| `DatePicker` | 274 kB |
+
+`DatePicker` er den man skal tenke seg om to ganger på: rundt 200 kB over
+gulvet. Verdt det på et bestillingsskjema, ikke verdt det på en
+registreringsside.
+
+**`FileUpload` var billigst, slik denne fila gjettet.** Bits har ingen
+primitiv, men serversiden finnes: multipart-parseren kopierer ingenting, og
+`StoreIn` lagrer under tilfeldig navn. 9 kB over gulvet.
+
+**Datoer inn og ut er ISO-strenger.** `@internationalized/date` skal ikke
+lekke ut i API-et — samme regel som for resten av Bits. Askr sender
+`YYYY-MM-DD` fra `DateTimeToSql`, og det er formen en app skal kunne sende
+rett inn og få rett ut. En tom eller ødelagt verdi gir en tom velger, ikke
+en hvit side.
+
+**Kommandopaletten søker i det som vises.** Bits filtrerer på `value` og
+`keywords`, ikke på innholdet i elementet — så en palett der `value` er
+`list-customers` finner ingenting når man skriver «all». Det er ikke det
+noen forventer, og ikke noe kalleren skal måtte vite; `Command.Item label`
+legges i `keywords` av seg selv.
+
+Tre feller til, alle skrevet ned i CLAUDE.md: nøkler i `{#each}` må være
+unike, og både ukedagsnavn («S M T W T F S») og datosegmenter (to
+`literal` i `MM/DD/YYYY`) gjentar seg — nøkle på indeks. `bind:value` mot
+`undefined` er en feil når mottakeren har en fallback, som Bits' `Command`
+har. Og `tests/setup.js` stubber det jsdom mangler, men må vernes med
+`typeof Element !== 'undefined'`, fordi setup kjører også for testen som
+går i node-miljø.
+
+Verifisert i ekte nettleser gjennom lekegrinda: forslagene åpner med
+ArrowDown og `aria-activedescendant` peker på et ekte valg, Enter velger,
+slideren går 40 → 45 med piltast, kalenderen åpner med fokus i rutenettet
+og ArrowRight + Enter gir `2026-09-21` tilbake som streng, seks tastetrykk
+fyller engangskoden, og paletten filtrerer på det som vises.
 
 ## Hva vi ikke bygger
 
@@ -542,6 +595,8 @@ den ser ut.
   vanskelig som hele bolk 2 til sammen.
 * **Chart.** Det finnes gode biblioteker, og et diagram er ikke en
   UI-komponent på samme måte som en knapp er det.
+* **Fargevelger.** Begrunnet over — den eneste fra bolk 3 som ble vurdert
+  og forkastet.
 * **Klientvalidering.** Begrunnet over.
 * **Et temabygger-verktøy.** Tokenene er ett CSS-blokk. Et verktøy for å
   redigere ett CSS-blokk er seremoni.

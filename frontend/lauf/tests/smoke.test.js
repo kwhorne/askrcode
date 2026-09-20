@@ -10,6 +10,8 @@ describe('pakka', () => {
       'Modal', 'Dropdown', 'Tooltip', 'Popover', 'Tabs', 'Accordion',
       'Avatar', 'Callout', 'Breadcrumbs', 'Navbar', 'Sidebar', 'Skeleton',
       'Toaster', 'toast',
+      'Progress', 'Slider', 'OtpInput', 'Autocomplete', 'Command',
+      'DatePicker', 'FileUpload',
     ]
     for (const navn of forventet) expect(Lauf[navn], navn).toBeTruthy()
   })
@@ -27,5 +29,7 @@ describe('pakka', () => {
     expect(Lauf.Tabs.Panel).toBeTruthy()
     expect(Lauf.Accordion.Item).toBeTruthy()
     expect(Lauf.Sidebar.Item).toBeTruthy()
+    expect(Lauf.Command.Group).toBeTruthy()
+    expect(Lauf.Command.Item).toBeTruthy()
   })
 })

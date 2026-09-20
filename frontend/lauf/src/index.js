@@ -25,6 +25,9 @@ import AccordionBase from './Accordion.svelte'
 import AccordionItem from './AccordionItem.svelte'
 import SidebarBase from './Sidebar.svelte'
 import SidebarItem from './SidebarItem.svelte'
+import CommandBase from './Command.svelte'
+import CommandGroup from './CommandGroup.svelte'
+import CommandItem from './CommandItem.svelte'
 
 export { cn } from './utils.js'
 export { FORM, FIELD } from './context.js'
@@ -60,6 +63,14 @@ export { default as Navbar } from './Navbar.svelte'
 export { default as Toaster } from './Toaster.svelte'
 export { toast, toasts, dismiss } from './toast.svelte.js'
 
+// Bolk 3.
+export { default as Progress } from './Progress.svelte'
+export { default as Slider } from './Slider.svelte'
+export { default as OtpInput } from './OtpInput.svelte'
+export { default as Autocomplete } from './Autocomplete.svelte'
+export { default as DatePicker } from './DatePicker.svelte'
+export { default as FileUpload } from './FileUpload.svelte'
+
 // Sammensatt eksport. Flux skriver <flux:button.group>; Svelte har ikke
 // punktnotasjon på komponenter, men en komponent er en funksjon, og en
 // funksjon kan bære felter. <Button.Group> leses som en member-uttrykk og
@@ -86,6 +97,11 @@ export const Dropdown = /*#__PURE__*/ Object.assign(DropdownBase, {
 export const Tabs = /*#__PURE__*/ Object.assign(TabsBase, { Panel: TabPanel })
 export const Accordion = /*#__PURE__*/ Object.assign(AccordionBase, { Item: AccordionItem })
 export const Sidebar = /*#__PURE__*/ Object.assign(SidebarBase, { Item: SidebarItem })
+export const Command = /*#__PURE__*/ Object.assign(CommandBase, {
+  Group: CommandGroup,
+  Item: CommandItem,
+})
 
 export { ButtonGroup, TableHead, TableBody, TableRow, TableHeader, TableCell }
 export { DropdownItem, DropdownSeparator, DropdownGroup, TabPanel, AccordionItem, SidebarItem }
+export { CommandGroup, CommandItem }

@@ -26,9 +26,11 @@
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
     "prepare": "node scripts/generate-icons.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "play": "vite build --config playground/vite.config.js && vite preview --config playground/vite.config.js --port 4173"
   },
   "dependencies": {
+    "@internationalized/date": "^3.8.1",
     "bits-ui": "^2.19.2",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.7.0"
@@ -40,6 +42,7 @@
   "devDependencies": {
     "@inertiajs/svelte": "^3.7.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tailwindcss/vite": "^4.0.0",
     "@testing-library/svelte": "^5.2.6",
     "axe-core": "^4.10.2",
     "heroicons": "^2.2.0",

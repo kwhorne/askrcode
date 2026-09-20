@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['tests/**/*.test.js'],
+    setupFiles: ['tests/setup.js'],
     // Uten browser-betingelsen løser Svelte 5 til server-varianten, og
     // komponentene monterer ikke i jsdom.
     server: { deps: { inline: ['@testing-library/svelte'] } },
