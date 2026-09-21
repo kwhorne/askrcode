@@ -12,7 +12,11 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.9.2 — 2026-09-21
+
+An architecture in the gate, and the money rule corrected — 0.9.1 fixed
+the framework's three sites, and the gate then found five more.
+
 
 ### Added
 

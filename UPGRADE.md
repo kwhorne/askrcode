@@ -8,6 +8,20 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.9.2
+
+Nothing can break. Documentation, the test suites, one example, and a new
+build-script target.
+
+**Worth reading if you store money.** The rule for `Currency` in the docs
+was wrong, and it was wrong in a direction that is silent. A typecast from
+an integer reinterprets the scaled Int64 instead of converting it, and
+whether it does so depends on the compiler *and* the architecture:
+`Currency(I * 100)` is 0.07 on x86_64 and 700 on aarch64. The framework's
+own uses were fixed in 0.9.1; if your app writes `Currency(something)`
+anywhere, that line is worth looking at. Assign into a `Currency`
+variable instead. See [Money](docs/database.md#money).
+
 ## 0.9.1
 
 Nothing can break. One compile fix, needed only on x86_64 — where 0.9.0
