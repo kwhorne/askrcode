@@ -16,6 +16,24 @@ with the zero-major caveat that minor releases may break things until
 
 ### Added
 
+- **`askr mcp` — an MCP server for AI agents, over stdio.** JSON-RPC 2.0
+  with `initialize`, `tools/list`, `tools/call` and `ping`. The tool list is
+  empty in this release: what it establishes is the transport and the
+  handshake, and the tools arrive on top of it.
+
+  **It runs in the tool, not in the app**, which is the opposite of what
+  Laravel Boost does and for a reason specific to a compiled framework: if
+  the app does not compile there is no app to ask, and that is exactly when
+  an agent most needs to be told what is wrong. `askr` is built from the
+  pinned release and does not depend on the project compiling.
+
+  `./askr mcp:check` is the gate for that. It writes a project that cannot
+  compile, pipes real frames through the server, and requires the handshake
+  anyway — then does it again with no project at all. It also asserts every
+  line on stdout is a JSON object: one stray `WriteLn` and a client sees a
+  parse error with nothing to say where it came from. It runs as part of
+  `./askr test`.
+
 - **`Askr.Cli.Diag` — compiler diagnostics as structure.** The first step
   towards `askr mcp`: fpc's output parsed into file, line, column and
   severity, so a tool can hand an agent something it can act on rather than

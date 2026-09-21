@@ -16,7 +16,7 @@ uses
   SysUtils, Classes, Process, TermIO,
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
-  Askr.Cli.Auth, Askr.Cli.Pkg;
+  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
   ved siden av binæren. En fpcupdeluxe-installasjon legger den ved binæren,
@@ -175,6 +175,7 @@ begin
   Si('  askr key:generate        print a new APP_KEY');
   Si('  askr config [--values]   show the effective configuration');
   Si('  askr test                build and run the app test suite');
+  Si('  askr mcp                 MCP server for AI agents, over stdio');
   Si('  askr version');
   Si('');
   Si('Commands read askr.toml in the project root.');
@@ -646,6 +647,23 @@ begin
       Halt(1);
     end;
     NewProject(GetCurrentDir, ParamStr(2), WantsAuth);
+    Exit;
+  end;
+
+  { The MCP server runs before FindProject, and that is the point of it.
+
+    FindProject writes to stdout and halts when there is no askr.toml —
+    which for a client is not "no project", it is a parse error on the
+    protocol channel with nothing to say where it came from. An agent may
+    well start the server in the wrong directory, or before the project
+    exists.
+
+    Everything from here on is a JSON-RPC message. The server answers the
+    handshake wherever it is started; a tool that needs the project says so
+    through the protocol, which is the only place a client can read it. }
+  if Kommando = 'mcp' then
+  begin
+    McpServe;
     Exit;
   end;
 

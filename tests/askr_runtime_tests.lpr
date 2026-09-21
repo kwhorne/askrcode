@@ -22,7 +22,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag;
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -4061,8 +4061,87 @@ begin
   end;
 end;
 
+{ ------------------------------------------------ the MCP server -- }
+
+{ The protocol, driven without a process — the same reason the router is
+  tested without a socket. What a process adds is the transport and the
+  purity of stdout, and that is `./askr mcp:check`.
+
+  These are the shapes a client actually sends. A server that answers
+  `initialize` and nothing else looks like it works right up until the
+  client asks for the tool list. }
+procedure TestMcpProtocol;
+var
+  A: TArena;
+  R: string;
+
+  function Call_(const Line_: string): string;
+  begin
+    A.Reset;
+    Result := McpHandle(A, Line_);
+  end;
+
+begin
+  A := TArena.Create(16 * 1024);
+  try
+    R := Call_('{"jsonrpc":"2.0","id":1,"method":"initialize","params":' +
+      '{"protocolVersion":"2025-06-18","capabilities":{},' +
+      '"clientInfo":{"name":"probe","version":"1"}}}');
+    AssertContains(R, '"id":1', 'the id comes back');
+    AssertContains(R, '"jsonrpc":"2.0"', 'and the envelope');
+    AssertContains(R, '"protocolVersion":"2025-06-18"',
+      'the version the client asked for');
+    AssertContains(R, '"serverInfo"', 'the server names itself');
+    AssertContains(R, AskrVersion, 'with the framework version');
+    AssertContains(R, '"tools"', 'and declares the tools capability');
+
+    { Declaring a capability we do not serve is worse than declaring none:
+      the client then calls a method that answers -32601. }
+    AssertEqual(Pos('"resources"', R), 0, 'and nothing it cannot serve');
+    AssertEqual(Pos('"prompts"', R), 0, 'nor prompts');
+
+    { A notification has no id and gets no reply at all. Answer one and the
+      client matches it to a request it never sent. }
+    R := Call_('{"jsonrpc":"2.0","method":"notifications/initialized"}');
+    AssertEqual(R, '', 'a notification gets no reply');
+
+    R := Call_('{"jsonrpc":"2.0","id":2,"method":"tools/list"}');
+    AssertContains(R, '"tools":[]', 'the tool list is empty for now');
+    AssertContains(R, '"id":2', 'and carries its own id');
+
+    R := Call_('{"jsonrpc":"2.0","id":3,"method":"ping"}');
+    AssertContains(R, '"result":{}', 'ping answers');
+
+    { A string id echoed back as a number is a different id, and the client
+      will not match it. }
+    R := Call_('{"jsonrpc":"2.0","id":"abc","method":"ping"}');
+    AssertContains(R, '"id":"abc"', 'a string id stays a string');
+
+    R := Call_('{"jsonrpc":"2.0","id":4,"method":"tools/call","params":' +
+      '{"name":"nope","arguments":{}}}');
+    AssertContains(R, '"error"', 'an unknown tool is an error');
+    AssertContains(R, 'nope', 'and the error names it');
+
+    R := Call_('{"jsonrpc":"2.0","id":5,"method":"no/such"}');
+    AssertContains(R, '-32601', 'an unknown method is -32601');
+
+    { The client sent something that is not JSON at all. The reply has to
+      be JSON anyway, or the transport is finished. }
+    R := Call_('{not json');
+    AssertContains(R, '-32700', 'unparseable input is -32700');
+    AssertContains(R, '"id":null', 'with a null id');
+
+    AssertEqual(Call_(''), '', 'a blank line is not a message');
+  finally
+    A.Free;
+  end;
+end;
+
 begin
   Group('Scheduler');
+  Group('MCP');
+  Test('the handshake, the tool list and the error shapes', @TestMcpProtocol);
+
   Group('Compiler diagnostics');
   Test('fpc diagnostics parse the same on every compiler and architecture',
     @TestDiagFormat);

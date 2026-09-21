@@ -478,6 +478,103 @@ cmd_run_demo() {
   bin_run_quiet rundemo
 }
 
+# Porten for den arkitektoniske innsatsen i MCP-laget: serveren skal svare
+# selv om prosjektet ikke kompilerer, og selv om det ikke finnes et prosjekt
+# i det hele tatt. Det kan ikke testes fra Pascal-suiten — det krever en ekte
+# prosess med ekte rør — så det er et eget mål.
+#
+# Den sjekker også at stdout er ren. Én WriteLn på feil side av McpServe, og
+# klienten ser en parse-feil i stedet for et svar, uten noe som sier hvor den
+# kom fra.
+cmd_mcp_check() {
+  prepare
+  fpc_run cli/askr.lpr
+
+  dir="$BUILD/mcpcheck"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+
+  # Et prosjekt som med vilje ikke lar seg kompilere.
+  cat > "$dir/askr.toml" <<TOML
+name = "mcpcheck"
+main = "app.lpr"
+units = "app"
+
+[askr]
+path = "$ROOT"
+TOML
+  cat > "$dir/app.lpr" <<'LPR'
+program app;
+begin
+  this is not pascal
+end.
+LPR
+
+  frames='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+
+  run_mcp_in() {  # $1 = katalog relativt til ROOT
+    if have_local_fpc; then
+      ( cd "$ROOT/$1" && printf '%s\n' "$frames" | "$BIN/askr" mcp )
+    else
+      ensure_image
+      printf '%s\n' "$frames" | docker run --rm -i $DOCKER_PLATFORM \
+        -v "$ROOT":/work -w "/work/$1" "$IMAGE" "/work/${BIN#$ROOT/}/askr" mcp
+    fi
+  }
+
+  fail=0
+  check() {  # $1 = beskrivelse, $2 = utdata, $3 = mønster
+    if printf '%s' "$2" | grep -q "$3"; then
+      echo "  ok    $1"
+    else
+      echo "  FEIL  $1"
+      echo "        fant ikke: $3"
+      fail=1
+    fi
+  }
+
+  echo "askr — mcp"
+  echo
+  echo "— i et prosjekt som ikke kompilerer"
+  # `|| true` fordi set -e ellers dreper skriptet i stillhet når serveren
+  # avslutter med feilkode — og da rapporterer porten ingenting om hva som
+  # var galt. En port som feiler uten å si hvorfor er verre enn ingen.
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck" 2>/dev/null || true)
+  check "håndtrykket svarer"        "$out" '"serverInfo"'
+  check "med klientens protokollversjon" "$out" '"protocolVersion":"2025-06-18"'
+  check "verktøylista svarer"       "$out" '"tools":\[\]'
+  # To svar, ikke tre: notifikasjonen skal ikke ha ett. Svarer man på den,
+  # matcher klienten det mot en forespørsel den aldri sendte.
+  check "notifikasjonen fikk intet svar" \
+    "$(printf '%s\n' "$out" | grep -c '^{')" '^2$'
+
+  # Hver linje på stdout skal være ett JSON-objekt. En eneste menneskelig
+  # linje her gjør hele strømmen ugyldig for klienten.
+  if printf '%s\n' "$out" | grep -vq '^{.*}$'; then
+    echo "  FEIL  stdout er ren JSON"
+    printf '%s\n' "$out" | grep -vn '^{.*}$' | sed 's/^/        /'
+    fail=1
+  else
+    echo "  ok    stdout er ren JSON"
+  fi
+
+  echo
+  echo "— uten et prosjekt i det hele tatt"
+  mkdir -p "$BUILD/mcpnone"
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpnone" 2>/dev/null || true)
+  check "håndtrykket svarer likevel" "$out" '"serverInfo"'
+  check "og ingenting lekket til stdout" "$out" '^{'
+
+  echo
+  if [ "$fail" -ne 0 ]; then
+    echo "mcp:check feilet."
+    return 1
+  fi
+  echo "mcp:check holder: serveren svarer uten et prosjekt som bygger."
+}
+
 cmd_test() {
   prepare
   fpc_run tests/askr_tests.lpr
@@ -519,6 +616,11 @@ cmd_test() {
   # sjekkes: at COM-deklarasjonene og callback-klassene typesjekker.
   fpc_run tools/probes/webview2_vtable.lpr
   bin_run_quiet webview2_vtable
+  echo
+  # MCP-serveren skal svare uten at prosjektet bygger. Den porten krever en
+  # ekte prosess med ekte rør og kan derfor ikke stå i Pascal-suiten — men
+  # den skal kjøres hver gang, ellers råtner den.
+  cmd_mcp_check || return 1
 }
 
 cmd_run() {
@@ -564,6 +666,7 @@ case "${1:-}" in
   db:down) shift; cmd_db_down "$@" ;;
   test)  shift; cmd_test "$@" ;;
   test:amd64) shift; ASKR_ARCH=amd64 exec "$0" test "$@" ;;
+  mcp:check) shift; cmd_mcp_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -580,6 +683,10 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
   ./askr build    bygg alle units og eksempelappen
   ./askr test     bygg og kjør testsuiten
   ./askr check    samme, med område- og overflytkontroll slått på
+  ./askr mcp:check
+                  MCP-serveren mot et prosjekt som ikke kompilerer,
+                  og mot ingen prosjekt. Den porten kan ikke stå i
+                  Pascal-suiten — den krever en ekte prosess
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,
