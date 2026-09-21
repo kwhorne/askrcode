@@ -1,12 +1,12 @@
-{ MySQL-tester.
+{ MySQL tests.
 
-  Kjører mot en ekte server. Without en, hopper suiten over seg selv og sier
-  hvorfor — den melder ikke grønt på noe den ikke har prøvd.
+  Runs against a real server. Without one, the suite skips itself and says
+  why — it does not report green on something it has not tried.
 
-    ./askr db:up        # starter MySQL 8.4 på port 3308
-    ./askr mysql        # bygger og kjører denne
+    ./askr db:up        # starts MySQL 8.4 on port 3308
+    ./askr mysql        # builds and runs this
 
-  DSN kan overstyres med ASKR_MYSQL_DSN. }
+  The DSN can be overridden with ASKR_MYSQL_DSN. }
 program askr_mysql_tests;
 
 {$mode Delphi}{$H+}
@@ -21,8 +21,9 @@ uses
   Askr.Queue, Askr.Queue.Db;
 
 type
-  { Én migrasjon som rører alt introspeksjonen skal kjenne igjen:
-    autonøkkel, tekst, boolsk, penger, dato, fremmednøkkel og to indekser. }
+  { One migration that touches everything the introspection has to
+    recognise: an auto key, text, boolean, money, a date, a foreign key
+    and two indexes. }
   TCreateShop = class(TMigration)
     class function Version: string; override;
     procedure Up(S: TSchemaBuilder); override;
@@ -61,8 +62,8 @@ begin
 end;
 
 var
-  Bestatt: Integer = 0;
-  Feilet: Integer = 0;
+  Passed: Integer = 0;
+  Failed: Integer = 0;
   Dsn: string;
 
 procedure Start(const Name: string);
@@ -75,12 +76,12 @@ procedure Ok(const What: string; Value_: Boolean);
 begin
   if Value_ then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
   end;
 end;
@@ -89,12 +90,12 @@ procedure Like(const What, Expected, Got: string);
 begin
   if Expected = Got then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Expected);
     WriteLn('        fikk:      ', Got);
@@ -106,7 +107,7 @@ begin
   Like(What, IntToStr(Expected), IntToStr(Got));
 end;
 
-{ Count_ prepared statements serveren har åpne akkurat nå. }
+{ How many prepared statements the server has open right now. }
 function OpenStatements_(C: TDbConnection; A: TArena): Int64;
 var
   R: TDbResult;
@@ -142,10 +143,11 @@ begin
     ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
 end;
 
-{ Poolen brukes fra worker-tråder i en ekte app, så det er der driveren
-  faktisk lever. En forbindelse går aldri til to tråder samtidig — poolen
-  garanterer det — men den kan godt gå til en annen tråd enn den som åpnet
-  den, og det er nettopp det denne testen utsetter den for. }
+{ The pool is used from worker threads in a real app, so that is where
+  the driver actually lives. A connection never goes to two threads at once
+  — the pool guarantees that — but it can well go to a different thread
+  from the one that opened it, and that is exactly what this test puts it
+  through. }
 type
   TPoolTraad = class(TThread)
   private
@@ -185,7 +187,7 @@ begin
           [DbParam(A, Int64(I)), DbParam(A, Int64(1))]);
         Inc(FSum, R.AsInt64(0, 0));
       finally
-        { Arenaen frigjør leiet gjennom Defer. }
+        { The arena releases the lease through Defer. }
         A.Free;
       end;
     end;
@@ -208,7 +210,7 @@ var
   Sum, Fasit: Int64;
   Err: string;
 begin
-  Start('pool og tråder');
+  Start('pool and threads');
   P := TDbPool.Create(Dsn, 3);
   try
     for I := 0 to Traader - 1 do
@@ -224,13 +226,13 @@ begin
       T[I].Free;
     end;
     if Err <> '' then
-      WriteLn('        feil fra en tråd: ', Err);
-    Ok('ingen tråd feilet', Err = '');
-    { 4 tråder x sum(2..51) }
+      WriteLn('        error from a thread: ', Err);
+    Ok('no thread failed', Err = '');
+    { 4 threads x sum(2..51) }
     Fasit := Int64(Traader) * ((Int64(Runder) * (Runder + 1)) div 2 + Runder);
-    LikeI('alle svarene stemmer', Fasit, Sum);
-    LikeI('200 leier totalt', Traader * Runder, Int64(P.AcquiredTotal));
-    Ok('poolen holdt seg innenfor grensen', P.LiveCount <= 3);
+    LikeI('every answer is right', Fasit, Sum);
+    LikeI('200 leases in total', Traader * Runder, Int64(P.AcquiredTotal));
+    Ok('the pool stayed within its limit', P.LiveCount <= 3);
     WriteLn('        forbindelser created_at: ', P.CreatedTotal,
             '  forkastet: ', P.DiscardedTotal);
   finally
@@ -247,7 +249,7 @@ var
   I: Integer;
   FantIndeks: Boolean;
 begin
-  Start('norn: migrasjon');
+  Start('norn: migration');
   C.Exec(A, 'DROP TABLE IF EXISTS norn_order');
   C.Exec(A, 'DROP TABLE IF EXISTS norn_customer');
   C.Exec(A, 'DROP TABLE IF EXISTS askr_migrations');
@@ -255,85 +257,85 @@ begin
   RegisterMigration(TCreateShop);
   M := TMigrator.Create(C);
   try
-    LikeI('én migrasjon venter', 1, M.PendingCount);
-    LikeI('én ble kjørt', 1, M.Up);
-    LikeI('ingen venter etterpå', 0, M.PendingCount);
+    LikeI('one migration is pending', 1, M.PendingCount);
+    LikeI('one was run', 1, M.Up);
+    LikeI('none is pending afterwards', 0, M.PendingCount);
   finally
     M.Free;
   end;
 
-  Start('norn: introspeksjon');
+  Start('norn: introspection');
   Schema_ := IntrospectSchema(C);
   try
-    Ok('fant norn_customer', Schema_.Table('norn_customer') <> nil);
-    Ok('fant norn_order', Schema_.Table('norn_order') <> nil);
+    Ok('found norn_customer', Schema_.Table('norn_customer') <> nil);
+    Ok('found norn_order', Schema_.Table('norn_order') <> nil);
 
     T := Schema_.Table('norn_customer');
-    Like('primærnøkkelen er id', 'id', T.PrimaryKey);
-    LikeI('seks kolonner', 6, T.ColumnCount);
+    Like('the primary key is id', 'id', T.PrimaryKey);
+    LikeI('six columns', 6, T.ColumnCount);
 
     Kol := T.Column(T.IndexOfColumn('id'));
-    Like('id blir Int64', 'TColInt64', ColAliasFor(Kol.SqlType, Kol.Scale));
-    Ok('id er primærnøkkel', Kol.IsPrimaryKey);
+    Like('id becomes Int64', 'TColInt64', ColAliasFor(Kol.SqlType, Kol.Scale));
+    Ok('id is the primary key', Kol.IsPrimaryKey);
 
     Kol := T.Column(T.IndexOfColumn('name'));
-    Like('varchar blir streng', 'TColStr', ColAliasFor(Kol.SqlType, Kol.Scale));
-    LikeI('lengden er med', 190, Kol.MaxLength);
-    Ok('name er ikke nullbar', not Kol.Nullable);
+    Like('varchar becomes a string', 'TColStr', ColAliasFor(Kol.SqlType, Kol.Scale));
+    LikeI('the length is there', 190, Kol.MaxLength);
+    Ok('name is not nullable', not Kol.Nullable);
 
     Kol := T.Column(T.IndexOfColumn('active'));
-    Like('tinyint(1) blir boolsk', 'TColBool',
+    Like('tinyint(1) becomes boolean', 'TColBool',
       ColAliasFor(Kol.SqlType, Kol.Scale));
-    Like('og Pascal-typen er Boolean', 'Boolean',
+    Like('and the Pascal type is Boolean', 'Boolean',
       PascalTypeFor(Kol.SqlType, Kol.Scale));
 
     Kol := T.Column(T.IndexOfColumn('balance'));
-    Like('decimal(12,2) blir Currency', 'TColCurrency',
+    Like('decimal(12,2) becomes Currency', 'TColCurrency',
       ColAliasFor(Kol.SqlType, Kol.Scale));
-    LikeI('skalaen leses', 2, Kol.Scale);
-    Ok('balance er nullbar', Kol.Nullable);
+    LikeI('the scale is read', 2, Kol.Scale);
+    Ok('balance is nullable', Kol.Nullable);
 
     Kol := T.Column(T.IndexOfColumn('last_seen'));
-    Like('datetime blir TDateTime', 'TColDateTime',
+    Like('datetime becomes TDateTime', 'TColDateTime',
       ColAliasFor(Kol.SqlType, Kol.Scale));
 
-    Ok('email er indeksert', T.IsIndexed('email'));
-    Ok('name er indeksert', T.IsIndexed('name'));
+    Ok('email is indexed', T.IsIndexed('email'));
+    Ok('name is indexed', T.IsIndexed('name'));
     FantIndeks := False;
     for I := 0 to T.IndexCount - 1 do
       if T.IndexAt(I).IsPrimary then
         FantIndeks := True;
-    Ok('primærnøkkelen er med blant indeksene', FantIndeks);
+    Ok('the primary key is among the indexes', FantIndeks);
     FantIndeks := False;
     for I := 0 to T.IndexCount - 1 do
       if T.IndexAt(I).IsUnique and (not T.IndexAt(I).IsPrimary) then
         FantIndeks := True;
-    Ok('unik-indeksen på email er markert unik', FantIndeks);
+    Ok('the unique index on email is marked unique', FantIndeks);
 
     T := Schema_.Table('norn_order');
-    LikeI('én fremmednøkkel', 1, T.ForeignKeyCount);
+    LikeI('one foreign key', 1, T.ForeignKeyCount);
     if T.ForeignKeyCount > 0 then
     begin
-      Like('peker på riktig kolonne', 'customer_id', T.ForeignKey(0).Column);
-      Like('peker på riktig tabell', 'norn_customer', T.ForeignKey(0).RefTable);
-      Like('peker på riktig kolonne i den', 'id', T.ForeignKey(0).RefColumn);
+      Like('points at the right column', 'customer_id', T.ForeignKey(0).Column);
+      Like('points at the right table', 'norn_customer', T.ForeignKey(0).RefTable);
+      Like('points at the right column in it', 'id', T.ForeignKey(0).RefColumn);
     end;
-    Ok('created_at finnes', T.HasColumn('created_at'));
+    Ok('created_at is there', T.HasColumn('created_at'));
   finally
     Schema_.Free;
   end;
 
-  Start('norn: tilbakerulling');
+  Start('norn: rollback');
   M := TMigrator.Create(C);
   try
-    LikeI('én rullet tilbake', 1, M.Down(1));
+    LikeI('one was rolled back', 1, M.Down(1));
   finally
     M.Free;
   end;
   Schema_ := IntrospectSchema(C);
   try
-    Ok('norn_customer er borte', Schema_.Table('norn_customer') = nil);
-    Ok('norn_order er borte', Schema_.Table('norn_order') = nil);
+    Ok('norn_customer is gone', Schema_.Table('norn_customer') = nil);
+    Ok('norn_order is gone', Schema_.Table('norn_order') = nil);
   finally
     Schema_.Free;
   end;
@@ -359,112 +361,113 @@ begin
   A := TArena.Create;
   C := TMySqlConnection.Create(Dsn);
   try
-    Start('forbindelse');
-    Ok('lever', C.IsAlive);
-    Ok('dialekten er MySQL', C.Dialect = sdMySql);
-    Ok('RETURNING finnes ikke', not C.SupportsReturning);
+    Start('connection');
+    Ok('alive', C.IsAlive);
+    Ok('the dialect is MySQL', C.Dialect = sdMySql);
+    Ok('RETURNING does not exist', not C.SupportsReturning);
     R := C.Exec(A, 'SELECT VERSION()');
     WriteLn('        server: ', R.Value(0, 0).ToString,
             '   klient: ', MySqlClientVersion);
 
     Schema_(C, A);
 
-    Start('innsetting og id');
+    Start('insert and id');
     Money := 1234.50;
     Id := C.InsertGetId(A,
       'INSERT INTO askr_customer (name, email, balance) VALUES (?, ?, ?)',
       [DbParam(A, 'Ada'), DbParam(A, 'ada@example.com'),
        DbParam(A, Money)], 'id');
-    Ok('fikk en id tilbake', Id > 0);
+    Ok('got an id back', Id > 0);
     Id2 := C.InsertGetId(A,
       'INSERT INTO askr_customer (name, email, balance) VALUES (?, ?, ?)',
       [DbParam(A, 'Bo'), DbParam(A, 'bo@example.com'), DbNull], 'id');
-    LikeI('neste id er én mer', Id + 1, Id2);
+    LikeI('the next id is one more', Id + 1, Id2);
 
-    Start('lesing');
+    Start('reading');
     R := C.ExecParams(A, 'SELECT name, balance, note, active FROM askr_customer ' +
       'WHERE id = ?', [DbParam(A, Id)]);
-    LikeI('én rad', 1, R.RowCount);
-    LikeI('fire kolonner', 4, R.FieldCount);
-    Like('kolonnenavn', 'balance', R.FieldName(1).ToString);
-    Like('navnet', 'Ada', R.Value(0, 'name').ToString);
-    Ok('balance leses som Currency',
+    LikeI('one row', 1, R.RowCount);
+    LikeI('four columns', 4, R.FieldCount);
+    Like('column names', 'balance', R.FieldName(1).ToString);
+    Like('the name', 'Ada', R.Value(0, 'name').ToString);
+    Ok('balance is read as Currency',
       SqlToCurrency(R.Value(0, 'balance'), V) and (V = 1234.50));
-    Ok('NULL er NULL', R.IsNull(0, 'note'));
-    Ok('tom streng er ikke NULL for active', not R.IsNull(0, 'active'));
-    Ok('boolsk leses', SqlToBool(R.Value(0, 'active'), B) and B);
+    Ok('NULL is NULL', R.IsNull(0, 'note'));
+    Ok('an empty string is not NULL for active', not R.IsNull(0, 'active'));
+    Ok('boolean is read', SqlToBool(R.Value(0, 'active'), B) and B);
 
     R := C.ExecParams(A, 'SELECT balance FROM askr_customer WHERE id = ?',
       [DbParam(A, Id2)]);
-    Ok('NULL-kolonne uten verdi', R.IsNull(0, 0));
+    Ok('a NULL column with no value', R.IsNull(0, 0));
 
-    Start('tekst og tegnsett');
+    Start('text and character sets');
     { utf8mb4 er hele poenget: MySQLs «utf8» klarer ikke firebyte-tegn. }
     Text_ := 'Blåbærsyltetøy 🫐 — ¥€$';
     C.ExecParams(A, 'UPDATE askr_customer SET note = ? WHERE id = ?',
       [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT note FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Like('firebyte-tegn overlever tur-retur', Text_, R.Value(0, 0).ToString);
+    Like('four-byte characters survive the round trip', Text_, R.Value(0, 0).ToString);
 
     Text_ := 'he said "hi"; DROP TABLE x; -- ' + #39 + 'og' + #39;
     C.ExecParams(A, 'UPDATE askr_customer SET note = ? WHERE id = ?',
       [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT note FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Like('anførselstegn og semikolon er data, ikke SQL', Text_,
+    Like('quotes and semicolons are data, not SQL', Text_,
       R.Value(0, 0).ToString);
 
-    Start('flyttall og regnede kolonner');
-    { Denne delen finnes fordi den fanget en ekte feil: en DOUBLE kommer
-      binært over prepared-protokollen, og en tidligere variant av
-      resultatlesningen ga tom verdi for alt som ikke var tekst. Tabellene
-      over skjulte det, fordi VARCHAR, DECIMAL og BIGINT sendes som tekst. }
+    Start('floats and computed columns');
+    { This part exists because it caught a real bug: a DOUBLE comes over
+      the prepared protocol in binary, and an earlier version of the
+      result reading gave an empty value for everything that was not
+      text. The tables above hid it, because VARCHAR, DECIMAL and BIGINT
+      are sent as text. }
     C.ExecParams(A, 'UPDATE askr_customer SET weight = ? WHERE id = ?',
       [DbParam(A, '72.5'), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT weight FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Ok('DOUBLE-kolonne kommer tilbake med verdi', R.Value(0, 0).Len > 0);
-    Ok('og lar seg lese som flyttall',
+    Ok('a DOUBLE column comes back with a value', R.Value(0, 0).Len > 0);
+    Ok('and can be read as a float',
       SqlToFloat(R.Value(0, 0), F) and (Abs(F - 72.5) < 0.0001));
 
     R := C.ExecParams(A, 'SELECT ? + ?',
       [DbParam(A, Int64(3)), DbParam(A, Int64(4))]);
-    LikeI('regnet uttrykk uten tabell', 7, R.AsInt64(0, 0));
+    LikeI('a computed expression with no table', 7, R.AsInt64(0, 0));
 
     R := C.ExecParams(A, 'SELECT AVG(balance) FROM askr_customer WHERE id IN (?, ?)',
       [DbParam(A, Id), DbParam(A, Id2)]);
-    Ok('aggregat over DECIMAL gir verdi', R.Value(0, 0).Len > 0);
+    Ok('an aggregate over DECIMAL gives a value', R.Value(0, 0).Len > 0);
 
-    { Lengre enn det faste bufferet på 192 bytes — tvinger andre runde. }
+    { Longer than the fixed 192-byte buffer — forces a second round. }
     Text_ := '';
     for I := 1 to 200 do
-      Text_ := Text_ + 'æ';   { 400 bytes i UTF-8 }
+      Text_ := Text_ + 'æ';   { 400 bytes in UTF-8 }
     C.ExecParams(A, 'UPDATE askr_customer SET note = ? WHERE id = ?',
       [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT note FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Like('lang tekst hentes i andre runde', Text_, R.Value(0, 0).ToString);
+    Like('long text is fetched in the second round', Text_, R.Value(0, 0).ToString);
 
-    Start('dato');
+    Start('dates');
     R := C.ExecParams(A, 'SELECT created_at FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Ok('DATETIME lar seg lese', SqlToDateTime(R.Value(0, 0), D) and (D > 40000));
+    Ok('DATETIME can be read', SqlToDateTime(R.Value(0, 0), D) and (D > 40000));
 
-    Start('berørte rader');
+    Start('affected rows');
     R := C.ExecParams(A, 'UPDATE askr_customer SET name = ? WHERE id = ?',
       [DbParam(A, 'Ada L.'), DbParam(A, Id)]);
-    LikeI('én rad endret', 1, R.AffectedRows);
-    { CLIENT_FOUND_ROWS: en oppdatering uten faktisk endring skal fortsatt
-      melde at raden ble truffet. }
+    LikeI('one row changed', 1, R.AffectedRows);
+    { CLIENT_FOUND_ROWS: an update with no actual change is to still
+      report that the row was matched. }
     R := C.ExecParams(A, 'UPDATE askr_customer SET name = ? WHERE id = ?',
       [DbParam(A, 'Ada L.'), DbParam(A, Id)]);
-    LikeI('uendret oppdatering teller likevel raden', 1, R.AffectedRows);
+    LikeI('an unchanged update still counts the row', 1, R.AffectedRows);
     R := C.ExecParams(A, 'UPDATE askr_customer SET name = ? WHERE id = ?',
       [DbParam(A, 'x'), DbParam(A, Int64(999999))]);
-    LikeI('ingen treff gir null', 0, R.AffectedRows);
+    LikeI('no match gives null', 0, R.AffectedRows);
 
-    Start('feil som skal kjennes igjen');
+    Start('errors that are to be recognised');
     Err := '';
     try
       C.ExecParams(A,
@@ -474,10 +477,10 @@ begin
       on E: EDbError do
       begin
         Err := E.SqlState;
-        Ok('unik-brudd kjennes igjen', E.IsUniqueViolation);
+        Ok('a unique violation is recognised', E.IsUniqueViolation);
       end;
     end;
-    Like('oversatt til 23505', '23505', Err);
+    Like('translated to 23505', '23505', Err);
 
     Err := '';
     try
@@ -488,21 +491,21 @@ begin
       on E: EDbError do
       begin
         Err := E.SqlState;
-        Ok('fremmednøkkelbrudd kjennes igjen', E.IsForeignKeyViolation);
+        Ok('a foreign key violation is recognised', E.IsForeignKeyViolation);
       end;
     end;
-    Like('oversatt til 23503', '23503', Err);
+    Like('translated to 23503', '23503', Err);
 
-    Start('transaksjoner');
+    Start('transactions');
     C.StartTransaction;
-    Ok('vet at den er i en transaksjon', C.InTransaction);
+    Ok('knows it is in a transaction', C.InTransaction);
     C.ExecParams(A, 'INSERT INTO askr_customer (name, email) VALUES (?, ?)',
       [DbParam(A, 'Midlertidig'), DbParam(A, 'midl@example.com')]);
     C.Rollback;
-    Ok('ute av transaksjonen igjen', not C.InTransaction);
+    Ok('out of the transaction again', not C.InTransaction);
     R := C.ExecParams(A, 'SELECT count(*) FROM askr_customer WHERE email = ?',
       [DbParam(A, 'midl@example.com')]);
-    LikeI('rollback fjernet raden', 0, R.AsInt64(0, 0));
+    LikeI('rollback removed the row', 0, R.AsInt64(0, 0));
 
     C.StartTransaction;
     C.ExecParams(A, 'INSERT INTO askr_customer (name, email) VALUES (?, ?)',
@@ -510,28 +513,28 @@ begin
     C.Commit;
     R := C.ExecParams(A, 'SELECT count(*) FROM askr_customer WHERE email = ?',
       [DbParam(A, 'varig@example.com')]);
-    LikeI('commit beholdt raden', 1, R.AsInt64(0, 0));
+    LikeI('commit kept the row', 1, R.AsInt64(0, 0));
 
-    Start('statement-cache');
+    Start('the statement cache');
     ForPrep := C.PreparedCount;
     ForHits := C.CacheHits;
     for I := 1 to 20 do
       C.ExecParams(A, 'SELECT name FROM askr_customer WHERE id = ?',
         [DbParam(A, Id)]);
-    LikeI('samme spørring forberedes én gang', 1, C.PreparedCount - ForPrep);
-    LikeI('resten traff cachen', 19, C.CacheHits - ForHits);
+    LikeI('the same query is prepared once', 1, C.PreparedCount - ForPrep);
+    LikeI('the rest hit the cache', 19, C.CacheHits - ForHits);
 
-    { Serverens eget tall, ikke vårt. Without dette kunne cachetellerne våre
-      vært riktige mens statements hopet seg opp på serveren — og det var
-      nettopp det som skjedde før statements uten cache ble lukket. }
+    { The server's own number, not ours. Without this our cache counters
+      could be right while statements piled up on the server — and that is
+      exactly what happened before uncached statements were closed. }
     ForApne := OpenStatements_(C, A);
     C.CacheLimit := 0;
     ForPrep := C.PreparedCount;
     for I := 1 to 50 do
       C.ExecParams(A, 'SELECT email FROM askr_customer WHERE id = ?',
         [DbParam(A, Id)]);
-    LikeI('cachen av: forberedes hver gang', 50, C.PreparedCount - ForPrep);
-    LikeI('men ingen blir liggende åpne på serveren', 0,
+    LikeI('the cache off: prepared every time', 50, C.PreparedCount - ForPrep);
+    LikeI('but none is left open on the server', 0,
       OpenStatements_(C, A) - ForApne);
     C.CacheLimit := 64;
 
@@ -539,10 +542,10 @@ begin
     for I := 1 to 50 do
       C.ExecParams(A, 'SELECT name FROM askr_customer WHERE email = ?',
         [DbParam(A, 'ada@example.com')]);
-    LikeI('med cache: nøyaktig ett står åpent', 1,
+    LikeI('with the cache: exactly one is open', 1,
       OpenStatements_(C, A) - ForApne);
 
-    Start('mange rader');
+    Start('many rows');
     C.Exec(A, 'DELETE FROM askr_customer WHERE email LIKE ''bulk%''');
     C.StartTransaction;
     for I := 1 to 500 do
@@ -560,18 +563,18 @@ begin
     C.Commit;
     R := C.ExecParams(A, 'SELECT id, name, balance FROM askr_customer ' +
       'WHERE email LIKE ? ORDER BY id', [DbParam(A, 'bulk%')]);
-    LikeI('500 rader tilbake', 500, R.RowCount);
-    Like('første rad', 'Bulk 1', R.Value(0, 'name').ToString);
-    Like('siste rad', 'Bulk 500', R.Value(499, 'name').ToString);
-    Ok('desimalen på rad 400 stemmer',
+    LikeI('500 rows back', 500, R.RowCount);
+    Like('the first row', 'Bulk 1', R.Value(0, 'name').ToString);
+    Like('the last row', 'Bulk 500', R.Value(499, 'name').ToString);
+    Ok('the decimal on row 400 is right',
       SqlToCurrency(R.Value(399, 'balance'), V) and (V = 100.0));
-    Ok('alle verdiene ligger i arenaen',
+    Ok('all the values are in the arena',
       A.Owns(R.Value(0, 'name').Data) and A.Owns(R.Value(499, 'name').Data));
 
-    Start('hva cachen er verdt');
-    { Et måltall, ikke en påstand. Tidsgrenser i en suite blir flakete på en
-      lastet maskin, men «prepared statements med cache» er tom tale uten
-      et tall bak. }
+    Start('what the cache is worth');
+    { A measurement, not an assertion. Time limits in a suite go flaky on
+      a loaded machine, but "prepared statements with a cache" is empty
+      talk without a number behind it. }
     C.CacheLimit := 0;
     C.FlushStatementCache;
     T0 := MonotonicMs;
@@ -588,27 +591,27 @@ begin
         [DbParam(A, 'Bulk ' + IntToStr(I))]);
     With_ := MonotonicMs - T0;
 
-    WriteLn('        2000 spørringer: ', Without, ' ms uten cache, ',
-            With_, ' ms med');
-    Ok('cachen gjorde det ikke tregere', With_ <= Without + (Without div 4));
+    WriteLn('        2000 queries: ', Without, ' ms without the cache, ',
+            With_, ' ms with');
+    Ok('the cache did not make it slower', With_ <= Without + (Without div 4));
 
-    Start('tomt resultat');
+    Start('an empty result');
     R := C.ExecParams(A, 'SELECT name FROM askr_customer WHERE id = ?',
       [DbParam(A, Int64(-1))]);
-    Ok('ingen rader', R.IsEmpty);
-    LikeI('men kolonnen er der', 1, R.FieldCount);
+    Ok('no rows', R.IsEmpty);
+    LikeI('but the column is there', 1, R.FieldCount);
 
-    Start('identifikatorer og plassholdere');
+    Start('identifiers and placeholders');
     B2.Init(A);
     C.AppendIdentStr(B2, 'tabell`name');
-    Like('backtick siteres, og backtick inni dobles',
+    Like('a backtick is quoted, and a backtick inside is doubled',
       '`tabell``name`', B2.ToStr.ToString);
     B2.Init(A);
     C.AppendPlaceholder(B2, 1);
     C.AppendPlaceholder(B2, 2);
-    Like('plassholdere er spørsmålstegn', '??', B2.ToStr.ToString);
+    Like('placeholders are question marks', '??', B2.ToStr.ToString);
     R := C.Exec(A, 'SELECT `name` FROM `askr_customer` LIMIT 1');
-    Ok('backtick-sitert spørring virker', R.RowCount = 1);
+    Ok('a backtick-quoted query works', R.RowCount = 1);
 
     C.Exec(A, 'DROP TABLE IF EXISTS askr_order');
     C.Exec(A, 'DROP TABLE IF EXISTS askr_customer');
@@ -633,7 +636,7 @@ begin
   if not MySqlAvailable then
   begin
     WriteLn;
-    WriteLn('HOPPET OVER: MySQL-klientbiblioteket finnes ikke her.');
+    WriteLn('SKIPPED: the MySQL client library is not here.');
     try
       TMySqlConnection.Create(Dsn);
     except
@@ -650,9 +653,9 @@ begin
       if Pos('Could not connect', E.Message) > 0 then
       begin
         WriteLn;
-        WriteLn('HOPPET OVER: ingen MySQL-server å snakke med.');
+        WriteLn('SKIPPED: no MySQL server to talk to.');
         WriteLn('  ', E.Message);
-        WriteLn('  Start en med ./askr db:up');
+        WriteLn('  Start one with ./askr db:up');
         Halt(0);
       end
       else
@@ -660,7 +663,7 @@ begin
   end;
 
   WriteLn;
-  WriteLn('— ', Bestatt, ' bestått, ', Feilet, ' feilet');
-  if Feilet > 0 then
+  WriteLn('— ', Passed, ' passed, ', Failed, ' failed');
+  if Failed > 0 then
     Halt(1);
 end.

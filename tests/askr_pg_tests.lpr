@@ -1,12 +1,12 @@
-{ Postgres-tester, med vekt på prepared statements og cachen deres.
+{ Postgres tests, weighted towards prepared statements and their cache.
 
-  Kjører mot en ekte server. Without en, hopper suiten over seg selv og sier
-  hvorfor.
+  Runs against a real server. Without one, the suite skips itself and says
+  why.
 
-    ./askr db:up     # Postgres på 5433
+    ./askr db:up     # Postgres on 5433
     ./askr pg
 
-  DSN kan overstyres med ASKR_PG_DSN. }
+  The DSN can be overridden with ASKR_PG_DSN. }
 program askr_pg_tests;
 
 {$mode Delphi}{$H+}
@@ -19,8 +19,8 @@ uses
   Askr.Queue, Askr.Queue.Db;
 
 var
-  Bestatt: Integer = 0;
-  Feilet: Integer = 0;
+  Passed: Integer = 0;
+  Failed: Integer = 0;
   Dsn: string;
 
 procedure Start(const Name: string);
@@ -33,12 +33,12 @@ procedure Ok(const What: string; Value_: Boolean);
 begin
   if Value_ then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
   end;
 end;
@@ -47,12 +47,12 @@ procedure Like(const What, Expected, Got: string);
 begin
   if Expected = Got then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Expected);
     WriteLn('        fikk:      ', Got);
@@ -64,8 +64,8 @@ begin
   Like(What, IntToStr(Expected), IntToStr(Got));
 end;
 
-{ Serverens eget syn på saken. Without denne kunne cachetellerne våre vært
-  riktige mens ingenting faktisk var forberedt. }
+{ The server's own view of it. Without this our cache counters could be
+  right while nothing was actually prepared. }
 function ServerStatements(C: TPgConnection; A: TArena): Int64;
 begin
   Result := C.Exec(A, 'SELECT count(*) FROM pg_prepared_statements').AsInt64(0, 0);
@@ -101,10 +101,10 @@ begin
   A := TArena.Create;
   C := TPgConnection.Create(Dsn);
   try
-    Start('forbindelse');
-    Ok('lever', C.IsAlive);
-    Ok('dialekten er Postgres', C.Dialect = sdPostgres);
-    Ok('RETURNING finnes', C.SupportsReturning);
+    Start('connection');
+    Ok('alive', C.IsAlive);
+    Ok('the dialect is Postgres', C.Dialect = sdPostgres);
+    Ok('RETURNING exists', C.SupportsReturning);
     WriteLn('        server: ', C.ServerVersion);
     C.Exec(A, 'DEALLOCATE ALL');
     Schema_(C, A);
@@ -116,67 +116,67 @@ begin
     for I := 1 to 20 do
       C.ExecParams(A, 'SELECT $1::bigint + $2::bigint',
         [DbParam(A, Int64(I)), DbParam(A, Int64(1))]);
-    LikeI('samme spørring forberedes én gang', 1, C.PreparedCount - ForPrep);
-    LikeI('resten traff cachen', 19, C.CacheHits - ForHits);
-    LikeI('serveren har ett statement mer', 1,
+    LikeI('the same query is prepared once', 1, C.PreparedCount - ForPrep);
+    LikeI('the rest hit the cache', 19, C.CacheHits - ForHits);
+    LikeI('the server has one statement more', 1,
       ServerStatements(C, A) - ForServer);
 
     R := C.ExecParams(A, 'SELECT $1::bigint + $2::bigint',
       [DbParam(A, Int64(3)), DbParam(A, Int64(4))]);
-    LikeI('og svaret er riktig', 7, R.AsInt64(0, 0));
+    LikeI('and the answer is right', 7, R.AsInt64(0, 0));
 
-    Start('cachen av');
+    Start('the cache off');
     C.CacheLimit := 0;
     ForPrep := C.PreparedCount;
     for I := 1 to 3 do
       C.ExecParams(A, 'SELECT $1::text', [DbParam(A, 'hei')]);
-    LikeI('ingenting forberedes', 0, C.PreparedCount - ForPrep);
+    LikeI('nothing is prepared', 0, C.PreparedCount - ForPrep);
     R := C.ExecParams(A, 'SELECT $1::text', [DbParam(A, 'hei')]);
-    Like('men svaret er det samme', 'hei', R.Value(0, 0).ToString);
+    Like('but the answer is the same', 'hei', R.Value(0, 0).ToString);
     C.CacheLimit := 64;
 
-    Start('PQprepare overlever rollback');
-    { SQL-setningen PREPARE er transaksjonell: forberedes den inne i en
-      transaksjon som rulles tilbake, forsvinner den. **PQprepare er noe
-      annet** — den sender en Parse-melding i den utvidede protokollen, og
-      slike statements hører til sesjonen, ikke til transaksjonen. De
-      overlever rollback.
+    Start('PQprepare survives a rollback');
+    { The SQL statement PREPARE is transactional: prepare it inside a
+      transaction that is rolled back and it disappears. **PQprepare is
+      something else** — it sends a Parse message in the extended
+      protocol, and such statements belong to the session, not to the
+      transaction. They survive a rollback.
 
-      Forskjellen er verdt en test, for den avgjør om cachen trenger å vite
-      om transaksjoner i det hele tatt. Den gjør ikke det. }
+      The difference is worth a test, because it decides whether the cache
+      needs to know about transactions at all. It does not. }
     C.FlushStatementCache;
     C.StartTransaction;
     R := C.ExecParams(A, 'SELECT $1::int * 2', [DbParam(A, Int64(21))]);
-    LikeI('forberedt og kjørt inne i transaksjonen', 42, R.AsInt64(0, 0));
+    LikeI('prepared and run inside the transaction', 42, R.AsInt64(0, 0));
     ForPrep := C.PreparedCount;
     C.Rollback;
 
-    LikeI('statementet står igjen på serveren', 1, ServerStatements(C, A));
+    LikeI('the statement is still on the server', 1, ServerStatements(C, A));
     R := C.ExecParams(A, 'SELECT $1::int * 2', [DbParam(A, Int64(21))]);
-    LikeI('samme spørring virker etterpå', 42, R.AsInt64(0, 0));
-    LikeI('uten å forberedes på nytt', 0, C.PreparedCount - ForPrep);
+    LikeI('the same query works afterwards', 42, R.AsInt64(0, 0));
+    LikeI('without being prepared again', 0, C.PreparedCount - ForPrep);
 
-    Start('gjenoppretting når statementet forsvinner likevel');
-    { Cachen kan fortsatt bli utdatert: noe annet i appen kan kjøre
-      DEALLOCATE ALL, og da peker den på navn serveren ikke kjenner. Her
-      gjøres det med vilje, bak ryggen på cachen, for å vise at neste kall
-      forbereder på nytt i stedet for å feile med 26000. }
+    Start('recovery when the statement disappears anyway');
+    { The cache can still go stale: something else in the app may run
+      DEALLOCATE ALL, and then it points at names the server does not
+      know. Here it is done deliberately, behind the cache's back, to show
+      that the next call prepares again instead of failing with 26000. }
     ForPrep := C.PreparedCount;
     C.Exec(A, 'DEALLOCATE ALL');
-    LikeI('serveren er tom', 0, ServerStatements(C, A));
+    LikeI('the server is empty', 0, ServerStatements(C, A));
     R := C.ExecParams(A, 'SELECT $1::int * 2', [DbParam(A, Int64(21))]);
-    LikeI('spørringen virker likevel', 42, R.AsInt64(0, 0));
-    LikeI('fordi den ble forberedt på nytt', 1, C.PreparedCount - ForPrep);
-    LikeI('og serveren har den igjen', 1, ServerStatements(C, A));
+    LikeI('the query works anyway', 42, R.AsInt64(0, 0));
+    LikeI('because it was prepared again', 1, C.PreparedCount - ForPrep);
+    LikeI('and the server has it again', 1, ServerStatements(C, A));
 
-    Start('et statement som feiler kastes ut');
+    Start('a statement that fails is evicted');
     C.FlushStatementCache;
-    { InsertGetId tar en INSERT uten RETURNING; driveren legger på det
-      dialekten trenger. }
+    { InsertGetId takes an INSERT without RETURNING; the driver adds
+      whatever the dialect needs. }
     Id := C.InsertGetId(A,
       'INSERT INTO pg_customer (name, email) VALUES ($1, $2)',
       [DbParam(A, 'Ada'), DbParam(A, 'ada@example.com')], 'id');
-    Ok('fikk en id', Id > 0);
+    Ok('got an id', Id > 0);
 
     Err := '';
     try
@@ -186,30 +186,30 @@ begin
       on E: EDbError do
       begin
         Err := E.SqlState;
-        Ok('unik-brudd kjennes igjen', E.IsUniqueViolation);
+        Ok('a unique violation is recognised', E.IsUniqueViolation);
       end;
     end;
-    Like('SQLSTATE er 23505', '23505', Err);
+    Like('SQLSTATE is 23505', '23505', Err);
 
-    { Samme spørring skal virke etterpå, med en annen e-post. }
+    { The same query is to work afterwards, with a different email. }
     Id := C.InsertGetId(A,
       'INSERT INTO pg_customer (name, email) VALUES ($1, $2)',
       [DbParam(A, 'Bo'), DbParam(A, 'bo@example.com')], 'id');
-    Ok('forbindelsen er brukbar etter feilen', Id > 0);
+    Ok('the connection is usable after the error', Id > 0);
 
-    Start('cachen har en grense');
+    Start('the cache has a limit');
     C.FlushStatementCache;
     C.CacheLimit := 4;
     for I := 1 to 10 do
       C.ExecParams(A,
         Format('SELECT $1::bigint + %d', [I]), [DbParam(A, Int64(1))]);
-    Ok('serveren holder seg under grensen',
+    Ok('the server stays under the limit',
       ServerStatements(C, A) <= 4);
     R := C.ExecParams(A, 'SELECT $1::bigint + 7', [DbParam(A, Int64(1))]);
-    LikeI('og spørringene svarer fortsatt riktig', 8, R.AsInt64(0, 0));
+    LikeI('and the queries still answer correctly', 8, R.AsInt64(0, 0));
     C.CacheLimit := 64;
 
-    Start('verdier over prepared-veien');
+    Start('values over the prepared path');
     C.FlushStatementCache;
     Money := 1234.50;
     C.ExecParams(A, 'UPDATE pg_customer SET balance = $1 WHERE id = $2',
@@ -217,27 +217,27 @@ begin
     R := C.ExecParams(A,
       'SELECT name, balance, active, created_at FROM pg_customer WHERE id = $1',
       [DbParam(A, Id)]);
-    LikeI('én rad', 1, R.RowCount);
-    Like('kolonnenavn beholdes', 'balance', R.FieldName(1).ToString);
-    Ok('NUMERIC leses som Currency',
+    LikeI('one row', 1, R.RowCount);
+    Like('column names are kept', 'balance', R.FieldName(1).ToString);
+    Ok('NUMERIC is read as Currency',
       SqlToCurrency(R.Value(0, 'balance'), V) and (V = 1234.50));
-    Ok('BOOLEAN leses', R.Value(0, 'active').EqualsStr('t'));
-    Ok('verdiene ligger i arenaen', A.Owns(R.Value(0, 'name').Data));
+    Ok('BOOLEAN is read', R.Value(0, 'active').EqualsStr('t'));
+    Ok('the values are in the arena', A.Owns(R.Value(0, 'name').Data));
 
     C.ExecParams(A, 'UPDATE pg_customer SET balance = $1 WHERE id = $2',
       [DbNull, DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT balance FROM pg_customer WHERE id = $1',
       [DbParam(A, Id)]);
-    Ok('NULL er NULL', R.IsNull(0, 0));
+    Ok('NULL is NULL', R.IsNull(0, 0));
 
     Text_ := 'Blåbær 🫐 — he said "hi"; DROP TABLE x; --';
     C.ExecParams(A, 'UPDATE pg_customer SET name = $1 WHERE id = $2',
       [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT name FROM pg_customer WHERE id = $1',
       [DbParam(A, Id)]);
-    Like('tekst er data, ikke SQL', Text_, R.Value(0, 0).ToString);
+    Like('text is data, not SQL', Text_, R.Value(0, 0).ToString);
 
-    Start('mange rader over samme statement');
+    Start('many rows over the same statement');
     C.Exec(A, 'DELETE FROM pg_customer');
     C.StartTransaction;
     ForPrep := C.PreparedCount;
@@ -254,30 +254,30 @@ begin
          DbParam(A, Money)]);
     end;
     C.Commit;
-    LikeI('500 innsettinger, ett statement', 1, C.PreparedCount - ForPrep);
+    LikeI('500 inserts, one statement', 1, C.PreparedCount - ForPrep);
     R := C.ExecParams(A,
       'SELECT name, balance FROM pg_customer WHERE email LIKE $1 ORDER BY id',
       [DbParam(A, 'bulk%')]);
-    LikeI('500 rader tilbake', 500, R.RowCount);
-    Like('siste rad', 'Bulk 500', R.Value(499, 'name').ToString);
-    Ok('desimalen på rad 400 stemmer',
+    LikeI('500 rows back', 500, R.RowCount);
+    Like('the last row', 'Bulk 500', R.Value(499, 'name').ToString);
+    Ok('the decimal on row 400 is right',
       SqlToCurrency(R.Value(399, 'balance'), V) and (V = 100.0));
 
-    { Statementet ble forberedt inne i transaksjonen, og denne gangen
-      committet — da skal det fortsatt finnes. }
+    { The statement was prepared inside the transaction, and this time
+      committed — then it is to still be there. }
     ForPrep := C.PreparedCount;
     Money := 1;
     C.ExecParams(A,
       'INSERT INTO pg_customer (name, email, balance) VALUES ($1, $2, $3)',
       [DbParam(A, 'After_'), DbParam(A, 'etter@example.com'),
        DbParam(A, Money)]);
-    LikeI('commit beholder det forberedte statementet', 0,
+    LikeI('commit keeps the prepared statement', 0,
       C.PreparedCount - ForPrep);
 
-    Start('hva cachen er verdt');
-    { Ikke en påstand — et måltall. Tidsgrenser i en testsuite blir flakete
-      på en lastet maskin, men uten et tall er «prepared statements med
-      cache» bare en påstand. }
+    Start('what the cache is worth');
+    { Not an assertion — a measurement. Time limits in a test suite go
+      flaky on a loaded machine, but without a number "prepared statements
+      with a cache" is only a claim. }
     C.Exec(A, 'DELETE FROM pg_customer WHERE email LIKE ''bulk%''');
     for I := 1 to 200 do
       C.ExecParams(A, 'SELECT count(*) FROM pg_customer WHERE name = $1',
@@ -299,11 +299,11 @@ begin
         [DbParam(A, 'Bulk ' + IntToStr(I))]);
     With_ := MonotonicMs - T0;
 
-    WriteLn('        2000 spørringer: ', Without, ' ms uten cache, ',
-            With_, ' ms med');
+    WriteLn('        2000 queries: ', Without, ' ms without the cache, ',
+            With_, ' ms with');
     if With_ > 0 then
-      WriteLn('        ', (Without * 100) div With_, ' % av tiden uten cache');
-    Ok('cachen gjorde det ikke tregere', With_ <= Without + (Without div 4));
+      WriteLn('        ', (Without * 100) div With_, ' % of the time without it');
+    Ok('the cache did not make it slower', With_ <= Without + (Without div 4));
 
     C.Exec(A, 'DROP TABLE IF EXISTS pg_order');
     C.Exec(A, 'DROP TABLE IF EXISTS pg_customer');
@@ -313,8 +313,9 @@ begin
   end;
 end;
 
-{ Poolen gir forbindelser til ulike tråder. Cachen ligger på forbindelsen,
-  så to tråder skal aldri se hverandres statementnavn. }
+{ The pool hands connections to different threads. The cache lives on the
+  connection, so two threads must never see each other's statement
+  names. }
 type
   TPgTraad = class(TThread)
   private
@@ -376,7 +377,7 @@ var
   Sum, Fasit: Int64;
   Err: string;
 begin
-  Start('pool og tråder');
+  Start('pool and threads');
   P := TDbPool.Create(Dsn, 3);
   try
     for I := 0 to Traader - 1 do
@@ -392,12 +393,12 @@ begin
       T[I].Free;
     end;
     if Err <> '' then
-      WriteLn('        feil fra en tråd: ', Err);
-    Ok('ingen tråd feilet', Err = '');
+      WriteLn('        error from a thread: ', Err);
+    Ok('no thread failed', Err = '');
     Fasit := Int64(Traader) * ((Int64(Runder) * (Runder + 1)) div 2 + Runder);
-    LikeI('alle svarene stemmer', Fasit, Sum);
-    LikeI('200 leier totalt', Traader * Runder, Int64(P.AcquiredTotal));
-    Ok('poolen holdt seg innenfor grensen', P.LiveCount <= 3);
+    LikeI('every answer is right', Fasit, Sum);
+    LikeI('200 leases in total', Traader * Runder, Int64(P.AcquiredTotal));
+    Ok('the pool stayed within its limit', P.LiveCount <= 3);
   finally
     P.Free;
   end;
@@ -414,7 +415,7 @@ begin
   if not PgAvailable then
   begin
     WriteLn;
-    WriteLn('HOPPET OVER: libpq finnes ikke her.');
+    WriteLn('SKIPPED: libpq is not here.');
     Halt(0);
   end;
   WriteLn('bibliotek: ', PgLibraryName);
@@ -430,9 +431,9 @@ begin
          (Pos('could not translate', LowerCase(E.Message)) > 0) then
       begin
         WriteLn;
-        WriteLn('HOPPET OVER: ingen Postgres-server å snakke med.');
+        WriteLn('SKIPPED: no Postgres server to talk to.');
         WriteLn('  ', E.Message);
-        WriteLn('  Start en med ./askr db:up');
+        WriteLn('  Start one with ./askr db:up');
         Halt(0);
       end
       else
@@ -440,7 +441,7 @@ begin
   end;
 
   WriteLn;
-  WriteLn('— ', Bestatt, ' bestått, ', Feilet, ' feilet');
-  if Feilet > 0 then
+  WriteLn('— ', Passed, ' passed, ', Failed, ' failed');
+  if Failed > 0 then
     Halt(1);
 end.

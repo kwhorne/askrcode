@@ -1,27 +1,28 @@
-{ Kryptogrunnmuren mot offisielle vektorer.
+{ The crypto foundation against official vectors.
 
-  Dette er den ene suiten der «det ser riktig ut» ikke er godt nok. En
-  SHA-256 med feil byterekkefølge produserer en fin, stabil, konsistent og
-  fullstendig verdiløs hash, og ingenting i en app vil si fra. Derfor er
-  hver algoritme her sjekket mot tall noen andre har publisert:
+  This is the one suite where "it looks right" is not good enough. A
+  SHA-256 with the byte order wrong produces a fine, stable, consistent
+  and entirely worthless hash, and nothing in an app will say so. Every
+  algorithm here is therefore checked against numbers somebody else
+  published:
 
-    SHA-256      NIST FIPS 180-4, eksempelvektorene
-    HMAC-SHA256  RFC 4231, alle syv
-    PBKDF2       RFC 6070-tilfellene regnet om til SHA-256 (de står i
-                 draft-josefsson-scrypt-kdf / RFC 7914s referanser)
-    base64       RFC 4648 sine egne teststrenger
-    ECDSA P-256  signaturer laget med python-cryptography, altsaa
-                 OpenSSL: en uavhengig implementasjon av samme spek
-    WebAuthn     hele seremonien bygget fra speken med en ekte P-256
-                 noekkel: COSE-noekkel, authenticatorData,
-                 attestasjonsobjekt og DER-signatur
+    SHA-256      NIST FIPS 180-4, the example vectors
+    HMAC-SHA256  RFC 4231, all seven
+    PBKDF2       the RFC 6070 cases recomputed for SHA-256 (they are in
+                 draft-josefsson-scrypt-kdf / RFC 7914's references)
+    base64       RFC 4648's own test strings
+    ECDSA P-256  signatures made with python-cryptography, that is,
+                 OpenSSL: an independent implementation of the same spec
+    WebAuthn     the whole ceremony built from the spec with a real P-256
+                 key: COSE key, authenticatorData, attestation object and
+                 DER signature
 
-  Vektorfila for ECDSA ligger i tests/vectors/ og er generert, ikke
-  hentet fra NIST. Det er verdt aa si rett ut: den viser at Askr er enig
-  med OpenSSL om de samme tilfellene, ikke at begge foelger standarden.
-  De ugyldige radene er de interessante - tuklet r, tuklet s, r = 0,
-  s = n, speilet y, punkt utenfor kurven, og en annen noekkels
-  signatur. }
+  The ECDSA vector file is in tests/vectors/ and is generated, not taken
+  from NIST. That is worth saying outright: it shows that Askr agrees with
+  OpenSSL on the same cases, not that either follows the standard. The
+  invalid rows are the interesting ones — tampered r, tampered s, r = 0,
+  s = n, mirrored y, a point off the curve, and another key's
+  signature. }
 program AskrCryptoTests;
 
 {$mode Delphi}{$H+}
@@ -35,8 +36,8 @@ uses
   Askr.Core.Cbor, Askr.WebAuthn;
 
 var
-  Bestatt: Integer = 0;
-  Feilet: Integer = 0;
+  Passed: Integer = 0;
+  Failed: Integer = 0;
 
 procedure Start(const Name_: string);
 begin
@@ -44,16 +45,16 @@ begin
   WriteLn('— ', Name_);
 end;
 
-procedure Ok(const What: string; Betingelse: Boolean);
+procedure Ok(const What: string; Condition: Boolean);
 begin
-  if Betingelse then
+  if Condition then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
   end;
 end;
@@ -62,12 +63,12 @@ procedure Like(const What, Expected, Got: string);
 begin
   if Expected = Got then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Expected);
     WriteLn('        fikk:      ', Got);
@@ -134,56 +135,57 @@ var
   P1, P2: TEcPoint;
   X, Y, Kk: TU256;
 begin
-  Start('ECDSA P-256: punktaritmetikk');
+  Start('ECDSA P-256: point arithmetic');
 
   EcSetAffine(EcGx, EcGy, P1);
   EcDouble(P1, P2);
   EcToAffine(P2, X, Y);
-  Ok('2G har riktig x', U256ToHex(X) =
+  Ok('2G has the right x', U256ToHex(X) =
     '7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978');
-  Ok('2G har riktig y', U256ToHex(Y) =
+  Ok('2G has the right y', U256ToHex(Y) =
     '07775510db8ed040293d9ac69f7430dbba7dade63ce982299e04b79d227873d1');
 
-  { n*G = uendelig. Den ene identiteten som fanger nesten alt galt i
-    punktaritmetikken paa en gang. }
+  { n*G = infinity. The one identity that catches almost everything wrong
+    in the point arithmetic at once. }
   EcSetAffine(EcGx, EcGy, P1);
   Kk := EcN;
   EcMul(Kk, P1, P2);
-  Ok('n*G er uendelig', EcIsInfinity(P2));
+  Ok('n*G is infinity', EcIsInfinity(P2));
 
-  { Doblingsgrenen i EcAdd naas aldri av tilfeldige signaturer: to
-    uavhengige punkter har praktisk talt aldri samme x. Without disse to er
-    den udekket, og en feil der ville dukket opp sjelden og uforklarlig.
-    Mutasjonssjekket: fjernes grenen, feiler begge. }
+  { The doubling branch in EcAdd is never reached by random signatures:
+    two independent points practically never share an x. Without these two
+    it is uncovered, and a fault there would turn up rarely and
+    inexplicably. Mutation-checked: remove the branch and both fail. }
   EcSetAffine(EcGx, EcGy, P1);
   EcAdd(P1, P1, P2);
   EcToAffine(P2, X, Y);
-  Ok('EcAdd(G, G) gir 2G', U256ToHex(X) =
+  Ok('EcAdd(G, G) gives 2G', U256ToHex(X) =
     '7cf27b188d034f7e8a52380304b51ac3c08969e277f21b35a60b48fc47669978');
 
   EcSetAffine(EcGx, EcGy, P1);
   FpSub(EcP, EcGy, Y);
   EcSetAffine(EcGx, Y, P2);
   EcAdd(P1, P2, P2);
-  Ok('G + (-G) er uendelig', EcIsInfinity(P2));
+  Ok('G + (-G) is infinity', EcIsInfinity(P2));
 
-  { Aliasing: R kan vaere samme variabel som P. Previous utgave nullstilte
-    out-parameteren foerst, og da var punktet borte foer foerste runde. }
+  { Aliasing: R can be the same variable as P. An earlier version cleared
+    the out parameter first, and then the point was gone before the first
+    round. }
   U256SetU32(Kk, 21);
   EcSetAffine(EcGx, EcGy, P1);
   EcMul(Kk, P1, P1);
-  Ok('EcMul(K, P, P) taaler aliasing', EcToAffine(P1, X, Y));
+  Ok('EcMul(K, P, P) tolerates aliasing', EcToAffine(P1, X, Y));
 
-  Ok('G ligger paa kurven', EcOnCurve(EcGx, EcGy));
+  Ok('G is on the curve', EcOnCurve(EcGx, EcGy));
   Y := EcGy; Y.L[0] := Y.L[0] xor 1;
-  Ok('et punkt utenfor kurven avvises', not EcOnCurve(EcGx, Y));
+  Ok('a point off the curve is rejected', not EcOnCurve(EcGx, Y));
 
-  Start('ECDSA P-256: signaturer mot OpenSSL-genererte vektorer');
+  Start('ECDSA P-256: signatures against OpenSSL-generated vectors');
   L := TStringList.Create;
   try
     if not FileExists('tests/vectors/ecdsa_p256.txt') then
     begin
-      Ok('vektorfila finnes (kjoer fra repo-rota)', False);
+      Ok('the vector file exists (run from the repository root)', False);
       Exit;
     end;
     L.LoadFromFile('tests/vectors/ecdsa_p256.txt');
@@ -236,13 +238,13 @@ var
   Asr: TAssertion;
   Wait, Got: Boolean;
 begin
-  Start('WebAuthn: hele seremonien, mot data bygget fra speken');
+  Start('WebAuthn: the whole ceremony, against data built from the spec');
   RegOk := 0; RegNei := 0; AsrOk := 0; AsrNei := 0; Gale := 0;
   L := TStringList.Create;
   try
     if not FileExists('tests/vectors/webauthn.txt') then
     begin
-      Ok('vektorfila finnes (kjoer fra repo-rota)', False);
+      Ok('the vector file exists (run from the repository root)', False);
       Exit;
     end;
     L.LoadFromFile('tests/vectors/webauthn.txt');
@@ -314,29 +316,30 @@ begin
   WriteLn('askr — krypto');
 
   { ---------------------------------------------------------- SHA-256 -- }
-  Start('SHA-256 mot NIST FIPS 180-4');
+  Start('SHA-256 against NIST FIPS 180-4');
 
-  Like('den tomme strengen',
+  Like('the empty string',
     'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
     Sha256Hex(''));
   Like('"abc"',
     'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     Sha256Hex('abc'));
-  { 56 byte: nøyaktig på grensa der utfyllingen ikke får plass i blokka og
-    må gå i en til. Den grenen er den vanligste feilen i en SHA-2. }
-  Like('448 bit, to blokker',
+  { 56 bytes: exactly on the boundary where the padding does not fit in
+    the block and has to go into another. That branch is the most common
+    mistake in a SHA-2. }
+  Like('448 bits, two blocks',
     '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1',
     Sha256Hex('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'));
-  Like('en million a-er',
+  Like('a million a''s',
     'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0',
     Sha256Hex(Again('a', 1000000)));
 
-  Start('SHA-256 på alle lengder rundt blokkgrensa');
-  { Utfyllingen har tre tilfeller: den får plass i blokka, den får akkurat
-    ikke plass og trenger en blokk til, eller den fyller blokka helt. En
-    bom på noen av dem gir typisk to lengder samme digest. 131 lengder som
-    alle er forskjellige utelukker det — og dekker 55/56 og 63/64, som er
-    nettopp grensene. }
+  Start('SHA-256 at every length around the block boundary');
+  { The padding has three cases: it fits in the block, it just does not
+    fit and needs another block, or it fills the block exactly. Getting any
+    of them wrong typically gives two lengths the same digest. 131 lengths
+    that are all different rules that out — and it covers 55/56 and 63/64,
+    which are precisely the boundaries. }
   Unike := 0;
   for I := 0 to 130 do
   begin
@@ -348,23 +351,23 @@ begin
     if not Duplikat then
       Inc(Unike);
   end;
-  Ok('131 lengder gir 131 ulike digester', Unike = 131);
-  Ok('55 og 56 er ulike (utfyllingen så vidt får plass)',
+  Ok('131 lengths give 131 different digests', Unike = 131);
+  Ok('55 and 56 differ (the padding only just fits)',
     Sett[55] <> Sett[56]);
-  Ok('63 og 64 er ulike (blokka fylles helt)', Sett[63] <> Sett[64]);
+  Ok('63 and 64 differ (the block fills exactly)', Sett[63] <> Sett[64]);
 
   { ------------------------------------------------------ HMAC-SHA256 -- }
-  Start('HMAC-SHA256 mot RFC 4231');
+  Start('HMAC-SHA256 against RFC 4231');
 
   { Tilfelle 1 }
   SetLength(A, 20);
   for I := 0 to 19 do A[I] := $0b;
-  Like('tilfelle 1',
+  Like('case 1',
     'b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7',
     DigestHex(HmacSha256(A, Bytes('Hi There'))));
 
-  { Tilfelle 2: nøkkel kortere enn hashen }
-  Like('tilfelle 2 — kort nøkkel',
+  { Case 2: a key shorter than the hash }
+  Like('case 2 — a short key',
     '5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843',
     HmacSha256Hex('Jefe', 'what do ya want for nothing?'));
 
@@ -373,7 +376,7 @@ begin
   for I := 0 to 19 do A[I] := $aa;
   SetLength(B, 50);
   for I := 0 to 49 do B[I] := $dd;
-  Like('tilfelle 3',
+  Like('case 3',
     '773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe',
     DigestHex(HmacSha256(A, B)));
 
@@ -382,15 +385,15 @@ begin
   for I := 0 to 24 do A[I] := Byte(I + 1);
   SetLength(B, 50);
   for I := 0 to 49 do B[I] := $cd;
-  Like('tilfelle 4',
+  Like('case 4',
     '82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b',
     DigestHex(HmacSha256(A, B)));
 
-  { Tilfelle 6: nøkkel på 131 byte, altså lengre enn blokka. Den hashes
-    først, og uten det steget stemmer ingenting her. }
+  { Case 6: a 131-byte key, that is, longer than the block. It is hashed
+    first, and without that step nothing here matches. }
   SetLength(A, 131);
   for I := 0 to 130 do A[I] := $aa;
-  Like('tilfelle 6 — nøkkel lengre enn blokka',
+  Like('case 6 — a key longer than the block',
     '60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54',
     DigestHex(HmacSha256(A,
       Bytes('Test Using Larger Than Block-Size Key - Hash Key First'))));
@@ -398,7 +401,7 @@ begin
   { Tilfelle 7 }
   SetLength(A, 131);
   for I := 0 to 130 do A[I] := $aa;
-  Like('tilfelle 7 — lang nøkkel og lang melding',
+  Like('case 7 — a long key and a long message',
     '9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2',
     DigestHex(HmacSha256(A, Bytes(
       'This is a test using a larger than block-size key and a larger ' +
@@ -406,7 +409,7 @@ begin
       'used by the HMAC algorithm.'))));
 
   { ----------------------------------------------------------- base64 -- }
-  Start('base64 mot RFC 4648');
+  Start('base64 against RFC 4648');
 
   Like('""', '', Base64Encode(Bytes('')));
   Like('"f"', 'Zg==', Base64Encode(Bytes('f')));
@@ -416,16 +419,17 @@ begin
   Like('"fooba"', 'Zm9vYmE=', Base64Encode(Bytes('fooba')));
   Like('"foobar"', 'Zm9vYmFy', Base64Encode(Bytes('foobar')));
 
-  { `=` på to TBytes sammenligner referansene i Delphi-modus, ikke
-    innholdet. Det er en felle som gir en test som alltid er grønn eller
-    alltid rød, avhengig av hvordan den skrives. }
-  Ok('dekoding er omvendt av koding',
+  { `=` on two TBytes compares the references in Delphi mode, not the
+    contents. That is a trap which gives a test that is either always green
+    or always red, depending on how it is written. }
+  Ok('decoding is the inverse of encoding',
     ConstantTimeEquals(Base64Decode(Base64Encode(Bytes('foobar'))),
       Bytes('foobar')));
-  Ok('også med utfylling',
+  Ok('with padding too',
     ConstantTimeEquals(Base64Decode(Base64Encode(Bytes('fo'))), Bytes('fo')));
 
-  { base64url skal aldri gi tegn som må prosentkodes i en URL. }
+  { base64url must never give a character that has to be percent-encoded
+    in a URL. }
   S := '';
   for I := 0 to 300 do
   begin
@@ -433,20 +437,20 @@ begin
     for J := 0 to 31 do A[J] := Byte((I * 7 + J * 13) and $FF);
     S := S + Base64UrlEncode(A);
   end;
-  Ok('base64url gir ingen +, / eller =',
+  Ok('base64url gives no +, / or =',
     (Pos('+', S) = 0) and (Pos('/', S) = 0) and (Pos('=', S) = 0));
 
   A := RandomBytes(32);
-  Ok('base64url tur-retur',
+  Ok('base64url round trip',
     ConstantTimeEquals(Base64UrlDecode(Base64UrlEncode(A)), A));
 
   Start('hex');
-  Like('koding', '00017fff', HexEncode(Bytes(#0#1#127#255)));
+  Like('encoding', '00017fff', HexEncode(Bytes(#0#1#127#255)));
   A := RandomBytes(48);
-  Ok('tur-retur', ConstantTimeEquals(HexDecode(HexEncode(A)), A));
+  Ok('round trip', ConstantTimeEquals(HexDecode(HexEncode(A)), A));
 
   { ----------------------------------------------------------- PBKDF2 -- }
-  Start('PBKDF2-HMAC-SHA256 mot RFC 6070-tilfellene');
+  Start('PBKDF2-HMAC-SHA256 against the RFC 6070 cases');
 
   Like('c=1, dkLen=32',
     '120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b',
@@ -457,41 +461,41 @@ begin
   Like('c=4096, dkLen=32',
     'c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a',
     HexEncode(Pbkdf2Sha256('password', Bytes('salt'), 4096, 32)));
-  { dkLen 40 tvinger to blokker, altså at blokktelleren faktisk brukes.
-    With_ en teller som alltid er 1 gir begge blokkene samme bytes, og den
-    feilen er usynlig så lenge man bare ber om 32. }
-  Like('c=4096, dkLen=40, to blokker',
+  { dkLen 40 forces two blocks, that is, that the block counter is
+    actually used. With a counter that is always 1 both blocks get the same
+    bytes, and that fault is invisible as long as you only ask for 32. }
+  Like('c=4096, dkLen=40, two blocks',
     '348c89dbcbd32b2f32d814b8116e84cf2b17347ebc1800181c4e2a1fb8dd53e1' +
     'c635518c7dac47e9',
     HexEncode(Pbkdf2Sha256('passwordPASSWORDpassword',
       Bytes('saltSALTsaltSALTsaltSALTsaltSALTsalt'), 4096, 40)));
 
-  Ok('null iterasjoner avvises', True);
+  Ok('zero iterations are rejected', True);
   try
     Pbkdf2Sha256('x', Bytes('y'), 0, 32);
-    Ok('  ... med en exception', False);
+    Ok('  ... with an exception', False);
   except
-    on ECryptoError do Ok('  ... med en exception', True);
+    on ECryptoError do Ok('  ... with an exception', True);
   end;
 
   { ------------------------------------------------------- tilfeldig -- }
-  Start('tilfeldighet fra kjernen');
+  Start('randomness from the kernel');
 
   A := RandomBytes(32);
   B := RandomBytes(32);
-  Ok('riktig lengde', (Length(A) = 32) and (Length(B) = 32));
-  Ok('to kall gir ikke samme bytes', not ConstantTimeEquals(A, B));
-  Ok('ikke bare nuller', not ConstantTimeEquals(A, Bytes(Again(#0, 32))));
-  Ok('RandomHex gir dobbelt så mange tegn', Length(RandomHex(16)) = 32);
-  Ok('RandomToken er url-trygg',
+  Ok('the right length', (Length(A) = 32) and (Length(B) = 32));
+  Ok('two calls do not give the same bytes', not ConstantTimeEquals(A, B));
+  Ok('not only zeroes', not ConstantTimeEquals(A, Bytes(Again(#0, 32))));
+  Ok('RandomHex gives twice as many characters', Length(RandomHex(16)) = 32);
+  Ok('RandomToken is url-safe',
     (Pos('+', RandomToken) = 0) and (Pos('/', RandomToken) = 0) and
     (Pos('=', RandomToken) = 0));
-  Ok('null bytes gir tom tabell', Length(RandomBytes(0)) = 0);
+  Ok('zero bytes gives an empty array', Length(RandomBytes(0)) = 0);
 
-  { En stor prøve skal treffe alle 256 byteverdiene. Det er ikke en
-    statistisk test, bare en sperre mot at generatoren leverer noe
-    åpenbart degenerert — som en buffer den aldri fylte helt, eller en
-    løkke som bare skrev de lave bitene. }
+  { A large sample is to hit all 256 byte values. This is not a
+    statistical test, only a stop against the generator delivering
+    something obviously degenerate — a buffer it never filled, or a loop
+    that only wrote the low bits. }
   FillChar(Apply_, SizeOf(Apply_), 0);
   for I := 1 to 64 do
   begin
@@ -503,146 +507,146 @@ begin
   for I := 0 to 255 do
     if Apply_[I] then
       Inc(Unike);
-  Ok('16 kB fra generatoren dekker alle 256 byteverdiene', Unike = 256);
+  Ok('16 kB from the generator covers all 256 byte values', Unike = 256);
 
   { -------------------------------------------------- konstant tid -- }
-  Start('konstanttidssammenligning');
+  Start('constant-time comparison');
 
-  Ok('like strenger', ConstantTimeEquals('hemmelig', 'hemmelig'));
-  Ok('ulike strenger', not ConstantTimeEquals('hemmelig', 'hemmeliG'));
-  Ok('ulik lengde', not ConstantTimeEquals('hemmelig', 'hemmelige'));
-  Ok('tomme strenger', ConstantTimeEquals('', ''));
-  Ok('avvik i første tegn oppdages',
+  Ok('equal strings', ConstantTimeEquals('hemmelig', 'hemmelig'));
+  Ok('different strings', not ConstantTimeEquals('hemmelig', 'hemmeliG'));
+  Ok('different lengths', not ConstantTimeEquals('hemmelig', 'hemmelige'));
+  Ok('empty strings', ConstantTimeEquals('', ''));
+  Ok('a difference in the first character is caught',
     not ConstantTimeEquals('Xemmelig', 'hemmelig'));
-  Ok('avvik i siste tegn oppdages',
+  Ok('a difference in the last character is caught',
     not ConstantTimeEquals('hemmeliX', 'hemmelig'));
 
   { ------------------------------------------------------- passord -- }
-  Start('passordhashing');
+  Start('password hashing');
 
-  { 1000 iterasjoner i testene, ikke 600 000. Standardverdien er målt
-    nedenfor i stedet — en suite som bruker et halvt sekund per hash gjør
-    ingen ferdig. }
+  { 1000 iterations in the tests, not 600,000. The default is measured
+    below instead — a suite that spends half a second per hash finishes
+    nobody. }
   H1 := HashPassword('riktig hestebatteri stift', 1000);
-  Ok('hashen har PHC-form',
+  Ok('the hash has PHC form',
     Copy(H1, 1, 17) = '$pbkdf2-sha256$i=');
-  Ok('iterasjonene står i hashen', Pos('$i=1000$', H1) > 0);
+  Ok('the iterations are in the hash', Pos('$i=1000$', H1) > 0);
   Ok('riktig passord godtas',
     VerifyPassword('riktig hestebatteri stift', H1));
-  Ok('feil passord avvises',
+  Ok('a wrong password is rejected',
     not VerifyPassword('riktig hestebatteri stif', H1));
-  Ok('tomt passord avvises', not VerifyPassword('', H1));
+  Ok('an empty password is rejected', not VerifyPassword('', H1));
 
-  { Saltet er det som gjør at to like passord ikke får lik hash. Without det
-    avslører én lekket database hvem som deler passord. }
+  { The salt is what keeps two identical passwords from getting the same
+    hash. Without it one leaked database reveals who shares a password. }
   H2 := HashPassword('riktig hestebatteri stift', 1000);
   Ok('samme passord gir ulik hash (saltet virker)', H1 <> H2);
-  Ok('men begge verifiserer',
+  Ok('but both verify',
     VerifyPassword('riktig hestebatteri stift', H2));
 
-  Ok('et tomt passord kan hashes og verifiseres',
+  Ok('an empty password can be hashed and verified',
     VerifyPassword('', HashPassword('', 1000)));
-  Ok('utf8 i passordet overlever',
+  Ok('utf8 in the password survives',
     VerifyPassword('blåbærsyltetøy 🫐',
       HashPassword('blåbærsyltetøy 🫐', 1000)));
 
-  Start('ødelagte hasher avvises uten å kaste');
-  Ok('tom streng', not VerifyPassword('x', ''));
-  Ok('bare tull', not VerifyPassword('x', 'ikke en hash'));
-  Ok('ukjent algoritme',
+  Start('broken hashes are rejected without raising');
+  Ok('an empty string', not VerifyPassword('x', ''));
+  Ok('plain nonsense', not VerifyPassword('x', 'not a hash'));
+  Ok('an unknown algorithm',
     not VerifyPassword('x', '$argon2id$v=19$m=65536$abc$def'));
-  Ok('manglende felt', not VerifyPassword('x', '$pbkdf2-sha256$i=1000$abc'));
-  Ok('iterasjoner som ikke er et tall',
+  Ok('a missing field', not VerifyPassword('x', '$pbkdf2-sha256$i=1000$abc'));
+  Ok('iterations that are not a number',
     not VerifyPassword('x', '$pbkdf2-sha256$i=mange$abc$def'));
-  Ok('null iterasjoner',
+  Ok('zero iterations',
     not VerifyPassword('x', '$pbkdf2-sha256$i=0$abc$def'));
-  Ok('ugyldig base64',
+  Ok('invalid base64',
     not VerifyPassword('x', '$pbkdf2-sha256$i=1000$!!!$!!!'));
-  Ok('avkortet hash',
+  Ok('a truncated hash',
     not VerifyPassword('x', Copy(H1, 1, Length(H1) - 10)));
 
   Start('rehashing');
-  Ok('en hash med færre iterasjoner skal oppgraderes',
+  Ok('a hash with fewer iterations is to be upgraded',
     NeedsRehash(H1, 2000));
-  Ok('en hash med like mange skal ikke', not NeedsRehash(H1, 1000));
-  Ok('en hash med flere skal ikke', not NeedsRehash(H1, 500));
-  Ok('en ugjenkjennelig hash skal alltid oppgraderes',
+  Ok('a hash with the same number must not', not NeedsRehash(H1, 1000));
+  Ok('a hash with more must not', not NeedsRehash(H1, 500));
+  Ok('an unrecognisable hash is always upgraded',
     NeedsRehash('tull', 1000));
-  Ok('standardverdien er dagens OWASP-anbefaling',
+  Ok('the default is today''s OWASP recommendation',
     DefaultPbkdf2Iterations = 600000);
 
 
-  { ----------------------------------------------------- appnøkkel -- }
-  Start('appnøkkel og signering');
+  { -------------------------------------------------------- app key -- }
+  Start('the app key and signing');
 
   SetAppKey('');
-  Ok('uten nøkkel er HasAppKey usann', not HasAppKey);
+  Ok('without a key HasAppKey is false', not HasAppKey);
   try
     Sign('noe');
-    Ok('signering uten nøkkel kaster', False);
+    Ok('signing without a key raises', False);
   except
-    on ECryptoError do Ok('signering uten nøkkel kaster', True);
+    on ECryptoError do Ok('signing without a key raises', True);
   end;
 
   S := GenerateAppKey;
-  Ok('en generert nøkkel er 32 byte base64', Length(Base64Decode(S)) = 32);
-  Ok('to genererte nøkler er ulike', S <> GenerateAppKey);
+  Ok('a generated key is 32 bytes of base64', Length(Base64Decode(S)) = 32);
+  Ok('two generated keys differ', S <> GenerateAppKey);
 
   SetAppKey(S);
-  Ok('nøkkelen er satt', HasAppKey);
+  Ok('the key is set', HasAppKey);
 
-  H1 := Sign('bruker=7|utlop=123');
-  Ok('den signerte verdien inneholder teksten',
-    Pos('bruker=7|utlop=123', H1) > 0);
-  Ok('og en signatur etter et punktum',
-    Length(H1) > Length('bruker=7|utlop=123') + 1);
-  Ok('samme tekst gir samme signatur', Sign('bruker=7|utlop=123') = H1);
+  H1 := Sign('user=7|expires=123');
+  Ok('the signed value contains the text',
+    Pos('user=7|expires=123', H1) > 0);
+  Ok('and a signature after a full stop',
+    Length(H1) > Length('user=7|expires=123') + 1);
+  Ok('the same text gives the same signature', Sign('user=7|expires=123') = H1);
 
-  Ok('den verifiserer', Unsign(H1, H2));
-  Like('og gir teksten tilbake', 'bruker=7|utlop=123', H2);
+  Ok('it verifies', Unsign(H1, H2));
+  Like('and gives the text back', 'user=7|expires=123', H2);
 
-  { Dette er hele poenget: en endret tekst skal ikke passere. }
-  Ok('en endret tekst avvises',
-    not Unsign(StringReplace(H1, 'bruker=7', 'bruker=1', []), H2));
-  Ok('og gir ingenting ut', H2 = '');
-  Ok('en endret signatur avvises',
+  { This is the whole point: altered text must not pass. }
+  Ok('altered text is rejected',
+    not Unsign(StringReplace(H1, 'user=7', 'user=1', []), H2));
+  Ok('and gives nothing back', H2 = '');
+  Ok('an altered signature is rejected',
     not Unsign(Copy(H1, 1, Length(H1) - 1) + 'X', H2));
-  Ok('uten punktum avvises', not Unsign('ingenpunktum', H2));
-  Ok('tom streng avvises', not Unsign('', H2));
+  Ok('without a full stop it is rejected', not Unsign('nofullstop', H2));
+  Ok('an empty string is rejected', not Unsign('', H2));
 
-  { En tekst med punktum i skal fortsatt virke — signaturen skilles av det
-    SISTE punktumet, ikke det første. }
+  { Text with a full stop in it is to keep working — the signature is
+    separated by the LAST full stop, not the first. }
   H1 := Sign('a.b.c');
-  Ok('tekst med punktum overlever', Unsign(H1, H2) and (H2 = 'a.b.c'));
+  Ok('text with a full stop survives', Unsign(H1, H2) and (H2 = 'a.b.c'));
 
-  { Bytter nøkkelen, blir alt som ble signert med den forrige ugyldig.
-    Det er hele grunnen til at man kan bytte den. }
+  { Change the key and everything signed with the previous one becomes
+    invalid. That is the whole reason you can change it. }
   H1 := Sign('noe');
   SetAppKey(GenerateAppKey);
-  Ok('en ny nøkkel ugyldiggjør gamle signaturer', not Unsign(H1, H2));
+  Ok('a new key invalidates old signatures', not Unsign(H1, H2));
   SetAppKey('');
 
   { ------------------------------------------------------- kostnad -- }
-  Start('kostnad');
+  Start('cost');
 
   T0 := Now;
   H1 := HashPassword('et passord');
   Ms := Round((Now - T0) * 24 * 60 * 60 * 1000);
   WriteLn(Format('        %d iterasjoner tok %d ms',
     [DefaultPbkdf2Iterations, Ms]));
-  { Dette er hele poenget med en passordhash: den skal koste. Er den under
-    50 ms, er parameteren for lav til å bremse en angriper med et grafikk-
-    kort. Er den over to sekunder, blir innlogging en DoS-vektor mot din
-    egen server. }
-  Ok('koster nok til å være verdt navnet (>= 50 ms)', Ms >= 50);
-  Ok('men ikke så mye at innlogging blir en DoS-vektor (< 2000 ms)',
+  { This is the whole point of a password hash: it is meant to cost. Under
+    50 ms and the parameter is too low to slow down an attacker with a
+    graphics card. Over two seconds and signing in becomes a DoS vector
+    against your own server. }
+  Ok('costs enough to be worth the name (>= 50 ms)', Ms >= 50);
+  Ok('but not so much that signing in becomes a DoS vector (< 2000 ms)',
     Ms < 2000);
-  Ok('og hashen fra den virker', VerifyPassword('et passord', H1));
+  Ok('and the hash from it works', VerifyPassword('et passord', H1));
   EcdsaTester;
   WebAuthnTester;
 
   WriteLn;
-  WriteLn(Format('— %d bestått, %d feilet', [Bestatt, Feilet]));
-  if Feilet > 0 then
+  WriteLn(Format('— %d passed, %d failed', [Passed, Failed]));
+  if Failed > 0 then
     Halt(1);
 end.
