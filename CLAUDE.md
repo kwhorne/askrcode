@@ -30,6 +30,18 @@ ikke det.
 Koden bygger og består alle testene på både 3.2.2 og 3.3.1 trunk. Hold det
 slik: det er den eneste måten å vite om en grense er borte eller bare flyttet.
 
+**Arkitektur er en akse til, og den er udekket.** Alt her kjører aarch64 —
+maskinen, og Docker-imaget på den maskinen. Første gang rammeverket ble
+bygget for x86_64 (en Ubuntu-server, 2026-09-21) feilet det med én gang:
+`Currency(GetFloatProp(...))` er en ulovlig typecast der, fordi `Extended`
+er 80 bit og en egen type, mens den på aarch64 er et alias for `Double`.
+Tre steder, alle udekket av 705 tester. Fikset i 0.9.1 med
+`PropAsCurrency`, som tilordner i stedet for å caste — **aldri cast inn i
+`Currency`, tilordn**, samme regel som multiplikasjonsfella under.
+
+Suiten kjører fortsatt bare aarch64. Det er en kjent hull, ikke en løst
+sak.
+
 `tools/probes/run.sh <fpc>` kjører generics-probene mot en gitt kompilator.
 Det er sju filer — seks grenser (p1–p6) og kallstedet (p7) som avhenger av
 p2 — og **alle sju feiler fortsatt**, på 3.2.2 og på trunk. Probene er

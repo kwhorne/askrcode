@@ -35,7 +35,7 @@ begin
     ckString:
       W.Str(GetStrProp(M, Col.Prop));
     ckCurrency:
-      W.Money(Currency(GetFloatProp(M, Col.Prop)));
+      W.Money(PropAsCurrency(M, Col.Prop));
     ckFloat:
       W.Num(GetFloatProp(M, Col.Prop));
     ckBoolean:

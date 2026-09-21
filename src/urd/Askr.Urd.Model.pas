@@ -331,10 +331,29 @@ function SnakeCase(const S: string): string;
 function Pluralize(const S: string): string;
 function TableNameFor(AClass: TClass): string;
 
+{ A published property read as Currency.
+
+  GetFloatProp returns Extended, and Currency(Extended) is not a legal
+  typecast: on x86_64 Extended is 80 bits and a type of its own, so the
+  compiler refuses it. On aarch64 Extended is an alias for Double and the
+  same line compiles — which is why this stood until the framework was
+  built for x86_64 for the first time.
+
+  Assignment is a defined conversion on both, and it is the rule the rest
+  of Askr already follows for money: never typecast into Currency, assign
+  into it. A typecast there reinterprets the scaled int64 instead of
+  converting the value. }
+function PropAsCurrency(Instance: TObject; PropInfo: PPropInfo): Currency;
+
 implementation
 
 threadvar
   GCurrentDb: TDbConnection;
+
+function PropAsCurrency(Instance: TObject; PropInfo: PPropInfo): Currency;
+begin
+  Result := GetFloatProp(Instance, PropInfo);
+end;
 
 { TModelListBase }
 
@@ -866,7 +885,7 @@ begin
     ckString: Result := GetStrProp(FValidator.Model, FCol.Prop);
     ckInteger: Result := IntToStr(GetInt64Prop(FValidator.Model, FCol.Prop));
     ckCurrency: Result := CurrencyToSql(
-      Currency(GetFloatProp(FValidator.Model, FCol.Prop)));
+      PropAsCurrency(FValidator.Model, FCol.Prop));
     ckFloat: Result := FloatToSql(GetFloatProp(FValidator.Model, FCol.Prop));
     ckDateTime: Result := DateTimeToSql(GetFloatProp(FValidator.Model, FCol.Prop));
     ckBoolean:
@@ -1310,7 +1329,7 @@ begin
         Result := DbParam(A, S);
       end;
     ckCurrency:
-      Result := DbParam(A, Currency(GetFloatProp(Model, Col.Prop)));
+      Result := DbParam(A, PropAsCurrency(Model, Col.Prop));
     ckFloat:
       Result := DbParam(A, FloatToSql(GetFloatProp(Model, Col.Prop)));
     ckBoolean:

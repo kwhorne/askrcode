@@ -27,6 +27,29 @@ with the zero-major caveat that minor releases may break things until
   on 3.2.2 and on trunk. The working notes said six; there are seven
   files — six limits and the call site that depends on the second.
 
+## 0.9.1 — 2026-09-21
+
+### Fixed
+
+- **Askr did not compile for x86_64.** `Currency(GetFloatProp(...))` is an
+  illegal typecast there: `Extended` is 80 bits and a type of its own, and
+  the compiler refuses it. On aarch64 `Extended` is an alias for `Double`
+  and the same line compiles, which is why three sites in `Askr.Urd.Model`
+  and `Askr.Urd.Json` stood untouched — **every build and every test run
+  of this framework had been on aarch64.**
+
+  Found by building it on an x86_64 server for the first time, not by
+  reading. The fix is `PropAsCurrency`, which assigns rather than casts:
+  assignment is a defined conversion on both, and a typecast into
+  `Currency` reinterprets the scaled int64 instead of converting the
+  value — the same trap the multiplication note already warns about.
+
+### Notes
+
+The test suite still runs on aarch64 only. That an architecture is a real
+axis — like the two compiler versions already are — is now written down in
+the working notes, and covering it is the next step, not a claim made here.
+
 ## 0.9.0 — 2026-09-21
 
 A markdown editor, tabs that do what Flux's do, and the last of the

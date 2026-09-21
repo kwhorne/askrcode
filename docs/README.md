@@ -113,6 +113,6 @@ the repository root.
 
 ## Version
 
-This documentation describes Askr 0.9.0. The framework builds and passes
+This documentation describes Askr 0.9.1. The framework builds and passes
 its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on macOS and
 Linux.

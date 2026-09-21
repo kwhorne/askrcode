@@ -8,6 +8,11 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.9.1
+
+Nothing can break. One compile fix, needed only on x86_64 — where 0.9.0
+does not build at all.
+
 ## 0.9.0
 
 One thing can break, and only if you use the CBOR reader directly:
