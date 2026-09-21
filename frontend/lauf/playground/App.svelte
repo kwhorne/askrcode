@@ -2,8 +2,9 @@
   import {
     Heading, Text, Field, Button, Card, Separator,
     Progress, Slider, OtpInput, Autocomplete, Command, DatePicker, FileUpload,
-    Editor,
+    Editor, Tabs,
   } from '../src/index.js'
+  import { User, Inbox, ArrowRight } from '../src/icons/micro/index.js'
   import Grid from './Grid.svelte'
 
   const alle = [
@@ -21,6 +22,17 @@
   // The editor is here because the undo stack cannot be measured in
   // jsdom: document.execCommand does not exist there, so the test suite
   // runs through the fallback. This is a real browser.
+  // Tabs are here for the contrast check across all three variants, and
+  // because findable cannot be measured in jsdom: there is no
+  // find-in-page there.
+  let tab = $state('profile')
+  const tabItems = [
+    { value: 'profile', label: 'Profile', icon: User },
+    { value: 'orders', label: 'Orders', icon: Inbox, badge: 12 },
+    { value: 'more', label: 'More', iconTrailing: ArrowRight },
+    { value: 'billing', label: 'Billing', disabled: true },
+  ]
+
   let notes = $state('# Release notes\n\nAskr **0.8.1** adds a mail provider.\n\n- Resend over HTTP\n- `MailFromConfig`\n')
 
   const treff = $derived(
@@ -58,6 +70,25 @@
     </Field>
 
     <Progress value={volum} label="Upload" showValue />
+  </Card>
+
+  <Separator label="Tabs" />
+
+  <Card class="flex flex-col gap-6">
+    <Tabs bind:value={tab} tabs={tabItems}>
+      <Tabs.Panel value="profile" findable>Profile panel</Tabs.Panel>
+      <Tabs.Panel value="orders" findable>A needle in the orders panel</Tabs.Panel>
+      <Tabs.Panel value="more" findable>More</Tabs.Panel>
+      <Tabs.Panel value="billing" findable>Billing</Tabs.Panel>
+    </Tabs>
+
+    <Tabs value="orders" tabs={tabItems} variant="segmented" size="sm">
+      <Tabs.Panel value="orders">Segmented, small</Tabs.Panel>
+    </Tabs>
+
+    <Tabs value="profile" tabs={tabItems} variant="pills">
+      <Tabs.Panel value="profile">Pills</Tabs.Panel>
+    </Tabs>
   </Card>
 
   <Separator label="Command" />

@@ -47,6 +47,46 @@ with the zero-major caveat that minor releases may break things until
   expect. It costs nothing: Rollup follows namespace member access, and a
   premise test now builds both forms and requires the same bytes out.
 
+- **`Lauf.Tabs` brought up to what Flux's tabs do**: three variants
+  (`underline`, `segmented`, `pills`), two sizes, per-tab icons, trailing
+  icons, badges and `disabled`, and `scrollable` for when the tabs do not
+  fit. The existing `tabs={[...]}` API is unchanged, so nothing breaks.
+
+  The tabs stay data rather than becoming child components. Flux writes
+  `<flux:tab name="profile">Profile</flux:tab>` because Blade has no good
+  way to hand over a list of objects; Svelte does, the tabs in an Askr app
+  usually come from the server, and Lauf's icons are components already.
+  One list, one code path.
+
+  A badge is part of the tab's accessible name — a screen reader reads
+  "Orders 12", which is what a sighted reader gets too.
+
+  Tabs that do not fit wrap by default and scroll with `scrollable`;
+  either way they no longer widen the page. Without `min-w-0` they pushed
+  past their own container and made the playground scroll 27 px sideways
+  at 390 px — found by the browser check, which measures scrollWidth,
+  because axe says nothing about it.
+
+- **`Lauf.Tabs.Panel findable`** — find-in-page reaches a panel that is not
+  open. An inactive panel carries `hidden`, so Ctrl+F cannot see into it,
+  and on a settings page split across six tabs that makes the browser's
+  own search a lie. `findable` marks inactive panels
+  `hidden="until-found"`; the browser searches them anyway and fires
+  `beforematch` on a hit, which Lauf uses to select the owning tab.
+
+  Browsers without `until-found` treat any value as plain `hidden`, so the
+  panel stays hidden and simply is not findable — the feature degrades,
+  not the page.
+
+### Changed
+
+- **Comments and identifiers in code are English from now on.** The rule
+  in the working notes is reversed: code is English, working notes stay
+  Norwegian. Existing code was not rewritten wholesale — the identifiers
+  were (3164 occurrences, compiler-verified on both compilers) and
+  `src/core` was, but the rest still carries Norwegian comments and is
+  converted as files are touched.
+
 ### Notes
 
 `Editor` measures 95 kB mounted and minified, against a 73 kB floor for a

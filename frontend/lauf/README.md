@@ -304,6 +304,75 @@ cursor sits inside bold text. Working that out from markdown source is
 doable, and a wrong `aria-pressed` is worse than none, so it is not there
 yet.
 
+### Tabs
+
+```svelte
+<Lauf.Tabs bind:value={tab} {tabs} variant="segmented">
+  <Lauf.Tabs.Panel value="profile">…</Lauf.Tabs.Panel>
+  <Lauf.Tabs.Panel value="orders">…</Lauf.Tabs.Panel>
+</Lauf.Tabs>
+```
+
+```js
+const tabs = [
+  { value: 'profile', label: 'Profile', icon: User },
+  { value: 'orders',  label: 'Orders',  icon: Inbox, badge: 12 },
+  { value: 'billing', label: 'Billing', disabled: true },
+]
+```
+
+| Prop | |
+|---|---|
+| `value` | The selected tab. Bindable. |
+| `tabs` | `{ value, label, icon?, iconTrailing?, badge?, disabled? }` |
+| `variant` | `underline` (default), `segmented`, `pills` |
+| `size` | `base` (default), `sm` |
+| `scrollable` | One line that scrolls sideways instead of wrapping |
+
+**Tabs that do not fit never widen the page.** By default they wrap to a
+second row; with `scrollable` they stay on one line and scroll, with the
+scrollbar hidden and a fade at the trailing edge. Both contain the
+overflow inside the component — the choice is only whether the tabs you
+cannot see are below or beside.
+
+That is not a detail. Without `min-w-0` on the list the tabs pushed past
+their own container and made the whole page scroll sideways at phone
+width, and axe says nothing about that. It was caught by the browser
+check, which measures the page's scrollWidth.
+
+When the underline variant wraps, the rule runs under the last row while
+the active tab's mark sits on its own row. That is what wrapping costs;
+use `scrollable` if you would rather keep one line.
+
+**The tabs are data, not child components.** Flux writes
+`<flux:tab name="profile">Profile</flux:tab>` because Blade has no good
+way to hand over a list of objects. Svelte does, the tabs in an Askr app
+usually come from the server, and icons in Lauf are components — so they
+travel in the array like everything else. One list, one code path.
+
+A badge is part of the tab's accessible name: a screen reader reads
+"Orders 12", which is what a sighted reader gets too.
+
+#### Find-in-page reaches a closed panel
+
+```svelte
+<Lauf.Tabs.Panel value="orders" findable>…</Lauf.Tabs.Panel>
+```
+
+This is the one thing Bits does not reach. An inactive panel carries
+`hidden`, so Ctrl+F cannot find anything in it — which on a settings page
+split across six tabs makes the browser's own search a lie.
+
+`findable` marks inactive panels `hidden="until-found"`. The browser
+searches them anyway, and on a match it fires `beforematch`; Lauf uses
+that to select the owning tab, so the panel is genuinely open rather than
+a fragment hanging out of a container the tablist thinks is closed.
+
+Browsers without `until-found` treat any value as plain `hidden`, so the
+panel stays hidden and simply is not findable. That degrades the feature,
+not the page. It is off by default because a page that keeps every panel
+searchable also keeps every panel rendered.
+
 ### DataGrid
 
 A grid has two modes, and choosing between them is the whole point.

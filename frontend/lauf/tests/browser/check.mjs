@@ -181,6 +181,80 @@ async function checkEditor(send, js) {
   return problems
 }
 
+// hidden="until-found" in a real browser.
+//
+// jsdom can be told the attribute is there, but it cannot say whether the
+// platform means anything by it: there is no find-in-page and no
+// enumerated `hidden` IDL. Chrome reflects el.hidden as the string
+// "until-found" when it supports the value and as a plain boolean when it
+// does not, so reading it back is the difference between "we wrote an
+// attribute" and "the feature is live".
+//
+// The search itself cannot be driven — CDP has no find-in-page — so what
+// is checked here is the platform's acceptance and the reveal path, not
+// that Ctrl+F finds the text. That gap is stated in the docs.
+async function checkFindable(send, js) {
+  const problems = []
+  await send('Page.navigate', { url: URL_BASE })
+  await wait(1500)
+
+  const state = await js(`
+    (() => {
+      const panels = [...document.querySelectorAll('[role="tabpanel"]')]
+      const hidden = panels.filter((p) => p.hasAttribute('hidden'))
+      return JSON.stringify({
+        panels: panels.length,
+        hidden: hidden.length,
+        attr: hidden.map((p) => p.getAttribute('hidden')),
+        idl: hidden.map((p) => String(p.hidden)),
+        rendered: hidden.filter((p) => p.getBoundingClientRect().height > 0).length,
+        cv: hidden.map((p) => getComputedStyle(p).contentVisibility),
+        cvis: hidden.map((p) => p.checkVisibility()),
+      })
+    })()`)
+  const s = JSON.parse(state)
+
+  if (!s.panels) return ['found no tab panels on the playground']
+  if (!s.hidden) problems.push('no inactive panel was hidden at all')
+  for (const a of s.attr)
+    if (a !== 'until-found') problems.push(`hidden attribute was "${a}", not "until-found"`)
+  for (const v of s.idl)
+    if (v !== 'until-found')
+      problems.push(`this Chrome reflects hidden as "${v}" — it does not support until-found`)
+  // Measured, not assumed: Chrome reports content-visibility: hidden on
+  // an until-found panel, and getBoundingClientRect().height is 0. Note
+  // that checkVisibility() returns TRUE for these — it does not account
+  // for content-visibility — so it is the wrong thing to assert on, and
+  // asserting on it was a bug in an earlier version of this check.
+  if (s.rendered) problems.push(`${s.rendered} until-found panel(s) had layout; they must stay hidden`)
+  for (const cv of s.cv)
+    if (cv !== 'hidden')
+      problems.push(`content-visibility was "${cv}"; until-found is not taking effect`)
+
+  // beforematch is what the browser fires on a match. Dispatching it is
+  // the closest we get to driving find-in-page, but unlike jsdom this
+  // runs against the real event plumbing.
+  const revealed = await js(`
+    (() => {
+      const p = [...document.querySelectorAll('[role="tabpanel"]')]
+        .find((x) => x.hasAttribute('hidden') && x.textContent.includes('needle'))
+      if (!p) return 'no hidden panel with the needle'
+      p.dispatchEvent(new Event('beforematch', { bubbles: true }))
+      p.id = p.id || 'askr-probe'
+      return p.id
+    })()`)
+  // Svelte updates on a microtask, so reading the attribute in the same
+  // expression is too early — that was a bug in this check, not in the
+  // component.
+  await wait(300)
+  const stillHidden = revealed.startsWith('no ') ? revealed : await js(
+    `document.getElementById(${JSON.stringify(revealed)}).hasAttribute('hidden')
+       ? 'still hidden after beforematch' : 'ok'`)
+  if (stillHidden !== 'ok') problems.push(`beforematch: ${stillHidden}`)
+
+  return problems
+}
+
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
   const { ws, send, js } = await connect()
@@ -251,8 +325,16 @@ async function main() {
     for (const f of editorProblems) console.log(`    ${f}`)
   }
 
+  const findableProblems = await checkFindable(send, js)
+  if (findableProblems.length) {
+    brudd += findableProblems.length
+    console.log('\nFEIL  tabs — findable')
+    for (const f of findableProblems) console.log(`    ${f}`)
+  }
+
   console.log('')
   console.log(`  ${editorProblems.length === 0 ? 'ok  ' : 'FEIL'} ${'editor undo'.padEnd(16)} Cmd+Z after Bold keeps the text`)
+  console.log(`  ${findableProblems.length === 0 ? 'ok  ' : 'FEIL'} ${'tabs findable'.padEnd(16)} Chrome accepts hidden="until-found"`)
   for (const r of rader) {
     console.log(`  ${r.brudd === 0 ? 'ok  ' : 'FEIL'} ${r.navn.padEnd(16)} bakgrunn ${r.bg.padEnd(22)} ${r.brudd} brudd`)
   }

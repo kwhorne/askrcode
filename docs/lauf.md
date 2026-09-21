@@ -95,6 +95,31 @@ measures that rather than assuming it.
 The full reference, with the reasoning behind each choice, is in
 [`frontend/lauf/README.md`](../frontend/lauf/README.md).
 
+## Tabs
+
+```svelte
+<Lauf.Tabs bind:value={tab} {tabs} variant="segmented">
+  <Lauf.Tabs.Panel value="profile">…</Lauf.Tabs.Panel>
+</Lauf.Tabs>
+```
+
+The tabs are data — `{ value, label, icon?, badge?, disabled? }` — rather
+than child components, because in an Askr app they usually come from the
+server and Lauf's icons are components already. Three variants
+(`underline`, `segmented`, `pills`), two sizes, and `scrollable` for when
+they do not fit.
+
+Bits UI owns the keyboard: arrow keys, Home/End, the roving tabindex and
+the link between a tab and its panel.
+
+**`findable` is the part Bits does not reach.** An inactive panel carries
+`hidden`, so the browser's own Ctrl+F cannot see into it — on a settings
+page split across six tabs that makes the search box a lie. With
+`findable` the inactive panels are marked `hidden="until-found"`, the
+browser searches them anyway, and on a match Lauf selects the owning tab
+so the panel is properly open rather than a fragment hanging out of a
+closed container.
+
 ## The editor writes markdown
 
 ```svelte
