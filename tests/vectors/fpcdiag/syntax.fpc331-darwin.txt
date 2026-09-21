@@ -1,0 +1,9 @@
+Hint: Start of reading config file /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/fpc.cfg
+Hint: End of reading config file /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/fpc.cfg
+Free Pascal Compiler version 3.3.1-20874-g0c4ff1090a-dirty [2026/09/18] for aarch64
+Copyright (c) 1993-2026 by Florian Klaempfl and others
+Target OS: Darwin for AArch64
+Compiling tests/vectors/fpcdiag/syntax.pas
+syntax.pas(11,14) Fatal: Syntax error, ")" expected but ";" found
+Fatal: Compilation aborted
+Error: /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/ppca64 returned an error exitcode

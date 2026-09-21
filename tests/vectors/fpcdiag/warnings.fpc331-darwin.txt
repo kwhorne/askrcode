@@ -1,0 +1,14 @@
+Hint: Start of reading config file /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/fpc.cfg
+Hint: End of reading config file /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/fpc.cfg
+Free Pascal Compiler version 3.3.1-20874-g0c4ff1090a-dirty [2026/09/18] for aarch64
+Copyright (c) 1993-2026 by Florian Klaempfl and others
+Target OS: Darwin for AArch64
+Compiling tests/vectors/fpcdiag/warnings.pas
+warnings.pas(14,10) Warning: Function result does not seem to be set
+warnings.pas(16,3) Note: Local variable "Never" is assigned but never used
+warnings.pas(10,18) Hint: Parameter "Param" not used
+Assembling (pipe) .build/diagtmp/warnings.s
+25 lines compiled, 0.0 sec
+1 warning(s) issued
+3 hint(s) issued
+1 note(s) issued

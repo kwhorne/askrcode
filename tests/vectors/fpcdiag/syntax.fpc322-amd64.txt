@@ -1,0 +1,9 @@
+Hint: Start of reading config file /etc/fpc.cfg
+Hint: End of reading config file /etc/fpc.cfg
+Free Pascal Compiler version 3.2.2+dfsg-20 [2023/03/30] for x86_64
+Copyright (c) 1993-2021 by Florian Klaempfl and others
+Target OS: Linux for x86-64
+Compiling tests/vectors/fpcdiag/syntax.pas
+syntax.pas(11,14) Fatal: Syntax error, ")" expected but ";" found
+Fatal: Compilation aborted
+Error: /usr/bin/ppcx64 returned an error exitcode

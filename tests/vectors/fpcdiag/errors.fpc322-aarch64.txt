@@ -1,0 +1,12 @@
+Hint: Start of reading config file /etc/fpc.cfg
+Hint: End of reading config file /etc/fpc.cfg
+Free Pascal Compiler version 3.2.2+dfsg-20 [2023/03/30] for aarch64
+Copyright (c) 1993-2021 by Florian Klaempfl and others
+Target OS: Linux for AArch64
+Compiling tests/vectors/fpcdiag/errors.pas
+errors.pas(18,8) Error: Identifier not found "NoSuchIdentifier"
+errors.pas(19,8) Error: Incompatible types: got "AnsiString" expected "LongInt"
+errors.pas(20,13) Error: Identifier not found "Missing"
+errors.pas(24) Fatal: There were 3 errors compiling module, stopping
+Fatal: Compilation aborted
+Error: /usr/bin/ppca64 returned an error exitcode

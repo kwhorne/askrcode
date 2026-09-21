@@ -22,7 +22,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips;
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -3918,8 +3918,155 @@ begin
   AssertTrue((Inf.Width = 320) and (Inf.Height = 240) and (Inf.Format = ifWebp),
     'conversion keeps the size');
 end;
+{ ------------------------------------------ compiler diagnostics -- }
+
+{ A premise test, and it comes before the MCP server rather than after it.
+
+  The whole value of a `build` tool is that an agent can verify instead of
+  claiming, and that rests on one thing: fpc's diagnostics parse into
+  file, line, column and severity. So the premise is written down first,
+  against real captured output rather than against what the format is
+  remembered to be.
+
+  The vectors in tests/vectors/fpcdiag/ were produced by compiling three
+  deliberately broken fixtures with three toolchains: 3.2.2 on aarch64,
+  3.2.2 on x86_64, and 3.3.1 trunk on aarch64. **The positioned lines are
+  byte-identical across all three**, which is the premise. Message text is
+  not: 3.2.2 writes `function header doesn't match` where trunk writes
+  `Function header doesn't match`. Nothing here may depend on wording. }
+procedure TestDiagFormat;
+var
+  T: Integer;
+  Toolchains: array[0..2] of string = (
+    'fpc322-aarch64', 'fpc322-amd64', 'fpc331-darwin');
+  Raw: TStringList;
+
+  function Load(const Fixture, Tool: string): string;
+  var
+    Path_: string;
+  begin
+    Result := '';
+    Path_ := 'tests/vectors/fpcdiag/' + Fixture + '.' + Tool + '.txt';
+    if not FileExists(Path_) then
+      Exit;
+    Raw.LoadFromFile(Path_);
+    Result := Raw.Text;
+  end;
+
+  { Only the ones with a position. The unpositioned Hints about fpc.cfg and
+    the `returned an error exitcode` line are real diagnostics and are
+    parsed, but they carry no location and are not what a caller shows. }
+  function Positioned(const D: TDiagArray): TDiagArray;
+  var
+    I, N: Integer;
+    R: TDiagArray;
+  begin
+    R := nil;
+    SetLength(R, Length(D));
+    N := 0;
+    for I := 0 to High(D) do
+      if D[I].FileName_ <> '' then
+      begin
+        R[N] := D[I];
+        Inc(N);
+      end;
+    SetLength(R, N);
+    Result := R;
+  end;
+
+var
+  D: TDiagArray;
+  Src: string;
+begin
+  Raw := TStringList.Create;
+  try
+    if Load('errors', 'fpc322-aarch64') = '' then
+    begin
+      AssertTrue(False,
+        'the diagnostic vectors exist (run from the repository root)');
+      Exit;
+    end;
+
+    for T := 0 to High(Toolchains) do
+    begin
+      { ---- several errors, and the summary line with no column ---- }
+      Src := Load('errors', Toolchains[T]);
+      AssertTrue(Src <> '', Toolchains[T] + ': errors vector loaded');
+      D := Positioned(ParseDiagnostics(Src));
+      AssertEqual(Length(D), 4, Toolchains[T] + ': four positioned lines');
+
+      AssertEqual(D[0].FileName_, 'errors.pas', Toolchains[T] + ': the file');
+      AssertEqual(D[0].Line, 18, Toolchains[T] + ': the line');
+      AssertEqual(D[0].Col, 8, Toolchains[T] + ': the column');
+      AssertTrue(D[0].Severity = dsError, Toolchains[T] + ': the severity');
+
+      AssertEqual(D[1].Line, 19, Toolchains[T] + ': the second line');
+      AssertEqual(D[2].Line, 20, Toolchains[T] + ': the third');
+
+      { The shape that has no column. Getting this wrong means either
+        dropping the line or reading 24 as a column. }
+      AssertEqual(D[3].Line, 24, Toolchains[T] + ': a line without a column');
+      AssertEqual(D[3].Col, 0, Toolchains[T] + ': and the column is 0');
+      AssertTrue(D[3].Severity = dsFatal, Toolchains[T] + ': and it is fatal');
+
+      AssertTrue(HasErrors(ParseDiagnostics(Src)),
+        Toolchains[T] + ': errors stop the build');
+
+      { ---- one fatal syntax error, no summary ---- }
+      Src := Load('syntax', Toolchains[T]);
+      D := Positioned(ParseDiagnostics(Src));
+      AssertEqual(Length(D), 1, Toolchains[T] + ': one positioned line');
+      AssertEqual(D[0].Line, 11, Toolchains[T] + ': the syntax error line');
+      AssertEqual(D[0].Col, 14, Toolchains[T] + ': and its column');
+      AssertTrue(D[0].Severity = dsFatal, Toolchains[T] + ': it is fatal');
+
+      { ---- a build that SUCCEEDS while saying things ---- }
+      Src := Load('warnings', Toolchains[T]);
+      D := Positioned(ParseDiagnostics(Src));
+      AssertEqual(Length(D), 3, Toolchains[T] + ': three positioned lines');
+      AssertTrue(D[0].Severity = dsWarning, Toolchains[T] + ': a warning');
+      AssertTrue(D[1].Severity = dsNote, Toolchains[T] + ': a note');
+      AssertTrue(D[2].Severity = dsHint, Toolchains[T] + ': a hint');
+
+      { The distinction the exit code alone cannot make. A build that emits
+        notes still produced a binary, and calling that a failure would be
+        wrong in the most common case there is. }
+      AssertTrue(not HasErrors(ParseDiagnostics(Src)),
+        Toolchains[T] + ': warnings and notes do not stop the build');
+    end;
+
+    { `Target OS: Darwin for AArch64` has a word before a colon and is not a
+      diagnostic. Neither is the banner, `Compiling …`, or the tallies. If
+      the severity were taken as "whatever stands before the colon", the
+      target line would come through as one. }
+    D := ParseDiagnostics(
+      'Free Pascal Compiler version 3.2.2+dfsg-20 [2023/03/30] for aarch64'#10 +
+      'Copyright (c) 1993-2021 by Florian Klaempfl and others'#10 +
+      'Target OS: Darwin for AArch64'#10 +
+      'Compiling tests/vectors/fpcdiag/warnings.pas'#10 +
+      'Assembling warnings'#10 +
+      '25 lines compiled, 0.0 sec'#10 +
+      '1 warning(s) issued'#10);
+    AssertEqual(Length(D), 0, 'the banner and the tallies are not diagnostics');
+
+    { An unpositioned severity is a diagnostic and is kept. Dropping it
+      would mean dropping by message text, which is the one thing this
+      parser must not do. }
+    D := ParseDiagnostics('Fatal: Compilation aborted'#10);
+    AssertEqual(Length(D), 1, 'an unpositioned severity is kept');
+    AssertEqual(D[0].Line, 0, 'with no line');
+    AssertEqual(D[0].FileName_, '', 'and no file');
+  finally
+    Raw.Free;
+  end;
+end;
+
 begin
   Group('Scheduler');
+  Group('Compiler diagnostics');
+  Test('fpc diagnostics parse the same on every compiler and architecture',
+    @TestDiagFormat);
+
   Group('Bilder');
   Test('format and dimensions without decoding', @TestBildeHoder);
   Test('a file that lies about what it is, is caught', @TestBildeSikkerhet);

@@ -1,0 +1,13 @@
+Hint: Start of reading config file /etc/fpc.cfg
+Hint: End of reading config file /etc/fpc.cfg
+Free Pascal Compiler version 3.2.2+dfsg-20 [2023/03/30] for x86_64
+Copyright (c) 1993-2021 by Florian Klaempfl and others
+Target OS: Linux for x86-64
+Compiling tests/vectors/fpcdiag/warnings.pas
+warnings.pas(14,10) Warning: Function result does not seem to be set
+warnings.pas(16,3) Note: Local variable "Never" is assigned but never used
+warnings.pas(10,18) Hint: Parameter "Param" not used
+25 lines compiled, 0.0 sec
+1 warning(s) issued
+3 hint(s) issued
+1 note(s) issued

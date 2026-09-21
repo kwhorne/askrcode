@@ -1,0 +1,12 @@
+Hint: Start of reading config file /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/fpc.cfg
+Hint: End of reading config file /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/fpc.cfg
+Free Pascal Compiler version 3.3.1-20874-g0c4ff1090a-dirty [2026/09/18] for aarch64
+Copyright (c) 1993-2026 by Florian Klaempfl and others
+Target OS: Darwin for AArch64
+Compiling tests/vectors/fpcdiag/errors.pas
+errors.pas(18,8) Error: Identifier not found "NoSuchIdentifier"
+errors.pas(19,8) Error: Incompatible types: got "AnsiString" expected "LongInt"
+errors.pas(20,13) Error: Identifier not found "Missing"
+errors.pas(24) Fatal: There were 3 errors compiling module, stopping
+Fatal: Compilation aborted
+Error: /Users/kh/fpcupdeluxe/fpc/bin/aarch64-darwin/ppca64 returned an error exitcode
