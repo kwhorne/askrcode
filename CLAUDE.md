@@ -98,6 +98,36 @@ Alle seks feiler fortsatt på trunk.
     ikke. Nettleseren sier bare «This is an invalid domain». Serveren
     sjekker det nå og sier hva man skal gjøre.
 
+## Bilder
+
+* **`SetExceptionMask` må settes før første libvips-kall.** Nøyaktig
+  samme felle som Cocoa og GTK: Free Pascal slår på flyttallsunntak, og
+  GLib — som libvips bygger på — regner rutinemessig med verdier som
+  utløser dem. Uten masken dør prosessen med `EInvalidOp` inne i
+  `vips_init`, og stakksporet peker på libvips. Funnet ved at prosessen
+  døde, ikke ved lesing.
+* **Askr.Image er ren Pascal, Askr.Image.Vips er ikke.** Skillet er ikke
+  vilkårlig: kryptoen må være ren fordi enhver app med brukere trenger
+  passordhashing, mens bildebehandling ikke er universell. Derfor
+  `dlopen`, som TLS og driverne.
+* **Opsjoner til libvips går i formatstrengen**, ikke som varargs:
+  `.jpg[Q=80,strip=true]` er én peker over en variadisk grense. Det som
+  gjenstår er erklært med FPCs `varargs`, så kompilatoren bruker
+  plattformens konvensjon — å telle argumenter for hånd på arm64 er det
+  `objc_msgSend` allerede har lært oss.
+* **`Pointer(vips_init)` i Delphi-modus KALLER variabelen.** Adressen
+  tas med en utypet `var`-parameter. Samme felle venter på enhver ny
+  dlopen-binding.
+* **Sniffing er en sikkerhetsfunksjon, ikke en bekvemmelighet.** Både
+  filnavnet og `Content-Type` er tekst klienten skriver. En `.jpg` som
+  er HTML er en lagret XSS hvis den serveres tilbake.
+* Å lese dimensjoner uten å dekode er også **forsvaret mot
+  dekompresjonsbomber**: en PNG på hundre kilobyte kan bli gigabyte.
+* **Oppskalering gjøres aldri.** Et større, uskarpere bilde er aldri
+  det noen ba om.
+* Bildetestene kjøres i containeren, der libvips finnes, og hopper over
+  seg selv på macOS med begrunnelse — som TLS-suiten.
+
 ## Elliptiske kurver
 
 * **Lemmene i `Askr.Core.BigInt` er 32 bit, ikke 64.** Et 32x32-produkt

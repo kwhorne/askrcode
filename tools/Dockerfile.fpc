@@ -35,3 +35,15 @@ RUN apt-get update \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libmariadb3 mariadb-client \
  && rm -rf /var/lib/apt/lists/*
+
+# libvips for Askr.Image.Vips. Samme mønster som libpq og OpenSSL: den
+# lastes med dlopen ved første bruk, så binæren starter uten den, og en
+# app som aldri skalerer et bilde betaler ingenting.
+#
+# Den ligger her og ikke på macOS-siden fordi denne maskinen ikke har
+# Homebrew — og fordi det allerede er slik TLS-testene gjøres: det som
+# krever et systembibliotek prøves i containeren, og suiten hopper over
+# seg selv der biblioteket mangler.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libvips42 \
+ && rm -rf /var/lib/apt/lists/*

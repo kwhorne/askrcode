@@ -8,6 +8,13 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.7.0
+
+Nothing can break. Two new units; none changed.
+
+Resizing needs libvips, which is optional and loaded at first use. If
+you do not call `Askr.Image.Vips`, nothing about your app changes.
+
 ## 0.6.4
 
 Nothing can break. Run `askr install` once to pick up the new Lauf path;

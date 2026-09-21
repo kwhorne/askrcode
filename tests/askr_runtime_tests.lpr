@@ -20,7 +20,7 @@ uses
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Mail, Askr.Ai, Askr.Inertia, Askr.Testing,
-  Askr.Core.Version;
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -2950,8 +2950,191 @@ end;
 
 { ------------------------------------------------------------------ main -- }
 
+{ ------------------------------------------------------------- bilder -- }
+
+function BildeFil(const Navn: string): TBytes;
+var
+  F: TFileStream;
+  Sti: string;
+  B: TBytes;
+begin
+  B := nil;
+  Result := B;
+  Sti := 'tests/vectors/images/' + Navn;
+  if not FileExists(Sti) then
+    Exit;
+  F := TFileStream.Create(Sti, fmOpenRead);
+  try
+    SetLength(B, F.Size);
+    if F.Size > 0 then
+      F.ReadBuffer(B[0], F.Size);
+    Result := B;
+  finally
+    F.Free;
+  end;
+end;
+
+function FmtNavn(F: TImageFormat): string;
+begin
+  case F of
+    ifJpeg: Result := 'jpeg';
+    ifPng:  Result := 'png';
+    ifGif:  Result := 'gif';
+    ifWebp: Result := 'webp';
+    ifBmp:  Result := 'bmp';
+    ifAvif: Result := 'avif';
+    ifTiff: Result := 'tiff';
+    ifSvg:  Result := 'svg';
+  else
+    Result := 'unknown';
+  end;
+end;
+
+procedure TestBildeHoder;
+var
+  L: TStringList;
+  I, K, W, H, A, Gale: Integer;
+  S, Navn, Fmt: string;
+  Inf: TImageInfo;
+begin
+  Gale := 0;
+  L := TStringList.Create;
+  try
+    if not FileExists('tests/vectors/images/expected.txt') then
+    begin
+      AssertTrue(False, 'bildefixturene finnes (kjør fra repo-rota)');
+      Exit;
+    end;
+    L.LoadFromFile('tests/vectors/images/expected.txt');
+    for I := 0 to L.Count - 1 do
+    begin
+      S := Trim(L[I]);
+      if (S = '') or (S[1] = '#') then
+        Continue;
+      K := Pos(' ', S); Navn := Copy(S, 1, K - 1);
+      S := Trim(Copy(S, K + 1, Length(S)));
+      K := Pos(' ', S); Fmt := Copy(S, 1, K - 1);
+      S := Trim(Copy(S, K + 1, Length(S)));
+      K := Pos(' ', S); W := StrToIntDef(Copy(S, 1, K - 1), -1);
+      S := Trim(Copy(S, K + 1, Length(S)));
+      K := Pos(' ', S); H := StrToIntDef(Copy(S, 1, K - 1), -1);
+      A := StrToIntDef(Trim(Copy(S, K + 1, Length(S))), 0);
+
+      Inf := ReadImageInfo('tests/vectors/images/' + Navn);
+      if FmtNavn(Inf.Format) <> Fmt then Inc(Gale);
+      if (W > 0) and ((Inf.Width <> W) or (Inf.Height <> H)) then Inc(Gale);
+      if (A = 1) <> Inf.Animated then Inc(Gale);
+    end;
+  finally
+    L.Free;
+  end;
+  AssertEqual(Gale, 0, 'format og dimensjoner leses uten å dekode');
+end;
+
+procedure TestBildeSikkerhet;
+var
+  D: TBytes;
+begin
+  { Den viktigste enkeltsjekken i uniten: en fil som heter .jpg og er
+    HTML er en lagret XSS-vektor hvis den serveres tilbake. }
+  D := BildeFil('nope.jpg');
+  AssertTrue(SniffFormat(D) = ifUnknown, 'HTML forkledd som .jpg er ikke et bilde');
+  AssertTrue(not ExtensionMatches('nope.jpg', D), 'og endelsen avsløres');
+
+  D := BildeFil('jpeg_320x240.jpg');
+  AssertTrue(ExtensionMatches('a.jpg', D), 'ekte jpeg matcher .jpg');
+  AssertTrue(ExtensionMatches('a.jpeg', D), '.jpeg regnes som det samme');
+  AssertTrue(not ExtensionMatches('a.png', D), 'men ikke .png');
+  AssertTrue(not ExtensionMatches('a.jpg', BildeFil('tom.png')),
+    'en tom fil er ingenting');
+end;
+
+procedure TestExifStripping;
+var
+  D, Ut: TBytes;
+  Inf: TImageInfo;
+begin
+  D := BildeFil('jpeg_exif_gps.jpg');
+  AssertEqual(JpegOrientation(D), 6, 'orienteringen leses fra EXIF');
+  AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(D)) > 0,
+    'EXIF står i fila før stripping');
+
+  AssertTrue(StripJpegMetadata(D, Ut), 'strippingen lykkes');
+  AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(Ut)) = 0,
+    'EXIF er borte etterpå');
+  AssertTrue(Length(Ut) < Length(D), 'og fila er mindre');
+  AssertTrue(SniffFormat(Ut) = ifJpeg, 'men fortsatt en jpeg');
+  Inf := ReadImageInfo(Ut);
+  AssertTrue((Inf.Width = 800) and (Inf.Height = 600), 'med dimensjonene i behold');
+
+  AssertEqual(JpegOrientation(BildeFil('jpeg_orient3.jpg')), 3,
+    'orientering 3 leses også');
+  AssertEqual(JpegOrientation(BildeFil('jpeg_320x240.jpg')), 0,
+    'uten EXIF er orienteringen 0');
+  AssertTrue(not StripJpegMetadata(BildeFil('png_320x240.png'), Ut),
+    'en png kan ikke strippes som jpeg');
+end;
+
+procedure TestVips;
+var
+  Inn, Ut: TBytes;
+  Inf: TImageInfo;
+begin
+  if not VipsAvailable then
+  begin
+    { Ikke en feil. libvips er en valgfri avhengighet, og suiten sier
+      hvorfor den hopper i stedet for å tie. }
+    WriteLn('    (hoppet over: ', Copy(VipsError, 1, 48), '…)');
+    AssertTrue(VipsError <> '', 'og feilen sier hva som mangler');
+    Exit;
+  end;
+
+  Inn := BildeFil('jpeg_1920x1080.jpg');
+  Ut := ResizeImage(Inn, 320, 0, ifJpeg, 80);
+  Inf := ReadImageInfo(Ut);
+  AssertEqual(Inf.Width, 320, 'skalert til oppgitt bredde');
+  AssertEqual(Inf.Height, 180, 'høyden følger forholdet');
+  AssertTrue(Length(Ut) < Length(Inn), 'og fila er mindre');
+
+  Ut := ResizeImage(Inn, 200, 200, ifJpeg, 80, fmCover);
+  Inf := ReadImageInfo(Ut);
+  AssertTrue((Inf.Width = 200) and (Inf.Height = 200),
+    'cover fyller boksen nøyaktig');
+
+  Ut := ResizeImage(Inn, 200, 200, ifJpeg, 80, fmInside);
+  Inf := ReadImageInfo(Ut);
+  AssertTrue((Inf.Width = 200) and (Inf.Height < 200),
+    'inside fyller den ikke');
+
+  AssertTrue(SniffFormat(ResizeImage(Inn, 100, 0, ifPng)) = ifPng,
+    'jpeg blir png');
+  AssertTrue(SniffFormat(ResizeImage(Inn, 100, 0, ifWebp, 75)) = ifWebp,
+    'jpeg blir webp');
+  AssertTrue(Length(ResizeImage(Inn, 600, 0, ifJpeg, 30)) <
+             Length(ResizeImage(Inn, 600, 0, ifJpeg, 95)),
+    'lavere kvalitet gir mindre fil');
+
+  { Oppskalering er aldri det noen ba om. }
+  AssertEqual(ReadImageInfo(ResizeImage(BildeFil('jpeg_320x240.jpg'),
+    2000, 0, ifJpeg, 80)).Width, 320, 'skalerer aldri opp');
+
+  { libvips strippes også, gjennom strip=true i formatstrengen. }
+  Ut := ResizeImage(BildeFil('jpeg_exif_gps.jpg'), 200, 0, ifJpeg, 80);
+  AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(Ut)) = 0,
+    'EXIF overlever ikke en skalering');
+
+  Inf := ReadImageInfo(ConvertImage(BildeFil('png_320x240.png'), ifWebp, 80));
+  AssertTrue((Inf.Width = 320) and (Inf.Height = 240) and (Inf.Format = ifWebp),
+    'konvertering beholder størrelsen');
+end;
 begin
   Group('Scheduler');
+  Group('Bilder');
+  Test('format og dimensjoner uten å dekode', @TestBildeHoder);
+  Test('en fil som lyver om hva den er, avsløres', @TestBildeSikkerhet);
+  Test('EXIF og GPS fjernes uten å røre pikslene', @TestExifStripping);
+  Test('skalering og konvertering (libvips)', @TestVips);
+
   Test('lauf har samme versjon som rammeverket', @TestLaufFoelgerRammeverket);
   Test('semver sammenlignes som tall, ikke som tekst', @TestSemVerSammenligning);
   Test('intervall kjører når det forfaller', @TestIntervall);

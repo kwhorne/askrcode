@@ -1,0 +1,19 @@
+# Testbilder for Askr.Image. Format: NAVN FORMAT BREDDE HOYDE ANIMERT
+# BREDDE 0 betyr at dimensjonene ikke skal kunne leses.
+png_1x1.png png 1 1 0
+png_320x240.png png 320 240 0
+png_4000x3000.png png 4000 3000 0
+png_anim.png png 16 16 1
+gif_1x1.gif gif 1 1 0
+gif_640x480.gif gif 640 480 0
+gif_anim.gif gif 32 32 1
+bmp_100x50.bmp bmp 100 50 0
+nope.jpg unknown 0 0 0
+tom.png unknown 0 0 0
+jpeg_1x1.jpg jpeg 1 1 0
+jpeg_320x240.jpg jpeg 320 240 0
+jpeg_1920x1080.jpg jpeg 1920 1080 0
+jpeg_exif_gps.jpg jpeg 800 600 0
+jpeg_orient3.jpg jpeg 640 480 0
+webp_lossy.webp webp 300 200 0
+webp_lossless.webp webp 120 90 0

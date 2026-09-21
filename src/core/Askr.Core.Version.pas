@@ -22,7 +22,7 @@ const
   { Endres denne, må frontend/lauf/package.json følge etter. Testen feiler
     ellers, og det er meningen: en utgivelse er ett tall over to
     økosystemer. }
-  AskrVersion = '0.6.4';
+  AskrVersion = '0.7.0';
 
 type
   TSemVer = record

@@ -33,6 +33,7 @@ exactly that over 500 requests.
 | **Norn** | Migrations, and typed columns generated from the *database*, not from the migrations |
 | **Lauf** | The frontend layer: 38 Svelte 5 components, forms that know your validation, a data grid that sorts in the database |
 | **Rún** | An optional query language transpiled to typed Pascal at build time |
+| Images | What an upload really is, and resizing it with libvips |
 | Runtime | Queue (in-process or durable), scheduler, cache, mail, logging, configuration |
 | Security | Pure-Pascal crypto, password hashing, sign-in, gates, signed URLs |
 | Desktop | The same app in a native window — WKWebView on macOS, WebKitGTK on Linux |
@@ -69,7 +70,7 @@ and `aria-invalid`, and the button shows a spinner while the request is out.
 
 Phases 1 and 2 are complete on **macOS and Linux**. The data layer is
 complete for all three dialects. The CLI has 22 commands. Documentation is
-34 pages under [`docs/`](docs/).
+35 pages under [`docs/`](docs/).
 
 Two things are **written and have never been run**, and they will say so
 until someone runs them:

@@ -16,6 +16,49 @@ with the zero-major caveat that minor releases may break things until
 
 Nothing yet.
 
+## 0.7.0 — 2026-09-21
+
+Images. Two units, and the split between them is the point.
+
+### Added
+
+- **`Askr.Image`** — what a file *is*, without decoding a pixel. No
+  dependency, always available. Format from magic bytes, dimensions from
+  the header, EXIF stripped by rewriting segments.
+
+  It is mostly a security unit. A file named `avatar.jpg` that is
+  actually HTML is a stored XSS: serve it back with the wrong
+  `Content-Type` and it runs under your domain. The filename is an
+  attacker's string and so is `Content-Type`; `SniffFormat` measures
+  instead. Reading dimensions without decoding is also how you refuse a
+  decompression bomb before it costs you gigabytes.
+
+  EXIF matters for a second reason: a photo from a phone usually carries
+  GPS. Someone uploading a profile picture is uploading their home
+  address unless something removes it.
+
+- **`Askr.Image.Vips`** — resize, crop and convert, by loading libvips
+  with `dlopen`. Same pattern as OpenSSL, libpq, libmariadb and sqlite3:
+  the binary starts without it, and an app that never resizes an image
+  pays nothing. When it is missing, the error names the package to
+  install for Debian, macOS and Alpine.
+
+  It never scales up: an image already smaller than the box comes back
+  at its own size.
+
+- `SniffFormat`, `ReadImageInfo` and `ExtensionMatches` take a `TStr`,
+  so they work straight on `TUploadedFile.Content` without copying the
+  upload.
+
+- [`docs/images.md`](docs/images.md), which also says why video is not
+  here: transcoding is minutes of CPU on a request that has to answer in
+  milliseconds, and belongs on the durable queue behind `ffmpeg`.
+
+### Notes
+
+The image tests run in the container, where libvips is installed, and
+skip on macOS saying why — the same arrangement as the TLS suite.
+
 ## 0.6.4 — 2026-09-21
 
 ### Changed
