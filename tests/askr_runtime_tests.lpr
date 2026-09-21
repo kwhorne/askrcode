@@ -1,7 +1,8 @@
-{ Tester for kjøretidsdelene av fase 2, skrevet med Askr.Testing.
+{ Tests for the runtime parts of phase 2, written with Askr.Testing.
 
-  Denne fila er også demonstrasjonen av rammeverket: ruteren testes uten
-  socket, databasen er sqlite::memory:, og arenaen hevdes om direkte. }
+  This file is also the demonstration of the framework: the router is
+  tested without a socket, the database is sqlite::memory:, and the arena
+  is asserted about directly. }
 program AskrRuntimeTests;
 
 {$mode Delphi}{$H+}
@@ -25,12 +26,12 @@ uses
 
 { -------------------------------------------------------------- versjon -- }
 
-{ En utgivelse er ett tall over to økosystemer: Pascal-kilden og
-  @askrcode/lauf på npm. Driver de fra hverandre, får man en komponent
-  hvis klienthalvdel ikke passer serverhalvdelen, og ingenting sier fra
-  før noe slutter å virke. Det HADDE drevet: CLI-en sto på 0.6.0 mens
-  package.json sto på 0.1.0. Denne testen er grunnen til at det ikke kan
-  skje igjen. }
+{ A release is one number across two ecosystems: the Pascal source and
+  @askrcode/lauf on npm. If they drift apart you get a component whose
+  client half does not fit the server half, and nothing says so until
+  something stops working. They HAD drifted: the CLI said 0.6.0 while
+  package.json said 0.1.0. This test is the reason it cannot happen
+  again. }
 procedure TestLaufFoelgerRammeverket;
 var
   F: TStringList;
@@ -38,10 +39,10 @@ var
   Line_, Fant, Path_: string;
 begin
   Fant := '';
-  { Kjøres fra repo-rota av ./askr test. Finner vi ikke fila, er det
-    ikke en grunn til å påstå at versjonene stemmer. }
+  { Run from the repository root by ./askr test. If we cannot find the
+    file, that is not a reason to claim the versions match. }
   Path_ := 'frontend/lauf/package.json';
-  AssertTrue(FileExists(Path_), 'package.json finnes (kjør fra repo-rota)');
+  AssertTrue(FileExists(Path_), 'package.json exists (run from the repository root)');
   F := TStringList.Create;
   try
     F.LoadFromFile(Path_);
@@ -60,26 +61,27 @@ begin
     F.Free;
   end;
   AssertEqual(Fant, AskrVersion,
-    'frontend/lauf/package.json må ha samme versjon som Askr.Core.Version');
+    'frontend/lauf/package.json must have the same version as Askr.Core.Version');
 end;
 
 procedure TestSemVerSammenligning;
 begin
   AssertTrue(CompareSemVer('0.6.0', '0.7.0') < 0, '0.6.0 < 0.7.0');
-  AssertTrue(CompareSemVer('0.10.0', '0.9.0') > 0, '0.10.0 > 0.9.0 (ikke tekst)');
-  AssertEqual(CompareSemVer('1.2.3', 'v1.2.3'), 0, 'v-prefiks er samme versjon');
-  { Semver-regelen som er lett å bomme på: rc kommer FØR utgivelsen. }
-  AssertTrue(CompareSemVer('0.7.0-rc.1', '0.7.0') < 0, 'rc før utgivelsen');
-  AssertTrue(not ParseSemVer('ikke-en-versjon').Valid, 'søppel er ugyldig');
-  AssertTrue(not ParseSemVer('1.2.3.4').Valid, 'fire ledd er ikke semver');
+  AssertTrue(CompareSemVer('0.10.0', '0.9.0') > 0, '0.10.0 > 0.9.0 (not as text)');
+  AssertEqual(CompareSemVer('1.2.3', 'v1.2.3'), 0, 'a v prefix is the same version');
+  { The semver rule that is easy to get wrong: rc comes BEFORE the
+    release. }
+  AssertTrue(CompareSemVer('0.7.0-rc.1', '0.7.0') < 0, 'rc before the release');
+  AssertTrue(not ParseSemVer('not-a-version').Valid, 'rubbish is invalid');
+  AssertTrue(not ParseSemVer('1.2.3.4').Valid, 'four parts is not semver');
 
-  { npm-regelen for nullmajor: ^0.6.0 låser minor, fordi et
-    nullmajor-prosjekt bryter ting i minor. }
+  { The npm rule for a zero major: ^0.6.0 locks the minor, because a
+    zero-major project breaks things in a minor. }
   AssertTrue(SatisfiesRange('0.6.3', '^0.6.0'), '0.6.3 passer ^0.6.0');
   AssertTrue(not SatisfiesRange('0.7.0', '^0.6.0'), '0.7.0 passer ikke ^0.6.0');
   AssertTrue(SatisfiesRange('1.9.0', '^1.2.0'), '1.9.0 passer ^1.2.0');
-  AssertTrue(not SatisfiesRange('0.5.0', '^0.6.0'), 'eldre passer aldri');
-  AssertTrue(SatisfiesRange('0.6.9', '~0.6.0'), '~ låser major.minor');
+  AssertTrue(not SatisfiesRange('0.5.0', '^0.6.0'), 'older never satisfies');
+  AssertTrue(SatisfiesRange('0.6.9', '~0.6.0'), '~ locks major.minor');
   AssertTrue(not SatisfiesRange('0.7.0', '~0.6.0'), '~ slipper ikke minor');
 end;
 
@@ -112,13 +114,13 @@ begin
   SchedulerSetup;
   try
     S.EverySeconds(10, 'a');
-    AssertEqual(S.Count, 1, 'én oppføring');
-    { Første kjøring er om ti sekunder, ikke nå. }
-    AssertEqual(S.Tick(UnixNow), 0, 'ikke forfalt ennå');
-    AssertEqual(S.Tick(UnixNow + 10), 1, 'forfalt etter ti sekunder');
-    AssertEqual(S.Tick(UnixNow + 10), 0, 'ikke to ganger på samme tikk');
-    AssertEqual(S.Tick(UnixNow + 20), 1, 'og så igjen');
-    AssertEqual(Q.Pending, 2, 'to jobber havnet på køen');
+    AssertEqual(S.Count, 1, 'one entry');
+    { The first run is in ten seconds, not now. }
+    AssertEqual(S.Tick(UnixNow), 0, 'not due yet');
+    AssertEqual(S.Tick(UnixNow + 10), 1, 'due after ten seconds');
+    AssertEqual(S.Tick(UnixNow + 10), 0, 'not twice on the same tick');
+    AssertEqual(S.Tick(UnixNow + 20), 1, 'and then again');
+    AssertEqual(Q.Pending, 2, 'two jobs landed on the queue');
   finally
     SchedulerRydd;
   end;
@@ -134,10 +136,10 @@ begin
     S.DailyAt(3, 30, 'a');
     Now_ := UnixNow;
     Ran := 0;
-    { Ett døgn, time for time: nøyaktig én kjøring. }
+    { One day, hour by hour: exactly one run. }
     for I := 0 to 24 do
       Ran := Ran + S.Tick(Now_ + Int64(I) * 3600);
-    AssertEqual(Ran, 1, 'daglig jobb kjørte én gang på et døgn');
+    AssertEqual(Ran, 1, 'a daily job ran once in a day');
   finally
     SchedulerRydd;
   end;
@@ -155,7 +157,7 @@ begin
     Ran := 0;
     for I := 0 to 7 * 24 do
       Ran := Ran + S.Tick(Now_ + Int64(I) * 3600);
-    AssertEqual(Ran, 1, 'ukentlig jobb kjørte én gang på en uke');
+    AssertEqual(Ran, 1, 'a weekly job ran once in a week');
   finally
     SchedulerRydd;
   end;
@@ -171,10 +173,10 @@ begin
     S.SkipWhenPending;
     Now_ := UnixNow;
     S.Tick(Now_ + 1);
-    AssertEqual(Q.Pending, 1, 'første kjøring havnet på køen');
-    { Jobben ligger fortsatt der, så neste skal hoppes over. }
+    AssertEqual(Q.Pending, 1, 'the first run landed on the queue');
+    { The job is still there, so the next one is to be skipped. }
     S.Tick(Now_ + 2);
-    AssertEqual(Q.Pending, 1, 'stabler seg ikke oppå en jobb som venter');
+    AssertEqual(Q.Pending, 1, 'does not stack on top of a job that is waiting');
   finally
     SchedulerRydd;
   end;
@@ -187,12 +189,12 @@ begin
   SchedulerSetup;
   L := TStringList.Create;
   try
-    S.EveryMinutes(5, 'rydd-opp');
+    S.EveryMinutes(5, 'clean-up');
     S.DailyAt(3, 30, 'nattjobb');
     S.Describe(L);
     AssertEqual(L.Count, 2, 'to linjer');
-    AssertContains(L.Text, 'every 5 minutes', 'intervall beskrives lesbart');
-    AssertContains(L.Text, 'daily at 03:30', 'daglig beskrives lesbart');
+    AssertContains(L.Text, 'every 5 minutes', 'an interval is described readably');
+    AssertContains(L.Text, 'daily at 03:30', 'daily is described readably');
   finally
     L.Free;
     SchedulerRydd;
@@ -205,7 +207,7 @@ var
   Store: TSessionStore;
   ClientCookie: string;
 
-function LagReq(A: TArena; const Cookie_: string): TRequest;
+function MakeReq(A: TArena; const Cookie_: string): TRequest;
 var
   Prev: TArena;
   Head: string;
@@ -241,7 +243,7 @@ begin
   Result := Copy(Raw, P, Q2 - P);
 end;
 
-procedure TestSesjonRundtur;
+procedure TestSessionRoundTrip;
 var
   A: TArena;
   Prev: TArena;
@@ -253,30 +255,30 @@ begin
   A := TArena.Create(16 * 1024);
   Prev := UseArena(A);
   try
-    { Første request: ingen kake, ny sesjon. }
-    Req := LagReq(A, '');
+    { The first request: no cookie, a new session. }
+    Req := MakeReq(A, '');
     Sess := Store.Start(Req);
-    AssertTrue(Sess.IsNew, 'ny sesjon uten kake');
+    AssertTrue(Sess.IsNew, 'a new session with no cookie');
     AssertEqual(Length(Sess.Id), 32, 'id er 32 hex-tegn');
     Sess.Put('bruker', 'knut');
     R := Respond(200);
     Store.Commit(Sess, R);
     ClientCookie := CookieFrom(R, A);
-    AssertEqual(Length(ClientCookie), 32, 'kaka ble satt');
+    AssertEqual(Length(ClientCookie), 32, 'the cookie was set');
 
-    { Andre request: samme kake, samme data. }
+    { The second request: the same cookie, the same data. }
     A.Reset;
-    Req := LagReq(A, ClientCookie);
+    Req := MakeReq(A, ClientCookie);
     Sess := Store.Start(Req);
-    AssertFalse(Sess.IsNew, 'sesjonen ble gjenopptatt');
-    AssertEqual(Sess.Get('bruker'), 'knut', 'verdien overlevde');
-    AssertEqual(Store.Resumed, 1, 'telt som gjenopptatt');
+    AssertFalse(Sess.IsNew, 'the session was resumed');
+    AssertEqual(Sess.Get('bruker'), 'knut', 'the value survived');
+    AssertEqual(Store.Resumed, 1, 'counted as resumed');
 
     { En ukjent kake gir en ny sesjon, ikke en feil. }
     A.Reset;
-    Req := LagReq(A, '00000000000000000000000000000000');
+    Req := MakeReq(A, '00000000000000000000000000000000');
     Sess := Store.Start(Req);
-    AssertTrue(Sess.IsNew, 'ukjent id gir ny sesjon');
+    AssertTrue(Sess.IsNew, 'an unknown id gives a new session');
   finally
     UseArena(Prev);
     A.Free;
@@ -297,29 +299,29 @@ begin
   A := TArena.Create(16 * 1024);
   Prev := UseArena(A);
   try
-    Req := LagReq(A, '');
+    Req := MakeReq(A, '');
     Sess := Store.Start(Req);
     Sess.Flash('suksess', 'Stored');
     AssertFalse(Sess.HasFlash('suksess'),
-      'det man skriver er ikke lesbart i samme request');
+      'what you write is not readable in the same request');
     R := Respond(200);
     Store.Commit(Sess, R);
     Cookie_ := CookieFrom(R, A);
 
-    { Next_ request: nå er den lesbar. }
+    { The next request: now it is readable. }
     A.Reset;
-    Req := LagReq(A, Cookie_);
+    Req := MakeReq(A, Cookie_);
     Sess := Store.Start(Req);
-    AssertTrue(Sess.HasFlash('suksess'), 'lesbar i neste request');
-    AssertEqual(Sess.GetFlash('suksess'), 'Stored', 'riktig verdi');
+    AssertTrue(Sess.HasFlash('suksess'), 'readable in the next request');
+    AssertEqual(Sess.GetFlash('suksess'), 'Stored', 'the right value');
     R := Respond(200);
     Store.Commit(Sess, R);
 
-    { Og borte i den etter. }
+    { And gone in the one after. }
     A.Reset;
-    Req := LagReq(A, Cookie_);
+    Req := MakeReq(A, Cookie_);
     Sess := Store.Start(Req);
-    AssertFalse(Sess.HasFlash('suksess'), 'borte i tredje request');
+    AssertFalse(Sess.HasFlash('suksess'), 'gone in the third request');
   finally
     UseArena(Prev);
     A.Free;
@@ -327,13 +329,14 @@ begin
   end;
 end;
 
-{ Enhver flash-nøkkel skal ut i Inertia-payloaden, ikke bare én bestemt.
+{ Every flash key is to reach the Inertia payload, not only one
+  particular one.
 
-  Vakten i BuildPayload spurte før etter nøkkelen 'suksess' bokstavelig talt,
-  mens WriteFlashInto skriver alle nøkler unntatt _errors. En app som gjorde
-  Session.Flash('error', ...) — slik det genererte auth-stillaset gjør — fikk
-  meldingen stille forkastet. Testen bruker med vilje en annen nøkkel enn den
-  som sto der. }
+  The guard in BuildPayload used to ask for the key 'suksess' literally,
+  while WriteFlashInto writes every key except _errors. An app that did
+  Session.Flash('error', ...) — as the generated auth scaffolding does —
+  had the message silently discarded. The test deliberately uses a
+  different key from the one that was there. }
 procedure TestInertiaFlashUansettNokkel;
 var
   A: TArena;
@@ -370,42 +373,42 @@ begin
   try
     TInertia.SetVersion('t');
 
-    { Emit en flash under en annen nøkkel enn 'suksess'. }
-    Req := LagReq(A, '');
+    { Set a flash under a key other than 'suksess'. }
+    Req := MakeReq(A, '');
     Sess := Store.Start(Req);
     Sess.Flash('error', 'That link is no longer valid.');
     R := Respond(200);
     Store.Commit(Sess, R);
     Cookie_ := CookieFrom(R, A);
 
-    { Next_ request: den skal være med i payloaden. }
+    { The next request: it is to be in the payload. }
     A.Reset;
     Req := InertiaReq(Cookie_);
     UseRequest(Req);
     Sess := Store.Start(Req);
     UseSession(Sess);
-    AssertTrue(Sess.HasAnyFlash, 'sesjonen har en lesbar flash');
+    AssertTrue(Sess.HasAnyFlash, 'the session has a readable flash');
     Body := Inertia('Home', ['x', Int64(1)]).Body.ToString;
     AssertContains(Body, '"error":"That link is no longer valid."',
-      'en flash under en annen nøkkel enn suksess kommer med');
+      'a flash under a key other than suksess comes along');
 
-    { Og vakten skal fortsatt vokte: uten flash og uten feil, ingen
-      flash-nøkkel i det hele tatt. }
+    { And the guard is to keep guarding: with no flash and no errors, no
+      flash key at all. }
     A.Reset;
     UseSession(nil);
     Req := InertiaReq('');
     UseRequest(Req);
     Sess := Store.Start(Req);
     UseSession(Sess);
-    AssertFalse(Sess.HasAnyFlash, 'ny sesjon har ingen flash');
+    AssertFalse(Sess.HasAnyFlash, 'a new session has no flash');
     Body := Inertia('Home', ['x', Int64(1)]).Body.ToString;
     AssertNotContains(Body, '"flash"',
-      'uten flash skrives ikke flash-objektet');
+      'with no flash the flash object is not written');
 
-    { _errors teller ikke som en melding — den er en egen prop. }
+    { _errors does not count as a message — it is a prop of its own. }
     A.Reset;
     UseSession(nil);
-    Req := LagReq(A, '');
+    Req := MakeReq(A, '');
     Sess := Store.Start(Req);
     Sess.FlashErrorsJson(Str('{"name":"is required"}'));
     R := Respond(302);
@@ -418,10 +421,10 @@ begin
     Sess := Store.Start(Req);
     UseSession(Sess);
     AssertFalse(Sess.HasAnyFlash,
-      'valideringsfeil er ikke en flash-melding');
-    AssertTrue(Sess.HasErrors, 'men de er der som feil');
+      'a validation error is not a flash message');
+    AssertTrue(Sess.HasErrors, 'but they are there as errors');
     Body := Inertia('Home', ['x', Int64(1)]).Body.ToString;
-    AssertContains(Body, '"errors"', 'og de kommer ut som errors');
+    AssertContains(Body, '"errors"', 'and they come out as errors');
   finally
     UseSession(PrevS);
     UseRequest(PrevR);
@@ -431,26 +434,27 @@ begin
   end;
 end;
 
-{ Sesjonen må ikke overleve requesten som en threadvar.
+{ The session must not outlive the request as a threadvar.
 
-  Den lever i request-arenaen og forsvinner ved Reset. Blir den stående,
-  ser neste request på den workeren en peker inn i minne arenaen har
-  gjenbrukt — og da leser den et objekt som ikke finnes lenger.
+  It lives in the request arena and disappears on Reset. If it is left
+  standing, the next request on that worker sees a pointer into memory the
+  arena has reused — and then it reads an object that no longer exists.
 
-  Utgangen som slapp forbi var den vanligste av dem alle: en anonym
-  besøkende som starter en sesjon uten å skrive til den. Den ble oppdaget
-  som EAccessViolation da en nettleser hentet en css-fil rett etter en
-  side på samme tilkobling, på et ekte nettsted bygget med rammeverket.
-  Den store fila fikk en ny arenablokk og gikk stille forbi; den lille
-  havnet oppå det gamle objektet.
+  The exit that slipped past was the most common of them all: an anonymous
+  visitor who starts a session without writing to it. It was found as an
+  EAccessViolation when a browser fetched a css file right after a page on
+  the same connection, on a real site built with the framework. The large
+  file got a new arena block and went quietly past; the small one landed on
+  top of the old object.
 
-  Testen går gjennom ruteren, altså den veien en ekte request går. }
+  The test goes through the router, that is, the way a real request
+  goes. }
 function TomHandler(Req: TRequest): TResponse;
 begin
   Result := RespondText('ok');
 end;
 
-function SkrivOgSvar(Req: TRequest): TResponse;
+function WriteAndReply(Req: TRequest): TResponse;
 begin
   CurrentSession.Put('x', '1');
   Result := RespondText('ok');
@@ -475,24 +479,25 @@ begin
     UseSessions(R);
     R.Get('/', TomHandler);
 
-    { 1. Anonym besøkende: sesjonen startes og skrives aldri til. Den skal
-         verken lagres eller få en kake — og den skal ikke bli stående. }
-    Req := LagReq(A, '');
+    { 1. An anonymous visitor: the session is started and never written
+      to. It is to be neither stored nor given a cookie — and it must
+      not be left standing. }
+    Req := MakeReq(A, '');
     Res := R.Handle(Req);
-    AssertStatus(Res, 200, 'requesten gikk gjennom');
+    AssertStatus(Res, 200, 'the request went through');
     AssertNil(CurrentSession,
-      'en sesjon ingen skrev til blir ikke stående etter requesten');
+      'a session nobody wrote to is not left standing after the request');
 
-    { 2. Og en som ble skrevet til, ryddes også. }
+    { 2. And one that was written to is cleaned up as well. }
     A.Reset;
-    Req := LagReq(A, '');
+    Req := MakeReq(A, '');
     R.Free;
     R := TRouter.Create;
     UseSessions(R);
-    R.Get('/', SkrivOgSvar);
+    R.Get('/', WriteAndReply);
     Res := R.Handle(Req);
-    AssertNil(CurrentSession, 'også når den ble lagret');
-    AssertTrue(CookieFrom(Res, A) <> '', 'og den fikk en kake');
+    AssertNil(CurrentSession, 'also when it was stored');
+    AssertTrue(CookieFrom(Res, A) <> '', 'and it got a cookie');
   finally
     R.Free;
     UseSession(PrevS);
@@ -515,7 +520,7 @@ begin
   A := TArena.Create(16 * 1024);
   Prev := UseArena(A);
   try
-    Req := LagReq(A, '');
+    Req := MakeReq(A, '');
     Sess := Store.Start(Req);
     Sess.FlashErrorsJson(Str('{"name":"is required"}'));
     R := Respond(302);
@@ -524,10 +529,10 @@ begin
 
     { Dette er avviket fra steg 5, lukket: feilene overlever omdirigeringen. }
     A.Reset;
-    Req := LagReq(A, Cookie_);
+    Req := MakeReq(A, Cookie_);
     Sess := Store.Start(Req);
-    AssertTrue(Sess.HasErrors, 'feilene overlevde omdirigeringen');
-    AssertContains(Sess.ErrorsJson, 'is required', 'med innholdet i behold');
+    AssertTrue(Sess.HasErrors, 'the errors survived the redirect');
+    AssertContains(Sess.ErrorsJson, 'is required', 'with the content intact');
   finally
     UseArena(Prev);
     A.Free;
@@ -541,7 +546,7 @@ var
   NullT: TNullTransport;
   M: TMailer;
 
-procedure TestMeldingRendres;
+procedure TestMessageRenders;
 var
   Msg: TMailMessage;
   Raw: string;
@@ -549,21 +554,21 @@ begin
   NullT := TNullTransport.Create;
   M := TMailer.Create(NullT, True);
   try
-    M.SetDefaultFrom('ingen-svar@gets.no', 'Askr');
+    M.SetDefaultFrom('no-reply@example.com', 'Askr');
     Msg := M.Message_
-      .AddTo('kh@gets.no', 'Knut W. Hørne')
+      .AddTo('ada@example.com', 'Ada Lovelace')
       .Subject('Kvittering')
-      .Text('Takk for bestillingen.');
+      .Text('Thank you for your order.');
     M.Send(Msg);
 
     Raw := NullT.LastMessage;
-    AssertContains(Raw, 'From: "Askr" <ingen-svar@gets.no>', 'avsender');
-    AssertContains(Raw, 'To: "Knut W. Hørne" <kh@gets.no>', 'mottaker');
+    AssertContains(Raw, 'From: "Askr" <no-reply@example.com>', 'avsender');
+    AssertContains(Raw, 'To: "Ada Lovelace" <ada@example.com>', 'the recipient');
     AssertContains(Raw, 'Subject: Kvittering', 'emne');
     AssertContains(Raw, 'Content-Type: text/plain; charset=utf-8', 'type');
-    AssertContains(Raw, 'Takk for bestillingen.', 'innhold');
+    AssertContains(Raw, 'Thank you for your order.', 'innhold');
     AssertContains(Raw, 'Message-ID: <', 'message-id');
-    AssertEqual(M.Sent, 1, 'talt som sendt');
+    AssertEqual(M.Sent, 1, 'counted as sent');
   finally
     M.Free;
   end;
@@ -579,12 +584,12 @@ begin
     M.Send(M.Message_
       .From('a@b.no')
       .AddTo('c@d.no')
-      .Subject('Begge deler')
-      .Text('ren tekst')
+      .Subject('Both')
+      .Text('plain text')
       .Html('<p>html</p>'));
     Raw := NullT.LastMessage;
-    AssertContains(Raw, 'multipart/alternative', 'multipart når begge er satt');
-    AssertContains(Raw, 'ren tekst', 'tekstdelen');
+    AssertContains(Raw, 'multipart/alternative', 'multipart when both are set');
+    AssertContains(Raw, 'plain text', 'tekstdelen');
     AssertContains(Raw, '<p>html</p>', 'html-delen');
   finally
     M.Free;
@@ -603,10 +608,10 @@ begin
     Msg := M.Message_.From('a@b.no').AddTo('c@d.no')
       .Bcc('skjult@e.no').Subject('x').Text('y');
     Recipients := Msg.AllRecipients;
-    AssertEqual(Length(Recipients), 2, 'bcc er med i mottakerlista');
+    AssertEqual(Length(Recipients), 2, 'bcc is in the recipient list');
     M.Send(Msg, False);
     Raw := NullT.LastMessage;
-    AssertNotContains(Raw, 'skjult@e.no', 'men ikke i hodet');
+    AssertNotContains(Raw, 'skjult@e.no', 'but not in the head');
     Msg.Free;
   finally
     M.Free;
@@ -630,7 +635,7 @@ begin
       on EMailError do
         Kastet := True;
     end;
-    AssertTrue(Kastet, 'melding uten avsender avvises');
+    AssertTrue(Kastet, 'a message with no sender is rejected');
   finally
     Msg.Free;
     M.Free;
@@ -639,9 +644,9 @@ end;
 
 { ------------------------------------------------------------- resend -- }
 
-{ Transporten får aldri lov til å sende noe ekte her. Alt går gjennom
-  TFakeResendHttp, som tar vare på JSON-en og svarer med det testen la i
-  kø — samme grep som TFakeAiTransport. }
+{ The transport is never allowed to send anything real here. Everything
+  goes through TFakeResendHttp, which keeps the JSON and answers with what
+  the test queued — the same move as TFakeAiTransport. }
 function NewResend(out H: TFakeResendHttp): TResendTransport;
 begin
   H := TFakeResendHttp.Create;
@@ -667,10 +672,10 @@ begin
       .Text('Thank you.')
       .Html('<p>Thank you.</p>'));
 
-    AssertEqual(H.Sent.Count, 1, 'én forespørsel');
+    AssertEqual(H.Sent.Count, 1, 'one request');
     J := H.Sent[0];
     AssertContains(J, '"from":"\"Example, Inc.\" <orders@example.com>"',
-      'avsender med sitert navn');
+      'a sender with a quoted name');
     AssertContains(J, '"to":["\"Ada Lovelace\" <customer@example.com>"]',
       'to er en liste');
     AssertContains(J, '"cc":["sales@example.com"]', 'cc');
@@ -679,10 +684,10 @@ begin
     AssertContains(J, '"html":"<p>Thank you.</p>"', 'html');
     AssertContains(J, '"text":"Thank you."', 'tekst');
     AssertEqual(H.LastUrl, 'https://api.resend.com/emails', 'endepunkt');
-    AssertEqual(H.LastApiKey, 're_test_nokkel', 'nøkkelen gis til HTTP-laget');
+    AssertEqual(H.LastApiKey, 're_test_nokkel', 'the key is handed to the HTTP layer');
     AssertEqual(T.LastId, '49a3999c-0ce1-4ea6-ab68-afcd6dc2e794',
       'id-en fra svaret');
-    AssertEqual(T.Count, 1, 'talt som sendt');
+    AssertEqual(T.Count, 1, 'counted as sent');
   finally
     T.Free;
   end;
@@ -707,13 +712,13 @@ begin
 
     J := H.Sent[0];
     AssertContains(J, '"reply_to":["one@example.com","two@example.com"]',
-      'reply_to blir et eget felt, som liste');
+      'reply_to becomes its own field, as a list');
     AssertContains(J, '"headers":{"X-Entity-Ref-ID":"42"}',
-      'andre hoder havner i headers');
-    { Resend avviser Reply-To som fritt hode. Står den begge steder, er
-      det tilfeldig hvilken som vinner. }
+      'other heads land in headers');
+    { Resend rejects Reply-To as a free header. If it is in both places,
+      which one wins is arbitrary. }
     AssertNotContains(J, '"headers":{"Reply-To"',
-      'reply-to står ikke også i headers');
+      'reply-to is not also in headers');
   finally
     T.Free;
   end;
@@ -729,12 +734,12 @@ begin
     H.Queue('{"id":"x"}', 200);
     T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
       .Subject('s').Text('t'));
-    { Et tomt headers-objekt er ikke feil, men det sier at vi skriver ut
-      nøkler vi ikke har noe å fylle. }
+    { An empty headers object is not wrong, but it says we are writing out
+      keys we have nothing to fill. }
     AssertNotContains(H.Sent[0], '"headers"',
-      'ingen headers-nøkkel uten hoder');
-    AssertNotContains(H.Sent[0], '"cc"', 'ingen cc uten cc');
-    AssertNotContains(H.Sent[0], '"html"', 'ingen html uten html');
+      'no headers key without heads');
+    AssertNotContains(H.Sent[0], '"cc"', 'no cc without cc');
+    AssertNotContains(H.Sent[0], '"html"', 'no html without html');
   finally
     T.Free;
   end;
@@ -752,29 +757,29 @@ begin
     T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
       .Subject('s').Text('t').Idempotency('order-1001-receipt'));
     AssertEqual(H.LastIdempotency, 'order-1001-receipt',
-      'kallerens nøkkel brukes som den er');
+      'the caller''s key is used as it is');
 
     H.Queue('{"id":"y"}', 200);
     T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
       .Subject('s').Text('t'));
     FirstByte := H.LastIdempotency;
-    AssertTrue(FirstByte <> '', 'uten egen nøkkel brukes message-id-en');
+    AssertTrue(FirstByte <> '', 'with no key of its own the message id is used');
     AssertTrue(FirstByte <> 'order-1001-receipt',
-      'og den er ikke forrige melding sin');
+      'and it is not the previous message''s');
   finally
     T.Free;
   end;
 end;
 
-procedure TestResendSammeMeldingSammeNoekkel;
+procedure TestResendSameMessageSameKey;
 var
   T: TResendTransport;
   H: TFakeResendHttp;
   M: TMailMessage;
   A, B: string;
 begin
-  { Det som gjør et gjenforsøk trygt: samme melding må gi samme nøkkel.
-    Gjør den ikke det, får mottakeren to eposter av én jobb. }
+  { What makes a retry safe: the same message has to give the same key. If
+    it does not, the recipient gets two emails from one job. }
   T := NewResend(H);
   M := TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
     .Subject('s').Text('t');
@@ -785,14 +790,14 @@ begin
     H.Queue('{"id":"x"}', 200);
     T.Send(M);
     B := H.LastIdempotency;
-    AssertEqual(A, B, 'samme melding gir samme idempotensnøkkel');
+    AssertEqual(A, B, 'the same message gives the same idempotency key');
   finally
     M.Free;
     T.Free;
   end;
 end;
 
-procedure TestResendFeil;
+procedure TestResendErrors;
 var
   T: TResendTransport;
   H: TFakeResendHttp;
@@ -819,15 +824,15 @@ begin
         Name_ := E.Name_;
         CanRetry := E.Retryable;
         AssertContains(E.Message, 'Invalid `to` field.',
-          'providerens egen tekst kommer med');
+          'the provider''s own text comes along');
         AssertContains(E.Message, 'validation_error', 'og typen');
       end;
     end;
     AssertTrue(Kastet, '422 kaster');
     AssertEqual(Status, 422, 'status');
-    AssertEqual(Name_, 'validation_error', 'typen slik API-et skriver den');
-    AssertTrue(not CanRetry, 'en valideringsfeil prøves ikke om igjen');
-    AssertEqual(T.Count, 0, 'og telles ikke som sendt');
+    AssertEqual(Name_, 'validation_error', 'the type the way the API writes it');
+    AssertTrue(not CanRetry, 'a validation error is not retried');
+    AssertEqual(T.Count, 0, 'and is not counted as sent');
   finally
     T.Free;
   end;
@@ -851,10 +856,10 @@ begin
       on E: EResendError do
         CanRetry := E.Retryable;
     end;
-    AssertTrue(CanRetry, 'rate limit kan prøves om igjen');
+    AssertTrue(CanRetry, 'a rate limit can be retried');
 
-    { Kvote er ikke det samme. Den går ikke over innenfor noen backoff en
-      kø har, og skal til feiltabellen der noen ser den. }
+    { A quota is not the same. It does not clear within any backoff a queue
+      has, and belongs in the failed table where somebody sees it. }
     H.Queue('{"message":"Daily quota reached.",' +
       '"name":"daily_quota_exceeded"}', 429);
     CanRetry := True;
@@ -865,7 +870,7 @@ begin
       on E: EResendError do
         CanRetry := E.Retryable;
     end;
-    AssertTrue(not CanRetry, 'kvote prøves ikke om igjen');
+    AssertTrue(not CanRetry, 'a quota is not retried');
 
     H.Queue('{"message":"Something went wrong.",' +
       '"name":"application_error"}', 500);
@@ -877,7 +882,7 @@ begin
       on E: EResendError do
         CanRetry := E.Retryable;
     end;
-    AssertTrue(CanRetry, '5xx kan prøves om igjen');
+    AssertTrue(CanRetry, '5xx can be retried');
   finally
     T.Free;
   end;
@@ -889,8 +894,8 @@ var
   H: TFakeResendHttp;
   Msg: string;
 begin
-  { Feltet har hatt flere navn over tid, og en feilside kan være HTML.
-    Ingen av delene skal gi en tom feilmelding. }
+  { The field has had several names over time, and an error page can be
+    HTML. Neither is to give an empty error message. }
   T := NewResend(H);
   try
     H.Queue('{"message":"nope","error_type":"invalid_parameter"}', 422);
@@ -902,7 +907,7 @@ begin
       on E: EResendError do
         Msg := E.Message;
     end;
-    AssertContains(Msg, 'invalid_parameter', 'error_type leses også');
+    AssertContains(Msg, 'invalid_parameter', 'error_type is read too');
 
     H.Queue('<html><body>502 Bad Gateway</body></html>', 502);
     Msg := '';
@@ -913,14 +918,14 @@ begin
       on E: EResendError do
         Msg := E.Message;
     end;
-    AssertContains(Msg, '502', 'statusen kommer med når kroppen ikke er JSON');
-    AssertContains(Msg, 'Bad Gateway', 'og det serveren faktisk skrev');
+    AssertContains(Msg, '502', 'the status comes along when the body is not JSON');
+    AssertContains(Msg, 'Bad Gateway', 'and what the server actually wrote');
   finally
     T.Free;
   end;
 end;
 
-procedure TestResendTomKropp;
+procedure TestResendEmptyBody;
 var
   T: TResendTransport;
   H: TFakeResendHttp;
@@ -936,8 +941,8 @@ begin
       on E: EMailError do
         Kastet := True;
     end;
-    AssertTrue(Kastet, 'melding uten tekst og html avvises før nettverket');
-    AssertEqual(H.Sent.Count, 0, 'og ingenting ble sendt');
+    AssertTrue(Kastet, 'a message with no text and no html is rejected before the network');
+    AssertEqual(H.Sent.Count, 0, 'and nothing was sent');
   finally
     T.Free;
   end;
@@ -951,8 +956,8 @@ begin
   T := NewResend(H);
   try
     AssertNotContains(T.Describe, 're_test_nokkel',
-      'Describe viser ikke nøkkelen');
-    AssertContains(T.Describe, 'resend', 'men sier hvilken transport det er');
+      'Describe does not show the key');
+    AssertContains(T.Describe, 'resend', 'but says which transport it is');
   finally
     T.Free;
   end;
@@ -967,11 +972,11 @@ var
   Kastet: Boolean;
   Msg: string;
 begin
-  { Standarden er loggfila. Without den ville et prosjekt uten oppsett
-    forsøkt å sende ekte post i utvikling. }
+  { The default is the log file. Without it a project with no setup would
+    have tried to send real mail in development. }
   T := MailFromConfig;
   try
-    AssertTrue(T is TLogTransport, 'uten oppsett er transporten log');
+    AssertTrue(T is TLogTransport, 'with no setup the transport is log');
   finally
     T.Free;
   end;
@@ -1007,20 +1012,20 @@ begin
     RemoveDir(Directory);
   end;
 
-  { Ikke et stille fall tilbake til log. En stavefeil i produksjon ville
-    da sett ut som at posten gikk ut. }
-  AssertTrue(Kastet, 'et ukjent transportnavn kaster');
-  AssertContains(Msg, 'sendgrid', 'feilen sier hva som ble bedt om');
+  { Not a silent fall back to log. A typo in production would then have
+    looked like the mail going out. }
+  AssertTrue(Kastet, 'an unknown transport name raises');
+  AssertContains(Msg, 'sendgrid', 'the error says what was asked for');
   AssertContains(Msg, 'resend',
-    'og lista nevner resend, som er linket inn her');
+    'and the list mentions resend, which is linked in here');
 end;
 
-{ En server som tar vare på hele requesten og svarer som Resend.
+{ A server that keeps the whole request and answers the way Resend does.
 
-  Den finnes fordi TFakeResendHttp hopper over nettopp det laget som
-  setter headerne på lufta: en mutasjon som slettet Idempotency-Key kom
-  gjennom hele suiten uten at noe sa fra. Her leses byte-ene som faktisk
-  ble sendt. }
+  It exists because TFakeResendHttp skips exactly the layer that puts the
+  headers on the wire: a mutation that deleted Idempotency-Key went through
+  the entire suite with nothing to say so. Here the bytes that were
+  actually sent are read. }
 type
   TResendEkkoServer = class(TThread)
   private
@@ -1098,44 +1103,46 @@ begin
       T.Send(TMailMessage.Create.From('a@example.com')
         .AddTo('b@example.com').Subject('s').Text('t')
         .Idempotency('job-77'));
-      AssertEqual(T.LastId, 'ekko-1', 'id-en leses ut av et ekte svar');
+      AssertEqual(T.LastId, 'ekko-1', 'the id is read out of a real reply');
     finally
       T.Free;
     end;
     Srv.WaitFor;
     R := Srv.Request;
 
-    AssertContains(R, 'POST /emails HTTP/1.1', 'metode og sti');
-    { Det avgjørende: begge headerne skal faktisk ligge i byte-ene. }
+    AssertContains(R, 'POST /emails HTTP/1.1', 'the method and the path');
+    { The decisive part: both headers are to actually be in the bytes. }
     AssertContains(R, 'Authorization: Bearer re_hemmelig_nokkel',
-      'nøkkelen går som Bearer');
+      'the key goes as a Bearer');
     AssertContains(R, 'Idempotency-Key: job-77',
-      'idempotensnøkkelen står i hodet, ikke bare i koden');
+      'the idempotency key is in the head, not only in the code');
     AssertContains(R, 'Content-Type: application/json', 'innholdstypen');
-    AssertContains(R, '"subject":"s"', 'kroppen kom med');
+    AssertContains(R, '"subject":"s"', 'the body came along');
   finally
     Srv.Free;
   end;
 end;
 
-{ En SMTP-server som sier hva den kan og skriver ned samtalen.
+{ An SMTP server that says what it can do and writes down the
+  conversation.
 
-  Den finnes for AUTH-stien. Passordet går over denne forbindelsen, og
-  det er den ene koden i mailuniten der en feil ikke bare gir en epost
-  som ikke kommer fram — den gir bort passordet. }
+  It exists for the AUTH path. The password goes over this connection, and
+  it is the one piece of code in the mail unit where a mistake does not
+  merely give an email that does not arrive — it gives away the
+  password. }
 type
   TSmtpEkkoServer = class(TThread)
   private
     FLytt: TSocket;
     FPort: Word;
-    FSamtale: string;
+    FTranscript: string;
     FAuthLine: string;
   protected
     procedure Execute; override;
   public
     constructor Create(const AAuthLine: string);
     property Port: Word read FPort;
-    property Samtale: string read FSamtale;
+    property Transcript: string read FTranscript;
   end;
 
 constructor TSmtpEkkoServer.Create(const AAuthLine: string);
@@ -1201,7 +1208,7 @@ begin
       Continue;
     end;
 
-    FSamtale := FSamtale + Line_ + #10;
+    FTranscript := FTranscript + Line_ + #10;
 
     if IData then
     begin
@@ -1256,7 +1263,7 @@ begin
   CloseSocket(FLytt);
 end;
 
-procedure SendWithAuth(Srv: TSmtpEkkoServer; const Bruker, Passord: string;
+procedure SendWithAuth(Srv: TSmtpEkkoServer; const User_, Passord: string;
   Tillat: Boolean);
 var
   T: TSmtpTransport;
@@ -1266,7 +1273,7 @@ begin
   Msg := TMailMessage.Create;
   try
     T.AllowPlainAuth := Tillat;
-    T.Credentials(Bruker, Passord);
+    T.Credentials(User_, Passord);
     Msg.From('a@example.com').AddTo('b@example.com').Subject('s').Text('t');
     T.Send(Msg);
   finally
@@ -1283,12 +1290,12 @@ begin
   try
     SendWithAuth(Srv, 'resend', 're_hemmelig', True);
     Srv.WaitFor;
-    { SASL PLAIN er #0bruker#0passord i base64. Regnet ut for hånd her,
-      slik at testen sjekker kodingen og ikke bare gjentar koden. }
-    AssertContains(Srv.Samtale, 'AUTH PLAIN AHJlc2VuZAByZV9oZW1tZWxpZw==',
-      'AUTH PLAIN med riktig SASL-koding');
-    AssertContains(Srv.Samtale, 'MAIL FROM:<a@example.com>',
-      'og sendingen fortsetter etterpå');
+    { SASL PLAIN is #0user#0password in base64. Worked out by hand here, so
+      that the test checks the encoding rather than repeating the code. }
+    AssertContains(Srv.Transcript, 'AUTH PLAIN AHJlc2VuZAByZV9oZW1tZWxpZw==',
+      'AUTH PLAIN with the right SASL encoding');
+    AssertContains(Srv.Transcript, 'MAIL FROM:<a@example.com>',
+      'and the send continues afterwards');
   finally
     Srv.Free;
   end;
@@ -1298,17 +1305,17 @@ procedure TestSmtpAuthLogin;
 var
   Srv: TSmtpEkkoServer;
 begin
-  { Only LOGIN tilbudt. Without denne grenen ville et eldre relé fått AUTH
-    PLAIN det ikke forstår. }
+  { Only LOGIN offered. Without this branch an older relay would have got
+    an AUTH PLAIN it does not understand. }
   Srv := TSmtpEkkoServer.Create('AUTH LOGIN');
   try
     SendWithAuth(Srv, 'bruker', 'passord', True);
     Srv.WaitFor;
-    AssertContains(Srv.Samtale, 'AUTH LOGIN', 'faller til LOGIN');
-    AssertNotContains(Srv.Samtale, 'AUTH PLAIN',
-      'og prøver ikke PLAIN den ikke tilbyr');
-    AssertContains(Srv.Samtale, 'YnJ1a2Vy', 'brukernavnet i base64');
-    AssertContains(Srv.Samtale, 'cGFzc29yZA==', 'passordet i base64');
+    AssertContains(Srv.Transcript, 'AUTH LOGIN', 'faller til LOGIN');
+    AssertNotContains(Srv.Transcript, 'AUTH PLAIN',
+      'and does not try the PLAIN it does not offer');
+    AssertContains(Srv.Transcript, 'YnJ1a2Vy', 'brukernavnet i base64');
+    AssertContains(Srv.Transcript, 'cGFzc29yZA==', 'passordet i base64');
   finally
     Srv.Free;
   end;
@@ -1320,8 +1327,8 @@ var
   Kastet: Boolean;
   Msg: string;
 begin
-  { Det viktigste i hele AUTH-stien: passordet skal ikke gå i klartekst
-    med mindre noen har sagt det eksplisitt. }
+  { The most important thing in the whole AUTH path: the password must not
+    go in the clear unless somebody has said so explicitly. }
   Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
   Kastet := False;
   Msg := '';
@@ -1335,10 +1342,10 @@ begin
         Msg := E.Message;
       end;
     end;
-    AssertTrue(Kastet, 'AUTH over klartekst stoppes');
-    AssertContains(Msg, 'in the clear', 'og sier hvorfor');
-    AssertNotContains(Msg, 'passord', 'uten å gjenta passordet');
-    AssertNotContains(Srv.Samtale, 'AUTH', 'ingenting ble sendt');
+    AssertTrue(Kastet, 'AUTH over cleartext is stopped');
+    AssertContains(Msg, 'in the clear', 'and says why');
+    AssertNotContains(Msg, 'passord', 'without repeating the password');
+    AssertNotContains(Srv.Transcript, 'AUTH', 'nothing was sent');
   finally
     Srv.Free;
   end;
@@ -1349,8 +1356,8 @@ var
   Srv: TSmtpEkkoServer;
   Kastet: Boolean;
 begin
-  { XOAUTH2-LOGIN inneholder «LOGIN» som delstreng. Et rått søk ville
-    sagt ja og sendt AUTH LOGIN til en server som ikke har den. }
+  { XOAUTH2-LOGIN contains "LOGIN" as a substring. A raw search would have
+    said yes and sent AUTH LOGIN to a server that does not have it. }
   Srv := TSmtpEkkoServer.Create('AUTH XOAUTH2-LOGIN CRAM-MD5');
   Kastet := False;
   try
@@ -1360,26 +1367,26 @@ begin
       on E: EMailError do
         Kastet := True;
     end;
-    AssertTrue(Kastet, 'ingen mekanisme vi kan er en feil, ikke et forsøk');
-    AssertNotContains(Srv.Samtale, 'AUTH LOGIN',
-      'delstrengen XOAUTH2-LOGIN teller ikke som LOGIN');
+    AssertTrue(Kastet, 'no mechanism we can do is an error, not an attempt');
+    AssertNotContains(Srv.Transcript, 'AUTH LOGIN',
+      'the substring XOAUTH2-LOGIN does not count as LOGIN');
   finally
     Srv.Free;
   end;
 end;
 
-procedure TestSmtpUtenBruker;
+procedure TestSmtpWithoutUser;
 var
   Srv: TSmtpEkkoServer;
 begin
-  { Ingen brukernavn: ingen AUTH, og ingen klage. En relé på loopback
-    vil ofte ikke ha noen. }
+  { No username: no AUTH, and no complaint. A relay on loopback often has
+    none. }
   Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
   try
     SendWithAuth(Srv, '', '', False);
     Srv.WaitFor;
-    AssertNotContains(Srv.Samtale, 'AUTH', 'ingen AUTH uten brukernavn');
-    AssertContains(Srv.Samtale, 'MAIL FROM:', 'men posten går');
+    AssertNotContains(Srv.Transcript, 'AUTH', 'no AUTH without a username');
+    AssertContains(Srv.Transcript, 'MAIL FROM:', 'but the mail goes');
   finally
     Srv.Free;
   end;
@@ -1407,17 +1414,18 @@ end;
 
 function TDemoCtrl.Save(Req: TRequest): TResponse;
 begin
-  Result := RespondText('fikk ' + IntToStr(Req.Body.Len) + ' bytes', 201);
+  Result := RespondText('got ' + IntToStr(Req.Body.Len) + ' bytes', 201);
 end;
 
 var
   DemoR: TRouter;
   DemoC: TDemoCtrl;
-  Klient: TTestClient;
+  Client: TTestClient;
 
-{ Velkomstsiden er det første noen ser av et nytt prosjekt, og den skal
-  virke uten npm, uten nett og uten filer ved siden av binæren. Brekker den
-  stille, merkes det først når noen prøver rammeverket for første gang. }
+{ The welcome page is the first thing anybody sees of a new project, and
+  it has to work without npm, without a network and without files next to
+  the binary. If it breaks quietly, it is noticed the first time somebody
+  tries the framework. }
 type
   TVelkomstCtrl = class
   public
@@ -1452,37 +1460,40 @@ begin
   with TTestClient.Create(VelkomstR) do
   try
     R := Get('/');
-    AssertStatus(R, 200, 'velkomstsiden svarer');
+    AssertStatus(R, 200, 'the welcome page answers');
     Body_ := R.Body.ToString;
     AssertTrue(Pos('<!doctype html>', Body_) = 1, 'er et HTML-dokument');
-    AssertTrue(Pos('shop', Body_) > 0, 'prosjektnavnet står i den');
+    AssertTrue(Pos('shop', Body_) > 0, 'the project name is in it');
 
-    { Avlesningen skal være ekte tall fra arenaen, ikke plassholdere. }
-    AssertTrue(Pos('This request', Body_) > 0, 'arena-avlesningen er med');
+    { The readout is to be real numbers from the arena, not
+      placeholders. }
+    AssertTrue(Pos('This request', Body_) > 0, 'the arena readout is there');
     AssertTrue(Pos('this worker reserved once', Body_) > 0,
-      'målebjelken er forklart');
-    { Bjelkebreddene må være gyldig CSS uansett locale — et komma her ville
-      gjort dem ugyldige på en maskin med norske innstillinger. }
-    AssertTrue(Pos('--w:', Body_) > 0, 'bjelken har en bredde');
-    AssertTrue(Pos(',%', Body_) = 0, 'bredden bruker punktum, ikke komma');
-    { Siden er det første et internasjonalt publikum ser, og skal være
-      på engelsk. }
-    AssertTrue(Pos('lang="en"', Body_) > 0, 'siden er merket engelsk');
+      'the gauge is explained');
+    { The bar widths have to be valid CSS whatever the locale — a comma
+      here would make them invalid on a machine with Norwegian
+      settings. }
+    AssertTrue(Pos('--w:', Body_) > 0, 'the bar has a width');
+    AssertTrue(Pos(',%', Body_) = 0, 'the width uses a full stop, not a comma');
+    { The page is the first thing an international audience sees, and is to
+      be in English. }
+    AssertTrue(Pos('lang="en"', Body_) > 0, 'the page is marked as English');
 
-    { Ingenting hentes utenfra. En maskin uten nett skal se det samme. }
-    AssertTrue(Pos('http://', Body_) = 0, 'ingen eksterne ressurser');
-    AssertTrue(Pos('https://', Body_) = 0, 'heller ikke over https');
-    AssertTrue(Pos('<script', Body_) = 0, 'ingen skript');
+    { Nothing is fetched from outside. A machine with no network is to see
+      the same thing. }
+    AssertTrue(Pos('http://', Body_) = 0, 'no external resources');
+    AssertTrue(Pos('https://', Body_) = 0, 'nor over https');
+    AssertTrue(Pos('<script', Body_) = 0, 'no scripts');
 
-    { Både lyst og mørkt tema, og den skal kunne leses på en telefon. }
-    AssertTrue(Pos('prefers-color-scheme', Body_) > 0, 'begge temaer');
+    { Both light and dark theme, and it has to be readable on a phone. }
+    AssertTrue(Pos('prefers-color-scheme', Body_) > 0, 'both themes');
     AssertTrue(Pos('name="viewport"', Body_) > 0, 'viewport-meta');
 
-    { Navnet er brukerkontrollert og må escapes. }
+    { The name is user-controlled and has to be escaped. }
     R := Get('/fiendtlig');
     Body_ := R.Body.ToString;
-    AssertTrue(Pos('&lt;script&gt;', Body_) > 0, 'prosjektnavnet escapes');
-    AssertTrue(Pos('<script', Body_) = 0, 'og slipper ikke gjennom rått');
+    AssertTrue(Pos('&lt;script&gt;', Body_) > 0, 'the project name is escaped');
+    AssertTrue(Pos('<script', Body_) = 0, 'and does not pass through raw');
   finally
     Free;
     VelkomstR.Free;
@@ -1490,12 +1501,12 @@ begin
   end;
 end;
 
-{ .env er der hemmeligheter havner. To ting må holde uansett hva som ellers
-  endres: ekte miljøvariabler skal vinne over fila, og ingen feilmelding
-  skal inneholde en verdi. }
+{ .env is where secrets end up. Two things have to hold whatever else
+  changes: real environment variables win over the file, and no error
+  message contains a value. }
 procedure TestEnv;
 const
-  Fil = 'askr-env-test.tmp';
+  FileName_ = 'askr-env-test.tmp';
 var
   L: TStringList;
   Err, Name_: string;
@@ -1518,71 +1529,72 @@ begin
     L.Add('OFFFLAG=no');
     L.Add('PATH_LIKE=/usr/local/bin');
     L.Add('SPACED_KEY = spaced');
-    L.SaveToFile(Fil);
+    L.SaveToFile(FileName_);
   finally
     L.Free;
   end;
 
   ClearEnv;
   try
-    LoadEnv(Fil);
+    LoadEnv(FileName_);
 
-    AssertEqual(Env('SIMPLE'), 'hello', 'enkel verdi');
-    AssertEqual(Env('EXPORTED'), 'yes', 'export-prefiks strippes');
-    AssertEqual(Env('QUOTED'), 'a b  c', 'anførselstegn beholder mellomrom');
-    AssertEqual(Env('ESCAPED'), 'line1'#10'line2', 'escapes i doble fnutter');
+    AssertEqual(Env('SIMPLE'), 'hello', 'a simple value');
+    AssertEqual(Env('EXPORTED'), 'yes', 'an export prefix is stripped');
+    AssertEqual(Env('QUOTED'), 'a b  c', 'quotes keep the spaces');
+    AssertEqual(Env('ESCAPED'), 'line1'#10'line2', 'escapes in double quotes');
     AssertEqual(Env('LITERAL'), 'raw \n stays',
-      'enkle fnutter er bokstavelige');
-    AssertEqual(Env('TRAILING'), 'value', 'kommentar etter verdien kuttes');
+      'single quotes are literal');
+    AssertEqual(Env('TRAILING'), 'value', 'a comment after the value is cut');
     AssertEqual(Env('HASHPASS'), 'pa#ssword',
-      'en # uten mellomrom foran er en del av verdien');
+      'a # with no space before it is part of the value');
     AssertEqual(Env('EMPTY'), '', 'tom verdi');
-    AssertEqual(Env('PATH_LIKE'), '/usr/local/bin', 'sti med skråstreker');
-    AssertEqual(Env('SPACED_KEY'), 'spaced', 'mellomrom rundt = tåles');
+    AssertEqual(Env('PATH_LIKE'), '/usr/local/bin', 'a path with slashes');
+    AssertEqual(Env('SPACED_KEY'), 'spaced', 'spaces around = are tolerated');
 
     AssertEqual(EnvInt('NUMBER'), 42, 'EnvInt');
-    AssertEqual(EnvInt('MISSING', 7), 7, 'EnvInt med standardverdi');
-    AssertTrue(EnvBool('FLAG'), 'EnvBool leser true');
-    AssertFalse(EnvBool('OFFFLAG'), 'EnvBool leser no som usann');
-    AssertTrue(EnvBool('MISSING', True), 'EnvBool med standardverdi');
-    AssertEqual(Env('MISSING', 'fallback'), 'fallback', 'Env med standardverdi');
+    AssertEqual(EnvInt('MISSING', 7), 7, 'EnvInt with a default');
+    AssertTrue(EnvBool('FLAG'), 'EnvBool reads true');
+    AssertFalse(EnvBool('OFFFLAG'), 'EnvBool reads no as false');
+    AssertTrue(EnvBool('MISSING', True), 'EnvBool with a default');
+    AssertEqual(Env('MISSING', 'fallback'), 'fallback', 'Env with a default');
 
-    AssertTrue(EnvHas('EMPTY'), 'EnvHas ser en tom verdi');
-    AssertFalse(EnvHas('NOT_THERE'), 'EnvHas ser ikke det som ikke finnes');
+    AssertTrue(EnvHas('EMPTY'), 'EnvHas sees an empty value');
+    AssertFalse(EnvHas('NOT_THERE'), 'EnvHas does not see what is not there');
 
-    { Det avgjørende: miljøet vinner. En verdi satt av systemd eller docker
-      skal aldri kunne overstyres av en fil som ligger igjen i katalogen. }
-    AssertEqual(Env('HOME') <> '', True, 'HOME finnes i miljøet');
-    AssertEqual(Env('SIMPLE'), 'hello', 'fila brukes når miljøet er tomt');
+    { The decisive part: the environment wins. A value set by systemd or
+      docker must never be overridable by a file left lying in the
+      directory. }
+    AssertEqual(Env('HOME') <> '', True, 'HOME is in the environment');
+    AssertEqual(Env('SIMPLE'), 'hello', 'the file is used when the environment is empty');
 
-    { EnvOrFail skal være trygg å la stå i et stakkspor. }
+    { EnvOrFail is to be safe to leave in a stack trace. }
     Err := '';
     try
       EnvOrFail('NOT_THERE');
     except
       on E: EEnvError do Err := E.Message;
     end;
-    AssertTrue(Pos('NOT_THERE', Err) > 0, 'feilen nevner nøkkelen');
-    AssertTrue(Pos('hello', Err) = 0, 'og lekker ingen verdier');
-    AssertTrue(Pos('pa#ssword', Err) = 0, 'heller ikke passordet');
-    AssertTrue(Pos(Fil, Err) > 0, 'men sier hvor det ble lett');
+    AssertTrue(Pos('NOT_THERE', Err) > 0, 'the error names the key');
+    AssertTrue(Pos('hello', Err) = 0, 'and leaks no values');
+    AssertTrue(Pos('pa#ssword', Err) = 0, 'nor the password');
+    AssertTrue(Pos(FileName_, Err) > 0, 'but says where it looked');
 
-    AssertEqual(EnvOrFail('SIMPLE'), 'hello', 'EnvOrFail gir verdien når den finnes');
-    { EnvKeys gir navn, ikke verdier — den er til diagnostikk og skal kunne
-      skrives ut uten å lekke noe. }
+    AssertEqual(EnvOrFail('SIMPLE'), 'hello', 'EnvOrFail gives the value when it is there');
+    { EnvKeys gives names, not values — it is for diagnostics and has to be
+      printable without leaking anything. }
     Name_ := '';
     for I := 0 to High(EnvKeys) do
       Name_ := Name_ + EnvKeys[I] + ' ';
-    AssertTrue(Pos('SIMPLE', Name_) > 0, 'EnvKeys nevner SIMPLE');
-    AssertTrue(Pos('HASHPASS', Name_) > 0, 'EnvKeys nevner HASHPASS');
-    AssertTrue(Pos('pa#ssword', Name_) = 0, 'men ingen verdier');
+    AssertTrue(Pos('SIMPLE', Name_) > 0, 'EnvKeys mentions SIMPLE');
+    AssertTrue(Pos('HASHPASS', Name_) > 0, 'EnvKeys mentions HASHPASS');
+    AssertTrue(Pos('pa#ssword', Name_) = 0, 'but no values');
   finally
     ClearEnv;
-    DeleteFile(Fil);
+    DeleteFile(FileName_);
   end;
 end;
 
-procedure TestKlientMotRuter;
+procedure TestClientAgainstRouter;
 var
   R: TResponse;
 begin
@@ -1591,35 +1603,35 @@ begin
   DemoR.Get('/ting', DemoC.Index);
   DemoR.Get('/ting/:id', DemoC.Vis);
   DemoR.Post('/ting', DemoC.Save);
-  Klient := TTestClient.Create(DemoR);
+  Client := TTestClient.Create(DemoR);
   try
-    R := Klient.Get('/ting');
+    R := Client.Get('/ting');
     AssertStatus(R, 200, 'GET /ting');
     AssertEqual(R.Body.ToString, '{"liste":[1,2,3]}', 'kroppen');
 
-    R := Klient.Get('/ting/42');
+    R := Client.Get('/ting/42');
     AssertEqual(R.Body.ToString, 'id=42', 'ruteparameter');
 
-    R := Klient.Post('/ting', '{"a":1}');
+    R := Client.Post('/ting', '{"a":1}');
     AssertStatus(R, 201, 'POST gir 201');
-    AssertEqual(R.Body.ToString, 'fikk 7 bytes', 'kroppen kom fram');
+    AssertEqual(R.Body.ToString, 'got 7 bytes', 'the body arrived');
 
-    R := Klient.Delete('/ting');
-    AssertStatus(R, 405, 'ukjent metode gir 405');
+    R := Client.Delete('/ting');
+    AssertStatus(R, 405, 'an unknown method gives 405');
 
-    R := Klient.Get('/finnes-ikke');
-    AssertStatus(R, 404, 'ukjent sti gir 404');
+    R := Client.Get('/finnes-ikke');
+    AssertStatus(R, 404, 'an unknown path gives 404');
   finally
-    Klient.Free;
+    Client.Free;
     DemoR.Free;
     DemoC.Free;
   end;
 end;
 
-{ Kjøres av AssertArenaStable. }
+{ Run by AssertArenaStable. }
 procedure EnRequest;
 begin
-  Klient.Get('/ting/7');
+  Client.Get('/ting/7');
 end;
 
 procedure TestArenaFlaterUt;
@@ -1627,12 +1639,12 @@ begin
   DemoC := TDemoCtrl.Create;
   DemoR := TRouter.Create;
   DemoR.Get('/ting/:id', DemoC.Vis);
-  Klient := TTestClient.Create(DemoR);
+  Client := TTestClient.Create(DemoR);
   try
-    AssertArenaStable(Klient.Arena, @EnRequest, 300,
-      'arenaen flater ut over 300 requests');
+    AssertArenaStable(Client.Arena, @EnRequest, 300,
+      'the arena levels off over 300 requests');
   finally
-    Klient.Free;
+    Client.Free;
     DemoR.Free;
     DemoC.Free;
   end;
@@ -1642,9 +1654,9 @@ end;
 { ----------------------------------------------------------------- CSRF -- }
 
 type
-  { Et skjemaendepunkt og et webhook-endepunkt. GET-handleren returnerer
-    tokenet i kroppen, slik en ekte side ville lagt det i et skjult felt —
-    tokenet lages først når noe spør etter det. }
+  { A form endpoint and a webhook endpoint. The GET handler returns the
+    token in the body, the way a real page would put it in a hidden field —
+    the token is made only when something asks for it. }
   TCsrfCtl = class
     function Vis(Req: TRequest): TResponse;
     function Save(Req: TRequest): TResponse;
@@ -1666,8 +1678,8 @@ begin
   Result := RespondText('mottatt', 200);
 end;
 
-{ Plukker én navngitt Set-Cookie ut av svaret. Returnerer hele direktivet,
-  ikke bare verdien, slik at HttpOnly kan sjekkes. }
+{ Picks one named Set-Cookie out of the reply. Returns the whole
+  directive, not only the value, so that HttpOnly can be checked. }
 function SetCookieLine(R: TResponse; A: TArena; const Name_: string): string;
 var
   B: TStrBuilder;
@@ -1725,13 +1737,14 @@ var
   CsrfK: TTestClient;
   CsrfExemptSet: Boolean = False;
 
-{ Bygger en app med sesjoner og CSRF koblet på, slik en ekte app gjør det:
-  SetSessions, UseSessions, UseCsrf. }
+{ Builds an app with sessions and CSRF wired up, the way a real app does
+  it: SetSessions, UseSessions, UseCsrf. }
 procedure CsrfSetup;
 begin
-  { Unntakslista er global og skal bare skrives én gang. Å registrere den
-    på nytt for hver test ville ikke gjort skade, men en liste som vokser
-    for hver oppsett er ikke det noen vil lese i en feilsøking. }
+  { The exception list is global and is to be written only once.
+    Registering it again for every test would do no harm, but a list that
+    grows with each setup is not what anybody wants to read while
+    debugging. }
   if not CsrfExemptSet then
   begin
     CsrfExempt('/webhooks/*');
@@ -1760,8 +1773,9 @@ begin
   Store.Free;
 end;
 
-{ Henter en sesjon med et token i, og gir tilbake både kaka og tokenet.
-  Det er nøyaktig det en nettleser gjør når den laster siden med skjemaet. }
+{ Fetches a session with a token in it, and gives back both the cookie
+  and the token. That is exactly what a browser does when it loads the page
+  with the form. }
 procedure FetchTokenAndCookie(out Cookie_, Token: string);
 var
   Res: TResponse;
@@ -1780,22 +1794,22 @@ begin
   try
     FetchTokenAndCookie(Cookie_, Token);
 
-    { GET sjekkes aldri: den skal per definisjon ikke endre noe. }
+    { GET is never checked: by definition it is not to change anything. }
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/form');
-    AssertEqual(Res.StatusCode, 200, 'GET slipper gjennom uten token');
+    AssertEqual(Res.StatusCode, 200, 'GET passes without a token');
 
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/form', '{}');
-    AssertEqual(Res.StatusCode, 419, 'POST uten token avvises');
+    AssertEqual(Res.StatusCode, 419, 'POST without a token is rejected');
 
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-CSRF-Token', 'helt feil').Post('/form', '{}');
-    AssertEqual(Res.StatusCode, 419, 'POST med feil token avvises');
+    AssertEqual(Res.StatusCode, 419, 'POST with a wrong token is rejected');
 
-    { Without sesjon finnes det ingenting å sammenligne med. Da er svaret nei —
-      ikke «ja, for det er ingen forventning». }
+    { Without a session there is nothing to compare against. Then the
+      answer is no — not "yes, because there is no expectation". }
     Res := CsrfK.WithHeader('X-CSRF-Token', Token).Post('/form', '{}');
-    AssertEqual(Res.StatusCode, 419, 'riktig token uten sesjon avvises');
+    AssertEqual(Res.StatusCode, 419, 'the right token with no session is rejected');
   finally
     CsrfRydd;
   end;
@@ -1809,52 +1823,53 @@ begin
   CsrfSetup;
   try
     FetchTokenAndCookie(Cookie_, Token);
-    AssertTrue(Token <> '', 'tokenet ble laget');
-    AssertTrue(Cookie_ <> '', 'sesjonskaka ble satt');
+    AssertTrue(Token <> '', 'the token was made');
+    AssertTrue(Cookie_ <> '', 'the session cookie was set');
 
-    { 1. Skjemafeltet, som et vanlig HTML-skjema sender det. }
+    { 1. The form field, the way an ordinary HTML form sends it. }
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/form', '_token=' + Token,
         'application/x-www-form-urlencoded');
-    AssertEqual(Res.StatusCode, 200, 'skjemafeltet _token godtas');
+    AssertEqual(Res.StatusCode, 200, 'the form field _token is accepted');
 
-    { 2. X-CSRF-Token, som fetch og XHR legger på selv. }
+    { 2. X-CSRF-Token, which fetch and XHR add themselves. }
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-CSRF-Token', Token).Post('/form', '{}');
-    AssertEqual(Res.StatusCode, 200, 'headeren X-CSRF-Token godtas');
+    AssertEqual(Res.StatusCode, 200, 'the header X-CSRF-Token is accepted');
 
-    { 3. X-XSRF-Token, som axios og Inertia speiler fra XSRF-TOKEN-kaka. }
+    { 3. X-XSRF-Token, which axios and Inertia mirror from the XSRF-TOKEN
+      cookie. }
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-XSRF-Token', Token).Post('/form', '{}');
-    AssertEqual(Res.StatusCode, 200, 'headeren X-XSRF-Token godtas');
+    AssertEqual(Res.StatusCode, 200, 'the header X-XSRF-Token is accepted');
   finally
     CsrfRydd;
   end;
 end;
 
-procedure TestCsrfTokenetErStabiltOgPerSesjon;
+procedure TestCsrfTokenStablePerSession;
 var
   Res: TResponse;
-  Kake1, Token1, Kake2, Token2: string;
+  Cookie1, Token1, Cookie2, Token2: string;
 begin
   CsrfSetup;
   try
-    FetchTokenAndCookie(Kake1, Token1);
+    FetchTokenAndCookie(Cookie1, Token1);
 
-    { Samme sesjon, nytt kall: samme token. Et token som byttet for hver
-      request ville gjort hver åpen fane ugyldig. }
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake1).Get('/form');
-    AssertEqual(Res.Body.ToString, Token1, 'samme sesjon gir samme token');
+    { The same session, a new call: the same token. A token that changed on
+      every request would invalidate every open tab. }
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie1).Get('/form');
+    AssertEqual(Res.Body.ToString, Token1, 'the same session gives the same token');
 
-    { Ny sesjon: nytt token — og det gamle skal ikke virke der. }
-    FetchTokenAndCookie(Kake2, Token2);
-    AssertTrue(Kake1 <> Kake2, 'to sesjoner');
-    AssertTrue(Token1 <> Token2, 'og to ulike tokens');
+    { A new session: a new token — and the old one must not work there. }
+    FetchTokenAndCookie(Cookie2, Token2);
+    AssertTrue(Cookie1 <> Cookie2, 'to sesjoner');
+    AssertTrue(Token1 <> Token2, 'and two different tokens');
 
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake2)
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie2)
       .WithHeader('X-CSRF-Token', Token1).Post('/form', '{}');
     AssertEqual(Res.StatusCode, 419,
-      'et token fra en annen sesjon avvises');
+      'a token from another session is rejected');
   finally
     CsrfRydd;
   end;
@@ -1866,23 +1881,24 @@ var
 begin
   CsrfSetup;
   try
-    { Et webhook kommer fra en tredjepart som umulig kan ha tokenet. Unntaket
-      er et hull man lager med vilje, og derfor testes det at det finnes —
-      og at det ikke gjelder mer enn stien det ble skrevet for. }
+    { A webhook comes from a third party that cannot possibly have the
+      token. The exception is a hole made on purpose, and that is why it is
+      tested that it exists — and that it does not apply beyond the path it
+      was written for. }
     Res := CsrfK.Post('/webhooks/stripe', '{}');
-    AssertEqual(Res.StatusCode, 200, 'unntatt sti slipper gjennom');
+    AssertEqual(Res.StatusCode, 200, 'an excepted path passes');
 
     Res := CsrfK.Post('/form', '{}');
-    AssertEqual(Res.StatusCode, 419, 'men resten er fortsatt beskyttet');
+    AssertEqual(Res.StatusCode, 419, 'but the rest is still protected');
   finally
     CsrfRydd;
   end;
 end;
 
-procedure TestCsrfKakeneLeverSideOmSide;
+procedure TestCsrfCookiesSideBySide;
 var
   Res: TResponse;
-  Sesjon, Xsrf: string;
+  Session_, Xsrf: string;
   Cookie_, Token: string;
 begin
   CsrfSetup;
@@ -1890,23 +1906,24 @@ begin
     FetchTokenAndCookie(Cookie_, Token);
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/form');
 
-    { Før AddHeader lot responsen siste verdi vinne per headernavn, og den
-      andre kaka ville skrevet over den første. To kaker i ett svar er hele
-      grunnen til at CSRF trengte den endringen. }
+    { Before AddHeader the response let the last value win per header name,
+      and the second cookie would have overwritten the first. Two cookies
+      in one reply is the whole reason CSRF needed that change. }
     AssertEqual(SetCookieCount(Res, CsrfK.Arena), 2,
-      'begge kakene står i svaret');
+      'both cookies are in the reply');
 
-    Sesjon := SetCookieLine(Res, CsrfK.Arena, 'askr_session');
+    Session_ := SetCookieLine(Res, CsrfK.Arena, 'askr_session');
     Xsrf := SetCookieLine(Res, CsrfK.Arena, 'XSRF-TOKEN');
-    AssertTrue(Sesjon <> '', 'sesjonskaka er der');
+    AssertTrue(Session_ <> '', 'the session cookie is there');
     AssertTrue(Xsrf <> '', 'XSRF-kaka er der');
 
-    { Sesjonskaka er det som autentiserer, og JavaScript skal ikke nå den.
-      XSRF-kaka er bare en kopi av noe som uansett står i sidens markup, og
-      må kunne leses for at axios skal kunne speile den tilbake. }
-    AssertTrue(Pos('HttpOnly', Sesjon) > 0, 'sesjonskaka er HttpOnly');
+    { The session cookie is what authenticates, and JavaScript must not
+      reach it. The XSRF cookie is only a copy of something that is in the
+      page's markup anyway, and has to be readable for axios to mirror it
+      back. }
+    AssertTrue(Pos('HttpOnly', Session_) > 0, 'the session cookie is HttpOnly');
     AssertEqual(Pos('HttpOnly', Xsrf), 0, 'XSRF-kaka er lesbar for JS');
-    AssertEqual(CookieValue(Xsrf), Token, 'XSRF-kaka bærer tokenet');
+    AssertEqual(CookieValue(Xsrf), Token, 'the XSRF cookie carries the token');
   finally
     CsrfRydd;
   end;
@@ -1916,8 +1933,9 @@ end;
 { ----------------------------------------------------------------- auth -- }
 
 type
-  { Appens brukermodell. Poenget er nettopp at rammeverket ikke kjenner
-    den: det lagrer en id som tekst, og appen slår opp resten. }
+  { The app's user model. The point is precisely that the framework does
+    not know it: it stores an id as text, and the app looks up the
+    rest. }
   TUser = class
     Name_: string;
     ErAdmin: Boolean;
@@ -1949,7 +1967,8 @@ end;
 
 function KanRedigere(const UserId: string; Resource: TObject): Boolean;
 begin
-  { En gate ser bare id-en og ressursen. Alt annet er appens sak. }
+  { A gate sees only the id and the resource. Everything else is the app's
+    business. }
   Result := UserId = '1';
 end;
 
@@ -1968,7 +1987,7 @@ begin
   if Askr.Auth.Check then
     Reply := 'inne:' + Askr.Auth.Id
   else
-    Reply := 'ute';
+    Reply := 'out';
   Result := RespondText(Reply, 200);
 end;
 
@@ -1997,7 +2016,7 @@ begin
   Reply := '';
   if Allows('edit') then Reply := Reply + 'edit ';
   if Allows('admin') then Reply := Reply + 'admin ';
-  if Allows('finnes-ikke') then Reply := Reply + 'ukjent ';
+  if Allows('does-not-exist') then Reply := Reply + 'ukjent ';
   if User <> nil then Reply := Reply + 'user:' + TUser(User).Name_;
   Result := RespondText(Trim(Reply), 200);
 end;
@@ -2007,9 +2026,10 @@ begin
   Result := RespondText('hemmelig', 200);
 end;
 
-{ Skriver til sesjonen, og tvinger den dermed til å bli lagret. En sesjon
-  ingen har skrevet til får verken plass i lageret eller en kake — og uten
-  en ekte sesjon før innlogging tester ikke fikseringstesten noe. }
+{ Writes to the session, and so forces it to be stored. A session nobody
+  has written to gets neither a slot in the store nor a cookie — and
+  without a real session before signing in, the fixation test tests
+  nothing. }
 function TAuthCtl.Ta(Req: TRequest): TResponse;
 begin
   CurrentSession.Put('handlekurv', '3');
@@ -2066,42 +2086,42 @@ end;
 procedure TestAuthInnOgUt;
 var
   Res: TResponse;
-  Kake1, Kake2: string;
+  Cookie1, Cookie2: string;
 begin
   AuthSetup(False);
   try
     Res := AuthK.Get('/me');
-    AssertEqual(Res.Body.ToString, 'ute', 'ingen er logget inn');
+    AssertEqual(Res.Body.ToString, 'out', 'nobody is signed in');
     AssertEqual(Sesjonskake(Res), '',
-      'en sesjon ingen skrev til lagres ikke');
+      'a session nobody wrote to is not stored');
 
-    { En ekte sesjon før innlogging — det er den som skal byttes ut. }
+    { A real session before signing in — that is the one to be replaced. }
     Res := AuthK.Get('/touch');
-    Kake1 := Sesjonskake(Res);
-    AssertTrue(Kake1 <> '', 'en sesjon det ble skrevet til får en kake');
+    Cookie1 := Sesjonskake(Res);
+    AssertTrue(Cookie1 <> '', 'a session that was written to gets a cookie');
 
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake1)
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie1)
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
-    Kake2 := Sesjonskake(Res);
+    Cookie2 := Sesjonskake(Res);
 
-    { Session fixation: id-en MÅ være en annen etter innlogging. Without dette
-      ville en angriper som fikk satt kaka di på forhånd vært innlogget
-      som deg. }
-    AssertTrue(Kake2 <> Kake1, 'sesjons-id-en ble byttet ved innlogging');
-    AssertTrue(Kake2 <> '', 'og en ny ble satt');
+    { Session fixation: the id MUST be a different one after signing in.
+      Without this an attacker who got your cookie set beforehand would be
+      signed in as you. }
+    AssertTrue(Cookie2 <> Cookie1, 'the session id was changed on sign-in');
+    AssertTrue(Cookie2 <> '', 'and a new one was set');
 
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake2).Get('/me');
-    AssertEqual(Res.Body.ToString, 'inne:1', 'brukeren er logget inn');
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie2).Get('/me');
+    AssertEqual(Res.Body.ToString, 'inne:1', 'the user is signed in');
 
-    { Den gamle id-en skal ikke lenger gi tilgang. }
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake1).Get('/me');
-    AssertEqual(Res.Body.ToString, 'ute', 'den gamle id-en er død');
+    { The old id must no longer give access. }
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie1).Get('/me');
+    AssertEqual(Res.Body.ToString, 'out', 'the old id is dead');
 
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake2)
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie2)
       .Post('/logout', '');
-    Kake1 := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake1).Get('/me');
-    AssertEqual(Res.Body.ToString, 'ute', 'utlogget');
+    Cookie1 := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie1).Get('/me');
+    AssertEqual(Res.Body.ToString, 'out', 'utlogget');
   finally
     AuthRydd;
   end;
@@ -2119,35 +2139,36 @@ begin
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/login-husk', 'id=2', 'application/x-www-form-urlencoded');
     Husk := CookieValue(SetCookieLine(Res, AuthK.Arena, 'askr_remember'));
-    AssertTrue(Husk <> '', 'husk-kaka ble satt');
+    AssertTrue(Husk <> '', 'the remember cookie was set');
     AssertTrue(Pos('.', Husk) > 0, 'den er signert');
 
-    { Without sesjonskake — som etter at nettleseren er lukket — men med
-      husk-kaka: brukeren skal komme inn igjen. }
+    { Without a session cookie — as after the browser has been closed — but
+      with the remember cookie: the user is to get back in. }
     Res := AuthK.WithHeader('Cookie', 'askr_remember=' + Husk).Get('/me');
-    AssertEqual(Res.Body.ToString, 'inne:2', 'husk-kaka logget inn igjen');
+    AssertEqual(Res.Body.ToString, 'inne:2', 'the remember cookie signed in again');
 
-    { Og den skal gi en fersk sesjon, ikke gjenbruke noen. }
-    AssertTrue(Sesjonskake(Res) <> '', 'en ny sesjon ble startet');
+    { And it is to give a fresh session, not reuse one. }
+    AssertTrue(Sesjonskake(Res) <> '', 'a new session was started');
 
-    { Tuklet signatur: avvises. Dette er hele grunnen til at kaka er
-      signert — uten det kunne hvem som helst skrevet «1|...» selv. }
+    { A tampered signature: rejected. This is the whole reason the cookie is
+      signed — without it anybody could have written "1|..." themselves. }
     Tuklet := StringReplace(Husk, '2|', '1|', []);
     Res := AuthK.WithHeader('Cookie', 'askr_remember=' + Tuklet).Get('/me');
-    AssertEqual(Res.Body.ToString, 'ute', 'tuklet husk-kake avvises');
+    AssertEqual(Res.Body.ToString, 'out', 'a tampered remember cookie is rejected');
 
-    { Utløpt, men korrekt signert. Utløpet står inne i det signerte nettopp
-      for at en klient som beholder kaka for lenge ikke skal komme inn. }
+    { Expired, but correctly signed. The expiry is inside the signed part
+      precisely so that a client which keeps the cookie too long does not
+      get in. }
     Tuklet := Sign('2|' + IntToStr(UnixNow - 60));
     Res := AuthK.WithHeader('Cookie', 'askr_remember=' + Tuklet).Get('/me');
-    AssertEqual(Res.Body.ToString, 'ute', 'utløpt husk-kake avvises');
+    AssertEqual(Res.Body.ToString, 'out', 'an expired remember cookie is rejected');
 
     { Utlogging sletter kaka. }
     Res := AuthK.WithHeader('Cookie', 'askr_remember=' + Husk)
       .Post('/logout', '');
     AssertTrue(Pos('Max-Age=0',
       SetCookieLine(Res, AuthK.Arena, 'askr_remember')) > 0,
-      'utlogging sletter husk-kaka');
+      'signing out clears the remember cookie');
   finally
     AuthRydd;
   end;
@@ -2162,7 +2183,7 @@ begin
   try
     { Ingen innlogget: alt er nei. }
     Res := AuthK.Get('/gate');
-    AssertEqual(Res.Body.ToString, '', 'uten innlogging gir gatene nei');
+    AssertEqual(Res.Body.ToString, '', 'with nobody signed in the gates say no');
 
     Res := AuthK.Get('/touch');
     Cookie_ := Sesjonskake(Res);
@@ -2171,14 +2192,14 @@ begin
     Cookie_ := Sesjonskake(Res);
 
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
-    { Bruker 1 kan redigere og er admin. «finnes-ikke» er ikke definert, og
-      en udefinert gate skal svare nei — en stavefeil skal stenge døra. }
+    { User 1 can edit and is an admin. "does-not-exist" is not defined, and
+      an undefined gate is to answer no — a typo is to close the door. }
     AssertEqual(Res.Body.ToString, 'edit admin user:Ada',
-      'gatene svarer, og en ukjent gate svarer nei');
-    AssertTrue(GateExists('edit'), 'gaten finnes');
-    AssertFalse(GateExists('finnes-ikke'), 'og en annen gjør ikke');
+      'the gates answer, and an unknown gate says no');
+    AssertTrue(GateExists('edit'), 'the gate is there');
+    AssertFalse(GateExists('does-not-exist'), 'and another one is not');
 
-    { Bruker 2 er ikke admin og kan ikke redigere. }
+    { User 2 is not an admin and cannot edit. }
     Res := AuthK.Get('/touch');
     Cookie_ := Sesjonskake(Res);
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
@@ -2186,7 +2207,7 @@ begin
     Cookie_ := Sesjonskake(Res);
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
     AssertEqual(Res.Body.ToString, 'user:Grace',
-      'en annen bruker får nei på begge');
+      'another user gets no on both');
   finally
     AuthRydd;
   end;
@@ -2199,23 +2220,23 @@ var
 begin
   AuthSetup(True);
   try
-    { En vanlig nettleser skal til innloggingssiden. }
+    { An ordinary browser is to go to the sign-in page. }
     Res := AuthK.Get('/skjult');
-    AssertEqual(Res.StatusCode, 302, 'uten innlogging blir det omdirigering');
+    AssertEqual(Res.StatusCode, 302, 'with nobody signed in it is a redirect');
     AssertEqual(Res.HeaderValue('Location'), '/login', 'til innloggingen');
 
-    { En Inertia-klient ville fulgt omdirigeringen og fått HTML der den
-      ventet JSON. 401 er det den kan gjøre noe med. }
+    { An Inertia client would have followed the redirect and got HTML
+      where it expected JSON. 401 is what it can act on. }
     Res := AuthK.WithHeader('X-Inertia', 'true').Get('/skjult');
-    AssertEqual(Res.StatusCode, 401, 'en Inertia-request får 401');
+    AssertEqual(Res.StatusCode, 401, 'an Inertia request gets 401');
 
     Res := AuthK.WithHeader('Accept', 'application/json').Get('/skjult');
-    AssertEqual(Res.StatusCode, 401, 'og en JSON-request også');
+    AssertEqual(Res.StatusCode, 401, 'and a JSON request too');
 
-    { Innlogget slipper gjennom. Innloggingsruten er selv bak kravet her,
-      så sesjonen må lages via en request som ikke er det — /login er en
-      POST, og RequireAuth stenger også den. Derfor logges det inn med
-      en klient uten kravet. }
+    { Signed in, it passes. The sign-in route is itself behind the
+      requirement here, so the session has to be made through a request
+      that is not — /login is a POST, and RequireAuth closes that too.
+      Hence signing in with a client without the requirement. }
     AuthRydd;
     AuthSetup(False);
     Res := AuthK.Get('/touch');
@@ -2224,7 +2245,7 @@ begin
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
     Cookie_ := Sesjonskake(Res);
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/skjult');
-    AssertEqual(Res.Body.ToString, 'hemmelig', 'innlogget slipper gjennom');
+    AssertEqual(Res.Body.ToString, 'hemmelig', 'signed in, it passes');
   finally
     AuthRydd;
   end;
@@ -2244,14 +2265,14 @@ begin
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
     Cookie_ := Sesjonskake(Res);
 
-    { /gate kaller User og admin-gaten, som begge slår opp brukeren.
-      Loaderen skal kalles én gang for User — admin-gaten gjør sitt eget
-      oppslag med vilje, for å vise at en gate kan det. }
+    { /gate calls User and the admin gate, both of which look the user up.
+      The loader is to be called once for User — the admin gate does its
+      own lookup on purpose, to show that a gate can. }
     Before := LastOppKalt;
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
-    AssertEqual(Res.StatusCode, 200, 'siden svarte');
+    AssertEqual(Res.StatusCode, 200, 'the page answered');
     AssertTrue(LastOppKalt - Before <= 2,
-      'brukeren slås ikke opp på nytt for hvert kall');
+      'the user is not looked up again for every call');
   finally
     AuthRydd;
   end;
@@ -2260,12 +2281,12 @@ end;
 
 { ------------------------------------------------------- logg og config -- }
 
-{ Det finnes ingen bærbar måte å sette en miljøvariabel som FPCs
-  GetEnvironmentVariable ser. libc-ens setenv virker på Darwin og **ikke**
-  på Linux, der RTL-en leser envp fra oppstart. Derfor testes «miljøet
-  vinner» mot en variabel som allerede står der — HOME — i stedet for mot
-  en testen setter selv. }
-function LagFil(const Path_: string; const Lines: array of string): Boolean;
+{ There is no portable way to set an environment variable that FPC's
+  GetEnvironmentVariable sees. libc's setenv works on Darwin and **not** on
+  Linux, where the RTL reads envp from start-up. So "the environment wins"
+  is tested against a variable that is already there — HOME — rather than
+  against one the test sets itself. }
+function MakeFile(const Path_: string; const Lines: array of string): Boolean;
 var
   L: TStringList;
   I: Integer;
@@ -2284,8 +2305,8 @@ end;
 var
   LogLines: TStringList;
 
-{ Egen destinasjon, slik at testen kan lese linjene i stedet for å måtte
-  fange stderr. Det er også demonstrasjonen av at SetLogSink virker. }
+{ Its own sink, so that the test can read the lines rather than having
+  to capture stderr. It is also the demonstration that SetLogSink works. }
 procedure CollectLine(const Line: string);
 begin
   LogLines.Add(Line);
@@ -2316,18 +2337,18 @@ begin
     LogInfo('i');
     LogWarn('w');
     LogError('e');
-    AssertEqual(LogLines.Count, 2, 'bare warn og error slapp gjennom');
-    AssertTrue(Pos('WARN', LogLines[0]) > 0, 'nivået står i linja');
-    AssertTrue(Pos('ERROR', LogLines[1]) > 0, 'og for error også');
+    AssertEqual(LogLines.Count, 2, 'only warn and error got through');
+    AssertTrue(Pos('WARN', LogLines[0]) > 0, 'the level is in the line');
+    AssertTrue(Pos('ERROR', LogLines[1]) > 0, 'and for error too');
 
-    AssertFalse(LogEnabled(llInfo), 'LogEnabled sier nei under terskelen');
+    AssertFalse(LogEnabled(llInfo), 'LogEnabled says no below the threshold');
     AssertTrue(LogEnabled(llError), 'og ja over');
 
-    { llNone er ikke et nivå å logge på, det er et tak. }
+    { llNone is not a level to log at, it is a ceiling. }
     LogLines.Clear;
     SetLogLevel(llNone);
-    LogError('selv ikke denne');
-    AssertEqual(LogLines.Count, 0, 'llNone slår loggen helt av');
+    LogError('not even this one');
+    AssertEqual(LogLines.Count, 0, 'llNone turns the log off entirely');
   finally
     LoggRydd;
   end;
@@ -2342,21 +2363,22 @@ begin
     LogInfo('request', ['method', 'GET', 'path', '/a b', 'status', 200]);
     AssertEqual(LogLines.Count, 1, 'én linje');
     L := LogLines[0];
-    AssertTrue(Pos('INFO', L) > 0, 'nivå');
+    AssertTrue(Pos('INFO', L) > 0, 'the level');
     AssertTrue(Pos('request', L) > 0, 'melding');
-    AssertTrue(Pos('method=GET', L) > 0, 'felt uten mellomrom står usitert');
-    { En verdi med mellomrom må siteres, ellers leses den som to felter. }
-    AssertTrue(Pos('path="/a b"', L) > 0, 'verdi med mellomrom siteres');
+    AssertTrue(Pos('method=GET', L) > 0, 'a field with no space is unquoted');
+    { A value with a space has to be quoted, or it is read as two
+      fields. }
+    AssertTrue(Pos('path="/a b"', L) > 0, 'a value with a space is quoted');
     AssertTrue(Pos('status=200', L) > 0, 'tall');
-    { Tidsstempelet er ISO 8601 i UTC. Lokaltid ville gjort loggen
-      usorterbar to ganger i året. }
-    AssertTrue(Pos('T', L) > 0, 'tidsstempel med T');
+    { The timestamp is ISO 8601 in UTC. Local time would make the log
+      unsortable twice a year. }
+    AssertTrue(Pos('T', L) > 0, 'a timestamp with a T');
     AssertTrue(Pos('Z ', L) > 0, 'og Z for UTC');
 
-    { Et felt uten verdi skal ikke velte noe. }
+    { A field with no value must not knock anything over. }
     LogLines.Clear;
     LogInfo('rar', ['alene']);
-    AssertEqual(LogLines.Count, 1, 'nøkkel uten verdi logges likevel');
+    AssertEqual(LogLines.Count, 1, 'a key with no value is logged anyway');
   finally
     LoggRydd;
   end;
@@ -2372,24 +2394,25 @@ begin
     LogInfo('request', ['method', 'GET', 'status', 200, 'ok', True,
       'ms', Int64(17)]);
     L := LogLines[0];
-    AssertTrue(Pos('"level":"info"', L) > 0, 'nivå som felt');
-    AssertTrue(Pos('"msg":"request"', L) > 0, 'melding som felt');
+    AssertTrue(Pos('"level":"info"', L) > 0, 'the level as a field');
+    AssertTrue(Pos('"msg":"request"', L) > 0, 'the message as a field');
     AssertTrue(Pos('"method":"GET"', L) > 0, 'streng siteres');
-    { Number og boolske skal stå usitert, ellers kan ingen regne på dem. }
-    AssertTrue(Pos('"status":200', L) > 0, 'tall står usitert');
-    AssertTrue(Pos('"ms":17', L) > 0, 'og int64 også');
-    AssertTrue(Pos('"ok":true', L) > 0, 'boolsk står usitert');
+    { Numbers and booleans are to be unquoted, or nobody can compute with
+      them. }
+    AssertTrue(Pos('"status":200', L) > 0, 'numbers are unquoted');
+    AssertTrue(Pos('"ms":17', L) > 0, 'and int64 too');
+    AssertTrue(Pos('"ok":true', L) > 0, 'a boolean is unquoted');
     AssertEqual(L[1], '{', 'linja er et JSON-objekt');
-    AssertEqual(L[Length(L)], '}', 'og den er lukket');
+    AssertEqual(L[Length(L)], '}', 'and it is closed');
 
-    { Anførselstegn og linjeskift i en verdi må escapes, ellers er linja
-      ikke lenger JSON — og en logginnsamler forkaster hele filen. }
+    { Quotes and line breaks in a value have to be escaped, or the line is
+      no longer JSON — and a log collector discards the whole file. }
     LogLines.Clear;
     LogWarn('rar', ['tekst', 'han sa "hei"' + #10 + 'og gikk']);
     L := LogLines[0];
-    AssertTrue(Pos('\"hei\"', L) > 0, 'anførselstegn escapes');
-    AssertTrue(Pos('\n', L) > 0, 'linjeskift escapes');
-    AssertEqual(Pos(#10, L), 0, 'og det er ingen ekte linjeskift igjen');
+    AssertTrue(Pos('\"hei\"', L) > 0, 'quotes are escaped');
+    AssertTrue(Pos('\n', L) > 0, 'line breaks are escaped');
+    AssertEqual(Pos(#10, L), 0, 'and no real line break is left');
   finally
     LoggRydd;
   end;
@@ -2403,25 +2426,26 @@ begin
   try
     SetLogFormat(lfJson);
     try
-      raise EConfigError.Create('noe gikk galt');
+      raise EConfigError.Create('something went wrong');
     except
       on E: Exception do
         LogException(E, 'while saving', ['id', 7]);
     end;
     AssertEqual(LogLines.Count, 1, 'én linje');
     L := LogLines[0];
-    { Klassen og meldingen er egne felter, ikke fritekst. Det er
-      forskjellen på å kunne gruppere på feiltype og å måtte grep-e. }
+    { The class and the message are separate fields, not free text. That is
+      the difference between being able to group by error type and having
+      to grep. }
     AssertTrue(Pos('"class":"EConfigError"', L) > 0, 'klassen er et felt');
-    AssertTrue(Pos('"error":"noe gikk galt"', L) > 0, 'meldingen er et felt');
-    AssertTrue(Pos('"msg":"while saving"', L) > 0, 'konteksten er meldingen');
-    AssertTrue(Pos('"id":7', L) > 0, 'og kallerens felter er med');
+    AssertTrue(Pos('"error":"something went wrong"', L) > 0, 'meldingen er et felt');
+    AssertTrue(Pos('"msg":"while saving"', L) > 0, 'the context is the message');
+    AssertTrue(Pos('"id":7', L) > 0, 'and the caller''s fields are there');
   finally
     LoggRydd;
   end;
 end;
 
-procedure TestLoggTilFil;
+procedure TestLogToFile;
 var
   Path_: string;
   L: TStringList;
@@ -2433,29 +2457,30 @@ begin
     SetLogFormat(lfText);
     SetLogFile(Path_);
     LogInfo('til fil', ['n', 1]);
-    LogInfo('og en til', ['n', 2]);
-    { Filen lukkes når destinasjonen byttes, og da er alt skrevet. }
+    LogInfo('and one more', ['n', 2]);
+    { The file is closed when the sink is changed, and then everything is
+      written. }
     SetLogFile('');
 
     L := TStringList.Create;
     try
       L.LoadFromFile(Path_);
-      AssertEqual(L.Count, 2, 'begge linjene havnet i fila');
-      AssertTrue(Pos('n=1', L[0]) > 0, 'første linje');
+      AssertEqual(L.Count, 2, 'both lines landed in the file');
+      AssertTrue(Pos('n=1', L[0]) > 0, 'the first line');
       AssertTrue(Pos('n=2', L[1]) > 0, 'andre linje');
     finally
       L.Free;
     end;
 
-    { Å åpne på nytt skal legge til, ikke slette. En omstart skal ikke
-      viske ut forrige kjørings logg. }
+    { Reopening is to append, not truncate. A restart must not wipe out the
+      previous run's log. }
     SetLogFile(Path_);
-    LogInfo('etter omstart');
+    LogInfo('after a restart');
     SetLogFile('');
     L := TStringList.Create;
     try
       L.LoadFromFile(Path_);
-      AssertEqual(L.Count, 3, 'den tredje ble lagt til');
+      AssertEqual(L.Count, 3, 'the third was appended');
     finally
       L.Free;
     end;
@@ -2465,7 +2490,7 @@ begin
   end;
 end;
 
-procedure TestConfigLag;
+procedure TestConfigLayers;
 var
   L: TStringList;
   Folder: string;
@@ -2483,8 +2508,9 @@ begin
     L.Clear;
     L.Add('APP_PORT=9000');
     L.Add('DATABASE_URL=sqlite:demo.db');
-    { HOME står allerede i miljøet. Ved å sette den til noe annet her, blir
-      fila og miljøet uenige — og da kan det testes hvem som vinner. }
+    { HOME is already in the environment. By setting it to something else
+      here, the file and the environment disagree — and then it can be
+      tested which one wins. }
     L.Add('HOME=/helt/feil');
     L.SaveToFile(Folder + '/.env');
   finally
@@ -2495,45 +2521,47 @@ begin
     ClearConfig;
     LoadConfig(Folder);
 
-    AssertEqual(Cfg('name'), 'demo', 'toppnivå fra askr.toml');
-    { .env slår askr.toml: app.port slås opp som APP_PORT, og den står i
-      .env med 9000 mens fila sier 8080. }
+    AssertEqual(Cfg('name'), 'demo', 'top level from askr.toml');
+    { .env beats askr.toml: app.port is looked up as APP_PORT, and that is
+      in .env with 9000 while the file says 8080. }
     AssertEqual(CfgInt('app.port'), 9000, '.env vinner over askr.toml');
-    AssertTrue(CfgSource('app.port') = csDotEnv, 'og kilden sier det');
-    AssertEqual(Cfg('units'), 'app', 'nøkkel uten seksjon');
+    AssertTrue(CfgSource('app.port') = csDotEnv, 'and the source says so');
+    AssertEqual(Cfg('units'), 'app', 'a key with no section');
     AssertEqual(CfgInt('app.backend_port', 8081), 8081,
-      'standardverdien når ingen har satt noe');
+      'the default when nobody has set anything');
     AssertEqual(Cfg('database.url'), 'sqlite:demo.db',
-      'punktum blir understrek i miljønavnet');
+      'a full stop becomes an underscore in the environment name');
 
-    { En nøkkel med tom verdi skal finnes, ikke forsvinne. Det er nettopp
-      der TStringList.Values oppfører seg ulikt på 3.2.2 og 3.3.1. }
-    AssertTrue(CfgHas('app.tom'), 'tom verdi i askr.toml finnes likevel');
+    { A key with an empty value is to be there, not disappear. That is
+      precisely where TStringList.Values behaves differently on 3.2.2 and
+      3.3.1. }
+    AssertTrue(CfgHas('app.tom'), 'an empty value in askr.toml is there anyway');
 
-    { Ekte miljøvariabler vinner over begge filene. Dette er den regelen
-      hele laget hviler på: en utrulling skal kunne sette noe uten at en
-      fil i repoet endres. }
+    { Real environment variables win over both files. This is the rule the
+      whole layer rests on: a deployment has to be able to set something
+      without a file in the repository changing. }
     AssertTrue(GetEnvironmentVariable('HOME') <> '',
-      'HOME finnes i miljøet');
+      'HOME is in the environment');
     AssertEqual(Cfg('home'), GetEnvironmentVariable('HOME'),
-      'miljøet vinner over .env');
-    AssertTrue(CfgSource('home') = csEnvironment, 'og kilden sier det');
+      'the environment beats .env');
+    AssertTrue(CfgSource('home') = csEnvironment, 'and the source says so');
 
     AssertEqual(EnvNameFor('app.backend_port'), 'APP_BACKEND_PORT',
-      'nøkkelnavn til miljønavn');
+      'a key name to an environment name');
 
-    { CfgOrFail nevner nøkkelen og miljøvariabelen, aldri en verdi. }
+    { CfgOrFail names the key and the environment variable, never a
+      value. }
     try
-      CfgOrFail('finnes.ikke');
-      AssertTrue(False, 'CfgOrFail skulle kastet');
+      CfgOrFail('does.not.exist');
+      AssertTrue(False, 'CfgOrFail should have raised');
     except
       on E: EConfigError do
       begin
-        AssertTrue(Pos('finnes.ikke', E.Message) > 0, 'nøkkelen nevnes');
-        AssertTrue(Pos('FINNES_IKKE', E.Message) > 0,
-          'og miljøvariabelen som ville satt den');
+        AssertTrue(Pos('does.not.exist', E.Message) > 0, 'the key is named');
+        AssertTrue(Pos('DOES_NOT_EXIST', E.Message) > 0,
+          'and the environment variable that would set it');
         AssertEqual(Pos('sqlite:demo.db', E.Message), 0,
-          'ingen verdi lekker ut');
+          'no value leaks out');
       end;
     end;
   finally
@@ -2544,16 +2572,16 @@ begin
   end;
 end;
 
-procedure TestConfigRapport;
+procedure TestConfigReport;
 var
   L: TStringList;
-  Folder, Rapport: string;
+  Folder, Report: string;
 begin
   Folder := '.build/cfg-rapport';
   ForceDirectories(Folder);
   L := TStringList.Create;
   try
-    L.Add('DATABASE_URL=postgresql://bruker:hemmelig@host/db');
+    L.Add('DATABASE_URL=postgresql://user:secret@host/db');
     L.Add('APP_ENV=local');
     L.Add('MAIL_FROM=post@example.com');
     L.SaveToFile(Folder + '/.env');
@@ -2565,24 +2593,25 @@ begin
     ClearConfig;
     LoadConfig(Folder);
 
-    { Without --values skal rapporten være trygg å lime inn hvor som helst. }
-    Rapport := ConfigReport(False);
-    AssertTrue(Pos('DATABASE_URL', Rapport) > 0, 'nøkkelen står der');
-    AssertEqual(Pos('hemmelig', Rapport), 0, 'men ingen verdi');
-    AssertEqual(Pos('post@example.com', Rapport), 0, 'heller ikke denne');
+    { Without --values the report is to be safe to paste anywhere. }
+    Report := ConfigReport(False);
+    AssertTrue(Pos('DATABASE_URL', Report) > 0, 'the key is there');
+    AssertEqual(Pos('hemmelig', Report), 0, 'but no value');
+    AssertEqual(Pos('post@example.com', Report), 0, 'nor this one');
 
-    { With_ --values vises verdier, men ikke de som ser ut som hemmeligheter. }
-    Rapport := ConfigReport(True);
-    AssertTrue(Pos('post@example.com', Rapport) > 0,
-      'en ufarlig verdi vises');
-    AssertEqual(Pos('hemmelig', Rapport), 0,
-      'men en DSN med passord i er fortsatt skjult');
-    AssertTrue(Pos('(hidden)', Rapport) > 0, 'og det står at den er det');
+    { With --values the values are shown, but not the ones that look like
+      secrets. }
+    Report := ConfigReport(True);
+    AssertTrue(Pos('post@example.com', Report) > 0,
+      'a harmless value is shown');
+    AssertEqual(Pos('hemmelig', Report), 0,
+      'but a DSN with a password in it is still hidden');
+    AssertTrue(Pos('(hidden)', Report) > 0, 'and it says that it is');
 
-    AssertTrue(LooksSecret('DATABASE_URL'), 'URL regnes som hemmelig');
+    AssertTrue(LooksSecret('DATABASE_URL'), 'URL counts as a secret');
     AssertTrue(LooksSecret('APP_KEY'), 'og KEY');
     AssertTrue(LooksSecret('smtp_password'), 'og PASSWORD');
-    AssertFalse(LooksSecret('APP_ENV'), 'men ikke APP_ENV');
+    AssertFalse(LooksSecret('APP_ENV'), 'but not APP_ENV');
   finally
     ClearConfig;
     DeleteFile(Folder + '/.env');
@@ -2592,68 +2621,68 @@ end;
 
 procedure TestMiljoe;
 const
-  Fil = '.build/miljoe-test/.env';
+  FileName_ = '.build/miljoe-test/.env';
 var
   Folder: string;
 begin
   Folder := '.build/miljoe-test';
   ForceDirectories(Folder);
   try
-    { APP_ENV settes i .env og ikke i prosessens miljø, fordi det siste
-      ikke lar seg gjøre bærbart. Env() leser begge, så laget som testes
-      er det samme. }
+    { APP_ENV is set in .env and not in the process environment, because
+      the latter cannot be done portably. Env() reads both, so the layer
+      under test is the same. }
     ClearEnv;
-    LagFil(Fil, ['# tom']);
-    LoadEnv(Fil);
-    AssertEqual(AppEnv, 'local', 'uten APP_ENV er vi lokale');
-    AssertTrue(IsLocal, 'og IsLocal sier det');
-    AssertFalse(IsProduction, 'ikke produksjon');
+    MakeFile(FileName_, ['# tom']);
+    LoadEnv(FileName_);
+    AssertEqual(AppEnv, 'local', 'without APP_ENV we are local');
+    AssertTrue(IsLocal, 'and IsLocal says so');
+    AssertFalse(IsProduction, 'not production');
 
     ClearEnv;
-    LagFil(Fil, ['APP_ENV=production']);
-    LoadEnv(Fil);
+    MakeFile(FileName_, ['APP_ENV=production']);
+    LoadEnv(FileName_);
     AssertTrue(IsProduction, 'production');
-    AssertFalse(IsLocal, 'og da ikke lokal');
+    AssertFalse(IsLocal, 'and so not local');
 
     ClearEnv;
-    LagFil(Fil, ['APP_ENV=prod']);
-    LoadEnv(Fil);
-    AssertTrue(IsProduction, 'prod er det samme');
+    MakeFile(FileName_, ['APP_ENV=prod']);
+    LoadEnv(FileName_);
+    AssertTrue(IsProduction, 'prod is the same');
 
     ClearEnv;
-    LagFil(Fil, ['APP_ENV=TESTING']);
-    LoadEnv(Fil);
-    AssertTrue(IsTesting, 'testing, uansett kasus');
+    MakeFile(FileName_, ['APP_ENV=TESTING']);
+    LoadEnv(FileName_);
+    AssertTrue(IsTesting, 'testing, whatever the case');
 
-    { RequireEnv nevner alle som mangler på én gang, og ingen verdier.
-      Poenget er tidspunktet: uten den oppdages en manglende nøkkel på
-      første request som trenger den. }
+    { RequireEnv names every missing one at once, and no values. The point
+      is the timing: without it a missing key is found on the first request
+      that needs it. }
     ClearEnv;
-    LagFil(Fil, ['FINNES=ja']);
-    LoadEnv(Fil);
+    MakeFile(FileName_, ['FINNES=ja']);
+    LoadEnv(FileName_);
     try
       RequireEnv(['FINNES', 'MANGLER_EN', 'MANGLER_TO']);
-      AssertTrue(False, 'RequireEnv skulle kastet');
+      AssertTrue(False, 'RequireEnv should have raised');
     except
       on E: EEnvError do
       begin
-        AssertTrue(Pos('MANGLER_EN', E.Message) > 0, 'første som mangler');
-        AssertTrue(Pos('MANGLER_TO', E.Message) > 0, 'og den andre');
+        AssertTrue(Pos('MANGLER_EN', E.Message) > 0, 'the first one missing');
+        AssertTrue(Pos('MANGLER_TO', E.Message) > 0, 'and the second one');
         AssertEqual(Pos('FINNES', E.Message), 0,
-          'den som fantes nevnes ikke');
-        AssertEqual(Pos('ja', E.Message), 0, 'og ingen verdi lekker ut');
+          'the one that was there is not named');
+        AssertEqual(Pos('ja', E.Message), 0, 'and no value leaks out');
       end;
     end;
     RequireEnv(['FINNES']);
   finally
     ClearEnv;
-    DeleteFile(Fil);
+    DeleteFile(FileName_);
     RemoveDir(Folder);
   end;
 end;
 
 
-{ -------------------------------------------------------- varig kø -- }
+{ --------------------------------------------------- the durable queue -- }
 
 var
   DurableLock: TRTLCriticalSection;
@@ -2671,20 +2700,20 @@ begin
     LeaveCriticalSection(DurableLock);
   end;
   if DurableShouldFail then
-    raise Exception.Create('med vilje');
+    raise Exception.Create('on purpose');
 end;
 
-function VarigDsn: string;
+function DurableDsn: string;
 begin
   Result := 'sqlite:.build/queue-test.db';
 end;
 
 function NewStore: TDbJobStore;
 begin
-  Result := TDbJobStore.Create(VarigDsn, 4);
-  { Rask poll, ellers venter testen et kvart sekund per jobb. En ekte app
-    vil ikke ha 10 ms — det er 400 spørringer i sekundet mot en tom tabell
-    med fire workere. }
+  Result := TDbJobStore.Create(DurableDsn, 4);
+  { A fast poll, or the test waits a quarter of a second per job. A real
+    app will not want 10 ms — that is 400 queries a second against an empty
+    table with four workers. }
   Result.Poll := 10;
   Result.EnsureSchema;
 end;
@@ -2700,48 +2729,48 @@ begin
   DurableShouldFail := False;
 end;
 
-procedure VarigRydd;
+procedure DurableClean;
 begin
   DeleteFile('.build/queue-test.db');
   DeleteFile('.build/queue-test.db-wal');
   DeleteFile('.build/queue-test.db-shm');
 end;
 
-{ Det hele dreier seg om: jobben skal fortsatt være der etter at prosessen
-  som la den inn er borte. }
-procedure TestVarigOverleverOmstart;
+{ What it all turns on: the job is to still be there after the process
+  that queued it is gone. }
+procedure TestDurableSurvivesRestart;
 var
   Storage: TDbJobStore;
   Q: TQueue;
 begin
   DurableSetup;
   try
-    { «Første kjøring»: legg inn tre jobber, og avslutt uten å kjøre dem. }
+    { "The first run": queue three jobs, and exit without running them. }
     Storage := NewStore;
     Q := TQueue.Create(Storage, 2, 3, True);
     try
-      AssertTrue(Q.Durable, 'køen sier fra at den er varig');
-      Q.Push('varig', 'en');
-      Q.Push('varig', 'to');
-      Q.Push('varig', 'tre');
-      AssertEqual(Q.Pending, 3, 'tre jobber i tabellen');
+      AssertTrue(Q.Durable, 'the queue says it is durable');
+      Q.Push('durable', 'en');
+      Q.Push('durable', 'to');
+      Q.Push('durable', 'tre');
+      AssertEqual(Q.Pending, 3, 'three jobs in the table');
     finally
-      { Ingen Start, ingen drain: dette er en prosess som dør. }
+      { No Start, no drain: this is a process that dies. }
       Q.Free;
     end;
 
-    { «Andre kjøring»: en ny prosess, nytt lager, samme fil. }
+    { "The second run": a new process, a new store, the same file. }
     Storage := NewStore;
     Q := TQueue.Create(Storage, 2, 3, True);
     try
-      AssertEqual(Q.Pending, 3, 'jobbene overlevde at køen ble borte');
-      Q.Handle('varig', @DurableJob);
+      AssertEqual(Q.Pending, 3, 'the jobs survived the queue going away');
+      Q.Handle('durable', @DurableJob);
       Q.Start;
-      AssertTrue(Q.WaitUntilEmpty(10000), 'og de kjørte nå');
+      AssertTrue(Q.WaitUntilEmpty(10000), 'and they ran now');
       Sleep(100);
       EnterCriticalSection(DurableLock);
       try
-        AssertEqual(DurableRan, 3, 'alle tre, én gang hver');
+        AssertEqual(DurableRan, 3, 'all three, once each');
       finally
         LeaveCriticalSection(DurableLock);
       end;
@@ -2750,11 +2779,11 @@ begin
       Q.Free;
     end;
   finally
-    VarigRydd;
+    DurableClean;
   end;
 end;
 
-procedure TestVarigFeilerOgGirOpp;
+procedure TestDurableFailsAndGivesUp;
 var
   Storage: TDbJobStore;
   Q: TQueue;
@@ -2765,41 +2794,41 @@ begin
     Q := TQueue.Create(Storage, 1, 2, False);
     try
       DurableShouldFail := True;
-      Q.Handle('varig', @DurableJob);
+      Q.Handle('durable', @DurableJob);
       Q.Start;
-      Q.Push('varig', 'dette går galt');
-      AssertTrue(Q.WaitUntilEmpty(10000), 'jobben ga seg til slutt');
+      Q.Push('durable', 'this will go wrong');
+      AssertTrue(Q.WaitUntilEmpty(10000), 'the job gave up in the end');
       Sleep(150);
       Q.Stop(False);
 
-      AssertEqual(Q.Failed, 1, 'talt som feilet');
-      { Forsøkstelleren ligger i raden, ikke i minnet — den skal overleve
-        at prosessen dør midt i. }
+      AssertEqual(Q.Failed, 1, 'counted as failed');
+      { The attempt counter is in the row, not in memory — it is to survive
+        the process dying halfway. }
       EnterCriticalSection(DurableLock);
       try
-        AssertEqual(DurableRan, 2, 'to forsøk, som MaxAttempts sier');
+        AssertEqual(DurableRan, 2, 'two attempts, as MaxAttempts says');
       finally
         LeaveCriticalSection(DurableLock);
       end;
 
-      { En jobb som har gitt opp flyttes, den slettes ikke. Den er det
-        eneste sporet av at noe skulle ha skjedd og ikke gjorde det. }
-      AssertEqual(Storage.FailedCount, 1, 'den ligger i feiltabellen');
+      { A job that has given up is moved, not deleted. It is the only trace
+        that something was supposed to happen and did not. }
+      AssertEqual(Storage.FailedCount, 1, 'it is in the failed table');
 
-      { Og den kan legges tilbake når det som var galt er rettet. }
+      { And it can be put back once whatever was wrong has been fixed. }
       DurableShouldFail := False;
       DurableRan := 0;
-      AssertEqual(Storage.RetryFailed, 1, 'RetryFailed flyttet den tilbake');
+      AssertEqual(Storage.RetryFailed, 1, 'RetryFailed moved it back');
       AssertEqual(Storage.FailedCount, 0, 'feiltabellen er tom');
-      AssertEqual(Q.Pending, 1, 'og jobben står i køen igjen');
+      AssertEqual(Q.Pending, 1, 'and the job is in the queue again');
 
       Q.Start;
-      AssertTrue(Q.WaitUntilEmpty(10000), 'den kjørte');
+      AssertTrue(Q.WaitUntilEmpty(10000), 'it ran');
       Sleep(100);
       EnterCriticalSection(DurableLock);
       try
-        AssertEqual(DurableLast, 'dette går galt',
-          'med payloaden i behold');
+        AssertEqual(DurableLast, 'this will go wrong',
+          'with the payload intact');
       finally
         LeaveCriticalSection(DurableLock);
       end;
@@ -2809,11 +2838,11 @@ begin
       Storage.Free;
     end;
   finally
-    VarigRydd;
+    DurableClean;
   end;
 end;
 
-procedure TestVarigUkjentJobb;
+procedure TestDurableUnknownJob;
 var
   Storage: TDbJobStore;
   Q: TQueue;
@@ -2824,25 +2853,26 @@ begin
     Q := TQueue.Create(Storage, 1, 3, False);
     try
       Q.Start;
-      Q.Push('finnes-ikke', 'data');
-      AssertTrue(Q.WaitUntilEmpty(10000), 'jobben ble tatt ut av køen');
+      Q.Push('does-not-exist', 'data');
+      AssertTrue(Q.WaitUntilEmpty(10000), 'the job was taken off the queue');
       Sleep(100);
       Q.Stop(False);
-      AssertEqual(Q.Dropped, 1, 'talt som forkastet');
-      { En app som har mistet en Handle-linje skal kunne se hva som lå der.
-        I minnekøen forsvinner den; her ligger den igjen. }
+      AssertEqual(Q.Dropped, 1, 'counted as dropped');
+      { An app that has lost a Handle line is to be able to see what was
+        there. In the memory queue it disappears; here it is left
+        behind. }
       AssertEqual(Storage.FailedCount, 1,
-        'en jobb uten handler havner i feiltabellen, ikke i intet');
+        'a job with no handler lands in the failed table, not in nothing');
     finally
       Q.Free;
       Storage.Free;
     end;
   finally
-    VarigRydd;
+    DurableClean;
   end;
 end;
 
-procedure TestVarigForsinkelseOgBinaert;
+procedure TestDurableDelayAndBinary;
 var
   Storage: TDbJobStore;
   Q: TQueue;
@@ -2853,42 +2883,43 @@ begin
     Storage := NewStore;
     Q := TQueue.Create(Storage, 1, 3, False);
     try
-      Q.Handle('varig', @DurableJob);
+      Q.Handle('durable', @DurableJob);
       Q.Start;
-      Q.Push('varig', 'senere', 2);
+      Q.Push('durable', 'senere', 2);
       Sleep(300);
       EnterCriticalSection(DurableLock);
       try
-        AssertEqual(DurableRan, 0, 'forsinket jobb kjører ikke med en gang');
+        AssertEqual(DurableRan, 0, 'a delayed job does not run at once');
       finally
         LeaveCriticalSection(DurableLock);
       end;
-      AssertEqual(Q.Pending, 1, 'den ligger fortsatt i tabellen');
+      AssertEqual(Q.Pending, 1, 'it is still in the table');
       Q.Stop(False);
 
-      { Rå bytes avvises med en gang. Å la dem gå videre gir enten en
-        ødelagt jobb eller en driverfeil langt unna den som skrev den. }
+      { Raw bytes are rejected at once. Letting them through gives either a
+        corrupt job or a driver error a long way from whoever wrote
+        it. }
       Err := '';
       try
-        Q.Push('varig', 'a'#0'b');
+        Q.Push('durable', 'a'#0'b');
       except
         on E: Exception do Err := E.Message;
       end;
       AssertTrue(Pos('NUL byte', Err) > 0,
-        'nullbyte i payloaden avvises, og meldingen sier hvorfor');
-      AssertTrue(Pos('varig', Err) > 0, 'og hvilken jobb det gjaldt');
+        'a zero byte in the payload is rejected, and the message says why');
+      AssertTrue(Pos('durable', Err) > 0, 'and which job it was');
     finally
       Q.Free;
       Storage.Free;
     end;
   finally
-    VarigRydd;
+    DurableClean;
   end;
 end;
 
-{ En worker som dør midt i en jobb etterlater raden reservert. Without at noen
-  slipper den igjen, ville jobben blitt liggende for alltid. }
-procedure TestVarigForlattReservasjon;
+{ A worker that dies halfway through a job leaves the row reserved.
+  Without somebody releasing it again, the job would lie there forever. }
+procedure TestDurableAbandonedReservation;
 var
   Storage: TDbJobStore;
   C: TDbConnection;
@@ -2900,15 +2931,15 @@ begin
   try
     Storage := NewStore;
     try
-      Storage.Push('varig', PByte(PChar('data')), 4, 0);
+      Storage.Push('durable', PByte(PChar('data')), 4, 0);
 
-      { Reserver, og gjør den aldri opp — som om prosessen døde her. }
-      AssertTrue(Storage.Reserve(J), 'jobben ble reservert');
-      AssertEqual(J.Name, 'varig', 'riktig jobb');
-      AssertFalse(Storage.Reserve(J), 'ingen andre får den mens den er tatt');
+      { Reserve it, and never settle it — as if the process died here. }
+      AssertTrue(Storage.Reserve(J), 'the job was reserved');
+      AssertEqual(J.Name, 'durable', 'the right job');
+      AssertFalse(Storage.Reserve(J), 'nobody else gets it while it is taken');
 
-      { Sett reservasjonen langt tilbake i tid, slik tiden ville gjort. }
-      C := OpenDbConnection(VarigDsn);
+      { Put the reservation far back in time, the way time would have. }
+      C := OpenDbConnection(DurableDsn);
       try
         C.Exec(A, 'UPDATE askr_jobs SET reserved_at = 1');
       finally
@@ -2916,15 +2947,15 @@ begin
       end;
 
       AssertTrue(Storage.Reserve(J),
-        'en forlatt reservasjon slippes og jobben kan tas igjen');
+        'an abandoned reservation is released and the job can be taken again');
       Storage.Complete(J);
-      AssertEqual(Storage.Pending, 0, 'og da er den borte');
+      AssertEqual(Storage.Pending, 0, 'and then it is gone');
     finally
       Storage.Free;
     end;
   finally
     A.Free;
-    VarigRydd;
+    DurableClean;
   end;
 end;
 
@@ -2932,16 +2963,16 @@ end;
 { ------------------------------------------------------- HTTP-klient -- }
 
 type
-  { En server å ringe. Alt klienten skal klare — chunked, omdirigering,
-    lang kropp, statuskoder — kommer herfra, slik at testene ikke trenger
-    nett. }
+  { A server to call. Everything the client has to handle — chunked,
+    redirects, a long body, status codes — comes from here, so that the
+    tests need no network. }
   TEkkoServer = class
     function Handle(Req: TRequest): TResponse;
   end;
 
 var
-  KlientPort: Word;
-  StroemBiter: Integer;
+  ClientPort: Word;
+  StreamChunks: Integer;
   StreamText: string;
   EkkoH: TEkkoServer;
   EkkoSrv: TAskrServer;
@@ -2989,10 +3020,11 @@ begin
   Result := RespondText('ukjent', 404);
 end;
 
-{ En liten server som svarer chunked. Askrs egen server gjør det ikke —
-  den setter alltid Content-Length — så uten denne er hele chunked-stien i
-  klienten udekket. Og det er den stien enhver ekte server bruker når den
-  ikke vet lengden på forhånd, altså nesten alltid for et strømmet API. }
+{ A small server that answers chunked. Askr's own server does not — it
+  always sets Content-Length — so without this the whole chunked path in
+  the client is uncovered. And that is the path every real server uses when
+  it does not know the length in advance, which is nearly always for a
+  streamed API. }
 type
   TChunkedServer = class(TThread)
   private
@@ -3030,7 +3062,7 @@ end;
 procedure TChunkedServer.Execute;
 var
   S: TSocket;
-  Reply, Bit: string;
+  Reply, Chunk: string;
   I: Integer;
   Buf: array[0..1023] of Byte;
 begin
@@ -3039,27 +3071,29 @@ begin
     S := fpAccept(FLytt, nil, nil);
     if S < 0 then
       Break;
-    { Read_ requesten og kast den — hva som spørres om er ikke poenget. }
+    { Read the request and throw it away — what is asked for is not the
+      point. }
     fpRecv(S, @Buf[0], SizeOf(Buf), 0);
 
     Reply := 'HTTP/1.1 200 OK'#13#10 +
       'Content-Type: text/plain'#13#10 +
       'Transfer-Encoding: chunked'#13#10 +
       'Connection: close'#13#10#13#10;
-    { Fem biter, og den siste inneholder en CRLF for å vise at innholdet
-      ikke forveksles med rammeverket rundt. }
+    { Five chunks, and the last contains a CRLF to show that the content is
+      not confused with the framing around it. }
     for I := 1 to 5 do
     begin
       if I = 5 then
-        Bit := 'siste'#13#10'linje'
+        Chunk := 'siste'#13#10'linje'
       else
-        Bit := StringOfChar(Chr(Ord('A') + I - 1), 1000);
-      { Størrelsen er heksadesimal. En bit med utvidelse etter semikolon
-        er lovlig, og den fjerde har en for å vise at den hoppes over. }
+        Chunk := StringOfChar(Chr(Ord('A') + I - 1), 1000);
+      { The size is hexadecimal. A chunk with an extension after a
+        semicolon is legal, and the fourth has one to show that it is
+        skipped. }
       if I = 4 then
-        Reply := Reply + Format('%x;noe=her'#13#10'%s'#13#10, [Length(Bit), Bit])
+        Reply := Reply + Format('%x;ext=here'#13#10'%s'#13#10, [Length(Chunk), Chunk])
       else
-        Reply := Reply + Format('%x'#13#10'%s'#13#10, [Length(Bit), Bit]);
+        Reply := Reply + Format('%x'#13#10'%s'#13#10, [Length(Chunk), Chunk]);
     end;
     Reply := Reply + '0'#13#10#13#10;
     fpSend(S, PChar(Reply), Length(Reply), 0);
@@ -3068,7 +3102,7 @@ begin
   CloseSocket(FLytt);
 end;
 
-procedure TestKlientChunked;
+procedure TestClientChunked;
 var
   Srv: TChunkedServer;
   K: THttpClient;
@@ -3080,24 +3114,25 @@ begin
   K := THttpClient.Create;
   try
     R := K.Get(Format('http://127.0.0.1:%d/', [Srv.Port]));
-    AssertEqual(R.Status, 200, 'chunked svar har status');
+    AssertEqual(R.Status, 200, 'a chunked reply has a status');
     AssertEqual(R.Header('Transfer-Encoding'), 'chunked',
-      'og serveren sa at den sendte chunked');
+      'and the server said it sent chunked');
 
     Ventet := '';
     for I := 1 to 4 do
       Ventet := Ventet + StringOfChar(Chr(Ord('A') + I - 1), 1000);
     Ventet := Ventet + 'siste'#13#10'linje';
     AssertEqual(Length(R.Body), Length(Ventet),
-      'alle bitene satt sammen igjen');
-    AssertEqual(R.Body, Ventet, 'og i riktig rekkefølge, byte for byte');
-    { Rammeverket rundt bitene skal ikke havne i kroppen. }
-    AssertEqual(Pos('3e8', R.Body), 0, 'størrelseslinjene er borte');
-    AssertEqual(Pos('noe=her', R.Body), 0, 'og utvidelsen også');
+      'all the chunks put back together');
+    AssertEqual(R.Body, Ventet, 'and in the right order, byte for byte');
+    { The framing around the chunks must not end up in the body. }
+    AssertEqual(Pos('3e8', R.Body), 0, 'the size lines are gone');
+    AssertEqual(Pos('ext=here', R.Body), 0, 'and the extension too');
   finally
     K.Free;
     Srv.Terminate;
-    { Én request til, slik at accept slipper løs og tråden kan avslutte. }
+    { One more request, so that accept lets go and the thread can
+      finish. }
     try
       K := THttpClient.Create;
       K.ConnectTimeoutMs := 500;
@@ -3111,98 +3146,101 @@ begin
   end;
 end;
 
-{ Navneoppslag mot /etc/hosts. Den stien er GetHostByName, ikke DNS, og
-  den skal virke overalt — også der det ikke finnes en navnetjener. }
-procedure TestKlientLocalhost;
+{ Name lookup against /etc/hosts. That path is GetHostByName, not DNS,
+  and it has to work everywhere — including where there is no name
+  server. }
+procedure TestClientLocalhost;
 var
   K: THttpClient;
   R: THttpResponse;
 begin
   K := THttpClient.Create;
   try
-    R := K.Get(Format('http://localhost:%d/hei', [KlientPort]));
-    AssertEqual(R.Status, 200, 'localhost slås opp i /etc/hosts');
-    AssertEqual(R.Body, 'hei', 'og svaret kom fram');
+    R := K.Get(Format('http://localhost:%d/hei', [ClientPort]));
+    AssertEqual(R.Status, 200, 'localhost resolves through /etc/hosts');
+    AssertEqual(R.Body, 'hei', 'and the reply arrived');
   finally
     K.Free;
   end;
 end;
 
-function SamleBit(const Chunk: string): Boolean;
+function CollectChunk(const Chunk: string): Boolean;
 begin
-  Inc(StroemBiter);
+  Inc(StreamChunks);
   StreamText := StreamText + Chunk;
   Result := True;
 end;
 
 function StoppEtterFoerste(const Chunk: string): Boolean;
 begin
-  Inc(StroemBiter);
+  Inc(StreamChunks);
   StreamText := StreamText + Chunk;
-  { False betyr «slutt å lese». Det er slik en SSE-lytter melder seg av. }
+  { False means "stop reading". That is how an SSE listener
+    unsubscribes. }
   Result := False;
 end;
 
-procedure TestKlientUrl;
+procedure TestClientUrl;
 var
   Sch, Host, Path_: string;
   Port: Word;
 begin
   AssertTrue(ParseUrl('https://api.example.com/v1/messages', Sch, Host,
-    Port, Path_), 'en vanlig https-adresse');
+    Port, Path_), 'an ordinary https address');
   AssertEqual(Sch, 'https', 'skjema');
   AssertEqual(Host, 'api.example.com', 'vert');
-  AssertEqual(Port, 443, 'https gir 443 uten at porten står der');
+  AssertEqual(Port, 443, 'https gives 443 without the port being there');
   AssertEqual(Path_, '/v1/messages', 'sti');
 
   ParseUrl('http://localhost:8080', Sch, Host, Port, Path_);
-  AssertEqual(Port, 8080, 'porten leses');
-  AssertEqual(Path_, '/', 'tom sti blir /');
+  AssertEqual(Port, 8080, 'the port is read');
+  AssertEqual(Path_, '/', 'an empty path becomes /');
 
   ParseUrl('http://x.no?a=1', Sch, Host, Port, Path_);
-  AssertEqual(Path_, '/?a=1', 'query uten sti får / foran');
+  AssertEqual(Path_, '/?a=1', 'a query with no path gets a / in front');
 
-  { Fragmentet er nettleserens, ikke serverens, og skal aldri sendes. }
+  { The fragment is the browser's, not the server's, and must never be
+    sent. }
   ParseUrl('http://x.no/side#del', Sch, Host, Port, Path_);
-  AssertEqual(Path_, '/side', 'fragmentet sendes ikke');
+  AssertEqual(Path_, '/side', 'the fragment is not sent');
 
-  { Brukerinfo i adressen ignoreres i stedet for å bli sendt videre. }
+  { User info in the address is ignored rather than passed on. }
   ParseUrl('https://bruker:pass@x.no/a', Sch, Host, Port, Path_);
-  AssertEqual(Host, 'x.no', 'brukerinfo hører ikke til verten');
+  AssertEqual(Host, 'x.no', 'user info does not belong to the host');
 
   AssertFalse(ParseUrl('ftp://x.no/a', Sch, Host, Port, Path_),
-    'ftp er ikke http');
+    'ftp is not http');
   AssertFalse(ParseUrl('bare en tekst', Sch, Host, Port, Path_),
-    'og en tekst uten skjema er ingen adresse');
+    'and text with no scheme is no address');
 
   AssertEqual(UrlEncodeValue('a b&c=d'), 'a%20b%26c%3Dd',
     'prosentkoding');
   AssertEqual(UrlEncodeValue('abc-_.~'), 'abc-_.~',
-    'de ureserverte tegnene står');
+    'the unreserved characters stand');
 end;
 
-procedure TestKlientMotEgenServer;
+procedure TestClientAgainstOwnServer;
 var
   K: THttpClient;
   R: THttpResponse;
   Base: string;
 begin
   K := THttpClient.Create;
-  Base := Format('http://127.0.0.1:%d', [KlientPort]);
+  Base := Format('http://127.0.0.1:%d', [ClientPort]);
   try
     R := K.Get(Base + '/hei');
     AssertEqual(R.Status, 200, 'GET svarte 200');
-    AssertEqual(R.Body, 'hei', 'og med riktig kropp');
+    AssertEqual(R.Body, 'hei', 'and with the right body');
     AssertTrue(R.Ok, 'Ok er sann for 200');
-    AssertTrue(R.Header('Content-Type') <> '', 'headerne kom med');
-    { Headeroppslag skal ignorere kasus, slik HTTP sier. }
+    AssertTrue(R.Header('Content-Type') <> '', 'the headers came along');
+    { Header lookup is to ignore case, the way HTTP says. }
     AssertEqual(R.Header('content-TYPE'), R.Header('Content-Type'),
-      'headernavn er ikke kasusfølsomme');
+      'header names are not case-sensitive');
 
     R := K.Post(Base + '/ekko', '{"a":1}');
     AssertEqual(R.Status, 200, 'POST svarte');
-    AssertEqual(R.Body, '{"a":1}', 'kroppen kom fram og tilbake');
-    AssertEqual(R.Header('X-Method'), 'POST', 'metoden var POST');
+    AssertEqual(R.Body, '{"a":1}', 'the body went there and back');
+    AssertEqual(R.Header('X-Method'), 'POST', 'the method was POST');
     AssertTrue(R.IsJson, 'svaret er JSON');
 
     R := K.Put(Base + '/ekko', 'p');
@@ -3212,47 +3250,47 @@ begin
     R := K.Delete(Base + '/ekko');
     AssertEqual(R.Header('X-Method'), 'DELETE', 'DELETE');
 
-    K.WithHeader('X-Prove', 'verdi').WithBearer('hemmelig-token');
+    K.WithHeader('X-Prove', 'value').WithBearer('secret-token');
     R := K.Get(Base + '/hode');
-    AssertEqual(R.Body, 'verdi|Bearer hemmelig-token',
-      'headerne fra klienten ble sendt');
+    AssertEqual(R.Body, 'value|Bearer secret-token',
+      'the headers from the client were sent');
     K.ClearHeaders;
 
     R := K.Get(Base + '/borte');
-    AssertEqual(R.Status, 404, '404 er et svar, ikke en exception');
+    AssertEqual(R.Status, 404, '404 is an answer, not an exception');
     AssertFalse(R.Ok, 'og Ok er usann');
 
-    { En kropp som ikke får plass i én lesning. }
+    { A body that does not fit in one read. }
     R := K.Get(Base + '/stor');
-    AssertEqual(Length(R.Body), 300000, 'et stort svar leses helt');
+    AssertEqual(Length(R.Body), 300000, 'a large reply is read in full');
 
-    AssertTrue(R.ElapsedMs >= 0, 'tiden måles');
+    AssertTrue(R.ElapsedMs >= 0, 'the time is measured');
   finally
     K.Free;
   end;
 end;
 
-procedure TestKlientOmdirigering;
+procedure TestClientRedirect;
 var
   K: THttpClient;
   R: THttpResponse;
   Base, Err: string;
 begin
   K := THttpClient.Create;
-  Base := Format('http://127.0.0.1:%d', [KlientPort]);
+  Base := Format('http://127.0.0.1:%d', [ClientPort]);
   try
     R := K.Get(Base + '/flytt');
-    AssertEqual(R.Status, 200, 'omdirigeringen ble fulgt');
-    AssertEqual(R.Body, 'hei', 'og vi endte riktig sted');
+    AssertEqual(R.Status, 200, 'the redirect was followed');
+    AssertEqual(R.Body, 'hei', 'and we ended up in the right place');
     AssertEqual(R.Redirects, 1, 'én omdirigering telt');
 
-    { 302 blir GET. 307 beholder metoden og kroppen — det er hele grunnen
-      til at 307 finnes. }
+    { 302 becomes GET. 307 keeps the method and the body — that is the
+      whole reason 307 exists. }
     R := K.Post(Base + '/flytt-307', 'kroppen', 'text/plain');
     AssertEqual(R.Header('X-Method'), 'POST', '307 beholder metoden');
     AssertEqual(R.Body, 'kroppen', 'og kroppen');
 
-    { En kjede som ikke tar slutt skal stoppe, ikke henge. }
+    { A chain that never ends is to stop, not hang. }
     Err := '';
     try
       K.Get(Base + '/evig');
@@ -3260,47 +3298,47 @@ begin
       on E: EHttpClientError do Err := E.Message;
     end;
     AssertTrue(Pos('Too many redirects', Err) > 0,
-      'en evig omdirigering stoppes');
+      'an endless redirect is stopped');
 
-    { With_ MaxRedirects = 0 returneres 302-svaret som det er. }
+    { With MaxRedirects = 0 the 302 reply is returned as it is. }
     K.MaxRedirects := 0;
     R := K.Get(Base + '/flytt');
-    AssertEqual(R.Status, 302, 'uten å følge ser man selve omdirigeringen');
+    AssertEqual(R.Status, 302, 'without following you see the redirect itself');
     AssertEqual(R.Header('Location'), '/hei', 'og Location');
   finally
     K.Free;
   end;
 end;
 
-procedure TestKlientStroemming;
+procedure TestClientStreaming;
 var
   K: THttpClient;
   R: THttpResponse;
   Base: string;
 begin
   K := THttpClient.Create;
-  Base := Format('http://127.0.0.1:%d', [KlientPort]);
+  Base := Format('http://127.0.0.1:%d', [ClientPort]);
   try
-    StroemBiter := 0;
+    StreamChunks := 0;
     StreamText := '';
-    R := K.Stream('GET', Base + '/stor', '', '', @SamleBit);
-    AssertEqual(R.Status, 200, 'strømmet svar har fortsatt status');
-    AssertEqual(R.Body, '', 'kroppen samles ikke opp når den strømmes');
-    AssertEqual(Length(StreamText), 300000, 'men callbacken fikk alt');
-    AssertTrue(StroemBiter > 1, 'og den fikk det i flere biter');
+    R := K.Stream('GET', Base + '/stor', '', '', @CollectChunk);
+    AssertEqual(R.Status, 200, 'a streamed reply still has a status');
+    AssertEqual(R.Body, '', 'the body is not collected when it is streamed');
+    AssertEqual(Length(StreamText), 300000, 'but the callback got it all');
+    AssertTrue(StreamChunks > 1, 'and it got it in several chunks');
 
     { False fra callbacken skal stoppe lesingen. }
-    StroemBiter := 0;
+    StreamChunks := 0;
     StreamText := '';
     R := K.Stream('GET', Base + '/stor', '', '', @StoppEtterFoerste);
-    AssertEqual(StroemBiter, 1, 'callbacken kan si stopp');
-    AssertTrue(Length(StreamText) < 300000, 'og da leses ikke resten');
+    AssertEqual(StreamChunks, 1, 'the callback can say stop');
+    AssertTrue(Length(StreamText) < 300000, 'and then the rest is not read');
   finally
     K.Free;
   end;
 end;
 
-procedure TestKlientFeil;
+procedure TestClientErrors;
 var
   K: THttpClient;
   Err: string;
@@ -3314,36 +3352,36 @@ begin
       on E: EHttpClientError do Err := E.Message;
     end;
     AssertTrue(Pos('not an http', Err) > 0,
-      'en adresse som ikke er http avvises med en gang');
+      'an address that is not http is rejected at once');
 
-    { En port ingen lytter på. Meldingen skal si hvor. }
+    { A port nobody is listening on. The message is to say where. }
     Err := '';
     K.ConnectTimeoutMs := 2000;
     try
-      K.Get('http://127.0.0.1:9/finnes-ikke');
+      K.Get('http://127.0.0.1:9/does-not-exist');
     except
       on E: EHttpClientError do Err := E.Message;
     end;
     AssertTrue(Pos('127.0.0.1', Err) > 0,
-      'en forbindelse som ikke går opp nevner verten');
+      'a connection that does not come up names the host');
 
     Err := '';
     try
-      K.Get('http://ingen-slik-vert.invalid/x');
+      K.Get('http://no-such-host.invalid/x');
     except
       on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('resolve', Err) > 0, 'og et navn som ikke finnes');
+    AssertTrue(Pos('resolve', Err) > 0, 'and a name that does not exist');
 
-    { Taket på svarstørrelse er en sperre, ikke en optimalisering. }
+    { The cap on reply size is a stop, not an optimization. }
     K.MaxResponseBytes := 1000;
     Err := '';
     try
-      K.Get(Format('http://127.0.0.1:%d/stor', [KlientPort]));
+      K.Get(Format('http://127.0.0.1:%d/stor', [ClientPort]));
     except
       on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('exceeded', Err) > 0, 'et for stort svar avvises');
+    AssertTrue(Pos('exceeded', Err) > 0, 'a reply that is too large is rejected');
   finally
     K.Free;
   end;
@@ -3353,19 +3391,19 @@ end;
 { --------------------------------------------------------------- AI -- }
 
 var
-  AiBiter: TStringList;
+  AiChunks: TStringList;
   AiVerktoeyKall: Integer;
   AiLastArg: string;
 
-function AiSamle(const Delta: string): Boolean;
+function AiCollect(const Delta: string): Boolean;
 begin
-  AiBiter.Add(Delta);
+  AiChunks.Add(Delta);
   Result := True;
 end;
 
-function AiStopp(const Delta: string): Boolean;
+function AiStop(const Delta: string): Boolean;
 begin
-  AiBiter.Add(Delta);
+  AiChunks.Add(Delta);
   Result := False;
 end;
 
@@ -3373,13 +3411,13 @@ function VaerVerktoey(const InputJson: string): string;
 begin
   Inc(AiVerktoeyKall);
   AiLastArg := InputJson;
-  Result := '{"temp_c": 7, "sky": "regn"}';
+  Result := '{"temp_c": 7, "sky": "rain"}';
 end;
 
-function SprekkVerktoey(const InputJson: string): string;
+function BoomTool(const InputJson: string): string;
 begin
   Result := '';
-  raise Exception.Create('verktøyet feilet');
+  raise Exception.Create('the tool failed');
 end;
 
 function NewClient(out F: TFakeAiTransport): TAiClient;
@@ -3389,7 +3427,7 @@ begin
   Result.UseTransport(F, True);
 end;
 
-{ Et svar slik API-et sender det. }
+{ A reply the way the API sends it. }
 function AiReply(const Text_: string): string;
 begin
   Result := '{"id":"msg_1","type":"message","role":"assistant",' +
@@ -3407,23 +3445,24 @@ begin
   K := NewClient(F);
   try
     F.Enqueue(AiReply('hei'));
-    AssertEqual(K.Ask('si hei'), 'hei', 'det enkleste kallet virker');
+    AssertEqual(K.Ask('si hei'), 'hei', 'the simplest call works');
 
     Sendt := F.Sent[0];
-    { Formen på requesten er det eneste vi kan holde fast uten en nøkkel,
-      og da skal den holdes fast nøyaktig. }
+    { The shape of the request is the only thing we can hold down without
+      a key, and then it is to be held down exactly. }
     AssertTrue(Pos('"model":"claude-opus-5"', Sendt) > 0,
       'standardmodellen er claude-opus-5');
-    AssertTrue(Pos('"max_tokens":4096', Sendt) > 0, 'max_tokens er med');
-    AssertTrue(Pos('"role":"user"', Sendt) > 0, 'meldingen har rolle');
+    AssertTrue(Pos('"max_tokens":4096', Sendt) > 0, 'max_tokens is there');
+    AssertTrue(Pos('"role":"user"', Sendt) > 0, 'the message has a role');
     AssertTrue(Pos('"content":"si hei"', Sendt) > 0, 'og innhold');
-    { Without stream skal feltet ikke være der i det hele tatt. }
-    AssertEqual(Pos('"stream"', Sendt), 0, 'ingen stream på et vanlig kall');
-    AssertEqual(Pos('"thinking"', Sendt), 0, 'og ingen thinking når den er av');
+    { Without stream the field is not to be there at all. }
+    AssertEqual(Pos('"stream"', Sendt), 0, 'no stream on an ordinary call');
+    AssertEqual(Pos('"thinking"', Sendt), 0, 'and no thinking when it is off');
     AssertEqual(Pos('"temperature"', Sendt), 0,
-      'ingen temperature når den ikke er satt');
+      'no temperature when it is not set');
 
-    { System, temperatur og modell settes av appen. }
+    { The system prompt, the temperature and the model are set by the
+      app. }
     K.System_ := 'Du er kort.';
     K.Model := 'claude-haiku-4-5';
     K.SetTemperature(0.2);
@@ -3433,26 +3472,26 @@ begin
     Sendt := F.Sent[1];
     AssertTrue(Pos('"system":"Du er kort."', Sendt) > 0, 'system er med');
     AssertTrue(Pos('"model":"claude-haiku-4-5"', Sendt) > 0,
-      'modellen kan byttes');
+      'the model can be changed');
     AssertTrue(Pos('"temperature":0.2', Sendt) > 0, 'temperature er med');
-    AssertTrue(Pos('"max_tokens":100', Sendt) > 0, 'max_tokens kan settes');
+    AssertTrue(Pos('"max_tokens":100', Sendt) > 0, 'max_tokens can be set');
 
-    { Dette er fella som er verdt en egen test: den gamle formen med
-      budget_tokens avvises med 400 av modellene her. }
+    { This is the trap worth a test of its own: the old form with
+      budget_tokens is rejected with a 400 by the models here. }
     K.Thinking := atAdaptive;
     F.Enqueue(AiReply('ok'));
     K.Ask('noe');
     Sendt := F.Sent[2];
     AssertTrue(Pos('"thinking":{"type":"adaptive"}', Sendt) > 0,
-      'tenkning sendes som adaptive');
+      'thinking is sent as adaptive');
     AssertEqual(Pos('budget_tokens', Sendt), 0,
-      'og aldri med budget_tokens');
+      'and never with budget_tokens');
   finally
     K.Free;
   end;
 end;
 
-procedure TestAiSvarOgFeil;
+procedure TestAiReplyAndError;
 var
   K: TAiClient;
   F: TFakeAiTransport;
@@ -3463,29 +3502,29 @@ begin
   K := NewClient(F);
   try
     F.Enqueue(AiReply('svaret'));
-    R := K.Send([UserMsg('spørsmål')]);
-    AssertEqual(R.Text, 'svaret', 'teksten plukkes ut');
+    R := K.Send([UserMsg('a question')]);
+    AssertEqual(R.Text, 'svaret', 'the text is picked out');
     AssertEqual(R.StopReason, 'end_turn', 'stop_reason');
-    AssertEqual(R.Model, 'claude-opus-5', 'modellen svaret kom fra');
-    AssertEqual(R.Usage.InputTokens, 12, 'input-tokens telles');
-    AssertEqual(R.Usage.OutputTokens, 34, 'output-tokens også');
-    AssertFalse(R.WantsTool, 'ingen verktøykall');
+    AssertEqual(R.Model, 'claude-opus-5', 'the model the reply came from');
+    AssertEqual(R.Usage.InputTokens, 12, 'input tokens are counted');
+    AssertEqual(R.Usage.OutputTokens, 34, 'output tokens too');
+    AssertFalse(R.WantsTool, 'no tool calls');
 
     { More tekstblokker settes sammen. }
     F.Enqueue('{"content":[{"type":"text","text":"en "},' +
       '{"type":"text","text":"to"}],"stop_reason":"end_turn"}');
     R := K.Send([UserMsg('x')]);
-    AssertEqual(R.Text, 'en to', 'flere tekstblokker settes sammen');
+    AssertEqual(R.Text, 'en to', 'several text blocks are joined');
 
     { Tenkeblokker holdes for seg. }
     F.Enqueue('{"content":[{"type":"thinking","thinking":"hmm"},' +
-      '{"type":"text","text":"svar"}],"stop_reason":"end_turn"}');
+      '{"type":"text","text":"an answer"}],"stop_reason":"end_turn"}');
     R := K.Send([UserMsg('x')]);
     AssertEqual(R.Thinking, 'hmm', 'tenkningen er for seg');
-    AssertEqual(R.Text, 'svar', 'og teksten for seg');
+    AssertEqual(R.Text, 'an answer', 'and the text on its own');
 
-    { En feil fra API-et skal bli en EAiError med type og status, ikke en
-      tom streng kalleren må gjette om. }
+    { An error from the API is to become an EAiError with a type and a
+      status, not an empty string the caller has to guess about. }
     F.Enqueue('{"type":"error","error":{"type":"rate_limit_error",' +
       '"message":"Number of requests has exceeded your rate limit"}}', 429);
     Err := '';
@@ -3496,16 +3535,17 @@ begin
       on Ex: EAiError do
       begin
         Err := Ex.Message;
-        AssertEqual(Ex.Status, 429, 'statusen er med');
-        { Kind er typen slik API-et skriver den, uten pynt: kallende kode
-          skal kunne sammenligne på den for å avgjøre om den skal prøve
-          igjen. }
-        AssertEqual(Ex.Kind, 'rate_limit_error', 'og Anthropics feiltype');
+        AssertEqual(Ex.Status, 429, 'the status is there');
+        { Kind is the type the way the API writes it, unadorned: calling
+          code is to be able to compare against it to decide whether to
+          try again. }
+        AssertEqual(Ex.Kind, 'rate_limit_error', 'and Anthropic''s error type');
       end;
     end;
-    AssertTrue(Pos('rate limit', Err) > 0, 'meldingen er API-ets egen');
+    AssertTrue(Pos('rate limit', Err) > 0, 'the message is the API''s own');
 
-    { Et svar som ikke er JSON skal si det, ikke krasje et sted lenger inne. }
+    { A reply that is not JSON is to say so, not crash somewhere further
+      in. }
     F.Enqueue('<html>503 fra en proxy</html>', 503);
     Err := '';
     try
@@ -3513,7 +3553,7 @@ begin
     except
       on Ex: EAiError do Err := Ex.Message;
     end;
-    AssertTrue(Pos('503', Err) > 0, 'en HTML-feilside gir en lesbar feil');
+    AssertTrue(Pos('503', Err) > 0, 'an HTML error page gives a readable error');
   finally
     K.Free;
   end;
@@ -3527,7 +3567,7 @@ var
   Sse: string;
 begin
   K := NewClient(F);
-  AiBiter := TStringList.Create;
+  AiChunks := TStringList.Create;
   try
     Sse :=
       'event: message_start'#10 +
@@ -3535,32 +3575,32 @@ begin
       #10 +
       ': en holdepuls'#10 +
       'data: {"type":"content_block_delta","index":0,' +
-      '"delta":{"type":"text_delta","text":"Hei"}}'#10 +
+      '"delta":{"type":"text_delta","text":"Hi"}}'#10 +
       'data: {"type":"content_block_delta","index":0,' +
-      '"delta":{"type":"text_delta","text":" der"}}'#10 +
+      '"delta":{"type":"text_delta","text":" there"}}'#10 +
       'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},' +
       '"usage":{"output_tokens":9}}'#10 +
       'data: [DONE]'#10;
     F.EnqueueStream(Sse);
 
-    R := K.Stream('si hei', @AiSamle);
-    AssertEqual(AiBiter.Count, 2, 'to tekstbiter gjennom callbacken');
-    AssertEqual(AiBiter[0], 'Hei', 'første bit');
-    AssertEqual(AiBiter[1], ' der', 'andre bit');
-    AssertEqual(R.Text, 'Hei der', 'og hele teksten er samlet i svaret');
-    AssertEqual(R.StopReason, 'end_turn', 'stop_reason fra message_delta');
-    AssertEqual(R.Usage.InputTokens, 5, 'input-tokens fra message_start');
-    AssertEqual(R.Usage.OutputTokens, 9, 'output-tokens fra message_delta');
+    R := K.Stream('say hi', @AiCollect);
+    AssertEqual(AiChunks.Count, 2, 'two text chunks through the callback');
+    AssertEqual(AiChunks[0], 'Hi', 'the first chunk');
+    AssertEqual(AiChunks[1], ' there', 'the second chunk');
+    AssertEqual(R.Text, 'Hi there', 'and the whole text is collected in the reply');
+    AssertEqual(R.StopReason, 'end_turn', 'stop_reason from message_delta');
+    AssertEqual(R.Usage.InputTokens, 5, 'input tokens from message_start');
+    AssertEqual(R.Usage.OutputTokens, 9, 'output tokens from message_delta');
     AssertTrue(Pos('"stream":true', F.Sent[0]) > 0,
-      'requesten ba om strømming');
+      'the request asked for streaming');
 
-    { Callbacken skal kunne si stopp. }
-    AiBiter.Clear;
+    { The callback has to be able to say stop. }
+    AiChunks.Clear;
     F.EnqueueStream(Sse);
-    R := K.Stream('si hei', @AiStopp);
-    AssertEqual(AiBiter.Count, 1, 'callbacken stoppet etter første bit');
+    R := K.Stream('say hi', @AiStop);
+    AssertEqual(AiChunks.Count, 1, 'the callback stopped after the first chunk');
   finally
-    AiBiter.Free;
+    AiChunks.Free;
     K.Free;
   end;
 end;
@@ -3576,77 +3616,79 @@ begin
   try
     AiVerktoeyKall := 0;
     AiLastArg := '';
-    K.AddTool('vaer', 'Slår opp været på et sted',
-      '{"type":"object","properties":{"sted":{"type":"string"}},' +
-      '"required":["sted"]}', @VaerVerktoey);
-    AssertEqual(K.ToolCount, 1, 'verktøyet er registrert');
+    K.AddTool('weather', 'Looks up the weather in a place',
+      '{"type":"object","properties":{"place":{"type":"string"}},' +
+      '"required":["place"]}', @VaerVerktoey);
+    AssertEqual(K.ToolCount, 1, 'the tool is registered');
 
-    { Første svar ber om verktøyet, andre svarer ferdig. }
+    { The first reply asks for the tool, the second answers for good. }
     F.Enqueue('{"content":[{"type":"text","text":"Jeg sjekker."},' +
-      '{"type":"tool_use","id":"tu_1","name":"vaer",' +
-      '"input":{"sted":"Oslo"}}],"stop_reason":"tool_use"}');
-    F.Enqueue(AiReply('Det regner i Oslo.'));
+      '{"type":"tool_use","id":"tu_1","name":"weather",' +
+      '"input":{"place":"Oslo"}}],"stop_reason":"tool_use"}');
+    F.Enqueue(AiReply('It is raining in Oslo.'));
 
-    R := K.RunTools('hvordan er været i Oslo');
-    AssertEqual(AiVerktoeyKall, 1, 'verktøyet ble kalt én gang');
-    { Argumentene kommer som JSON-tekst — bare verktøyet vet hvilke felter
-      det har, så rammeverket gir dem videre som de er. }
-    AssertTrue(Pos('"sted":"Oslo"', AiLastArg) > 0,
-      'og fikk argumentene fra modellen');
-    AssertTrue(Pos('Det regner', R.Text) > 0, 'og løkka kom til et svar');
+    R := K.RunTools('what is the weather in Oslo');
+    AssertEqual(AiVerktoeyKall, 1, 'the tool was called once');
+    { The arguments come as JSON text — only the tool knows which fields
+      it has, so the framework passes them on as they are. }
+    AssertTrue(Pos('"place":"Oslo"', AiLastArg) > 0,
+      'and got the arguments from the model');
+    AssertTrue(Pos('It is raining', R.Text) > 0, 'and the loop reached an answer');
 
-    { Verktøyet skal stå i requesten med skjemaet sitt. }
+    { The tool is to be in the request with its schema. }
     Sendt := F.Sent[0];
-    AssertTrue(Pos('"name":"vaer"', Sendt) > 0, 'verktøyet er med');
+    AssertTrue(Pos('"name":"weather"', Sendt) > 0, 'the tool is there');
     AssertTrue(Pos('"input_schema":{"type":"object"', Sendt) > 0,
-      'og skjemaet sendes som det er');
+      'and the schema is sent as it is');
 
-    { Andre runde må ha resultatet med, som en tool_result-blokk i en
-      user-melding. Det er den vanligste feilen når man bygger løkka selv. }
+    { The second round has to carry the result, as a tool_result block in
+      a user message. That is the most common mistake when you build the
+      loop yourself. }
     Sendt := F.Sent[1];
     AssertTrue(Pos('"type":"tool_result"', Sendt) > 0,
-      'resultatet sendes som tool_result');
+      'the result is sent as tool_result');
     AssertTrue(Pos('"tool_use_id":"tu_1"', Sendt) > 0,
-      'og peker tilbake med id');
-    AssertTrue(Pos('temp_c', Sendt) > 0, 'med det verktøyet returnerte');
+      'and points back with an id');
+    AssertTrue(Pos('temp_c', Sendt) > 0, 'with what the tool returned');
 
-    { Et verktøy som kaster skal ikke ta ned løkka — modellen får feilen. }
+    { A tool that raises must not take down the loop — the model gets the
+      error. }
     K.ClearTools;
-    K.AddTool('sprekk', 'Feiler alltid', '{"type":"object"}',
-      @SprekkVerktoey);
+    K.AddTool('boom', 'Always fails', '{"type":"object"}',
+      @BoomTool);
     F.Enqueue('{"content":[{"type":"tool_use","id":"tu_2",' +
-      '"name":"sprekk","input":{}}],"stop_reason":"tool_use"}');
-    F.Enqueue(AiReply('Jeg fikk en feil.'));
-    R := K.RunTools('prøv');
-    AssertTrue(Pos('Jeg fikk en feil', R.Text) > 0,
-      'et verktøy som kaster stopper ikke løkka');
+      '"name":"boom","input":{}}],"stop_reason":"tool_use"}');
+    F.Enqueue(AiReply('I got an error.'));
+    R := K.RunTools('try');
+    AssertTrue(Pos('I got an error', R.Text) > 0,
+      'a tool that raises does not stop the loop');
     AssertTrue(Pos('"is_error":true', F.Sent[3]) > 0,
-      'og feilen merkes som feil');
+      'and the error is marked as an error');
 
-    { Et verktøy modellen finner på skal heller ikke velte noe. }
+    { A tool the model invents must not knock anything over either. }
     F.Enqueue('{"content":[{"type":"tool_use","id":"tu_3",' +
       '"name":"finnes-ikke","input":{}}],"stop_reason":"tool_use"}');
     F.Enqueue(AiReply('Beklager.'));
-    R := K.RunTools('prøv');
+    R := K.RunTools('try');
     AssertTrue(Pos('no such tool', F.Sent[5]) > 0,
-      'et ukjent verktøy blir en beskjed til modellen');
+      'an unknown tool becomes a message to the model');
 
-    { Løkka har et tak. }
+    { The loop has a cap. }
     K.MaxTurns := 2;
     K.ClearTools;
-    K.AddTool('vaer', 'x', '{"type":"object"}', @VaerVerktoey);
-    F.Enqueue('{"content":[{"type":"tool_use","id":"a","name":"vaer",' +
+    K.AddTool('weather', 'x', '{"type":"object"}', @VaerVerktoey);
+    F.Enqueue('{"content":[{"type":"tool_use","id":"a","name":"weather",' +
       '"input":{}}],"stop_reason":"tool_use"}');
-    F.Enqueue('{"content":[{"type":"tool_use","id":"b","name":"vaer",' +
+    F.Enqueue('{"content":[{"type":"tool_use","id":"b","name":"weather",' +
       '"input":{}}],"stop_reason":"tool_use"}');
     Err := '';
     try
-      K.RunTools('gå i ring');
+      K.RunTools('go in circles');
     except
       on E: EAiError do Err := E.Message;
     end;
     AssertTrue(Pos('did not finish within 2 turns', Err) > 0,
-      'en løkke som ikke tar slutt stoppes');
+      'a loop that never ends is stopped');
   finally
     K.Free;
   end;
@@ -3661,28 +3703,28 @@ begin
   K := NewClient(F);
   try
     F.Enqueue('{"content":[{"type":"tool_use","id":"t","name":"respond",' +
-      '"input":{"navn":"Ada","alder":36,"aktiv":true}}],' +
+      '"input":{"name":"Ada","age":36,"active":true}}],' +
       '"stop_reason":"tool_use"}');
-    Reply := K.Structured('hvem er hun',
-      '{"type":"object","properties":{"navn":{"type":"string"},' +
-      '"alder":{"type":"integer"}},"required":["navn"]}');
+    Reply := K.Structured('who is she',
+      '{"type":"object","properties":{"name":{"type":"string"},' +
+      '"age":{"type":"integer"}},"required":["name"]}');
 
-    { Resultatet er JSON, ikke prosa. }
-    AssertTrue(Pos('"navn":"Ada"', Reply) > 0, 'feltene kom tilbake');
-    AssertTrue(Pos('"alder":36', Reply) > 0, 'også tallene');
-    AssertTrue(Pos('"aktiv":true', Reply) > 0, 'og boolske');
+    { The result is JSON, not prose. }
+    AssertTrue(Pos('"name":"Ada"', Reply) > 0, 'the fields came back');
+    AssertTrue(Pos('"age":36', Reply) > 0, 'the numbers too');
+    AssertTrue(Pos('"active":true', Reply) > 0, 'and booleans');
 
     Sendt := F.Sent[0];
-    { Det er tool_choice som gjør at svaret blir strukturert og ikke prosa
-      ved siden av. }
+    { It is tool_choice that makes the answer structured and not prose
+      alongside it. }
     AssertTrue(Pos('"tool_choice":{"type":"tool","name":"respond"}', Sendt) > 0,
-      'modellen tvinges til verktøyet');
+      'the model is forced to the tool');
 
-    { Structured skal ikke endre klienten den ble kalt på. }
-    AssertEqual(K.ToolCount, 0, 'verktøyene er som før etterpå');
+    { Structured must not change the client it was called on. }
+    AssertEqual(K.ToolCount, 0, 'the tools are as before afterwards');
 
-    { Svarer modellen med tekst likevel, skal det være en feil og ikke en
-      tom streng kalleren må gjette om. }
+    { If the model answers with text anyway, that is to be an error and not
+      an empty string the caller has to guess about. }
     F.Enqueue(AiReply('Hun heter Ada.'));
     Err := '';
     try
@@ -3691,7 +3733,7 @@ begin
       on E: EAiError do Err := E.Message;
     end;
     AssertTrue(Pos('instead of the requested structure', Err) > 0,
-      'prosa i stedet for struktur er en feil');
+      'prose instead of structure is an error');
   finally
     K.Free;
   end;
@@ -3751,7 +3793,7 @@ begin
   try
     if not FileExists('tests/vectors/images/expected.txt') then
     begin
-      AssertTrue(False, 'bildefixturene finnes (kjør fra repo-rota)');
+      AssertTrue(False, 'the image fixtures exist (run from the repository root)');
       Exit;
     end;
     L.LoadFromFile('tests/vectors/images/expected.txt');
@@ -3777,25 +3819,25 @@ begin
   finally
     L.Free;
   end;
-  AssertEqual(Gale, 0, 'format og dimensjoner leses uten å dekode');
+  AssertEqual(Gale, 0, 'format and dimensions are read without decoding');
 end;
 
 procedure TestBildeSikkerhet;
 var
   D: TBytes;
 begin
-  { Den viktigste enkeltsjekken i uniten: en fil som heter .jpg og er
-    HTML er en lagret XSS-vektor hvis den serveres tilbake. }
+  { The single most important check in the unit: a file called .jpg that
+    is HTML is a stored XSS vector if it is served back. }
   D := ImageFile('nope.jpg');
-  AssertTrue(SniffFormat(D) = ifUnknown, 'HTML forkledd som .jpg er ikke et bilde');
-  AssertTrue(not ExtensionMatches('nope.jpg', D), 'og endelsen avsløres');
+  AssertTrue(SniffFormat(D) = ifUnknown, 'HTML disguised as .jpg is not an image');
+  AssertTrue(not ExtensionMatches('nope.jpg', D), 'and the extension is exposed');
 
   D := ImageFile('jpeg_320x240.jpg');
-  AssertTrue(ExtensionMatches('a.jpg', D), 'ekte jpeg matcher .jpg');
-  AssertTrue(ExtensionMatches('a.jpeg', D), '.jpeg regnes som det samme');
-  AssertTrue(not ExtensionMatches('a.png', D), 'men ikke .png');
+  AssertTrue(ExtensionMatches('a.jpg', D), 'a real jpeg matches .jpg');
+  AssertTrue(ExtensionMatches('a.jpeg', D), '.jpeg counts as the same');
+  AssertTrue(not ExtensionMatches('a.png', D), 'but not .png');
   AssertTrue(not ExtensionMatches('a.jpg', ImageFile('tom.png')),
-    'en tom fil er ingenting');
+    'an empty file is nothing');
 end;
 
 procedure TestExifStripping;
@@ -3804,24 +3846,24 @@ var
   Inf: TImageInfo;
 begin
   D := ImageFile('jpeg_exif_gps.jpg');
-  AssertEqual(JpegOrientation(D), 6, 'orienteringen leses fra EXIF');
+  AssertEqual(JpegOrientation(D), 6, 'the orientation is read from EXIF');
   AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(D)) > 0,
-    'EXIF står i fila før stripping');
+    'EXIF is in the file before stripping');
 
-  AssertTrue(StripJpegMetadata(D, Ut), 'strippingen lykkes');
+  AssertTrue(StripJpegMetadata(D, Ut), 'the stripping succeeds');
   AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(Ut)) = 0,
-    'EXIF er borte etterpå');
-  AssertTrue(Length(Ut) < Length(D), 'og fila er mindre');
-  AssertTrue(SniffFormat(Ut) = ifJpeg, 'men fortsatt en jpeg');
+    'EXIF is gone afterwards');
+  AssertTrue(Length(Ut) < Length(D), 'and the file is smaller');
+  AssertTrue(SniffFormat(Ut) = ifJpeg, 'but still a jpeg');
   Inf := ReadImageInfo(Ut);
-  AssertTrue((Inf.Width = 800) and (Inf.Height = 600), 'med dimensjonene i behold');
+  AssertTrue((Inf.Width = 800) and (Inf.Height = 600), 'with the dimensions intact');
 
   AssertEqual(JpegOrientation(ImageFile('jpeg_orient3.jpg')), 3,
-    'orientering 3 leses også');
+    'orientation 3 is read too');
   AssertEqual(JpegOrientation(ImageFile('jpeg_320x240.jpg')), 0,
-    'uten EXIF er orienteringen 0');
+    'without EXIF the orientation is 0');
   AssertTrue(not StripJpegMetadata(ImageFile('png_320x240.png'), Ut),
-    'en png kan ikke strippes som jpeg');
+    'a png cannot be stripped as a jpeg');
 end;
 
 procedure TestVips;
@@ -3831,173 +3873,173 @@ var
 begin
   if not VipsAvailable then
   begin
-    { Ikke en feil. libvips er en valgfri avhengighet, og suiten sier
-      hvorfor den hopper i stedet for å tie. }
+    { Not a failure. libvips is an optional dependency, and the suite says
+      why it skips rather than staying quiet. }
     WriteLn('    (hoppet over: ', Copy(VipsError, 1, 48), '…)');
-    AssertTrue(VipsError <> '', 'og feilen sier hva som mangler');
+    AssertTrue(VipsError <> '', 'and the error says what is missing');
     Exit;
   end;
 
   Inn := ImageFile('jpeg_1920x1080.jpg');
   Ut := ResizeImage(Inn, 320, 0, ifJpeg, 80);
   Inf := ReadImageInfo(Ut);
-  AssertEqual(Inf.Width, 320, 'skalert til oppgitt bredde');
-  AssertEqual(Inf.Height, 180, 'høyden følger forholdet');
-  AssertTrue(Length(Ut) < Length(Inn), 'og fila er mindre');
+  AssertEqual(Inf.Width, 320, 'resized to the given width');
+  AssertEqual(Inf.Height, 180, 'the height follows the ratio');
+  AssertTrue(Length(Ut) < Length(Inn), 'and the file is smaller');
 
   Ut := ResizeImage(Inn, 200, 200, ifJpeg, 80, fmCover);
   Inf := ReadImageInfo(Ut);
   AssertTrue((Inf.Width = 200) and (Inf.Height = 200),
-    'cover fyller boksen nøyaktig');
+    'cover fills the box exactly');
 
   Ut := ResizeImage(Inn, 200, 200, ifJpeg, 80, fmInside);
   Inf := ReadImageInfo(Ut);
   AssertTrue((Inf.Width = 200) and (Inf.Height < 200),
-    'inside fyller den ikke');
+    'inside does not fill it');
 
   AssertTrue(SniffFormat(ResizeImage(Inn, 100, 0, ifPng)) = ifPng,
-    'jpeg blir png');
+    'jpeg becomes png');
   AssertTrue(SniffFormat(ResizeImage(Inn, 100, 0, ifWebp, 75)) = ifWebp,
-    'jpeg blir webp');
+    'jpeg becomes webp');
   AssertTrue(Length(ResizeImage(Inn, 600, 0, ifJpeg, 30)) <
              Length(ResizeImage(Inn, 600, 0, ifJpeg, 95)),
-    'lavere kvalitet gir mindre fil');
+    'lower quality gives a smaller file');
 
-  { Oppskalering er aldri det noen ba om. }
+  { Upscaling is never what anybody asked for. }
   AssertEqual(ReadImageInfo(ResizeImage(ImageFile('jpeg_320x240.jpg'),
-    2000, 0, ifJpeg, 80)).Width, 320, 'skalerer aldri opp');
+    2000, 0, ifJpeg, 80)).Width, 320, 'never upscales');
 
-  { libvips strippes også, gjennom strip=true i formatstrengen. }
+  { libvips strips too, through strip=true in the format string. }
   Ut := ResizeImage(ImageFile('jpeg_exif_gps.jpg'), 200, 0, ifJpeg, 80);
   AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(Ut)) = 0,
-    'EXIF overlever ikke en skalering');
+    'EXIF does not survive a resize');
 
   Inf := ReadImageInfo(ConvertImage(ImageFile('png_320x240.png'), ifWebp, 80));
   AssertTrue((Inf.Width = 320) and (Inf.Height = 240) and (Inf.Format = ifWebp),
-    'konvertering beholder størrelsen');
+    'conversion keeps the size');
 end;
 begin
   Group('Scheduler');
   Group('Bilder');
-  Test('format og dimensjoner uten å dekode', @TestBildeHoder);
-  Test('en fil som lyver om hva den er, avsløres', @TestBildeSikkerhet);
-  Test('EXIF og GPS fjernes uten å røre pikslene', @TestExifStripping);
-  Test('skalering og konvertering (libvips)', @TestVips);
+  Test('format and dimensions without decoding', @TestBildeHoder);
+  Test('a file that lies about what it is, is caught', @TestBildeSikkerhet);
+  Test('EXIF and GPS are removed without touching the pixels', @TestExifStripping);
+  Test('resizing and conversion (libvips)', @TestVips);
 
-  Test('lauf har samme versjon som rammeverket', @TestLaufFoelgerRammeverket);
-  Test('semver sammenlignes som tall, ikke som tekst', @TestSemVerSammenligning);
-  Test('intervall kjører når det forfaller', @TestIntervall);
-  Test('daglig kjører én gang per døgn', @TestDaglig);
-  Test('ukentlig kjører én gang per uke', @TestUkentlig);
-  Test('hopper over når køen venter', @TestHoppOverNaarKoenVenter);
-  Test('planen kan leses', @TestBeskrivelse);
+  Test('lauf has the same version as the framework', @TestLaufFoelgerRammeverket);
+  Test('semver is compared as numbers, not as text', @TestSemVerSammenligning);
+  Test('an interval runs when it falls due', @TestIntervall);
+  Test('daily runs once a day', @TestDaglig);
+  Test('weekly runs once a week', @TestUkentlig);
+  Test('skips when the queue is still waiting', @TestHoppOverNaarKoenVenter);
+  Test('the schedule can be read', @TestBeskrivelse);
 
-  Group('Varig kø');
-  Test('jobbene overlever en omstart', @TestVarigOverleverOmstart);
-  Test('feilet jobb havner i feiltabellen og kan legges tilbake',
-    @TestVarigFeilerOgGirOpp);
-  Test('jobb uten handler forsvinner ikke', @TestVarigUkjentJobb);
-  Test('forsinkelse, og binært avvises', @TestVarigForsinkelseOgBinaert);
-  Test('forlatt reservasjon slippes', @TestVarigForlattReservasjon);
+  Group('The durable queue');
+  Test('the jobs survive a restart', @TestDurableSurvivesRestart);
+  Test('a failed job lands in the failed table and can be put back',
+    @TestDurableFailsAndGivesUp);
+  Test('a job with no handler does not disappear', @TestDurableUnknownJob);
+  Test('a delay, and binary is rejected', @TestDurableDelayAndBinary);
+  Test('an abandoned reservation is released', @TestDurableAbandonedReservation);
 
   Group('Sesjoner');
-  Test('rundtur med kake', @TestSesjonRundtur);
-  Test('flash lever nøyaktig én request', @TestFlashLeverEnRequest);
-  Test('valideringsfeil overlever omdirigering',
+  Test('a round trip with a cookie', @TestSessionRoundTrip);
+  Test('flash lives exactly one request', @TestFlashLeverEnRequest);
+  Test('validation errors survive a redirect',
     @TestValideringsfeilOverlevererOmdirigering);
-  Test('Inertia tar med flash uansett nøkkel', @TestInertiaFlashUansettNokkel);
-  Test('sesjonen lekker ikke ut av requesten',
+  Test('Inertia carries flash whatever the key', @TestInertiaFlashUansettNokkel);
+  Test('the session does not leak out of the request',
     @TestSesjonenLekkerIkkeUtAvRequesten);
 
   Group('CSRF');
-  Test('avviser uten token', @TestCsrfAvviserUtenToken);
-  Test('godtar felt, X-CSRF-Token og X-XSRF-Token',
+  Test('rejects without a token', @TestCsrfAvviserUtenToken);
+  Test('accepts a field, X-CSRF-Token and X-XSRF-Token',
     @TestCsrfGodtarAlleTreKilder);
-  Test('tokenet er stabilt og bundet til sesjonen',
-    @TestCsrfTokenetErStabiltOgPerSesjon);
-  Test('unntak for webhooks', @TestCsrfUnntakForWebhooks);
-  Test('sesjonskaka og XSRF-kaka lever side om side',
-    @TestCsrfKakeneLeverSideOmSide);
+  Test('the token is stable and bound to the session',
+    @TestCsrfTokenStablePerSession);
+  Test('an exception for webhooks', @TestCsrfUnntakForWebhooks);
+  Test('the session cookie and the XSRF cookie live side by side',
+    @TestCsrfCookiesSideBySide);
 
   Group('Auth');
-  Test('innlogging bytter sesjons-id, utlogging tømmer', @TestAuthInnOgUt);
-  Test('husk meg er signert, utløper og kan slettes', @TestAuthHuskMeg);
-  Test('gates svarer nei som standard', @TestAuthGates);
-  Test('RequireAuth omdirigerer, men gir 401 til JSON', @TestAuthRequire);
-  Test('brukeren slås opp én gang per request',
+  Test('signing in changes the session id, signing out clears it', @TestAuthInnOgUt);
+  Test('remember me is signed, expires and can be cleared', @TestAuthHuskMeg);
+  Test('gates answer no by default', @TestAuthGates);
+  Test('RequireAuth redirects, but gives 401 to JSON', @TestAuthRequire);
+  Test('the user is looked up once per request',
     @TestAuthBrukeroppslagCaches);
 
   Group('Logg');
-  Test('nivåer filtrerer', @TestLoggNivaa);
-  Test('tekstformat siterer når det trengs', @TestLoggTekstformat);
-  Test('json er gyldig, med tall som tall', @TestLoggJson);
-  Test('exception blir egne felter', @TestLoggException);
-  Test('fil åpnes for tillegg', @TestLoggTilFil);
+  Test('levels filter', @TestLoggNivaa);
+  Test('the text format quotes when it has to', @TestLoggTekstformat);
+  Test('the json is valid, with numbers as numbers', @TestLoggJson);
+  Test('an exception becomes its own fields', @TestLoggException);
+  Test('a file is opened for appending', @TestLogToFile);
 
   Group('Konfigurasjon');
-  Test('miljø vinner over .env vinner over askr.toml', @TestConfigLag);
-  Test('rapporten viser ikke hemmeligheter', @TestConfigRapport);
-  Test('APP_ENV og RequireEnv', @TestMiljoe);
+  Test('the environment beats .env beats askr.toml', @TestConfigLayers);
+  Test('the report does not show secrets', @TestConfigReport);
+  Test('APP_ENV and RequireEnv', @TestMiljoe);
 
   Group('HTTP-klient');
-  Test('URL-er deles riktig', @TestKlientUrl);
-  Test('mot Askrs egen server', @TestKlientMotEgenServer);
-  Test('omdirigering følges, og stoppes', @TestKlientOmdirigering);
-  Test('strømming, og callbacken kan si stopp', @TestKlientStroemming);
-  Test('chunked settes sammen igjen', @TestKlientChunked);
-  Test('localhost slås opp i /etc/hosts', @TestKlientLocalhost);
-  Test('feilene sier hva som var galt', @TestKlientFeil);
+  Test('URLs are split correctly', @TestClientUrl);
+  Test('against Askr''s own server', @TestClientAgainstOwnServer);
+  Test('a redirect is followed, and stopped', @TestClientRedirect);
+  Test('streaming, and the callback can say stop', @TestClientStreaming);
+  Test('chunked is put back together', @TestClientChunked);
+  Test('localhost resolves through /etc/hosts', @TestClientLocalhost);
+  Test('the errors say what was wrong', @TestClientErrors);
 
   Group('AI');
-  Test('requesten har riktig form', @TestAiRequestform);
-  Test('svar plukkes fra hverandre, feil blir feil', @TestAiSvarOgFeil);
-  Test('SSE settes sammen, callbacken kan stoppe', @TestAiStroemming);
-  Test('verktøyløkka kjører, feiler pent og har tak', @TestAiVerktoey);
-  Test('strukturert utdata tvinges gjennom et verktøy',
+  Test('the request has the right shape', @TestAiRequestform);
+  Test('replies are taken apart, errors become errors', @TestAiReplyAndError);
+  Test('SSE is reassembled, the callback can stop it', @TestAiStroemming);
+  Test('the tool loop runs, fails gracefully and has a cap', @TestAiVerktoey);
+  Test('structured output is forced through a tool',
     @TestAiStrukturert);
 
   Group('Mail');
-  Test('melding rendres som RFC 5322', @TestMeldingRendres);
-  Test('tekst og html blir multipart', @TestMultipart);
-  Test('bcc er mottaker, men ikke i hodet', @TestBccSkjulesIHodet);
-  Test('melding uten avsender avvises', @TestManglerAvsender);
-  Test('transporten velges av mail.transport', @TestMailFraConfig);
-  Test('SMTP AUTH PLAIN kodes som SASL sier', @TestSmtpAuthPlain);
-  Test('SMTP faller til AUTH LOGIN når PLAIN ikke tilbys',
+  Test('a message renders as RFC 5322', @TestMessageRenders);
+  Test('text and html become multipart', @TestMultipart);
+  Test('bcc is a recipient, but not in the head', @TestBccSkjulesIHodet);
+  Test('a message with no sender is rejected', @TestManglerAvsender);
+  Test('the transport is chosen by mail.transport', @TestMailFraConfig);
+  Test('SMTP AUTH PLAIN is encoded the way SASL says', @TestSmtpAuthPlain);
+  Test('SMTP falls back to AUTH LOGIN when PLAIN is not offered',
     @TestSmtpAuthLogin);
-  Test('passordet går aldri i klartekst uten at noen har sagt det',
+  Test('the password never goes in the clear unless somebody said so',
     @TestSmtpAuthKreverKryptering);
-  Test('en mekanisme vi ikke kan, er en feil', @TestSmtpAuthUkjentMekanisme);
-  Test('uten brukernavn sendes ingen AUTH', @TestSmtpUtenBruker);
+  Test('a mechanism we cannot do is an error', @TestSmtpAuthUkjentMekanisme);
+  Test('with no username no AUTH is sent', @TestSmtpWithoutUser);
 
   Group('Resend');
-  Test('forespørselen har riktig form', @TestResendForm);
-  Test('reply-to blir et eget felt, andre hoder blir headers',
+  Test('the request has the right shape', @TestResendForm);
+  Test('reply-to becomes its own field, other heads become headers',
     @TestResendReplyTo);
-  Test('felter uten innhold skrives ikke ut', @TestResendIngenHoder);
-  Test('idempotensnøkkelen sendes med', @TestResendIdempotens);
-  Test('samme melding gir samme nøkkel over et gjenforsøk',
-    @TestResendSammeMeldingSammeNoekkel);
-  Test('en feil blir EResendError med status og type', @TestResendFeil);
-  Test('rate limit kan prøves om igjen, kvote kan ikke',
+  Test('fields with no content are not written out', @TestResendIngenHoder);
+  Test('the idempotency key is sent along', @TestResendIdempotens);
+  Test('the same message gives the same key across a retry',
+    @TestResendSameMessageSameKey);
+  Test('an error becomes EResendError with a status and a type', @TestResendErrors);
+  Test('a rate limit can be retried, a quota cannot',
     @TestResendRateLimit);
-  Test('ukjent feilform gir fortsatt en brukbar melding',
+  Test('an unknown error shape still gives a usable message',
     @TestResendUkjentFeilform);
-  Test('melding uten kropp avvises før nettverket', @TestResendTomKropp);
-  Test('nøkkelen står ikke i Describe', @TestResendLekkerIkkeNoekkel);
-  Test('headerne ligger i byte-ene på lufta', @TestResendPaaLufta);
+  Test('a message with no body is rejected before the network', @TestResendEmptyBody);
+  Test('the key is not in Describe', @TestResendLekkerIkkeNoekkel);
+  Test('the headers are in the bytes on the wire', @TestResendPaaLufta);
 
-  Group('Testklienten');
-  Test('ruter, parametre og kropp uten socket', @TestKlientMotRuter);
-  Test('arenaen flater ut', @TestArenaFlaterUt);
-  Test('velkomstsiden svarer uten byggesteg', @TestVelkomstside);
-  Test('.env leses, og miljøet vinner over den', @TestEnv);
+  Group('The test client');
+  Test('routes, parameters and a body without a socket', @TestClientAgainstRouter);
+  Test('the arena levels off', @TestArenaFlaterUt);
+  Test('the welcome page answers with no build step', @TestVelkomstside);
+  Test('.env is read, and the environment wins over it', @TestEnv);
 
   InitCriticalSection(DurableLock);
 
-  { Serveren klienttestene ringer. Port 0 lar kjernen velge, slik at
-    suitene kan kjøre parallelt uten å krangle om porter — samme grep som
-    ende-til-ende-delen i askr_tests. }
+  { The server the client tests call. Port 0 lets the kernel choose, so
+    that the suites can run in parallel without fighting over ports — the
+    same move as the end-to-end part of askr_tests. }
   EkkoH := TEkkoServer.Create;
   EkkoOpts := DefaultServerOptions;
   EkkoOpts.Port := 0;
@@ -4005,7 +4047,7 @@ begin
   EkkoSrv := TAskrServer.Create(EkkoOpts);
   EkkoSrv.SetHandler(EkkoH.Handle);
   EkkoSrv.Start;
-  KlientPort := EkkoSrv.BoundPort;
+  ClientPort := EkkoSrv.BoundPort;
 
   Brukere[0] := TUser.Create;
   Brukere[0].Name_ := 'Ada';
@@ -4014,8 +4056,9 @@ begin
   Brukere[1].Name_ := 'Grace';
   Brukere[1].ErAdmin := False;
 
-  WriteLn('Askr — kjøretidstester (skrevet med Askr.Testing)');
-  { Serveren stoppes ikke her: RunTestsAndHalt kaller Halt, og prosessen
-    tar den med seg. Å rydde etter Halt er ikke mulig uansett. }
+  WriteLn('Askr — runtime tests (written with Askr.Testing)');
+  { The server is not stopped here: RunTestsAndHalt calls Halt, and the
+    process takes it with it. Cleaning up after Halt is not possible
+    anyway. }
   RunTestsAndHalt;
 end.

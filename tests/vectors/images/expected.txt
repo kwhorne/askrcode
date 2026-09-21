@@ -1,5 +1,5 @@
-# Testbilder for Askr.Image. Format: NAVN FORMAT BREDDE HOYDE ANIMERT
-# BREDDE 0 betyr at dimensjonene ikke skal kunne leses.
+# Test images for Askr.Image. Format: NAME FORMAT WIDTH HEIGHT ANIMATED
+# WIDTH 0 means the dimensions are not meant to be readable.
 png_1x1.png png 1 1 0
 png_320x240.png png 320 240 0
 png_4000x3000.png png 4000 3000 0

@@ -12,6 +12,27 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Changed
+
+- **`tests/` is English.** Comments, test names, fixture data and
+  identifiers across all eight suites — around 1,240 comment lines and
+  some 900 assertion names. The example domain went with it: the AI tool
+  fixture is a `weather` tool taking a `place`, not `vaer` taking `sted`.
+
+  Non-ASCII test data stays: `Blåbærsyltetøy 🫐` is there because it tests
+  utf8mb4 and four-byte characters, `/a/b/æ` because it tests percent
+  decoding, and `æøå — 日本` because it tests UTF-8 through JSON.
+
+  The suites caught the translation repeatedly — a renamed input with an
+  unchanged expectation fails loudly, which is what they are for. One
+  genuine find: the desktop suite asserted that the no-display error
+  mentions `webtjeneste`, and `Askr.Desktop` has said `serving over HTTP`
+  since `src/` was translated. It would have failed the moment anybody ran
+  the suite without a display, and nobody had, because it skips on macOS
+  and wherever GTK is missing.
+
 ## 0.9.2 — 2026-09-21
 
 An architecture in the gate, and the money rule corrected — 0.9.1 fixed
