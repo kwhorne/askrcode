@@ -654,10 +654,20 @@ blir stående; alt nytt skrives på engelsk. Det samme gjelder alle
 `.md`-filer i repoet utenom de tre arbeidsnotatene: CHANGELOG.md,
 UPGRADE.md, README.md og docs/.
 
-**Kommentarer og arbeidsnotatene er norske** — CLAUDE.md, LAUF.md og
-LARAVEL.md. De er ikke produkt. Skriver du en ny melding som kan nå en
-bruker, skriv den på engelsk — skriver du en kommentar om hvorfor koden er
-som den er, skriv den på norsk.
+**Kode er engelsk. Alt i kode.** Identifikatorer, kommentarer, testnavn,
+doc-kommentarer på props. Det gjelder `.pas`, `.svelte`, `.js`, `.mjs` og
+alt annet som kompileres eller kjøres. Grunnen er den samme som for
+produktet: Askr er internasjonalt, og en kommentar ingen kan lese er
+ingen kommentar.
+
+Dette snudde 2026-09-21. **Koden som fantes før den datoen er fortsatt
+norsk**, og er ikke skrevet om — det er tusenvis av linjer på tvers av
+Pascal og JavaScript, og en masseomdøping er sin egen jobb med sin egen
+risiko. Skriver du ny kode, eller skriver du om en fil helt, skal den ut
+engelsk. Ikke bland i samme funksjon.
+
+**Arbeidsnotatene er fortsatt norske** — CLAUDE.md, LAUF.md og LARAVEL.md.
+De er ikke kode og ikke produkt; de er notater til oss.
 
 **README.md er unntaket som flyttet.** Den var et arbeidsnotat på norsk til
 repoet ble offentlig. Nå er den det første noen ser på GitHub, altså
@@ -1387,6 +1397,61 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
   Pascal gir `YYYY-MM-DD`, og det er formen som skal gå rett inn og rett ut.
 * Bits' `Command` filtrerer på `value` og `keywords`, ikke på teksten i
   elementet. `CommandItem` legger derfor `label` i `keywords` selv.
+
+## Editor
+
+* **`Lauf.Editor` er markdown-kilde, ikke WYSIWYG, og det er svaret på at
+  vi ikke bygger en rik-tekst-editor selv.** Feltet er en `<textarea>`, så
+  markering, innliming, IME, mobiltastatur og angre er nettleserens. En
+  editor på `contenteditable` eier alt det selv, og det er der de går for
+  å dø. Flux bygger heller ikke sin egen: den ligger på TipTap og lastes
+  utenom hovedbunten.
+* **`execCommand('insertText')` er grunnen til at koden ser rar ut.**
+  Setter man `textarea.value` direkte, kaster nettleseren angrehistorikken,
+  og Cmd+Z etter et klikk på «fet» tar deg tilbake til før alt du har
+  skrevet. Metoden er merket utdatert og har ingen erstatning for akkurat
+  dette; reserveveien under setter verdien direkte og mister angre.
+* **jsdom har ingen `document.execCommand`.** Hele komponentsuiten kjører
+  altså gjennom reserveveien og beviser ingenting om angre. Den prøves i
+  `tests/browser/check.mjs`, mot lekegrinda i ekte Chrome, og
+  mutasjonssjekken der gir nøyaktig feilmeldingen designet finnes for.
+  Samme regel som ellers: en stub er ikke en måling.
+* **Avslåingen sammenlignes med det knappen ville laget, ikke med
+  mønsteret.** Første utgave spurte `av.test(linje)`, og da fjernet
+  «Heading 2» overskriften på `# x` i stedet for å bytte nivå — og
+  «nummerert liste» tømte en punktliste. Mønsteret sier hva som skal bort
+  først, ikke om vi er framme.
+* **`aria-controls` skal ikke peke på noe som ikke finnes.** Øyeknappen
+  pekte på forhåndsvisningen også når den var lukket, altså på en id som
+  ikke var i DOM-en. Funnet av axe i Field-testen, ikke ved lesing. Nå
+  `aria-expanded` alltid, `aria-controls` bare når ruta er der.
+* **Verktøylinja har rovende tabindex.** Uten den står det tolv tabstopp
+  mellom forrige felt og selve teksten. Svelte-lintern vil ha `tabindex`
+  på beholderen også; det er feil for dette mønsteret, og advarselen er
+  slått av på stedet med begrunnelsen ved siden av.
+* **Editoren er den første fila som er skrevet på engelsk hele veien** —
+  identifikatorer, kommentarer og testnavn. Se språkregelen: den snudde
+  mens denne ble skrevet, og resten av repoet er ikke rørt.
+* **Markdown-gjengiveren er vår egen fordi Lauf ikke skal ha en
+  markdown-avhengighet.** `marked` er 40 kB og kan mye mer enn en
+  forhåndsvisning trenger. Omfanget er låst til det verktøylinja kan lage.
+* **Rå HTML slipper aldri gjennom, og det er ikke en forenkling.** Markdown
+  tillater HTML i kilden, og det er nettopp der en editor blir en lagret
+  XSS. Alt escapes først. Lenkeskjemaer er hvitelistet; `javascript:` og
+  `data:` blir `#`.
+* **Sikkerhetspåstanden måles gjennom nettleserens egen parser.** Testen
+  setter utskriften som `innerHTML` og leser `a.protocol`. En regex mot
+  teksten er min forestilling om HTML; `a.protocol` er HTML. Det var den
+  omskrivingen som viste at `java&#115;cript:` allerede var ufarlig av en
+  annen grunn enn jeg trodde — `&` er escapet, så parseren ser aldri `s`.
+* **`import * as Lauf` rister like godt som en navngitt import.** Det er
+  ikke innlysende: et navneromsobjekt ser ut som noe en bundler må beholde
+  helt. Rollup følger medlemsoppslagene. Premisstesten bygger begge former
+  og krever at de er like store — en mutasjon som dro `Editor` inn i
+  `Button`-navnerommet uten pure-merking ble fanget.
+* **Byggstørrelse avhenger av harness.** De samme to fixturene måler 73 kB
+  fra et frittstående skript og 88 kB under vitest. Sammenligningen mellom
+  to bygg i samme harness er påstanden; det absolutte tallet er det ikke.
 
 ## DataGrid
 

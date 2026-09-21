@@ -71,6 +71,11 @@ export { default as Autocomplete } from './Autocomplete.svelte'
 export { default as DatePicker } from './DatePicker.svelte'
 export { default as FileUpload } from './FileUpload.svelte'
 export { default as DataGrid } from './DataGrid.svelte'
+export { default as Editor } from './Editor.svelte'
+// The editor's own markdown renderer. Exported because an app that stores
+// markdown also has to display it somewhere other than the editor, and it
+// would be odd to require a markdown package for exactly that.
+export { renderMarkdown, escapeHtml } from './markdown.js'
 export {
   compare, sortRows, filterRows, clampPage, pageSlice,
   windowFor, selectionState, nextSort,

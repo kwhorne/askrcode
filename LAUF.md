@@ -649,8 +649,13 @@ gjør at en skjermleser kan si «rad 4013 av 91000» når tjue rader finnes.
 
 ## Hva vi ikke bygger
 
-* **Editor.** En rik-tekst-editor er et eget produkt. Om noen trenger en, er
-  svaret TipTap eller ProseMirror, ikke vår egen.
+* **WYSIWYG-editor.** Den påstanden står fortsatt — men den gjaldt rik
+  tekst, ikke markdown, og det skillet viste seg å være hele svaret.
+  `Editor` finnes nå som en markdown-kildeeditor: en `<textarea>` med
+  verktøylinje og forhåndsvisning. Det som gjorde en egen rik-tekst-editor
+  uaktuell — markering, innliming, IME, mobiltastatur og angre — eier
+  nettleseren når feltet er en textarea, og ingenting av det er vårt.
+  Trenger noen ekte WYSIWYG, er svaret fortsatt ProseMirror.
 * **Kanban.** Samme sak, pluss dra-og-slipp med tastaturstøtte, som er like
   vanskelig som hele bolk 2 til sammen.
 * **Chart.** Det finnes gode biblioteker, og et diagram er ikke en

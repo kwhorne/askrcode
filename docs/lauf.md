@@ -77,11 +77,60 @@ from it yourself.
 `Table`, `Pagination`, `Modal`, `Dropdown`, `Popover`, `Tooltip`, `Tabs`,
 `Accordion`, `Avatar`, `Callout`, `Breadcrumbs`, `Navbar`, `Sidebar`,
 `Skeleton`, `Toaster`, `Progress`, `Slider`, `OtpInput`, `Autocomplete`,
-`Command`, `DatePicker`, `FileUpload`, `DataGrid` — and `Form` and `Flash`
-from `@askrcode/lauf/inertia`.
+`Command`, `DatePicker`, `FileUpload`, `DataGrid`, `Editor` — and `Form` and
+`Flash` from `@askrcode/lauf/inertia`.
+
+Either import style works, and they build to the same bytes:
+
+```svelte
+import { Button } from '@askrcode/lauf'      <Button>Save</Button>
+import * as Lauf from '@askrcode/lauf'       <Lauf.Button>Save</Lauf.Button>
+```
+
+The namespace form is there because it reads like the Blade components a
+lot of people are coming from. It is free — Rollup follows namespace member
+access, so it tree-shakes exactly as well as a named import, and a test
+measures that rather than assuming it.
 
 The full reference, with the reasoning behind each choice, is in
 [`frontend/lauf/README.md`](../frontend/lauf/README.md).
+
+## The editor writes markdown
+
+```svelte
+<Field name="notes" label="Release notes">
+  <Lauf.Editor bind:value={notes} preview />
+</Field>
+```
+
+The value is markdown, in and out. Not HTML — markdown is what belongs in
+the database: readable in a SQL console, it diffs, and it cannot carry a
+script.
+
+It is a `<textarea>` with a toolbar and a preview pane, not a
+`contenteditable`. You see `**bold**` rather than bold, and in exchange you
+get everything the browser already does well: selection, paste, IME, mobile
+keyboards, and undo. A click on *Bold* lands on the browser's own undo
+stack, so `⌘Z` walks back through formatting and typing together — checked
+in a real Chrome, because jsdom has no `document.execCommand` to check it
+with.
+
+```svelte
+<Lauf.Editor toolbar="heading | bold italic | bullet ordered ~ preview" />
+```
+
+`|` separates, `~` spaces out, and an unknown name is skipped rather than
+thrown — a typo should cost a button, not the page. `⌘B`, `⌘I`, `⌘K` and
+`⌘E` are wired, and every button toggles off again.
+
+**Raw HTML never reaches the preview.** That is the whole security answer:
+the text comes from whoever is typing, and the preview runs in the reader's
+browser on your domain. Everything is escaped, and a link may only be
+`http`, `https`, `mailto`, `tel` or relative — `javascript:` and `data:`
+become `#`.
+
+`renderMarkdown` is exported for showing stored markdown elsewhere, so a
+page does not need a markdown package for what the editor already does.
 
 ## Forms know about your validation
 
@@ -157,8 +206,9 @@ never notices the change.
 
 ## What is missing
 
-No colour picker, no rich-text editor, no kanban board, no charts, no
-client-side validation. The grid does not reorder or pin columns by drag, and
+No colour picker, no WYSIWYG editor, no kanban board, no charts, no
+client-side validation. `Editor` writes markdown source; true rich text
+means ProseMirror, and that is a dependency Lauf does not have. The grid does not reorder or pin columns by drag, and
 does not group, edit in place, scroll infinitely or export. Each is its own
 project; the reasons are in `LAUF.md` in the repository root.
 

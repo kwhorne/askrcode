@@ -14,7 +14,44 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **`Lauf.Editor`** — a markdown editor: a `<textarea>` with a toolbar and
+  a live preview, written from scratch in Svelte 5 with no new dependency.
+
+  The value is markdown, in and out. Not HTML — markdown is what belongs
+  in a database: readable in a SQL console, it diffs, and it cannot carry
+  a script.
+
+  **It is not WYSIWYG, and that is the design.** Flux does not build its
+  own either; it sits on ProseMirror and loads it outside the main bundle.
+  With a textarea, selection, paste, IME, mobile keyboards and undo all
+  stay the browser's. A click on *Bold* goes onto the browser's own undo
+  stack, so `⌘Z` steps back through formatting and typing together —
+  verified in a real Chrome, because jsdom has no `document.execCommand`
+  to verify it with.
+
+  The toolbar is a string, as in Flux: `"heading | bold italic ~ preview"`.
+  An unknown name is skipped — a typo should cost a button, not the page.
+
+- **`renderMarkdown`** — the editor's own renderer, exported for pages
+  that display stored markdown. It covers what the toolbar can produce and
+  nothing else, and **raw HTML never passes through**: that is where an
+  editor becomes a stored XSS, since the text comes from whoever is typing
+  and the preview runs in the reader's browser on your domain. Link
+  schemes are limited to `http`, `https`, `mailto`, `tel` and relative
+  addresses.
+
+- **`import * as Lauf` is a supported style**, so components can be
+  written `<Lauf.Button>` and `<Lauf.Editor>` — the shape Blade users
+  expect. It costs nothing: Rollup follows namespace member access, and a
+  premise test now builds both forms and requires the same bytes out.
+
+### Notes
+
+`Editor` measures 95 kB mounted and minified, against a 73 kB floor for a
+bare `<Button>`. An app that does not use it pays none of that, and the
+tree-shaking test checks exactly that.
 
 ## 0.8.1 — 2026-09-21
 

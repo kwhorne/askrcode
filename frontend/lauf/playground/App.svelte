@@ -2,6 +2,7 @@
   import {
     Heading, Text, Field, Button, Card, Separator,
     Progress, Slider, OtpInput, Autocomplete, Command, DatePicker, FileUpload,
+    Editor,
   } from '../src/index.js'
   import Grid from './Grid.svelte'
 
@@ -17,6 +18,10 @@
   let volum = $state(40)
   let kode = $state('')
   let filer = $state([])
+  // The editor is here because the undo stack cannot be measured in
+  // jsdom: document.execCommand does not exist there, so the test suite
+  // runs through the fallback. This is a real browser.
+  let notes = $state('# Release notes\n\nAskr **0.8.1** adds a mail provider.\n\n- Resend over HTTP\n- `MailFromConfig`\n')
 
   const treff = $derived(
     alle.filter((a) => a.label.toLowerCase().includes(søk.toLowerCase()))
@@ -48,6 +53,10 @@
       <FileUpload bind:files={filer} multiple maxSize={1024 * 1024} />
     </Field>
 
+    <Field name="notes" label="Release notes" description="Markdown.">
+      <Editor bind:value={notes} rows={8} preview />
+    </Field>
+
     <Progress value={volum} label="Upload" showValue />
   </Card>
 
@@ -67,5 +76,6 @@
 
   <p class="text-xs text-muted" id="lauf-state">
     customer={kunde} due={dato} volume={volum} code={kode} files={filer.length}
+    notes={notes.length}
   </p>
 </main>

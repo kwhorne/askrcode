@@ -12,6 +12,29 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixture = join(here, 'fixtures', 'one-icon')
+const namespaceFixture = join(here, 'fixtures', 'namespace')
+
+/** Builds a fixture and returns all the code that came out. */
+async function buildFixture(root) {
+  const result = await build({
+    root,
+    // Without this Vite loads the package's own vite.config.js, which
+    // adds the svelte plugin itself. Then it runs twice, and the second
+    // pass gets compiled JS where it expects Svelte source. The error
+    // reads "Expected token }" in some random component and points
+    // nowhere.
+    configFile: false,
+    logLevel: 'silent',
+    plugins: [svelte()],
+    build: {
+      write: false,
+      minify: true,
+      rollupOptions: { input: join(root, 'main.js') },
+    },
+  })
+  const chunks = (Array.isArray(result) ? result[0] : result).output
+  return chunks.filter((c) => c.type === 'chunk').map((c) => c.code).join('')
+}
 
 // Premisstest.
 //
@@ -41,24 +64,7 @@ const fixture = join(here, 'fixtures', 'one-icon')
 // Slutter den å holde, er det ikonmodellen som svikter, ikke testen.
 describe('tree-shaking', () => {
   it('en app som bruker ett ikon får ett ikon i bunten', async () => {
-    const result = await build({
-      root: fixture,
-      // Uten denne laster Vite pakkas egen vite.config.js, som selv legger
-      // til svelte-pluginen. Da kjører den to ganger, og den andre runden
-      // får kompilert JS inn der den venter Svelte-kilde. Feilen kommer ut
-      // som «Expected token }» i en tilfeldig komponent, og peker ingen vei.
-      configFile: false,
-      logLevel: 'silent',
-      plugins: [svelte()],
-      build: {
-        write: false,
-        minify: true,
-        rollupOptions: { input: join(fixture, 'main.js') },
-      },
-    })
-
-    const chunks = (Array.isArray(result) ? result[0] : result).output
-    const code = chunks.filter((c) => c.type === 'chunk').map((c) => c.code).join('')
+    const code = await buildFixture(fixture)
 
     // Ikonet som faktisk brukes er med.
     expect(code).toContain('M8.75 2.75a.75.75 0 0 0-1.5 0v5.69')
@@ -80,5 +86,33 @@ describe('tree-shaking', () => {
 
     const bytes = Buffer.byteLength(code, 'utf8')
     expect(bytes).toBeLessThan(100 * 1024)
+  }, 120000)
+
+  // `import * as Lauf` + <Lauf.Button> is the form apps are meant to
+  // write, because it reads like Flux's <flux:button>. That form would be
+  // worthless if it dragged the whole library along, and the fact that it
+  // does not is not obvious: a namespace object LOOKS like something a
+  // bundler has to keep whole. Rollup follows the member lookups, and
+  // this test is what holds that down — not an assumption.
+  it('dot notation shakes as well as a named import', async () => {
+    const named = await buildFixture(join(here, 'fixtures', 'named-button'))
+    const dotted = await buildFixture(namespaceFixture)
+
+    expect(dotted).not.toMatch(/bits-ui|accordion-root|dialog-content/i)
+    // aria-rowindex is DataGrid's, the heaviest thing in the library.
+    expect(dotted).not.toMatch(/aria-rowindex/)
+    // The editor drags the markdown renderer with it. Neither has any
+    // business in a button-only bundle.
+    expect(dotted).not.toMatch(/Nothing to preview|blockquote/)
+
+    // The comparison is the claim, not the number: how big the bundle is
+    // depends on which harness builds it — the same two fixtures measure
+    // 73 kB from a standalone script and 88 kB here — while the
+    // DIFFERENCE between the two forms is what says whether dot notation
+    // costs anything. The margin covers the minifier giving identifiers
+    // different lengths; if the namespace dragged a component along the
+    // gap would be kilobytes, not bytes.
+    const diff = Math.abs(Buffer.byteLength(dotted, 'utf8') - Buffer.byteLength(named, 'utf8'))
+    expect(diff).toBeLessThan(256)
   }, 120000)
 })

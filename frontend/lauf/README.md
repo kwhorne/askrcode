@@ -107,8 +107,34 @@ mechanical copy of a dependency that is already in `node_modules`.
 `Tabs` (`.Panel`), `Accordion` (`.Item`), `Avatar`, `Callout`,
 `Breadcrumbs`, `Navbar`, `Sidebar` (`.Item`), `Skeleton`, `Toaster`,
 `Progress`, `Slider`, `OtpInput`, `Autocomplete`, `Command`
-(`.Group`, `.Item`), `DatePicker`, `FileUpload` — and `Form` and `Flash`
-from `@askrcode/lauf/inertia`.
+(`.Group`, `.Item`), `DatePicker`, `FileUpload`, `Editor` — and `Form` and
+`Flash` from `@askrcode/lauf/inertia`.
+
+### Two ways to write them
+
+```svelte
+<script>
+  import { Button, Editor } from '@askrcode/lauf'
+</script>
+
+<Button>Save</Button>
+```
+
+```svelte
+<script>
+  import * as Lauf from '@askrcode/lauf'
+</script>
+
+<Lauf.Button>Save</Lauf.Button>
+<Lauf.Editor bind:value={notes} />
+```
+
+The second reads like Flux's `<flux:button>`, and it costs nothing: Rollup
+follows namespace member access, so `import * as Lauf` shakes exactly as
+well as a named import. That is not obvious — a namespace object *looks*
+like something a bundler has to keep whole — so it is a test rather than an
+assumption. A `<Lauf.Button>` app and a `<Button>` app build to the same
+bytes, with no Bits UI, no DataGrid and no editor in either.
 
 ### What opens and closes
 
@@ -184,6 +210,7 @@ gzip — the floor is the Svelte runtime plus `cn`:
 | `Button` (the floor) | 75 kB |
 | `Progress` | 81 kB |
 | `FileUpload` | 84 kB |
+| `Editor` | 95 kB |
 | `OtpInput` | 100 kB |
 | `Slider` | 103 kB |
 | `Command` | 115 kB |
@@ -204,8 +231,78 @@ almost no CRUD app needs one, and the apps that do want a real one. Block 3
 in `LAUF.md` says to weigh each of these components on its own; this is the
 one where the answer was no.
 
-Also still absent, and on purpose: rich-text editor, kanban board, charts,
-client-side validation, and a theme builder. The reasons are in `LAUF.md`.
+**No WYSIWYG.** `Editor` is a markdown source editor, not a rich-text one —
+see below for why that is a choice rather than a shortfall.
+
+Also still absent, and on purpose: kanban board, charts, client-side
+validation, and a theme builder. The reasons are in `LAUF.md`.
+
+### Editor
+
+```svelte
+<Field name="notes" label="Release notes">
+  <Lauf.Editor bind:value={notes} preview />
+</Field>
+```
+
+The value is **markdown, in and out** — not HTML. Markdown is what belongs
+in the database: a person can read it in a SQL console, it diffs, and it
+cannot carry a script.
+
+| Prop | |
+|---|---|
+| `value` | The markdown. Bindable. |
+| `preview` | Whether the preview pane is open. Bindable, off by default. |
+| `toolbar` | Which buttons, as a string |
+| `placeholder`, `rows`, `disabled` | As on a textarea |
+
+```svelte
+<Lauf.Editor toolbar="heading | bold italic | bullet ordered ~ preview" />
+```
+
+Space-separated, `|` for a separator and `~` for a spacer — the same shape
+Flux uses, because it reads faster than an array of objects. The buttons
+are `heading`, `h2`, `h3`, `bold`, `italic`, `strike`, `code`, `quote`,
+`bullet`, `ordered`, `link`, `undo`, `redo` and `preview`. An unknown name
+is skipped: a typo should cost a button, not the page.
+
+`⌘B`, `⌘I`, `⌘K` and `⌘E` do bold, italic, link and code. Every button
+toggles — a second click takes the formatting off again rather than
+doubling it.
+
+**It is a `<textarea>`, not a `contenteditable`, and that is the design.**
+You see `**bold**` rather than bold. What you get for it is everything a
+browser already does well: selection, paste, IME, mobile keyboards, and —
+the one that matters — undo. A click on *Bold* goes onto the browser's own
+undo stack, so `⌘Z` steps back through formatting and typing together. An
+editor built on `contenteditable` owns all of that itself, and that is
+where editors go to die. If you need true WYSIWYG, ProseMirror is the
+answer and it is a dependency Lauf does not have.
+
+That also means the preview needs a markdown renderer, and Lauf has no
+markdown dependency either. `renderMarkdown` is exported for the pages that
+display stored markdown outside the editor:
+
+```js
+import { renderMarkdown } from '@askrcode/lauf'
+```
+
+It covers what the toolbar can produce — headings, bold, italic,
+strikethrough, code, links, lists, quotes, rules, paragraphs — and nothing
+else. No tables, no nested lists, no footnotes.
+
+**Raw HTML never passes through.** Markdown allows HTML in the source, and
+that is exactly where an editor becomes a stored XSS: the text comes from
+whoever is typing, and the preview runs in the reader's browser on your
+domain. Everything is escaped first, and link schemes are limited to
+`http`, `https`, `mailto`, `tel` and relative addresses — `javascript:` and
+`data:` become `#`. The tests check that through the browser's own parser
+(`a.protocol`), not with a regex against the output string.
+
+**No active state on the toolbar.** The buttons do not light up when the
+cursor sits inside bold text. Working that out from markdown source is
+doable, and a wrong `aria-pressed` is worse than none, so it is not there
+yet.
 
 ### DataGrid
 

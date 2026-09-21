@@ -75,6 +75,112 @@ async function connect() {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// The undo stack in <Lauf.Editor>.
+//
+// This is the one property of the editor jsdom cannot measure at all:
+// jsdom has no document.execCommand, so the test suite runs through the
+// fallback and proves nothing about undo. And undo is exactly why the
+// code uses execCommand instead of assigning textarea.value: assigning
+// it directly throws away the whole history, and Cmd+Z after clicking
+// Bold takes you back to before everything you typed.
+//
+// So the check is: type something, embolden it, undo — and expect the
+// text to still be there as it was, rather than gone.
+async function checkEditor(send, js) {
+  const problems = []
+  const sel = '[data-lauf="editor"] textarea'
+
+  await send('Page.navigate', { url: URL_BASE })
+  await wait(1500)
+
+  const present = await js(`!!document.querySelector('${sel}')`)
+  if (!present) return ['found no editor on the playground']
+
+  // That execCommand works here at all is a precondition, not a detail.
+  // If it stops working we want to know immediately.
+  const supported = await js(`
+    (() => {
+      const t = document.querySelector('${sel}')
+      t.focus(); t.setSelectionRange(0, 0)
+      return document.queryCommandSupported && document.queryCommandSupported('insertText')
+    })()`)
+  if (!supported) problems.push('execCommand("insertText") is no longer supported — undo is lost')
+
+  // Clear the field and type for real, so there is a history to undo.
+  await js(`(() => { const t = document.querySelector('${sel}'); t.focus(); t.select(); return true })()`)
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete',
+    windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete',
+    windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 })
+  await send('Input.insertText', { text: 'hello world' })
+  await wait(120)
+
+  const before = await js(`document.querySelector('${sel}').value`)
+  if (before !== 'hello world') problems.push(`typing gave "${before}", not "hello world"`)
+
+  // Select "world" and hit bold.
+  await js(`
+    (() => {
+      const t = document.querySelector('${sel}')
+      t.focus(); t.setSelectionRange(6, 11)
+      document.querySelector('[aria-label="Bold"]').click()
+      return true
+    })()`)
+  await wait(150)
+  const after = await js(`document.querySelector('${sel}').value`)
+  if (after !== 'hello **world**') problems.push(`bold gave "${after}", not "hello **world**"`)
+
+  // At 390 px the source and the preview must stack rather than sit side
+  // by side. If they do not, the editor is wider than the screen and the
+  // whole page scrolls sideways — and axe says nothing about that.
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 390, height: 900, deviceScaleFactor: 2, mobile: true,
+  })
+  await wait(300)
+  const narrow = await js(`
+    (() => {
+      const e = document.querySelector('[data-lauf="editor"]')
+      const t = e.querySelector('textarea')
+      const p = e.querySelector('[aria-label="Preview"]')
+      return JSON.stringify({
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        stacked: p ? Math.round(p.getBoundingClientRect().top) >=
+                     Math.round(t.getBoundingClientRect().bottom) : null,
+      })
+    })()`)
+  const { overflow, stacked } = JSON.parse(narrow)
+  if (overflow > 0) problems.push(`the page scrolls ${overflow} px sideways at 390 px`)
+  if (stacked === false) problems.push('source and preview sit side by side at 390 px')
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: 1280, height: 1000, deviceScaleFactor: 2, mobile: false,
+  })
+  await wait(200)
+
+  // Cmd+Z. commands: ['undo'] is CDP's own way into the editing commands
+  // and is the closest we get to a real keypress.
+  await js(`document.querySelector('${sel}').focus(); true`)
+  await send('Input.dispatchKeyEvent', {
+    type: 'rawKeyDown', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90,
+    nativeVirtualKeyCode: 90, modifiers: 4, commands: ['undo'],
+  })
+  await send('Input.dispatchKeyEvent', {
+    type: 'keyUp', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90,
+    nativeVirtualKeyCode: 90, modifiers: 4,
+  })
+  await wait(200)
+
+  const undone = await js(`document.querySelector('${sel}').value`)
+  if (undone !== 'hello world') {
+    problems.push(
+      `undo gave "${undone}", not "hello world". ` +
+      'That means the edit went around the browser history — ' +
+      'see write() in Editor.svelte.'
+    )
+  }
+
+  return problems
+}
+
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
   const { ws, send, js } = await connect()
@@ -138,7 +244,15 @@ async function main() {
     }
   }
 
+  const editorProblems = await checkEditor(send, js)
+  if (editorProblems.length) {
+    brudd += editorProblems.length
+    console.log('\nFEIL  editor — undo stack')
+    for (const f of editorProblems) console.log(`    ${f}`)
+  }
+
   console.log('')
+  console.log(`  ${editorProblems.length === 0 ? 'ok  ' : 'FEIL'} ${'editor undo'.padEnd(16)} Cmd+Z after Bold keeps the text`)
   for (const r of rader) {
     console.log(`  ${r.brudd === 0 ? 'ok  ' : 'FEIL'} ${r.navn.padEnd(16)} bakgrunn ${r.bg.padEnd(22)} ${r.brudd} brudd`)
   }
