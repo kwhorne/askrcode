@@ -49,7 +49,7 @@ begin
 end;
 
 { Tusenskille med smalt mellomrom, slik tall skrives på norsk. }
-function Tall(V: QWord): string;
+function Number(V: QWord): string;
 var
   S: string;
   I, N: Integer;
@@ -100,10 +100,10 @@ end;
 function WelcomePage(Req: TRequest; const AppName: string): TResponse;
 var
   A: TArena;
-  Navn, Html: string;
+  Name_, Html: string;
 begin
   A := Req.Arena;
-  Navn := Esc(AppName);
+  Name_ := Esc(AppName);
 
   Html :=
 '<!doctype html>'#10 +
@@ -111,7 +111,7 @@ begin
 '<head>'#10 +
 '<meta charset="utf-8">'#10 +
 '<meta name="viewport" content="width=device-width, initial-scale=1">'#10 +
-'<title>' + Navn + ' is running</title>'#10 +
+'<title>' + Name_ + ' is running</title>'#10 +
 '<style>'#10 +
 ':root {'#10 +
 '  --ground:  #0a1014;'#10 +
@@ -246,7 +246,7 @@ begin
 '<main>'#10 +
                                                                               #10 +
 '<p class="live"><span class="dot"></span>serving</p>'#10 +
-'<h1>' + Navn + ' is running</h1>'#10 +
+'<h1>' + Name_ + ' is running</h1>'#10 +
 '<p class="addr">on <b>' + Vert(Req) + '</b></p>'#10 +
                                                                               #10 +
 '<section class="gauge">'#10 +
@@ -256,16 +256,16 @@ begin
 '  <div class="fill now" style="--w:' + Andel(A.BytesLive, A.BytesReserved) + '%"></div>'#10 +
 '</div>'#10 +
 '<p class="legend"><b>' + Andel(A.HighWaterMark, A.BytesReserved) + '%</b>'#10 +
-' of the <b>' + Tall(A.BytesReserved) + ' B</b> this worker reserved once'#10 +
+' of the <b>' + Number(A.BytesReserved) + ' B</b> this worker reserved once'#10 +
 ' and keeps reusing</p>'#10 +
                                                                               #10 +
 '<dl class="figures">'#10 +
 '<div><dt>This request</dt>'#10 +
-'     <dd>' + Tall(A.BytesLive) + '<span class="unit"> B</span></dd></div>'#10 +
+'     <dd>' + Number(A.BytesLive) + '<span class="unit"> B</span></dd></div>'#10 +
 '<div><dt>Peak</dt>'#10 +
-'     <dd>' + Tall(A.HighWaterMark) + '<span class="unit"> B</span></dd></div>'#10 +
+'     <dd>' + Number(A.HighWaterMark) + '<span class="unit"> B</span></dd></div>'#10 +
 '<div><dt>Requests served</dt>'#10 +
-'     <dd>' + Tall(A.ResetCount) + '</dd></div>'#10 +
+'     <dd>' + Number(A.ResetCount) + '</dd></div>'#10 +
 '</dl>'#10 +
 '</section>'#10 +
                                                                               #10 +

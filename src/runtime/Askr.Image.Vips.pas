@@ -9,7 +9,7 @@
 
   Samme mønster som OpenSSL, libpq, libmariadb og sqlite3: binæren
   starter uten libvips, og en app som aldri skalerer et bilde betaler
-  ingenting. Mangler biblioteket, sier `VipsError` hva som skal
+  ingenting. Missing biblioteket, sier `VipsError` hva som skal
   installeres — den lister ikke bare stier den lette i.
 
   Det er også grunnen til at dette IKKE er ren Pascal slik kryptoen er.
@@ -47,7 +47,7 @@ type
       nødvendigvis boksen. Standard, og det man vil ha til et bilde i
       en artikkel. }
     fmInside,
-    { Fyll boksen og beskjær det som stikker ut. Til avatarer og
+    { Fill boksen og beskjær det som stikker ut. To_ avatarer og
       kort, der alle rutene skal være like store. }
     fmCover
   );
@@ -61,7 +61,7 @@ function VipsVersion: string;
 
 { Skalerer et bilde og gir det tilbake i Format.
 
-  Bredde eller høyde kan være 0, og betyr da «regn den ut». Er begge
+  Width_ eller høyde kan være 0, og betyr da «regn den ut». Er begge
   satt, avgjør Fit hva som skjer med forholdet.
 
   Kvalitet gjelder JPEG og WebP, og ignoreres for PNG. 0 betyr
@@ -115,7 +115,7 @@ type
 var
   GLastet: Boolean = False;
   GOk: Boolean = False;
-  GFeil: string = '';
+  GErr: string = '';
   GHandle: Pointer = nil;
 
   vips_init: TVipsInit = nil;
@@ -133,9 +133,9 @@ var
 {$IFDEF UNIX}
 { Utypet var-parameter: Pointer(vips_init) i Delphi-modus KALLER
   variabelen i stedet for aa ta adressen. }
-function Symbol(const Navn: string; var P): Boolean;
+function Symbol(const Name_: string; var P): Boolean;
 begin
-  Pointer(P) := dlsym(GHandle, PChar(Navn));
+  Pointer(P) := dlsym(GHandle, PChar(Name_));
   Result := Pointer(P) <> nil;
 end;
 {$ENDIF}
@@ -161,7 +161,7 @@ begin
   end;
   if GHandle = nil then
   begin
-    GFeil := 'libvips is not installed. Image resizing needs it:' +
+    GErr := 'libvips is not installed. Image resizing needs it:' +
       LineEnding + LineEnding +
       '  Debian/Ubuntu   apt-get install libvips42' + LineEnding +
       '  macOS           brew install vips' + LineEnding +
@@ -185,7 +185,7 @@ begin
 
   if Manglet <> '' then
   begin
-    GFeil := 'libvips was found but does not export ' + Manglet +
+    GErr := 'libvips was found but does not export ' + Manglet +
       '. It may be too old; Askr needs 8.9 or newer.';
     Exit;
   end;
@@ -193,7 +193,7 @@ begin
   { Flyttallsunntakene MÅ maskeres før første libvips-kall.
 
     Free Pascal slår dem på; GLib, som libvips bygger på, regner
-    rutinemessig med verdier som utløser dem. Uten masken dør prosessen
+    rutinemessig med verdier som utløser dem. Without masken dør prosessen
     med EInvalidOp inne i vips_init, og stakksporet peker på biblioteker
     man ikke har skrevet — det ser ut som en feil i libvips.
 
@@ -206,12 +206,12 @@ begin
     men ubrukelig — og da skal vi si det, ikke krasje senere. }
   if vips_init('askr') <> 0 then
   begin
-    GFeil := 'libvips failed to initialise.';
+    GErr := 'libvips failed to initialise.';
     Exit;
   end;
   GOk := True;
 {$ELSE}
-  GFeil := 'Image resizing is only wired up on Unix. ' +
+  GErr := 'Image resizing is only wired up on Unix. ' +
            'The binding loads libvips with dlopen.';
 {$ENDIF}
 end;
@@ -228,7 +228,7 @@ begin
   if GOk then
     Result := ''
   else
-    Result := GFeil;
+    Result := GErr;
 end;
 
 function VipsVersion: string;
@@ -243,13 +243,13 @@ end;
 
 { ------------------------------------------------------------- hjelpere -- }
 
-procedure Krev;
+procedure Expect;
 begin
   if not VipsAvailable then
-    raise EVipsError.Create(GFeil);
+    raise EVipsError.Create(GErr);
 end;
 
-function SisteVipsFeil: string;
+function LastVipsError: string;
 var
   P: PAnsiChar;
 begin
@@ -325,7 +325,7 @@ var
   S: AnsiString;
 begin
   Result := nil;
-  Krev;
+  Expect;
   if Length(Data) = 0 then
     raise EVipsError.Create('The image is empty.');
 
@@ -362,13 +362,13 @@ begin
     Res := vips_thumbnail_buffer(@Data[0], Length(Data), Img, Width, nil);
 
   if (Res <> 0) or (Img = nil) then
-    raise EVipsError.Create('Could not read that image: ' + SisteVipsFeil);
+    raise EVipsError.Create('Could not read that image: ' + LastVipsError);
 
   try
     Ut := nil;
     Len := 0;
     if vips_image_write_to_buffer(Img, PAnsiChar(S), Ut, Len, nil) <> 0 then
-      raise EVipsError.Create('Could not write the image: ' + SisteVipsFeil);
+      raise EVipsError.Create('Could not write the image: ' + LastVipsError);
     try
       Result := Kopier(Ut, Len);
     finally
@@ -387,7 +387,7 @@ function ConvertImage(const Data: TBytes; Format: TImageFormat;
 var
   Inn: TImageInfo;
 begin
-  Krev;
+  Expect;
   Inn := ReadImageInfo(Data);
   if not Inn.Ok then
     raise EVipsError.Create('Could not read the image dimensions.');

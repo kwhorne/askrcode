@@ -38,7 +38,7 @@ type
   { Ikke-generisk base for TModelList<M>.
 
     Finnes for at serialisering og eager loading skal kunne behandle en liste
-    uten å kjenne elementtypen. Uten den måtte hver konsument spesialiseres
+    uten å kjenne elementtypen. Without den måtte hver konsument spesialiseres
     per modell, og det er nettopp den boilerplaten generics skulle fjerne. }
   TModelListBase = class(TArenaObject)
   protected
@@ -236,7 +236,7 @@ type
   end;
 
   { $M+ er det som gir modellene lov til å ha en published-seksjon i det hele
-    tatt, og som får Free Pascal til å legge RTTI der. Uten dette ville hele
+    tatt, og som får Free Pascal til å legge RTTI der. Without dette ville hele
     mappingen krevd kodegenerering. }
   {$M+}
   TModel = class(TArenaObject)
@@ -549,9 +549,9 @@ begin
 end;
 
 { Felles for Timestamps og SoftDeletes: kolonnen må finnes som en mappet
-  TDateTime-property. Uten sjekken ville feltet stille latt være å bli satt,
+  TDateTime-property. Without sjekken ville feltet stille latt være å bli satt,
   og det ville sett ut som at tidsstemplene virket. }
-procedure KrevDateTimeKolonne(Meta: TModelMeta; const AColumn, AHva: string);
+procedure RequireDateTimeColumn(Meta: TModelMeta; const AColumn, AWhat: string);
 var
   I: Integer;
 begin
@@ -560,19 +560,19 @@ begin
     raise EModelError.CreateFmt(
       '%s.%s needs a mapped column "%s". Add a published TDateTime ' +
       'property for it (the convention maps %s to "%s").',
-      [Meta.ModelClass.ClassName, AHva, AColumn,
+      [Meta.ModelClass.ClassName, AWhat, AColumn,
        'CreatedAt/UpdatedAt/DeletedAt', AColumn]);
   if Meta.Columns[I].Kind <> ckDateTime then
     raise EModelError.CreateFmt(
       '%s.%s needs "%s" to be a TDateTime property, not %s.',
-      [Meta.ModelClass.ClassName, AHva, AColumn,
+      [Meta.ModelClass.ClassName, AWhat, AColumn,
        GetEnumName(TypeInfo(TColumnKind), Ord(Meta.Columns[I].Kind))]);
 end;
 
 procedure TSchema.Timestamps(const ACreatedAt, AUpdatedAt: string);
 begin
-  KrevDateTimeKolonne(FMeta, ACreatedAt, 'Timestamps');
-  KrevDateTimeKolonne(FMeta, AUpdatedAt, 'Timestamps');
+  RequireDateTimeColumn(FMeta, ACreatedAt, 'Timestamps');
+  RequireDateTimeColumn(FMeta, AUpdatedAt, 'Timestamps');
   FMeta.FHasTimestamps := True;
   FMeta.FCreatedAtColumn := ACreatedAt;
   FMeta.FUpdatedAtColumn := AUpdatedAt;
@@ -580,7 +580,7 @@ end;
 
 procedure TSchema.SoftDeletes(const AColumn: string);
 begin
-  KrevDateTimeKolonne(FMeta, AColumn, 'SoftDeletes');
+  RequireDateTimeColumn(FMeta, AColumn, 'SoftDeletes');
   FMeta.FSoftDeletes := True;
   FMeta.FDeletedAtColumn := AColumn;
 end;
@@ -705,7 +705,7 @@ begin
     S.Free;
   end;
 
-  { Etter Describe, fordi primærnøkkelen kan ha blitt endret der. }
+  { After_ Describe, fordi primærnøkkelen kan ha blitt endret der. }
   PkIndex := Result.PrimaryKeyIndex;
   if (PkIndex >= 0) and Result.FAutoIncrement then
     Result.FColumns[PkIndex].Insertable := False;
@@ -1337,8 +1337,8 @@ var
   Sql: string;
   NewId: Int64;
   Mark: TArenaMark;
-  Naa: TDateTime;
-  VarNy: Boolean;
+  Now_: TDateTime;
+  WasNew: Boolean;
 begin
   C := RequireDb(Conn);
   M := Meta;
@@ -1349,7 +1349,7 @@ begin
   PkIdx := M.PrimaryKeyIndex;
   { Leses før SQL-en kjører: INSERT setter FPersisted, og etterpå ser alt
     ut som en oppdatering. }
-  VarNy := not FPersisted;
+  WasNew := not FPersisted;
 
   BeforeSave;
   if FPersisted then
@@ -1362,18 +1362,18 @@ begin
     var oppdatert ti ganger så like fersk ut som da den ble laget. }
   if M.HasTimestamps then
   begin
-    Naa := UtcNow;
+    Now_ := UtcNow;
     if not FPersisted then
     begin
       TsIdx := M.IndexOfColumn(M.CreatedAtColumn);
       { Bare når den ikke alt er satt: en import som bevarer opprinnelige
         tidspunkter skal ikke få dem overskrevet. }
       if (TsIdx >= 0) and (GetFloatProp(Self, M.Columns[TsIdx].Prop) = 0) then
-        SetFloatProp(Self, M.Columns[TsIdx].Prop, Naa);
+        SetFloatProp(Self, M.Columns[TsIdx].Prop, Now_);
     end;
     TsIdx := M.IndexOfColumn(M.UpdatedAtColumn);
     if TsIdx >= 0 then
-      SetFloatProp(Self, M.Columns[TsIdx].Prop, Naa);
+      SetFloatProp(Self, M.Columns[TsIdx].Prop, Now_);
   end;
 
   Mark := A.Mark;
@@ -1461,7 +1461,7 @@ begin
     A.Rewind(Mark);
   end;
 
-  if VarNy then
+  if WasNew then
     AfterInsert
   else
     AfterUpdate;
@@ -1469,14 +1469,14 @@ begin
 end;
 
 { Felles for Delete, ForceDelete og Restore: sett en TDateTime-kolonne og
-  skriv raden. Alle tre er «oppdater én kolonne på én rad». }
-procedure SettDatoOgLagre(Model: TModel; C: TDbConnection; A: TArena;
-  M: TModelMeta; ColIdx, PkIdx: Integer; Verdi: TDateTime);
+  skriv raden. All_ tre er «oppdater én kolonne på én rad». }
+procedure SetDateAndSave(Model: TModel; C: TDbConnection; A: TArena;
+  M: TModelMeta; ColIdx, PkIdx: Integer; Value_: TDateTime);
 var
   B: TStrBuilder;
   Mark: TArenaMark;
 begin
-  SetFloatProp(Model, M.Columns[ColIdx].Prop, Verdi);
+  SetFloatProp(Model, M.Columns[ColIdx].Prop, Value_);
   Mark := A.Mark;
   try
     B.Init(A, 160);
@@ -1540,7 +1540,7 @@ var
   C: TDbConnection;
   M: TModelMeta;
   A: TArena;
-  PkIdx, DelIdx: Integer;
+  PkIdx, PartIdx: Integer;
 begin
   M := Meta;
   if not M.SoftDeletes then
@@ -1553,13 +1553,13 @@ begin
   if A = nil then
     raise EModelError.Create('Restore requires the model to live in an arena');
   PkIdx := M.PrimaryKeyIndex;
-  DelIdx := M.IndexOfColumn(M.DeletedAtColumn);
-  if (PkIdx < 0) or (DelIdx < 0) then
+  PartIdx := M.IndexOfColumn(M.DeletedAtColumn);
+  if (PkIdx < 0) or (PartIdx < 0) then
     raise EModelError.CreateFmt('%s cannot be restored',
       [M.ModelClass.ClassName]);
   { 0 er «ikke satt» for en TDateTime her, og ParamFor skriver NULL for
     den. Det er samme regel som resten av datolaget bruker. }
-  SettDatoOgLagre(Self, C, A, M, DelIdx, PkIdx, 0);
+  SetDateAndSave(Self, C, A, M, PartIdx, PkIdx, 0);
 end;
 
 procedure TModel.Delete(Conn: TDbConnection);
@@ -1567,7 +1567,7 @@ var
   C: TDbConnection;
   M: TModelMeta;
   A: TArena;
-  PkIdx, DelIdx: Integer;
+  PkIdx, PartIdx: Integer;
 begin
   M := Meta;
   if not M.SoftDeletes then
@@ -1581,13 +1581,13 @@ begin
   if A = nil then
     raise EModelError.Create('Delete requires the model to live in an arena');
   PkIdx := M.PrimaryKeyIndex;
-  DelIdx := M.IndexOfColumn(M.DeletedAtColumn);
-  if (PkIdx < 0) or (DelIdx < 0) then
+  PartIdx := M.IndexOfColumn(M.DeletedAtColumn);
+  if (PkIdx < 0) or (PartIdx < 0) then
     raise EModelError.CreateFmt('%s has no primary key',
       [M.ModelClass.ClassName]);
 
   BeforeDelete;
-  SettDatoOgLagre(Self, C, A, M, DelIdx, PkIdx, UtcNow);
+  SetDateAndSave(Self, C, A, M, PartIdx, PkIdx, UtcNow);
   { Raden finnes fortsatt. Persisted blir stående, slik at en påfølgende
     Save oppdaterer den og ikke setter inn en ny. }
   AfterDelete;

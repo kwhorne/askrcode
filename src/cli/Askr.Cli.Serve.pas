@@ -258,8 +258,8 @@ var
   Saved, T0, TBuilt, TUp: Int64;
   Total: Int64;
   Ok: Boolean;
-  NyPort: Word;
-  Gammel: TProcess;
+  NewPort: Word;
+  Old: TProcess;
 begin
   Saved := FileMtimeMs(ChangedPath);
   T0 := MonotonicMs;
@@ -280,23 +280,23 @@ begin
     Nedstengingen tar 44 ms målt, og den trenger ikke ligge i den kritiske
     stien. Proxyen bytter port i det øyeblikket den nye svarer. }
   if FAppPort = FOpts.BackendPort then
-    NyPort := FOpts.BackendPort + 1
+    NewPort := FOpts.BackendPort + 1
   else
-    NyPort := FOpts.BackendPort;
+    NewPort := FOpts.BackendPort;
 
-  Gammel := FApp;
-  FApp := StartAppOn(NyPort);
-  if not WaitForBackend(NyPort, 10000) then
+  Old := FApp;
+  FApp := StartAppOn(NewPort);
+  if not WaitForBackend(NewPort, 10000) then
   begin
     StopProcess(FApp);
-    FApp := Gammel;
+    FApp := Old;
     FProxy.Resume('The app started but is not answering on port ' +
-      IntToStr(NyPort) + '.');
+      IntToStr(NewPort) + '.');
     Exit;
   end;
 
-  FAppPort := NyPort;
-  FProxy.BackendPort := NyPort;
+  FAppPort := NewPort;
+  FProxy.BackendPort := NewPort;
   FProxy.Resume('');
   TUp := MonotonicMs;
 
@@ -305,7 +305,7 @@ begin
   Total := UnixNowMs - Saved;
 
   { Utenfor målingen, og utenfor det brukeren venter på. }
-  StopProcess(Gammel);
+  StopProcess(Old);
 
   { Deteksjonen er det som skjedde før T0: tiden fra editoren skrev fila til
     pollingen så den. Den regnes ut som resten, og skjules ikke — den er en

@@ -4,11 +4,11 @@ unit p5_generisk_standardparameter;
 {$mode Delphi}{$H+}
 interface
 type
-  TBoks<M: class> = class end;
-function Boks<M: class>(Tall: Integer = 0): TBoks<M>;
+  TBox<M: class> = class end;
+function Box<M: class>(Number: Integer = 0): TBox<M>;
 implementation
-function Boks<M: class>(Tall: Integer = 0): TBoks<M>;
+function Box<M: class>(Number: Integer = 0): TBox<M>;
 begin
-  Result := TBoks<M>.Create;
+  Result := TBox<M>.Create;
 end;
 end.

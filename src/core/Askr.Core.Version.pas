@@ -62,8 +62,8 @@ end;
 
 function ParseSemVer(const S: string): TSemVer;
 var
-  T, Tall: string;
-  I, Ledd: Integer;
+  T, Number: string;
+  I, Clause: Integer;
   P: Integer;
 begin
   Result.Major := 0; Result.Minor := 0; Result.Patch := 0;
@@ -84,31 +84,31 @@ begin
     T := Copy(T, 1, P - 1);
   end;
 
-  Ledd := 0;
-  Tall := '';
+  Clause := 0;
+  Number := '';
   for I := 1 to Length(T) + 1 do
   begin
     if (I <= Length(T)) and (T[I] in ['0'..'9']) then
-      Tall := Tall + T[I]
+      Number := Number + T[I]
     else if (I > Length(T)) or (T[I] = '.') then
     begin
-      if Tall = '' then
+      if Number = '' then
         Exit;
-      case Ledd of
-        0: Result.Major := StrToIntDef(Tall, -1);
-        1: Result.Minor := StrToIntDef(Tall, -1);
-        2: Result.Patch := StrToIntDef(Tall, -1);
+      case Clause of
+        0: Result.Major := StrToIntDef(Number, -1);
+        1: Result.Minor := StrToIntDef(Number, -1);
+        2: Result.Patch := StrToIntDef(Number, -1);
       else
         Exit;   { fire ledd er ikke semver }
       end;
-      Inc(Ledd);
-      Tall := '';
+      Inc(Clause);
+      Number := '';
     end
     else
       Exit;     { noe annet enn siffer og punktum }
   end;
 
-  if Ledd < 1 then
+  if Clause < 1 then
     Exit;
   if (Result.Major < 0) or (Result.Minor < 0) or (Result.Patch < 0) then
     Exit;

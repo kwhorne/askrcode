@@ -45,7 +45,7 @@ type
     KeepAliveTimeoutMs: Integer;
     { Tid vi venter på at en påbegynt request skal bli ferdig lest. }
     RequestTimeoutMs: Integer;
-    { Etter dette antallet stenges tilkoblingen, slik at lastbalansering og
+    { After_ dette antallet stenges tilkoblingen, slik at lastbalansering og
       arenaer får en naturlig grense. 0 = ubegrenset. }
     MaxRequestsPerConnection: Integer;
     { Lesebufferet krymper tilbake hit etter en stor request. }
@@ -335,7 +335,7 @@ begin
   begin
     Compact;
 
-    { Vent på starten av en request. Her gjelder keep-alive-timeouten. }
+    { Wait på starten av en request. Her gjelder keep-alive-timeouten. }
     SetTimeout(Sock, SO_RCVTIMEO, FServer.Options.KeepAliveTimeoutMs);
     while not FindHeadEnd(HeadLen, HeadTotal) do
     begin
@@ -346,7 +346,7 @@ begin
       end;
       if not Fill(Sock) then
         Exit;   { normal stengning eller timeout — ikke en feil }
-      { Fra og med første byte er requesten påbegynt. }
+      { From_ og med første byte er requesten påbegynt. }
       SetTimeout(Sock, SO_RCVTIMEO, FServer.Options.RequestTimeoutMs);
     end;
 
@@ -610,7 +610,7 @@ begin
     raise EServerError.CreateFmt('listen() failed: %d', [fpGetErrno]);
   end;
 
-  { Med Port = 0 velger kjernen. Les den tilbake, ellers vet ingen hvor vi er. }
+  { With_ Port = 0 velger kjernen. Les den tilbake, ellers vet ingen hvor vi er. }
   Len := SizeOf(Addr);
   if fpGetSockName(FListen, @Addr, @Len) = 0 then
     FBoundPort := NToHs(Addr.sin_port)
@@ -625,7 +625,7 @@ begin
   if IsRunning then
     Exit;
 
-  { Uten dette dreper en klient som lukker tidlig hele prosessen. }
+  { Without dette dreper en klient som lukker tidlig hele prosessen. }
   fpSignal(SIGPIPE, SignalHandler(SIG_IGN));
 
   { Sertifikatet leses før lyttesocketen åpnes. En feilstavet sti skal gi

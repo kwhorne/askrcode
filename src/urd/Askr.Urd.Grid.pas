@@ -112,7 +112,7 @@ type
     function Searchable(const Cols: array of TColStr): TGrid<M>;
 
     function DefaultSort(const Key: string; Dir: TSqlDir = Asc): TGrid<M>;
-    { Standard sidestørrelse, og taket klienten kan be om. Uten et tak kan
+    { Standard sidestørrelse, og taket klienten kan be om. Without et tak kan
       hvem som helst be om per=1000000 og be databasen om alt. }
     function PerPage(N: Integer; Max: Integer = 200): TGrid<M>;
 
@@ -287,7 +287,7 @@ begin
   if S.Len > 0 then
   begin
     N := StrToIntDef(S.ToString, 0);
-    { Taket gjelder også det klienten ber om. Uten det er per=1000000 en
+    { Taket gjelder også det klienten ber om. Without det er per=1000000 en
       måte å be databasen om hele tabellen på. }
     if N > 0 then
       FClientPer := N;
@@ -413,7 +413,7 @@ begin
   W.Field('page', Int64(FPage));
   W.Field('per', Int64(EffectivePer));
   W.Field('q', FQuery);
-  { Har ikke Rows kjørt, er totalen ikke målt — og da skal den ikke stå der
+  { Has_ ikke Rows kjørt, er totalen ikke målt — og da skal den ikke stå der
     som om den var det. }
   if FRan then
   begin

@@ -76,9 +76,9 @@ type
     å sende. Testene leser Sent for å sjekke JSON-en. }
   TFakeResendHttp = class(TResendHttp)
   private
-    FSvar: TStringList;
+    FReplies: TStringList;
     FStatuser: array of Integer;
-    FNeste: Integer;
+    FNext: Integer;
     FSendt: TStringList;
     FLastKey: string;
     FLastIdem: string;
@@ -104,9 +104,9 @@ type
     FLastId: string;
     FCount: QWord;
     function BuildJson(M: TMailMessage): string;
-    procedure Feil(Status: Integer; const Body: string);
+    procedure Err(Status: Integer; const Body: string);
   public
-    { Tom nøkkel betyr RESEND_API_KEY fra miljøet eller .env. Mangler den
+    { Tom nøkkel betyr RESEND_API_KEY fra miljøet eller .env. Missing den
       også der, kastes det ved oppsett — ikke ved første epost. }
     constructor Create(const AApiKey: string = '');
     destructor Destroy; override;
@@ -166,20 +166,20 @@ end;
 constructor TFakeResendHttp.Create;
 begin
   inherited Create;
-  FSvar := TStringList.Create;
+  FReplies := TStringList.Create;
   FSendt := TStringList.Create;
 end;
 
 destructor TFakeResendHttp.Destroy;
 begin
-  FSvar.Free;
+  FReplies.Free;
   FSendt.Free;
   inherited Destroy;
 end;
 
 procedure TFakeResendHttp.Queue(const Body: string; Status: Integer);
 begin
-  FSvar.Add(Body);
+  FReplies.Add(Body);
   SetLength(FStatuser, Length(FStatuser) + 1);
   FStatuser[High(FStatuser)] := Status;
 end;
@@ -191,12 +191,12 @@ begin
   FLastKey := ApiKey;
   FLastIdem := IdempotencyKey;
   FLastUrl := Url;
-  if FNeste >= FSvar.Count then
+  if FNext >= FReplies.Count then
     raise EResendError.Create(0, 'fake',
       'The fake Resend transport has no more queued responses.', False);
-  Status := FStatuser[FNeste];
-  Result := FSvar[FNeste];
-  Inc(FNeste);
+  Status := FStatuser[FNext];
+  Result := FReplies[FNext];
+  Inc(FNext);
 end;
 
 { ------------------------------------------------------------ transporten -- }
@@ -239,7 +239,7 @@ begin
   Result := 'resend (' + FBaseUrl + ')';
 end;
 
-procedure SkrivAdresser(var W: TJsonWriter; const AName: string;
+procedure WriteAddresses(var W: TJsonWriter; const AName: string;
   const L: TMailAddressArray);
 var
   I: Integer;
@@ -258,8 +258,8 @@ var
   A: TArena;
   W: TJsonWriter;
   I, K: Integer;
-  Navn, Verdi, Svar: string;
-  HarHoder: Boolean;
+  Name_, Value_, Reply: string;
+  HasHeaders: Boolean;
 begin
   if M.Sender.Address = '' then
     raise EMailError.Create('The message has no sender');
@@ -277,9 +277,9 @@ begin
     W.Init(A, 4096);
     W.BeginObject;
     W.Field('from', FormatMailAddress(M.Sender));
-    SkrivAdresser(W, 'to', M.ToList);
-    SkrivAdresser(W, 'cc', M.CcList);
-    SkrivAdresser(W, 'bcc', M.BccList);
+    WriteAddresses(W, 'to', M.ToList);
+    WriteAddresses(W, 'cc', M.CcList);
+    WriteAddresses(W, 'bcc', M.BccList);
     W.Field('subject', M.SubjectLine);
     if M.HtmlBody <> '' then
       W.Field('html', M.HtmlBody);
@@ -289,39 +289,39 @@ begin
     { Reply-To settes i Askr med Header('Reply-To', …), fordi det er et
       hode. Resend har et eget felt for det og avviser det som hode, så
       det flyttes over — og tas ut av headers-objektet nedenfor. }
-    Svar := '';
+    Reply := '';
     for I := 0 to M.ExtraHeaders.Count - 1 do
       if SameText(M.ExtraHeaders.Names[I], 'Reply-To') then
-        Svar := M.ExtraHeaders.ValueFromIndex[I];
-    if Svar <> '' then
+        Reply := M.ExtraHeaders.ValueFromIndex[I];
+    if Reply <> '' then
     begin
       { Resend tar reply_to som streng eller liste. Vi sender alltid
         lista: flere Reply-To er lov i RFC 5322, og én adresse i en
         ettelementsliste betyr det samme som adressen alene. }
       W.Key('reply_to');
       W.BeginArray;
-      for K := 1 to WordCount(Svar, [',']) do
-        if Trim(ExtractWord(K, Svar, [','])) <> '' then
-          W.Str(Trim(ExtractWord(K, Svar, [','])));
+      for K := 1 to WordCount(Reply, [',']) do
+        if Trim(ExtractWord(K, Reply, [','])) <> '' then
+          W.Str(Trim(ExtractWord(K, Reply, [','])));
       W.EndArray;
     end;
 
-    HarHoder := False;
+    HasHeaders := False;
     for I := 0 to M.ExtraHeaders.Count - 1 do
     begin
-      Navn := M.ExtraHeaders.Names[I];
-      if SameText(Navn, 'Reply-To') then
+      Name_ := M.ExtraHeaders.Names[I];
+      if SameText(Name_, 'Reply-To') then
         Continue;
-      Verdi := M.ExtraHeaders.ValueFromIndex[I];
-      if not HarHoder then
+      Value_ := M.ExtraHeaders.ValueFromIndex[I];
+      if not HasHeaders then
       begin
         W.Key('headers');
         W.BeginObject;
-        HarHoder := True;
+        HasHeaders := True;
       end;
-      W.Field(Navn, Verdi);
+      W.Field(Name_, Value_);
     end;
-    if HarHoder then
+    if HasHeaders then
       W.EndObject;
 
     W.EndObject;
@@ -331,7 +331,7 @@ begin
   end;
 end;
 
-function KanProeves(Status: Integer; const Navn: string): Boolean;
+function CanRetry(Status: Integer; const Name_: string): Boolean;
 begin
   { 5xx og et ekte rate limit går over av seg selv. Kvote gjør det ikke —
     ikke innenfor noen backoff en kø har — så den skal til feiltabellen
@@ -341,21 +341,21 @@ begin
     Exit(True);
   if Status = 408 then
     Exit(True);
-  if Navn = 'rate_limit_exceeded' then
+  if Name_ = 'rate_limit_exceeded' then
     Exit(True);
-  if Navn = 'concurrent_idempotent_requests' then
+  if Name_ = 'concurrent_idempotent_requests' then
     Exit(True);
   Result := False;
 end;
 
-procedure TResendTransport.Feil(Status: Integer; const Body: string);
+procedure TResendTransport.Err(Status: Integer; const Body: string);
 var
   A: TArena;
   Root: PJsonValue;
   ErrPos: SizeInt;
-  Navn, Msg, Pynt: string;
+  Name_, Msg, Suffix: string;
 begin
-  Navn := '';
+  Name_ := '';
   Msg := '';
   A := TArena.Create(16 * 1024);
   try
@@ -365,11 +365,11 @@ begin
         den nyere. Begge leses, og type for sikkerhets skyld — en feil vi
         ikke klarer å navngi skal fortsatt komme fram med status og
         tekst. }
-      Navn := JsonAsString(JsonMember(Root, 'name'));
-      if Navn = '' then
-        Navn := JsonAsString(JsonMember(Root, 'error_type'));
-      if Navn = '' then
-        Navn := JsonAsString(JsonMember(Root, 'type'));
+      Name_ := JsonAsString(JsonMember(Root, 'name'));
+      if Name_ = '' then
+        Name_ := JsonAsString(JsonMember(Root, 'error_type'));
+      if Name_ = '' then
+        Name_ := JsonAsString(JsonMember(Root, 'type'));
       Msg := JsonAsString(JsonMember(Root, 'message'));
       if Msg = '' then
         Msg := JsonAsString(JsonMember(Root, 'error'));
@@ -383,19 +383,19 @@ begin
   if Msg = '' then
     Msg := 'no response body';
 
-  if Navn <> '' then
-    Pynt := ' (' + Navn + ')'
+  if Name_ <> '' then
+    Suffix := ' (' + Name_ + ')'
   else
-    Pynt := '';
+    Suffix := '';
 
-  raise EResendError.Create(Status, Navn,
-    Format('Resend API error %d%s: %s', [Status, Pynt, Msg]),
-    KanProeves(Status, Navn));
+  raise EResendError.Create(Status, Name_,
+    Format('Resend API error %d%s: %s', [Status, Suffix, Msg]),
+    CanRetry(Status, Name_));
 end;
 
 procedure TResendTransport.Send(M: TMailMessage);
 var
-  Body, Svar, Idem: string;
+  Body, Reply, Idem: string;
   Status: Integer;
   A: TArena;
   Root: PJsonValue;
@@ -411,7 +411,7 @@ begin
     Idem := M.EnsureMessageId;
 
   try
-    Svar := FHttp.Post(FBaseUrl + '/emails', FApiKey, Idem, Body, Status);
+    Reply := FHttp.Post(FBaseUrl + '/emails', FApiKey, Idem, Body, Status);
   except
     on E: EResendError do
       raise;
@@ -424,12 +424,12 @@ begin
   end;
 
   if (Status < 200) or (Status > 299) then
-    Feil(Status, Svar);
+    Err(Status, Reply);
 
   FLastId := '';
   A := TArena.Create(8 * 1024);
   try
-    if JsonParse(A, Str(Svar), Root, ErrPos) then
+    if JsonParse(A, Str(Reply), Root, ErrPos) then
       FLastId := JsonAsString(JsonMember(Root, 'id'));
   finally
     A.Free;

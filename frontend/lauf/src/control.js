@@ -1,9 +1,10 @@
-// Delt mellom Input, Textarea og Select: den ene tingen en kontroll må vite
-// for å oppføre seg riktig inne i et Field og et Form.
+// Shared between Input, Textarea and Select: the one thing a control has
+// to know to behave correctly inside a Field and a Form.
 //
-// Verdien leses fra <Form> når kontrollen står i et navngitt <Field>, og
-// fra `bind:value` ellers. Det er én kodevei, ikke to — en if rundt selve
-// <input>-elementet ville gitt to steder å holde attributtene like.
+// The value is read from <Form> when the control sits in a named <Field>,
+// and from `bind:value` otherwise. That is one code path, not two — an if
+// around the <input> element itself would give two places to keep the
+// attributes in step.
 
 export const controlClasses =
   'w-full rounded-control border bg-transparent text-fg text-sm px-3 py-2 ' +

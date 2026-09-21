@@ -66,11 +66,11 @@ function IsTesting: Boolean;
 
   Poenget er tidspunktet: uten den oppdages en manglende DATABASE_URL på
   første request som treffer databasen, kanskje i produksjon, kanskje som
-  en 500 hos en bruker. Med den stopper appen ved oppstart og sier hvilke
+  en 500 hos en bruker. With_ den stopper appen ved oppstart og sier hvilke
   nøkler det gjelder. Aldri hvilke verdier. }
 procedure RequireEnv(const Keys: array of string);
 
-{ Til diagnostikk. EnvKeys gir navnene som ble lest, ikke verdiene. }
+{ To_ diagnostikk. EnvKeys gir navnene som ble lest, ikke verdiene. }
 function EnvFile: string;
 function EnvKeys: TStringArray;
 procedure ClearEnv;
@@ -130,7 +130,7 @@ begin
     Exit;
   end;
 
-  { Ikke sitert: en # med mellomrom foran starter en kommentar. Uten
+  { Ikke sitert: en # med mellomrom foran starter en kommentar. Without
     mellomrom er den en del av verdien, slik at et passord med # i seg
     ikke blir kuttet i to. }
   I := 2;
@@ -148,9 +148,9 @@ end;
 
 procedure LoadEnv(const Path: string);
 var
-  Linjer: TStringList;
+  Lines: TStringList;
   I, P, Idx: Integer;
-  L, Key, Verdi: string;
+  L, Key, Value_: string;
 begin
   GLock.Acquire;
   try
@@ -162,12 +162,12 @@ begin
     if not FileExists(Path) then
       Exit;
 
-    Linjer := TStringList.Create;
+    Lines := TStringList.Create;
     try
-      Linjer.LoadFromFile(Path);
-      for I := 0 to Linjer.Count - 1 do
+      Lines.LoadFromFile(Path);
+      for I := 0 to Lines.Count - 1 do
       begin
-        L := Trim(Linjer[I]);
+        L := Trim(Lines[I]);
         if (L = '') or (L[1] = '#') then
           Continue;
         if Copy(L, 1, 7) = 'export ' then
@@ -183,16 +183,16 @@ begin
           «API_KEY=» ville altså forsvunnet på trunk og blitt igjen på 3.2.2.
           Vi skriver paret selv. Siste forekomst vinner, slik at en fil kan
           overstyre seg selv. }
-        Verdi := ParseValue(Copy(L, P + 1, MaxInt));
+        Value_ := ParseValue(Copy(L, P + 1, MaxInt));
         Idx := GStore.IndexOfName(Key);
         if Idx >= 0 then
-          GStore[Idx] := Key + '=' + Verdi
+          GStore[Idx] := Key + '=' + Value_
         else
-          GStore.Add(Key + '=' + Verdi);
+          GStore.Add(Key + '=' + Value_);
       end;
       GFile := ExpandFileName(Path);
     finally
-      Linjer.Free;
+      Lines.Free;
     end;
   finally
     GLock.Release;
@@ -282,7 +282,7 @@ end;
 
 function EnvOrFail(const Key: string): string;
 var
-  Hvor: string;
+  Where_: string;
 begin
   Result := Env(Key);
   if Result <> '' then
@@ -290,10 +290,10 @@ begin
   { Meldingen sier hvor det ble lett, slik at den som får den kan gjøre noe.
     Den sier aldri hva noen annen nøkkel inneholder. }
   if GFile <> '' then
-    Hvor := Format(' Checked the environment and %s.', [GFile])
+    Where_ := Format(' Checked the environment and %s.', [GFile])
   else
-    Hvor := ' Checked the environment; no .env file was loaded.';
-  raise EEnvError.CreateFmt('%s is not set.%s', [Key, Hvor]);
+    Where_ := ' Checked the environment; no .env file was loaded.';
+  raise EEnvError.CreateFmt('%s is not set.%s', [Key, Where_]);
 end;
 
 function EnvFile: string;
@@ -367,31 +367,31 @@ end;
 procedure RequireEnv(const Keys: array of string);
 var
   I: Integer;
-  Mangler: string;
-  Antall: Integer;
+  Missing: string;
+  Count_: Integer;
 begin
-  Mangler := '';
-  Antall := 0;
+  Missing := '';
+  Count_ := 0;
   for I := 0 to High(Keys) do
     if Trim(Env(Keys[I])) = '' then
     begin
-      if Mangler <> '' then
-        Mangler := Mangler + ', ';
-      Mangler := Mangler + Keys[I];
-      Inc(Antall);
+      if Missing <> '' then
+        Missing := Missing + ', ';
+      Missing := Missing + Keys[I];
+      Inc(Count_);
     end;
-  if Antall = 0 then
+  if Count_ = 0 then
     Exit;
-  { Alle på én gang. En feil om gangen betyr like mange omstarter som det
+  { All_ på én gang. En feil om gangen betyr like mange omstarter som det
     er manglende nøkler. }
   if GFile <> '' then
     raise EEnvError.CreateFmt(
       'Missing required configuration: %s. Looked in the environment and %s.',
-      [Mangler, GFile])
+      [Missing, GFile])
   else
     raise EEnvError.CreateFmt(
       'Missing required configuration: %s. Looked in the environment; ' +
-      'no .env file was found.', [Mangler]);
+      'no .env file was found.', [Missing]);
 end;
 initialization
   GLock := TCriticalSection.Create;

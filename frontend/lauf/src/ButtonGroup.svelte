@@ -1,5 +1,6 @@
-<!-- Knapper som hører sammen. Sømmene mellom dem fjernes med negativ margin
-     i stedet for å be hver knapp om å vite hvor i rekka den står. -->
+<!-- Buttons that belong together. The seams between them are removed
+     with a negative margin rather than by asking each button to know
+     where in the row it sits. -->
 <script>
   import { cn } from './utils.js'
   let { children, class: klass, ...rest } = $props()

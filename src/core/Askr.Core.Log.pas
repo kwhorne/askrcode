@@ -25,7 +25,7 @@
   databasen. Logger appen selv en hemmelighet, er det appens valg — men
   ingenting her gjør det for den.
 
-  Loggen er trådsikker. Alle workerne skriver til den samme, og en linje
+  Loggen er trådsikker. All_ workerne skriver til den samme, og en linje
   skal ikke kunne bli klippet i to av en annen tråd. }
 unit Askr.Core.Log;
 
@@ -245,7 +245,7 @@ end;
 procedure ConfigureLogFromEnv;
 var
   L: TLogLevel;
-  F, Sti: string;
+  F, Path_: string;
 begin
   if Env('LOG_LEVEL') <> '' then
   begin
@@ -269,9 +269,9 @@ begin
   else
     SetLogFormat(lfText);
 
-  Sti := Env('LOG_FILE');
-  if Sti <> '' then
-    SetLogFile(Sti);
+  Path_ := Env('LOG_FILE');
+  if Path_ <> '' then
+    SetLogFile(Path_);
 end;
 
 { ------------------------------------------------------------ skriving -- }
@@ -302,7 +302,7 @@ begin
   end;
 end;
 
-function FloatMedPunktum(V: Extended): string;
+function FloatWithDot(V: Extended): string;
 var
   Fs: TFormatSettings;
 begin
@@ -314,7 +314,7 @@ end;
 
 { Sant for verdier som skal stå usitert i JSON. En logginnsamler som får
   «"ms":"12"» kan ikke regne på den; «"ms":12» kan den. }
-function ErTall(const V: TVarRec): Boolean;
+function IsNumber(const V: TVarRec): Boolean;
 begin
   Result := V.VType in [vtInteger, vtInt64, vtQWord, vtExtended, vtCurrency];
 end;
@@ -327,7 +327,7 @@ end;
 { Én verdi fra `array of const` til tekst. Alt som kan komme inn må ha en
   gren: en logglinje som kaster fordi noen sendte en peker er verre enn
   linja den erstattet. }
-function VerdiTekst(const V: TVarRec): string;
+function ValueText(const V: TVarRec): string;
 begin
   case V.VType of
     vtInteger: Result := IntToStr(V.VInteger);
@@ -348,8 +348,8 @@ begin
     { FloatToStr og CurrToStr følger locale, og på en norsk maskin blir
       desimalskilletegnet komma. I en JSON-logg er «1,5» ikke et tall, det
       er en syntaksfeil. Punktum settes derfor eksplisitt. }
-    vtExtended: Result := FloatMedPunktum(V.VExtended^);
-    vtCurrency: Result := FloatMedPunktum(V.VCurrency^);
+    vtExtended: Result := FloatWithDot(V.VExtended^);
+    vtCurrency: Result := FloatWithDot(V.VCurrency^);
     vtPointer:
       if V.VPointer = nil then
         Result := 'nil'
@@ -373,24 +373,24 @@ end;
 { Tekstformatet siterer bare når det trengs. En verdi uten mellomrom eller
   anførselstegn leses lettere uten dem, og det er et menneske som leser
   dette formatet. }
-function TekstVerdi(const S: string): string;
+function TextValue(const S: string): string;
 var
   I: Integer;
-  MaaSiteres: Boolean;
+  NeedsQuoting: Boolean;
 begin
-  MaaSiteres := S = '';
+  NeedsQuoting := S = '';
   for I := 1 to Length(S) do
     if (S[I] <= ' ') or (S[I] = '"') then
     begin
-      MaaSiteres := True;
+      NeedsQuoting := True;
       Break;
     end;
-  if not MaaSiteres then
+  if not NeedsQuoting then
     Exit(S);
   Result := '"' + JsonEscape(S) + '"';
 end;
 
-procedure SkrivLinje(const Line: string);
+procedure WriteLine_(const Line: string);
 begin
   GLock.Acquire;
   try
@@ -403,7 +403,7 @@ begin
     begin
       try
         WriteLn(GFile, Line);
-        { Uten Flush ligger de siste linjene i bufferet når prosessen dør,
+        { Without Flush ligger de siste linjene i bufferet når prosessen dør,
           og det er nettopp de linjene noen leter etter. }
         Flush(GFile);
         Exit;
@@ -429,7 +429,7 @@ procedure LogWrite(L: TLogLevel; const Msg: string;
 var
   B: string;
   I: Integer;
-  Noekkel, Verdi: string;
+  Noekkel, Value_: string;
 begin
   if not LogEnabled(L) then
     Exit;
@@ -441,14 +441,14 @@ begin
     I := 0;
     while I <= High(Fields) do
     begin
-      Noekkel := VerdiTekst(Fields[I]);
+      Noekkel := ValueText(Fields[I]);
       B := B + ',"' + JsonEscape(Noekkel) + '":';
       if I + 1 > High(Fields) then
         B := B + '""'
-      else if ErTall(Fields[I + 1]) or ErBool(Fields[I + 1]) then
-        B := B + VerdiTekst(Fields[I + 1])
+      else if IsNumber(Fields[I + 1]) or ErBool(Fields[I + 1]) then
+        B := B + ValueText(Fields[I + 1])
       else
-        B := B + '"' + JsonEscape(VerdiTekst(Fields[I + 1])) + '"';
+        B := B + '"' + JsonEscape(ValueText(Fields[I + 1])) + '"';
       Inc(I, 2);
     end;
     B := B + '}';
@@ -461,17 +461,17 @@ begin
     I := 0;
     while I <= High(Fields) do
     begin
-      Noekkel := VerdiTekst(Fields[I]);
+      Noekkel := ValueText(Fields[I]);
       if I + 1 <= High(Fields) then
-        Verdi := VerdiTekst(Fields[I + 1])
+        Value_ := ValueText(Fields[I + 1])
       else
-        Verdi := '';
-      B := B + ' ' + Noekkel + '=' + TekstVerdi(Verdi);
+        Value_ := '';
+      B := B + ' ' + Noekkel + '=' + TextValue(Value_);
       Inc(I, 2);
     end;
   end;
 
-  SkrivLinje(B);
+  WriteLine_(B);
 end;
 
 procedure LogWrite(L: TLogLevel; const Msg: string);
@@ -527,8 +527,8 @@ end;
 procedure LogException(E: Exception; const Context: string;
   const Fields: array of const);
 var
-  NKlasse, NFeil, VKlasse, VFeil: string;
-  Alle: array of TVarRec;
+  NKlasse, NErr, VKlasse, VErr: string;
+  All_: array of TVarRec;
   I: Integer;
 begin
   if not LogEnabled(llError) then
@@ -548,18 +548,18 @@ begin
     uttrykk på stedet ville vært frigjort for tidlig. }
   NKlasse := 'class';
   VKlasse := E.ClassName;
-  NFeil := 'error';
-  VFeil := E.Message;
+  NErr := 'error';
+  VErr := E.Message;
 
-  SetLength(Alle, Length(Fields) + 4);
-  Alle[0].VType := vtAnsiString; Alle[0].VAnsiString := Pointer(NKlasse);
-  Alle[1].VType := vtAnsiString; Alle[1].VAnsiString := Pointer(VKlasse);
-  Alle[2].VType := vtAnsiString; Alle[2].VAnsiString := Pointer(NFeil);
-  Alle[3].VType := vtAnsiString; Alle[3].VAnsiString := Pointer(VFeil);
+  SetLength(All_, Length(Fields) + 4);
+  All_[0].VType := vtAnsiString; All_[0].VAnsiString := Pointer(NKlasse);
+  All_[1].VType := vtAnsiString; All_[1].VAnsiString := Pointer(VKlasse);
+  All_[2].VType := vtAnsiString; All_[2].VAnsiString := Pointer(NErr);
+  All_[3].VType := vtAnsiString; All_[3].VAnsiString := Pointer(VErr);
   for I := 0 to High(Fields) do
-    Alle[I + 4] := Fields[I];
+    All_[I + 4] := Fields[I];
 
-  LogWrite(llError, Context, Alle);
+  LogWrite(llError, Context, All_);
 end;
 
 initialization

@@ -1,13 +1,13 @@
-<!-- En radioknapp får bare mening i en gruppe, og gruppa er et <Field
-     as="fieldset">. Navnet kommer derfra, slik at to knapper ikke kan havne
-     i hver sin gruppe ved en skrivefeil. -->
+<!-- A radio button only means anything inside a group, and the group is
+     a <Field as="fieldset">. The name comes from there, so two buttons
+     cannot end up in separate groups because of a typo. -->
 <script>
   import { getContext } from 'svelte'
   import { cn } from './utils.js'
   import { FORM, FIELD, uid } from './context.js'
 
   let {
-    /** Verdien denne knappen står for. */
+    /** The value this button stands for. */
     value,
     /** Overstyrer gruppens navn. */
     name,

@@ -178,7 +178,7 @@ var
   D: TDateTime;
   Y, M, Dd: Word;
   Kandidat: TDateTime;
-  DagNaa, Diff: Integer;
+  DayNow, Diff: Integer;
 begin
   if E.Kind = skInterval then
     Exit(FromUnix + E.IntervalSec);
@@ -196,8 +196,8 @@ begin
     skWeekly:
       begin
         { DayOfWeek i FPC er 1 = søndag. TDayOfWeek er 0 = søndag. }
-        DagNaa := DayOfWeek(D) - 1;
-        Diff := E.Day - DagNaa;
+        DayNow := DayOfWeek(D) - 1;
+        Diff := E.Day - DayNow;
         if Diff < 0 then
           Inc(Diff, 7);
         Kandidat := EncodeDate(Y, M, Dd) + Diff +
@@ -302,37 +302,37 @@ end;
 function TScheduler.Tick(NowUnix: Int64): Integer;
 var
   I: Integer;
-  Naa: Int64;
+  Now_: Int64;
 begin
   Result := 0;
   if NowUnix = 0 then
-    Naa := UnixNow
+    Now_ := UnixNow
   else
-    Naa := NowUnix;
+    Now_ := NowUnix;
 
   Inc(FTicks);
   FLock.Acquire;
   try
     for I := 0 to High(FEntries) do
     begin
-      if FEntries[I].NextRun > Naa then
+      if FEntries[I].NextRun > Now_ then
         Continue;
 
-      { En jobb som allerede venter skal ikke stables. Uten dette vokser
+      { En jobb som allerede venter skal ikke stables. Without dette vokser
         køen i det uendelige når jobben er tregere enn intervallet. }
       if FEntries[I].SkipIfPending and (FQueue.Pending > 0) then
       begin
         Inc(FEntries[I].Skipped);
-        FEntries[I].NextRun := NextAfter(FEntries[I], Naa);
+        FEntries[I].NextRun := NextAfter(FEntries[I], Now_);
         Continue;
       end;
 
       FQueue.Push(FEntries[I].JobName, FEntries[I].Payload);
-      FEntries[I].LastRun := Naa;
+      FEntries[I].LastRun := Now_;
       Inc(FEntries[I].Runs);
       Inc(FDispatched);
       Inc(Result);
-      FEntries[I].NextRun := NextAfter(FEntries[I], Naa);
+      FEntries[I].NextRun := NextAfter(FEntries[I], Now_);
     end;
   finally
     FLock.Release;
@@ -362,7 +362,7 @@ end;
 procedure TScheduler.Describe(Lines: TStrings);
 var
   I: Integer;
-  Naar: string;
+  When_: string;
   E: TScheduleEntry;
 begin
   FLock.Acquire;
@@ -373,18 +373,18 @@ begin
       case E.Kind of
         skInterval:
           if E.IntervalSec mod 3600 = 0 then
-            Naar := Format('every %d hours', [E.IntervalSec div 3600])
+            When_ := Format('every %d hours', [E.IntervalSec div 3600])
           else if E.IntervalSec mod 60 = 0 then
-            Naar := Format('every %d minutes', [E.IntervalSec div 60])
+            When_ := Format('every %d minutes', [E.IntervalSec div 60])
           else
-            Naar := Format('every %d seconds', [E.IntervalSec]);
-        skDaily:   Naar := Format('daily at %.2d:%.2d', [E.Hour, E.Minute]);
-        skWeekly:  Naar := Format('weekly on day %d at %.2d:%.2d',
+            When_ := Format('every %d seconds', [E.IntervalSec]);
+        skDaily:   When_ := Format('daily at %.2d:%.2d', [E.Hour, E.Minute]);
+        skWeekly:  When_ := Format('weekly on day %d at %.2d:%.2d',
                      [E.Day, E.Hour, E.Minute]);
-        skMonthly: Naar := Format('monthly on the %dth at %.2d:%.2d',
+        skMonthly: When_ := Format('monthly on the %dth at %.2d:%.2d',
                      [E.Day, E.Hour, E.Minute]);
       end;
-      Lines.Add(Format('%-22s %-28s next: %s', [E.JobName, Naar,
+      Lines.Add(Format('%-22s %-28s next: %s', [E.JobName, When_,
         FormatDateTime('yyyy-mm-dd hh:nn:ss', UnixToDateTime(E.NextRun))]));
     end;
   finally

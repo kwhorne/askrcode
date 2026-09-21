@@ -20,7 +20,7 @@
   port 8080 i stedet for å migrere. Det var ikke en liten feil — det gjorde
   hele migrasjonsverktøyet utilgjengelig fra et ferskt prosjekt.
 
-  ## Hva som med vilje ikke finnes
+  ## What som med vilje ikke finnes
 
   Laravel har `optimize`, `config:cache`, `route:cache`, `view:cache` og
   `clear-compiled`. De finnes fordi PHP tolker kildekoden på nytt ved hver
@@ -57,7 +57,7 @@ type
 procedure RegisterSeeder(S: TSeederClass);
 function RegisteredSeeders: TList;
 
-{ Appen sier hvor databasen er. Uten den kan ingen av db-kommandoene
+{ Appen sier hvor databasen er. Without den kan ingen av db-kommandoene
   gjøre noe, og da sier de fra i stedet for å feile halvveis. }
 procedure SetConsoleDsn(const Dsn: string);
 { Ruteren, køen, planen og cachen settes av appen når den har dem. Det som
@@ -78,7 +78,7 @@ function RunConsole: Boolean;
 procedure UseMaintenance(R: TRouter);
 function InMaintenance: Boolean;
 
-{ Alle kommandoene, til `askr list`. }
+{ All_ kommandoene, til `askr list`. }
 function ConsoleCommands: TStringArray;
 
 implementation
@@ -122,12 +122,12 @@ end;
 { ----------------------------------------------------------- hjelpere -- }
 
 procedure Si(const S: string); forward;
-procedure Feil(const S: string); forward;
+procedure Err(const S: string); forward;
 
 { Ja/nei i en statusutskrift. Skrevet ut fordi IfThen uten StrUtils eller
   Math i uses treffer en generisk deklarasjon og gir «Generics without
   specialization» — en feilmelding som ikke sier hva som er galt. }
-function BoolSvar(B: Boolean; const Ja, Nei: string): string;
+function BoolAnswer(B: Boolean; const Ja, Nei: string): string;
 begin
   if B then
     Result := Ja
@@ -138,7 +138,7 @@ end;
 { De omgivende køen, planen og cachen kaster når de ikke er satt, og
   meldingene deres sier hva som mangler. Kommandoene her fanger dem i
   stedet for å la et stakkspor stå som svar på «askr queue:status». }
-function HarKoe: Boolean;
+function HasQueue: Boolean;
 begin
   Result := True;
   try
@@ -146,13 +146,13 @@ begin
   except
     on E: Exception do
     begin
-      Feil(E.Message);
+      Err(E.Message);
       Result := False;
     end;
   end;
 end;
 
-function HarPlan: Boolean;
+function HasSchedule: Boolean;
 begin
   Result := True;
   try
@@ -160,13 +160,13 @@ begin
   except
     on E: Exception do
     begin
-      Feil(E.Message);
+      Err(E.Message);
       Result := False;
     end;
   end;
 end;
 
-function HarCache: Boolean;
+function HasCache: Boolean;
 begin
   Result := True;
   try
@@ -174,7 +174,7 @@ begin
   except
     on E: Exception do
     begin
-      Feil(E.Message);
+      Err(E.Message);
       Result := False;
     end;
   end;
@@ -186,14 +186,14 @@ begin
   Flush(Output);
 end;
 
-procedure Feil(const S: string);
+procedure Err(const S: string);
 begin
   WriteLn(ErrOutput, S);
   Flush(ErrOutput);
 end;
 
 { Et flagg på formen --step=3 eller --step 3. }
-function FlaggTall(const Navn: string; Standard: Integer): Integer;
+function FlagValue(const Name_: string; Standard: Integer): Integer;
 var
   I: Integer;
   P: string;
@@ -202,19 +202,19 @@ begin
   for I := 1 to ParamCount do
   begin
     P := ParamStr(I);
-    if Copy(P, 1, Length(Navn) + 3) = '--' + Navn + '=' then
-      Exit(StrToIntDef(Copy(P, Length(Navn) + 4, MaxInt), Standard));
-    if (P = '--' + Navn) and (I < ParamCount) then
+    if Copy(P, 1, Length(Name_) + 3) = '--' + Name_ + '=' then
+      Exit(StrToIntDef(Copy(P, Length(Name_) + 4, MaxInt), Standard));
+    if (P = '--' + Name_) and (I < ParamCount) then
       Exit(StrToIntDef(ParamStr(I + 1), Standard));
   end;
 end;
 
-function HarFlagg(const Navn: string): Boolean;
+function HasFlag(const Name_: string): Boolean;
 var
   I: Integer;
 begin
   for I := 1 to ParamCount do
-    if ParamStr(I) = '--' + Navn then
+    if ParamStr(I) = '--' + Name_ then
       Exit(True);
   Result := False;
 end;
@@ -235,11 +235,11 @@ begin
   Result := '';
 end;
 
-function AapneDb: TDbConnection;
+function OpenDb: TDbConnection;
 begin
   if GDsn = '' then
   begin
-    Feil('No database is configured. Call SetConsoleDsn in app.lpr, or ' +
+    Err('No database is configured. Call SetConsoleDsn in app.lpr, or ' +
       'set DATABASE_URL.');
     Halt(1);
   end;
@@ -250,7 +250,7 @@ begin
     begin
       { DSN-en kan ha passord i seg og skrives aldri ut. Skjemaet alene
         sier nok til å finne feilen. }
-      Feil(Format('Could not connect to the %s database: %s',
+      Err(Format('Could not connect to the %s database: %s',
         [DsnScheme(GDsn), E.Message]));
       Halt(1);
       Result := nil;
@@ -258,7 +258,7 @@ begin
   end;
 end;
 
-procedure LoggLinje(const Line: string);
+procedure LogLine(const Line: string);
 begin
   Si('  ' + Line);
 end;
@@ -271,10 +271,10 @@ var
   M: TMigrator;
   N: Integer;
 begin
-  C := AapneDb;
+  C := OpenDb;
   M := TMigrator.Create(C);
   try
-    M.OnLog := LoggLinje;
+    M.OnLog := LogLine;
     N := M.Up(Steps);
     if N = 0 then
       Si('Nothing to migrate.')
@@ -292,9 +292,9 @@ var
   M: TMigrator;
   Info: TMigrationInfoArray;
   I: Integer;
-  Merke: string;
+  Mark: string;
 begin
-  C := AapneDb;
+  C := OpenDb;
   M := TMigrator.Create(C);
   try
     Info := M.Status;
@@ -307,14 +307,14 @@ begin
     for I := 0 to High(Info) do
     begin
       if Info[I].Applied and Info[I].Registered then
-        Merke := 'applied'
+        Mark := 'applied'
       else if Info[I].Applied then
         { Kjørt, men fila er borte. Det er en tilstand man vil vite om. }
-        Merke := 'MISSING'
+        Mark := 'MISSING'
       else
-        Merke := 'pending';
+        Mark := 'pending';
       Si(Format('%-18s %-10s %s',
-        [Info[I].Version, Merke, Info[I].Title]));
+        [Info[I].Version, Mark, Info[I].Title]));
     end;
     Si('');
     Si(Format('%d pending.', [M.PendingCount]));
@@ -330,10 +330,10 @@ var
   M: TMigrator;
   N: Integer;
 begin
-  C := AapneDb;
+  C := OpenDb;
   M := TMigrator.Create(C);
   try
-    M.OnLog := LoggLinje;
+    M.OnLog := LogLine;
     N := M.Down(Steps);
     if N = 0 then
       Si('Nothing to roll back.')
@@ -348,7 +348,7 @@ end;
 { Sletter alle tabeller i skjemaet, ikke bare de Norn kjenner. En
   migrate:fresh som lot noe stå ville gitt en database som ser tom ut og
   ikke er det. }
-function SlettAlleTabeller(C: TDbConnection; A: TArena): Integer;
+function DropAllTables(C: TDbConnection; A: TArena): Integer;
 var
   S: TDbSchema;
   I: Integer;
@@ -402,22 +402,22 @@ var
   A: TArena;
   N: Integer;
 begin
-  if IsProduction and not HarFlagg('force') then
+  if IsProduction and not HasFlag('force') then
   begin
     { Den ene kommandoen som sletter alt skal ikke kunne kjøres i
       produksjon ved et uhell. }
-    Feil('Refusing to wipe the database with APP_ENV=production. ' +
+    Err('Refusing to wipe the database with APP_ENV=production. ' +
       'Pass --force if that is really what you want.');
     Halt(1);
   end;
-  C := AapneDb;
+  C := OpenDb;
   A := TArena.Create(64 * 1024);
   try
     if C.Dialect = sdMySql then
       C.Exec(A, 'SET FOREIGN_KEY_CHECKS = 0');
     if C.Dialect = sdSqlite then
       C.Exec(A, 'PRAGMA foreign_keys = OFF');
-    N := SlettAlleTabeller(C, A);
+    N := DropAllTables(C, A);
     if C.Dialect = sdMySql then
       C.Exec(A, 'SET FOREIGN_KEY_CHECKS = 1');
     if C.Dialect = sdSqlite then
@@ -430,30 +430,30 @@ begin
   end;
 end;
 
-procedure CmdMigrateFresh(MedSeed: Boolean); forward;
+procedure CmdMigrateFresh(WithSeed: Boolean); forward;
 procedure CmdSeed(const Bare: string); forward;
 
-procedure CmdMigrateFresh(MedSeed: Boolean);
+procedure CmdMigrateFresh(WithSeed: Boolean);
 begin
   CmdDbWipe(True);
   Si('Dropped all tables.');
   CmdMigrate(0);
-  if MedSeed then
+  if WithSeed then
     CmdSeed('');
 end;
 
 procedure CmdMigrateReset;
 begin
-  { Alle, ikke bare de siste. 0 til Down betyr ingenting, så tallet må
+  { All_, ikke bare de siste. 0 til Down betyr ingenting, så tallet må
     være stort nok til å dekke alt som er kjørt. }
   CmdRollback(MaxInt);
 end;
 
-procedure CmdMigrateRefresh(MedSeed: Boolean);
+procedure CmdMigrateRefresh(WithSeed: Boolean);
 begin
   CmdMigrateReset;
   CmdMigrate(0);
-  if MedSeed then
+  if WithSeed then
     CmdSeed('');
 end;
 
@@ -473,7 +473,7 @@ begin
     Si('No seeders are registered. Create one with: askr make seeder <Name>');
     Exit;
   end;
-  C := AapneDb;
+  C := OpenDb;
   N := 0;
   try
     for I := 0 to L.Count - 1 do
@@ -495,7 +495,7 @@ begin
   end;
   if (Bare <> '') and (N = 0) then
   begin
-    Feil('No seeder named "' + Bare + '".');
+    Err('No seeder named "' + Bare + '".');
     Halt(1);
   end;
   Si(Format('%d seeder(s) ran.', [N]));
@@ -511,7 +511,7 @@ var
   I: Integer;
   T: TDbTable;
 begin
-  C := AapneDb;
+  C := OpenDb;
   A := TArena.Create(128 * 1024);
   try
     { Skjemaet, ikke DSN-en: den kan ha passord i seg. }
@@ -538,7 +538,7 @@ begin
   end;
 end;
 
-procedure CmdDbTable(const Navn: string);
+procedure CmdDbTable(const Name_: string);
 var
   C: TDbConnection;
   S: TDbSchema;
@@ -546,21 +546,21 @@ var
   I: Integer;
   Col: TDbColumn;
   Fk: TDbForeignKey;
-  Merke: string;
+  Mark: string;
 begin
-  if Navn = '' then
+  if Name_ = '' then
   begin
-    Feil('Usage: askr db:table <name>');
+    Err('Usage: askr db:table <name>');
     Halt(1);
   end;
-  C := AapneDb;
+  C := OpenDb;
   try
     S := IntrospectSchema(C);
     try
-      T := S.Table(Navn);
+      T := S.Table(Name_);
       if T = nil then
       begin
-        Feil('No table named "' + Navn + '".');
+        Err('No table named "' + Name_ + '".');
         Halt(1);
       end;
       Si('Table  ' + T.Name);
@@ -570,15 +570,15 @@ begin
       for I := 0 to T.ColumnCount - 1 do
       begin
         Col := T.Column(I);
-        Merke := '';
+        Mark := '';
         if Col.Nullable then
-          Merke := 'yes'
+          Mark := 'yes'
         else
-          Merke := 'no';
+          Mark := 'no';
         if Col.Name = T.PrimaryKey then
-          Merke := Merke + '  (pk)';
+          Mark := Mark + '  (pk)';
         Si(Format('%-24s %-20s %-8s %s',
-          [Col.Name, Col.SqlType, Merke,
+          [Col.Name, Col.SqlType, Mark,
            PascalTypeFor(Col.SqlType, Col.Scale)]));
       end;
       if T.IndexCount > 0 then
@@ -619,7 +619,7 @@ var
   Endret: TStringArray;
   I: Integer;
 begin
-  C := AapneDb;
+  C := OpenDb;
   try
     S := IntrospectSchema(C);
     try
@@ -644,30 +644,30 @@ end;
 
 { ---------------------------------------------------------------- kø -- }
 
-procedure KreverKoe;
+procedure RequiresQueue;
 begin
-  if not HarKoe then
+  if not HasQueue then
     Halt(1);
 end;
 
 procedure CmdQueueWork;
 var
-  Foer: QWord;
+  Before: QWord;
 begin
-  KreverKoe;
+  RequiresQueue;
   Si(Format('Queue worker started (%d workers, %s).',
-    [Queue.Workers, BoolSvar(Queue.Durable, 'durable', 'in-process')]));
+    [Queue.Workers, BoolAnswer(Queue.Durable, 'durable', 'in-process')]));
   Queue.Start;
-  Foer := 0;
+  Before := 0;
   { Kjører til noen avbryter. En egen prosess for køen er ikke nødvendig
     i Askr — appen kan gjøre begge deler — men den finnes for den som vil
     skille dem. }
   while True do
   begin
     Sleep(1000);
-    if Queue.Processed <> Foer then
+    if Queue.Processed <> Before then
     begin
-      Foer := Queue.Processed;
+      Before := Queue.Processed;
       LogInfo('queue', ['processed', Int64(Queue.Processed),
         'failed', Int64(Queue.Failed), 'pending', Queue.Pending]);
     end;
@@ -676,13 +676,13 @@ end;
 
 procedure CmdQueueStatus;
 begin
-  KreverKoe;
+  RequiresQueue;
   Si(Format('Pending    %d', [Queue.Pending]));
   Si(Format('Processed  %d', [Queue.Processed]));
   Si(Format('Retried    %d', [Queue.Retried]));
   Si(Format('Failed     %d', [Queue.Failed]));
   Si(Format('Dropped    %d', [Queue.Dropped]));
-  Si(Format('Durable    %s', [BoolSvar(Queue.Durable, 'yes', 'no')]));
+  Si(Format('Durable    %s', [BoolAnswer(Queue.Durable, 'yes', 'no')]));
 end;
 
 { -------------------------------------------------------- scheduler -- }
@@ -692,7 +692,7 @@ var
   L: TStringList;
   I: Integer;
 begin
-  if not HarPlan then
+  if not HasSchedule then
     Halt(1);
   L := TStringList.Create;
   try
@@ -711,9 +711,9 @@ procedure CmdScheduleRun;
 var
   N: Integer;
 begin
-  if not HarPlan then
+  if not HasSchedule then
     Halt(1);
-  KreverKoe;
+  RequiresQueue;
   { Ett tikk. Scheduleren dytter til køen og utfører aldri noe selv, så
     jobbene kjører av køen etterpå. }
   N := Schedule.Tick;
@@ -726,7 +726,7 @@ end;
 
 procedure CmdCacheClear;
 begin
-  if not HarCache then
+  if not HasCache then
     Halt(1);
   Cache.Flush;
   Si('Cache cleared.');
@@ -746,10 +746,10 @@ end;
 
 type
   TVedlikehold = class
-    class function Sjekk(Req: TRequest): TResponse;
+    class function Check(Req: TRequest): TResponse;
   end;
 
-class function TVedlikehold.Sjekk(Req: TRequest): TResponse;
+class function TVedlikehold.Check(Req: TRequest): TResponse;
 begin
   if not InMaintenance then
     Exit(nil);
@@ -761,7 +761,7 @@ end;
 
 procedure UseMaintenance(R: TRouter);
 begin
-  R.Use(TVedlikehold.Sjekk);
+  R.Use(TVedlikehold.Check);
 end;
 
 procedure CmdDown;
@@ -793,14 +793,14 @@ procedure CmdAbout;
 begin
   Si('Application');
   Si('  Environment   ' + AppEnv);
-  Si('  Debug         ' + BoolSvar(not IsProduction, 'yes', 'no'));
-  Si('  Maintenance   ' + BoolSvar(FileExists(VedlikeholdsFil), 'ON', 'off'));
+  Si('  Debug         ' + BoolAnswer(not IsProduction, 'yes', 'no'));
+  Si('  Maintenance   ' + BoolAnswer(FileExists(VedlikeholdsFil), 'ON', 'off'));
   Si('  Log level     ' + LogLevelName(LogLevel));
   if ConfigFile <> '' then
     Si('  askr.toml     ' + ConfigFile);
   if EnvFile <> '' then
     Si('  .env          ' + EnvFile);
-  Si('  App key       ' + BoolSvar(HasAppKey, 'set', 'MISSING'));
+  Si('  App key       ' + BoolAnswer(HasAppKey, 'set', 'MISSING'));
   Si('');
   Si('Database');
   if GDsn = '' then
@@ -815,7 +815,7 @@ begin
     Si('  Routes        not registered');
   try
     Si(Format('  Queue         %d workers, %s',
-      [Queue.Workers, BoolSvar(Queue.Durable, 'durable', 'in-process')]));
+      [Queue.Workers, BoolAnswer(Queue.Durable, 'durable', 'in-process')]));
   except
     on Exception do Si('  Queue         not configured');
   end;
@@ -839,7 +839,7 @@ var
 begin
   if GRouter = nil then
   begin
-    Feil('No router is registered. Call SetConsoleRouter in app.lpr.');
+    Err('No router is registered. Call SetConsoleRouter in app.lpr.');
     Halt(1);
   end;
   L := TStringList.Create;
@@ -858,34 +858,34 @@ end;
 
 type
   TKommando = record
-    Navn: string;
+    Name_: string;
     Hjelp: string;
   end;
 
 const
   Kommandoer: array[0..21] of TKommando = (
-    (Navn: 'about';            Hjelp: 'what this app is configured with'),
-    (Navn: 'routes';           Hjelp: 'the routing table'),
-    (Navn: 'migrate';          Hjelp: 'run pending migrations'),
-    (Navn: 'migrate:status';   Hjelp: 'what has run and what has not'),
-    (Navn: 'migrate:rollback'; Hjelp: 'roll back the last batch (--step=N)'),
-    (Navn: 'migrate:reset';    Hjelp: 'roll back everything'),
-    (Navn: 'migrate:fresh';    Hjelp: 'drop all tables, then migrate (--seed)'),
-    (Navn: 'migrate:refresh';  Hjelp: 'reset, then migrate (--seed)'),
-    (Navn: 'db:seed';          Hjelp: 'run the seeders (--class=Name)'),
-    (Navn: 'db:show';          Hjelp: 'tables in the database'),
-    (Navn: 'db:table';         Hjelp: 'columns, indexes and keys of one table'),
-    (Navn: 'db:wipe';          Hjelp: 'drop every table (--force in production)'),
-    (Navn: 'schema';           Hjelp: 'generate typed columns from the database'),
-    (Navn: 'queue:work';       Hjelp: 'run the queue until interrupted'),
-    (Navn: 'queue:status';     Hjelp: 'counters for the queue'),
-    (Navn: 'schedule:list';    Hjelp: 'the schedule'),
-    (Navn: 'schedule:run';     Hjelp: 'dispatch what is due, once'),
-    (Navn: 'cache:clear';      Hjelp: 'empty the cache'),
-    (Navn: 'down';             Hjelp: 'maintenance mode on'),
-    (Navn: 'up';               Hjelp: 'maintenance mode off'),
-    (Navn: 'env';              Hjelp: 'the current environment'),
-    (Navn: 'list';             Hjelp: 'these commands'));
+    (Name_: 'about';            Hjelp: 'what this app is configured with'),
+    (Name_: 'routes';           Hjelp: 'the routing table'),
+    (Name_: 'migrate';          Hjelp: 'run pending migrations'),
+    (Name_: 'migrate:status';   Hjelp: 'what has run and what has not'),
+    (Name_: 'migrate:rollback'; Hjelp: 'roll back the last batch (--step=N)'),
+    (Name_: 'migrate:reset';    Hjelp: 'roll back everything'),
+    (Name_: 'migrate:fresh';    Hjelp: 'drop all tables, then migrate (--seed)'),
+    (Name_: 'migrate:refresh';  Hjelp: 'reset, then migrate (--seed)'),
+    (Name_: 'db:seed';          Hjelp: 'run the seeders (--class=Name)'),
+    (Name_: 'db:show';          Hjelp: 'tables in the database'),
+    (Name_: 'db:table';         Hjelp: 'columns, indexes and keys of one table'),
+    (Name_: 'db:wipe';          Hjelp: 'drop every table (--force in production)'),
+    (Name_: 'schema';           Hjelp: 'generate typed columns from the database'),
+    (Name_: 'queue:work';       Hjelp: 'run the queue until interrupted'),
+    (Name_: 'queue:status';     Hjelp: 'counters for the queue'),
+    (Name_: 'schedule:list';    Hjelp: 'the schedule'),
+    (Name_: 'schedule:run';     Hjelp: 'dispatch what is due, once'),
+    (Name_: 'cache:clear';      Hjelp: 'empty the cache'),
+    (Name_: 'down';             Hjelp: 'maintenance mode on'),
+    (Name_: 'up';               Hjelp: 'maintenance mode off'),
+    (Name_: 'env';              Hjelp: 'the current environment'),
+    (Name_: 'list';             Hjelp: 'these commands'));
 
 function ConsoleCommands: TStringArray;
 var
@@ -894,7 +894,7 @@ begin
   Result := nil;
   SetLength(Result, Length(Kommandoer));
   for I := Low(Kommandoer) to High(Kommandoer) do
-    Result[I] := Kommandoer[I].Navn;
+    Result[I] := Kommandoer[I].Name_;
 end;
 
 procedure CmdList;
@@ -904,7 +904,7 @@ begin
   Si('Commands this app answers to:');
   Si('');
   for I := Low(Kommandoer) to High(Kommandoer) do
-    Si(Format('  %-18s %s', [Kommandoer[I].Navn, Kommandoer[I].Hjelp]));
+    Si(Format('  %-18s %s', [Kommandoer[I].Name_, Kommandoer[I].Hjelp]));
 end;
 
 function RunConsole: Boolean;
@@ -915,7 +915,7 @@ begin
   if ParamCount < 1 then
     Exit;
   K := ParamStr(1);
-  { Kommandoene kommer som --navn fra verktøyet. Uten prefikset er det
+  { Kommandoene kommer som --navn fra verktøyet. Without prefikset er det
     portnummeret, slik det alltid har vært. }
   if Copy(K, 1, 2) <> '--' then
     Exit;
@@ -924,12 +924,12 @@ begin
 
   if K = 'about' then CmdAbout
   else if K = 'routes' then CmdRoutes
-  else if K = 'migrate' then CmdMigrate(FlaggTall('step', 0))
+  else if K = 'migrate' then CmdMigrate(FlagValue('step', 0))
   else if K = 'migrate:status' then CmdMigrateStatus
-  else if K = 'migrate:rollback' then CmdRollback(FlaggTall('step', 1))
+  else if K = 'migrate:rollback' then CmdRollback(FlagValue('step', 1))
   else if K = 'migrate:reset' then CmdMigrateReset
-  else if K = 'migrate:fresh' then CmdMigrateFresh(HarFlagg('seed'))
-  else if K = 'migrate:refresh' then CmdMigrateRefresh(HarFlagg('seed'))
+  else if K = 'migrate:fresh' then CmdMigrateFresh(HasFlag('seed'))
+  else if K = 'migrate:refresh' then CmdMigrateRefresh(HasFlag('seed'))
   else if K = 'db:seed' then CmdSeed(Arg(1))
   else if K = 'db:show' then CmdDbShow
   else if K = 'db:table' then CmdDbTable(Arg(1))
@@ -946,8 +946,8 @@ begin
   else if K = 'list' then CmdList
   else
   begin
-    Feil('Unknown command: ' + K);
-    Feil('Try: askr list');
+    Err('Unknown command: ' + K);
+    Err('Try: askr list');
     Halt(1);
   end;
 end;

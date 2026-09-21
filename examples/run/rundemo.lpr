@@ -18,7 +18,7 @@ var
   Customers: TCustomerRowArray;
   Orders: TOrderRowArray;
   Cust: TCustomerRow;
-  Ord_: TOrderRow;
+  Word_: TOrderRow;
   Found: Boolean;
   I, J, Total: Integer;
   Sum: Currency;
@@ -32,9 +32,9 @@ begin
     Cust := CustomerById(A, C, 3, Found);
     WriteLn(Format('CustomerById(3): %s <%s>, balance %.2f',
       [Cust.Name, Cust.Email, Cust.Balance]));
-    Ord_ := OrderById(A, C, 3, Found);
+    Word_ := OrderById(A, C, 3, Found);
     WriteLn(Format('OrderById(3):    amount %.2f, customer %d',
-      [Ord_.Amount, Ord_.CustomerId]));
+      [Word_.Amount, Word_.CustomerId]));
     Cust := CustomerById(A, C, 9999, Found);
     WriteLn('CustomerById(9999) found: ', BoolToStr(Found, True));
     WriteLn;

@@ -1,6 +1,6 @@
 { Postgres-tester, med vekt på prepared statements og cachen deres.
 
-  Kjører mot en ekte server. Uten en, hopper suiten over seg selv og sier
+  Kjører mot en ekte server. Without en, hopper suiten over seg selv og sier
   hvorfor.
 
     ./askr db:up     # Postgres på 5433
@@ -29,42 +29,42 @@ begin
   WriteLn('— ', Name);
 end;
 
-procedure Ok(const Hva: string; Verdi: Boolean);
+procedure Ok(const What: string; Value_: Boolean);
 begin
-  if Verdi then
+  if Value_ then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
   end;
 end;
 
-procedure Like(const Hva, Forventet, Fikk: string);
+procedure Like(const What, Forventet, Fikk: string);
 begin
   if Forventet = Fikk then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Forventet);
     WriteLn('        fikk:      ', Fikk);
   end;
 end;
 
-procedure LikeI(const Hva: string; Forventet, Fikk: Int64);
+procedure LikeI(const What: string; Forventet, Fikk: Int64);
 begin
-  Like(Hva, IntToStr(Forventet), IntToStr(Fikk));
+  Like(What, IntToStr(Forventet), IntToStr(Fikk));
 end;
 
-{ Serverens eget syn på saken. Uten denne kunne cachetellerne våre vært
+{ Serverens eget syn på saken. Without denne kunne cachetellerne våre vært
   riktige mens ingenting faktisk var forberedt. }
 function ServerStatements(C: TPgConnection; A: TArena): Int64;
 begin
@@ -85,7 +85,7 @@ begin
     '  created_at TIMESTAMPTZ NOT NULL DEFAULT now())');
 end;
 
-procedure Kjor;
+procedure Run_;
 var
   C: TPgConnection;
   A: TArena;
@@ -93,9 +93,9 @@ var
   Id: Int64;
   I: Integer;
   ForPrep, ForHits, ForServer: Int64;
-  Feil, Tekst: string;
+  Err, Text_: string;
   V: Currency;
-  T0, Uten, Med: Int64;
+  T0, Without, With_: Int64;
 begin
   A := TArena.Create;
   C := TPgConnection.Create(Dsn);
@@ -177,18 +177,18 @@ begin
       [DbParam(A, 'Ada'), DbParam(A, 'ada@example.com')], 'id');
     Ok('fikk en id', Id > 0);
 
-    Feil := '';
+    Err := '';
     try
       C.ExecParams(A, 'INSERT INTO pg_customer (name, email) VALUES ($1, $2)',
         [DbParam(A, 'Kopi'), DbParam(A, 'ada@example.com')]);
     except
       on E: EDbError do
       begin
-        Feil := E.SqlState;
+        Err := E.SqlState;
         Ok('unik-brudd kjennes igjen', E.IsUniqueViolation);
       end;
     end;
-    Like('SQLSTATE er 23505', '23505', Feil);
+    Like('SQLSTATE er 23505', '23505', Err);
 
     { Samme spørring skal virke etterpå, med en annen e-post. }
     Id := C.InsertGetId(A,
@@ -228,12 +228,12 @@ begin
       [DbParam(A, Id)]);
     Ok('NULL er NULL', R.IsNull(0, 0));
 
-    Tekst := 'Blåbær 🫐 — he said "hi"; DROP TABLE x; --';
+    Text_ := 'Blåbær 🫐 — he said "hi"; DROP TABLE x; --';
     C.ExecParams(A, 'UPDATE pg_customer SET name = $1 WHERE id = $2',
-      [DbParam(A, Tekst), DbParam(A, Id)]);
+      [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT name FROM pg_customer WHERE id = $1',
       [DbParam(A, Id)]);
-    Like('tekst er data, ikke SQL', Tekst, R.Value(0, 0).ToString);
+    Like('tekst er data, ikke SQL', Text_, R.Value(0, 0).ToString);
 
     Start('mange rader over samme statement');
     C.Exec(A, 'DELETE FROM pg_customer');
@@ -260,7 +260,7 @@ begin
     ForPrep := C.PreparedCount;
     C.ExecParams(A,
       'INSERT INTO pg_customer (name, email, balance) VALUES ($1, $2, $3)',
-      [DbParam(A, 'Etter'), DbParam(A, 'etter@example.com'),
+      [DbParam(A, 'After_'), DbParam(A, 'etter@example.com'),
        DbParam(A, Currency(1))]);
     LikeI('commit beholder det forberedte statementet', 0,
       C.PreparedCount - ForPrep);
@@ -280,7 +280,7 @@ begin
     for I := 1 to 2000 do
       C.ExecParams(A, 'SELECT count(*) FROM pg_customer WHERE name = $1',
         [DbParam(A, 'Bulk ' + IntToStr(I))]);
-    Uten := MonotonicMs - T0;
+    Without := MonotonicMs - T0;
 
     C.CacheLimit := 64;
     C.FlushStatementCache;
@@ -288,13 +288,13 @@ begin
     for I := 1 to 2000 do
       C.ExecParams(A, 'SELECT count(*) FROM pg_customer WHERE name = $1',
         [DbParam(A, 'Bulk ' + IntToStr(I))]);
-    Med := MonotonicMs - T0;
+    With_ := MonotonicMs - T0;
 
-    WriteLn('        2000 spørringer: ', Uten, ' ms uten cache, ',
-            Med, ' ms med');
-    if Med > 0 then
-      WriteLn('        ', (Uten * 100) div Med, ' % av tiden uten cache');
-    Ok('cachen gjorde det ikke tregere', Med <= Uten + (Uten div 4));
+    WriteLn('        2000 spørringer: ', Without, ' ms uten cache, ',
+            With_, ' ms med');
+    if With_ > 0 then
+      WriteLn('        ', (Without * 100) div With_, ' % av tiden uten cache');
+    Ok('cachen gjorde det ikke tregere', With_ <= Without + (Without div 4));
 
     C.Exec(A, 'DROP TABLE IF EXISTS pg_order');
     C.Exec(A, 'DROP TABLE IF EXISTS pg_customer');
@@ -312,13 +312,13 @@ type
     FPool: TDbPool;
     FRunder: Integer;
     FSum: Int64;
-    FFeil: string;
+    FErr: string;
   protected
     procedure Execute; override;
   public
     constructor Create(APool: TDbPool; ARunder: Integer);
     property Sum: Int64 read FSum;
-    property Feil: string read FFeil;
+    property Err: string read FErr;
   end;
 
 constructor TPgTraad.Create(APool: TDbPool; ARunder: Integer);
@@ -350,7 +350,7 @@ begin
     end;
   except
     on E: Exception do
-      FFeil := E.ClassName + ': ' + E.Message;
+      FErr := E.ClassName + ': ' + E.Message;
   end;
 end;
 
@@ -365,7 +365,7 @@ var
   T: array[0..Traader - 1] of TPgTraad;
   I: Integer;
   Sum, Fasit: Int64;
-  Feil: string;
+  Err: string;
 begin
   Start('pool og tråder');
   P := TDbPool.Create(Dsn, 3);
@@ -373,18 +373,18 @@ begin
     for I := 0 to Traader - 1 do
       T[I] := TPgTraad.Create(P, Runder);
     Sum := 0;
-    Feil := '';
+    Err := '';
     for I := 0 to Traader - 1 do
     begin
       T[I].WaitFor;
       Inc(Sum, T[I].Sum);
-      if (Feil = '') and (T[I].Feil <> '') then
-        Feil := T[I].Feil;
+      if (Err = '') and (T[I].Err <> '') then
+        Err := T[I].Err;
       T[I].Free;
     end;
-    if Feil <> '' then
-      WriteLn('        feil fra en tråd: ', Feil);
-    Ok('ingen tråd feilet', Feil = '');
+    if Err <> '' then
+      WriteLn('        feil fra en tråd: ', Err);
+    Ok('ingen tråd feilet', Err = '');
     Fasit := Int64(Traader) * ((Int64(Runder) * (Runder + 1)) div 2 + Runder);
     LikeI('alle svarene stemmer', Fasit, Sum);
     LikeI('200 leier totalt', Traader * Runder, Int64(P.AcquiredTotal));
@@ -411,9 +411,9 @@ begin
   WriteLn('bibliotek: ', PgLibraryName);
 
   try
-    Kjor;
+    Run_;
     PoolDelen;
-    KoeDelen(Dsn);
+    QueuePart(Dsn);
   except
     on E: EDbError do
       if (Pos('could not connect', LowerCase(E.Message)) > 0) or

@@ -2,7 +2,7 @@
 
   Dette er den delen PRD-en selv kaller den svakeste i designet, og den delen
   som avgjør om premisset holder. Pascal har ingen __callStatic, så Eloquents
-  Customer::where(...) finnes ikke. Til gjengjeld gir typede kolonner noe
+  Customer::where(...) finnes ikke. To_ gjengjeld gir typede kolonner noe
   Eloquent aldri har klart: kompileringsfeil på skrivefeil og feil verditype.
 
       Query<TCustomer>
@@ -41,7 +41,7 @@ uses
   Askr.Urd.Driver, Askr.Urd.Model;
 
 type
-  { Genereres av Norn i steg 3. Til da skrives disse for hånd. }
+  { Genereres av Norn i steg 3. To_ da skrives disse for hånd. }
   TCol<T> = record
     Name: ShortString;
     Table: ShortString;
@@ -118,7 +118,7 @@ type
     function AddWhere: PWhereTerm;
     function AddOrder: POrderTerm;
     function AddInParam(const P: TDbParam): Integer;
-    function SoftDeleteLedd(out Bare: Boolean): Boolean;
+    function SoftDeleteClause(out Bare: Boolean): Boolean;
     function SoftDeleteAll: Int64;
     procedure BuildWhere(var B: TStrBuilder; var ParamNo: Integer;
       var Params: TArray<TDbParam>);
@@ -156,7 +156,7 @@ type
 
     { Fritekstsøk over flere kolonner: ett uttrykk, OR mellom kolonnene.
 
-      Uten denne har TQuery bare AND, og «finn Ada i navn eller e-post» lar
+      Without denne har TQuery bare AND, og «finn Ada i navn eller e-post» lar
       seg ikke uttrykke. Den er med vilje smal — én operator, ett uttrykk,
       ingen nøsting — fordi et generelt grupperingsspråk er et større
       spørsmål enn det en liste trenger. Tom tekst eller tom kolonneliste
@@ -194,7 +194,7 @@ type
     function Count: Int64;
     function Paginate(Page, PerPage: Integer): TModelList<M>;
     { Sletter alt som matcher. Returnerer antall rader. }
-    { Med SoftDeletes setter denne deleted_at, som Model.Delete gjør.
+    { With_ SoftDeletes setter denne deleted_at, som Model.Delete gjør.
       ForceDeleteAll sletter uansett. RestoreAll tar de myktslettede
       tilbake. }
     function DeleteAll: Int64;
@@ -661,7 +661,7 @@ begin
 end;
 
 { Sant når spørringen skal ha et ekstra ledd om deleted_at. }
-function TQuery<M>.SoftDeleteLedd(out Bare: Boolean): Boolean;
+function TQuery<M>.SoftDeleteClause(out Bare: Boolean): Boolean;
 begin
   Bare := FTrashed = tsBare;
   Result := FMeta.SoftDeletes and (FTrashed <> tsMed);
@@ -678,18 +678,18 @@ var
   { Lukker en OR-gruppe når leddet vi nettopp skrev var det siste i den. }
   procedure LukkGruppe(Idx: Integer);
   var
-    IGruppe, SisteIGruppe: Boolean;
+    IGruppe, LastInGroup: Boolean;
   begin
     IGruppe := (FWheres + Idx)^.OrPrev or
       ((Idx + 1 < FWhereCount) and (FWheres + Idx + 1)^.OrPrev);
-    SisteIGruppe := (Idx + 1 >= FWhereCount) or
+    LastInGroup := (Idx + 1 >= FWhereCount) or
       not (FWheres + Idx + 1)^.OrPrev;
-    if IGruppe and SisteIGruppe then
+    if IGruppe and LastInGroup then
       B.AppendByte(Ord(')'));
   end;
 
 begin
-  Filter := SoftDeleteLedd(BareSlettede);
+  Filter := SoftDeleteClause(BareSlettede);
   if (FWhereCount = 0) and not Filter then
     Exit;
   C := Conn;
@@ -1086,7 +1086,7 @@ var
   Sql: string;
   Mark: TArenaMark;
 begin
-  { Med SoftDeletes gjør DeleteAll det samme som Model.Delete. Alternativet
+  { With_ SoftDeletes gjør DeleteAll det samme som Model.Delete. Alternativet
     — at én sletter mykt og den andre hardt — er den slags forskjell ingen
     husker før en tabell er tom. }
   if FMeta.SoftDeletes then

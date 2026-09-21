@@ -24,28 +24,28 @@ uses
   selv i stedet for å la brukeren oppdage det gjennom en kryptisk feil. }
 { Manuell PATH-gjennomgang. ExeSearch og FileSearch er begge finurlige om
   skilletegn på tvers av plattformer. }
-function FinnPaaPath(const Navn: string): string;
+function FindOnPath(const Name_: string): string;
 var
-  Deler: TStringList;
+  Parts_: TStringList;
   I: Integer;
   Kandidat: string;
 begin
   Result := '';
-  Deler := TStringList.Create;
+  Parts_ := TStringList.Create;
   try
-    Deler.Delimiter := ':';
-    Deler.StrictDelimiter := True;
-    Deler.DelimitedText := GetEnvironmentVariable('PATH');
-    for I := 0 to Deler.Count - 1 do
+    Parts_.Delimiter := ':';
+    Parts_.StrictDelimiter := True;
+    Parts_.DelimitedText := GetEnvironmentVariable('PATH');
+    for I := 0 to Parts_.Count - 1 do
     begin
-      if Deler[I] = '' then
+      if Parts_[I] = '' then
         Continue;
-      Kandidat := IncludeTrailingPathDelimiter(Deler[I]) + Navn;
+      Kandidat := IncludeTrailingPathDelimiter(Parts_[I]) + Name_;
       if FileExists(Kandidat) then
         Exit(Kandidat);
     end;
   finally
-    Deler.Free;
+    Parts_.Free;
   end;
 end;
 
@@ -66,7 +66,7 @@ begin
     Exit;
   Full := Kompilator;
   if ExtractFilePath(Full) = '' then
-    Full := FinnPaaPath(Kompilator);
+    Full := FindOnPath(Kompilator);
   if Full = '' then
     Exit;
   Dir := ExtractFileDir(ExpandFileName(Full));
@@ -91,51 +91,51 @@ end;
   prosjektet som sier hvilken kompilator det skal bygges med. ASKR_FPC er
   maskinens svar når prosjektet ikke har noe, og den finnes for at en
   utvikler skal kunne peke på sin egen fpc uten å endre prosjektfila —
-  samme variabel som rammeverkets eget byggskript bruker. Til slutt PATH. }
-function FinnKompilator(P: TProject): string;
+  samme variabel som rammeverkets eget byggskript bruker. To_ slutt PATH. }
+function FindCompiler(P: TProject): string;
 var
-  Valgt, FraMiljo, Full: string;
+  Chosen, FromEnv, Full: string;
 begin
-  Valgt := P.Compiler;
-  FraMiljo := GetEnvironmentVariable('ASKR_FPC');
+  Chosen := P.Compiler;
+  FromEnv := GetEnvironmentVariable('ASKR_FPC');
 
   { ASKR_FPC gjelder bare når prosjektet ikke har pekt ut noe selv. }
-  if (FraMiljo <> '') and (Valgt = 'fpc') then
+  if (FromEnv <> '') and (Chosen = 'fpc') then
   begin
-    if FileExists(FraMiljo) then
-      Exit(FraMiljo);
+    if FileExists(FromEnv) then
+      Exit(FromEnv);
     Si('askr: ASKR_FPC points at a compiler that is not there.');
     Si('');
-    Si('  ASKR_FPC   ' + FraMiljo);
+    Si('  ASKR_FPC   ' + FromEnv);
     Si('');
     Si('Fix the path, or unset it to use fpc from PATH.');
     Halt(1);
   end;
 
   { En sti med katalog i skal finnes som den er; et bart navn slås opp. }
-  if ExtractFilePath(Valgt) <> '' then
+  if ExtractFilePath(Chosen) <> '' then
   begin
-    if FileExists(Valgt) then
-      Exit(Valgt);
+    if FileExists(Chosen) then
+      Exit(Chosen);
     Si('askr: the compiler in askr.toml is not there.');
     Si('');
-    Si('  compiler   ' + Valgt);
+    Si('  compiler   ' + Chosen);
     Si('');
     Si('Fix the path in askr.toml, or remove the line to use fpc from PATH.');
     Halt(1);
   end;
 
-  Full := FinnPaaPath(Valgt);
+  Full := FindOnPath(Chosen);
   if Full <> '' then
     Exit(Full);
 
   Si('askr: cannot find the Pascal compiler.');
   Si('');
-  Si('  looked for   ' + Valgt + '   on PATH');
-  if FraMiljo = '' then
+  Si('  looked for   ' + Chosen + '   on PATH');
+  if FromEnv = '' then
     Si('  ASKR_FPC     not set')
   else
-    Si('  ASKR_FPC     ' + FraMiljo + '   (ignored: askr.toml sets compiler)');
+    Si('  ASKR_FPC     ' + FromEnv + '   (ignored: askr.toml sets compiler)');
   Si('');
   Si('Askr builds your app with Free Pascal. Install it, then either put it');
   Si('on PATH or point at it:');
@@ -181,7 +181,7 @@ begin
   Si('The app answers many of them itself; see: askr list');
 end;
 
-function FinnProsjekt: TProject;
+function FindProject: TProject;
 begin
   Result := TProject.Find(GetCurrentDir);
   if Result = nil then
@@ -194,7 +194,7 @@ end;
 
 { Kjører appbinæren med et flagg, og lar den svare selv. Ruter og migrasjoner
   er appens kunnskap, ikke verktøyets. }
-function KjorApp(P: TProject; const Flagg: string): Integer;
+function RunApp(P: TProject; const Flagg: string): Integer;
 var
   Proc: TProcess;
   Bin: string;
@@ -212,7 +212,7 @@ begin
     Proc.Executable := Bin;
     Proc.Parameters.Add(Flagg);
     { Alt etter kommandoen sendes med: «askr db:table posts» og
-      «askr migrate:rollback --step=2» skal virke. Uten dette kom flagget
+      «askr migrate:rollback --step=2» skal virke. Without dette kom flagget
       alene fram, og argumentet forsvant på veien. }
     for I := 2 to ParamCount do
       Proc.Parameters.Add(ParamStr(I));
@@ -245,7 +245,7 @@ begin
   Result := False;
 end;
 
-function ByggFlagg(P: TProject): string;
+function BuildFlags(P: TProject): string;
 const
   { Rammeverkets units. Rekkefølgen spiller ingen rolle for fpc. }
   { `cli` er med fordi Askr.Console ligger der: kommandoene appen svarer
@@ -254,42 +254,42 @@ const
     ('core', 'http', 'urd', 'norn', 'inertia', 'desktop', 'runtime', 'run',
      'cli');
 var
-  Stier: TStringArray;
+  Paths_: TStringArray;
   I: Integer;
-  Ramme, Cfg, Feil: string;
-  Opphav: TPkgOrigin;
+  Frame, Cfg, Err: string;
+  Origin: TPkgOrigin;
 begin
   Result := P.CompilerFlags;
 
-  Cfg := KompilatorConfigFlagg(FinnKompilator(P));
+  Cfg := KompilatorConfigFlagg(FindCompiler(P));
   if Cfg <> '' then
     Result := Cfg + ' ' + Result;
 
   { Stien løses av pakkelaget: en lokal sti hvis prosjektet har pekt ut
     én, ellers den låste versjonen fra ~/.askr/pkg. Byggingen skal ikke
     vite forskjellen. }
-  Ramme := ResolveFramework(P, Opphav, Feil);
-  if Ramme = '' then
+  Frame := ResolveFramework(P, Origin, Err);
+  if Frame = '' then
   begin
-    Si('askr: ' + Feil);
+    Si('askr: ' + Err);
     Halt(1);
   end;
-  if Ramme <> '' then
+  if Frame <> '' then
     for I := Low(AskrUnits) to High(AskrUnits) do
-      Result := Result + ' -Fu' + IncludeTrailingPathDelimiter(Ramme) +
+      Result := Result + ' -Fu' + IncludeTrailingPathDelimiter(Frame) +
         'src' + PathDelim + AskrUnits[I];
 
-  Stier := P.UnitPaths;
-  for I := 0 to High(Stier) do
-    if DirectoryExists(IncludeTrailingPathDelimiter(P.Root) + Stier[I]) then
+  Paths_ := P.UnitPaths;
+  for I := 0 to High(Paths_) do
+    if DirectoryExists(IncludeTrailingPathDelimiter(P.Root) + Paths_[I]) then
       { Mappa selv og ett nivå under. -Fu<dir>/* er FPCs egen form for det,
         og sparer brukeren for å liste opp app/Http, app/Models og resten. }
-      Result := Result + ' -Fu' + Stier[I] + ' -Fu' + Stier[I] + PathDelim + '*';
+      Result := Result + ' -Fu' + Paths_[I] + ' -Fu' + Paths_[I] + PathDelim + '*';
 end;
 
 { --target web (standard) eller --target desktop. Samme kodebase, to skall;
   det er hele poenget med at forskjellen er én unit. }
-function HovedFil(P: TProject): string;
+function ChooseMainFile(P: TProject): string;
 var
   I: Integer;
   Target: string;
@@ -322,12 +322,12 @@ end;
   .build/run, som legges på søkestien. Kjøres før kompilatoren, slik at
   `askr build` og `askr serve` bare virker — språket skal ikke kreve et
   eget steg man må huske. }
-function KjorRun(P: TProject; Stille: Boolean): Boolean;
+function RunRun(P: TProject; Stille: Boolean): Boolean;
 var
   Filer: TStringList;
   Rec: TSearchRec;
   Dir, UtDir, Ut, UnitName: string;
-  Stier: TStringArray;
+  Paths_: TStringArray;
   I, J: Integer;
   Stats: TRunStats;
 begin
@@ -335,10 +335,10 @@ begin
   UtDir := IncludeTrailingPathDelimiter(P.Root) + '.build' + PathDelim + 'run';
   Filer := TStringList.Create;
   try
-    Stier := P.UnitPaths;
-    for I := 0 to High(Stier) do
+    Paths_ := P.UnitPaths;
+    for I := 0 to High(Paths_) do
     begin
-      Dir := IncludeTrailingPathDelimiter(P.Root) + Stier[I];
+      Dir := IncludeTrailingPathDelimiter(P.Root) + Paths_[I];
       if not DirectoryExists(Dir) then
         Continue;
       if FindFirst(IncludeTrailingPathDelimiter(Dir) + '*.run',
@@ -384,10 +384,10 @@ var
   Flagg: TStringArray;
   I: Integer;
   Params: TStringList;
-  Hoved: string;
+  Main_: string;
 begin
-  Hoved := HovedFil(P);
-  if not KjorRun(P, False) then
+  Main_ := ChooseMainFile(P);
+  if not RunRun(P, False) then
     Halt(1);
   ForceDirectories(IncludeTrailingPathDelimiter(P.Root) + '.build/units');
   ForceDirectories(IncludeTrailingPathDelimiter(P.Root) + '.build/bin');
@@ -398,15 +398,15 @@ begin
   try
     Params.Delimiter := ' ';
     Params.StrictDelimiter := True;
-    Params.DelimitedText := ByggFlagg(P);
-    Proc.Executable := FinnKompilator(P);
+    Params.DelimitedText := BuildFlags(P);
+    Proc.Executable := FindCompiler(P);
     for I := 0 to Params.Count - 1 do
       if Params[I] <> '' then
         Proc.Parameters.Add(Params[I]);
     Proc.Parameters.Add('-Fu.build' + PathDelim + 'run');
     Proc.Parameters.Add('-FU.build/units');
     Proc.Parameters.Add('-FE.build/bin');
-    Proc.Parameters.Add(Hoved);
+    Proc.Parameters.Add(Main_);
     Proc.CurrentDirectory := P.Root;
     Proc.Options := [poWaitOnExit, poUsePipes, poStderrToOutPut];
     Proc.Execute;
@@ -416,7 +416,7 @@ begin
       Write(Lines.Text);
       Halt(1);
     end;
-    Si('Built .build/bin/' + ChangeFileExt(ExtractFileName(Hoved), ''));
+    Si('Built .build/bin/' + ChangeFileExt(ExtractFileName(Main_), ''));
   finally
     Params.Free;
     Lines.Free;
@@ -450,8 +450,8 @@ begin
   try
     Params.Delimiter := ' ';
     Params.StrictDelimiter := True;
-    Params.DelimitedText := ByggFlagg(P);
-    Proc.Executable := FinnKompilator(P);
+    Params.DelimitedText := BuildFlags(P);
+    Proc.Executable := FindCompiler(P);
     for I := 0 to Params.Count - 1 do
       if Params[I] <> '' then
         Proc.Parameters.Add(Params[I]);
@@ -498,8 +498,8 @@ begin
   Opts.Root := P.Root;
   Opts.MainFile := P.MainFile;
   Opts.BinaryName := ChangeFileExt(ExtractFileName(P.MainFile), '');
-  Opts.Compiler := FinnKompilator(P);
-  Opts.CompilerFlags := ByggFlagg(P);
+  Opts.Compiler := FindCompiler(P);
+  Opts.CompilerFlags := BuildFlags(P);
   Opts.PublicPort := P.Port;
   Opts.BackendPort := P.BackendPort;
   Opts.FrontendDir := P.FrontendDir;
@@ -531,7 +531,7 @@ end;
 
 { FindCmdLineSwitch tolker --migration som svitsjen «-migration», og
   treffer ikke. Enklere å se etter argumentet selv. }
-function HarFlagg(const Flagg: string): Boolean;
+function HasFlag(const Flagg: string): Boolean;
 var
   I: Integer;
 begin
@@ -543,37 +543,37 @@ end;
 
 { Skal prosjektet ha innlogging?
 
-  --auth og --no-auth svarer for den som kjører fra et skript. Uten et av
+  --auth og --no-auth svarer for den som kjører fra et skript. Without et av
   dem spørres det, men bare når det faktisk står et menneske der: en
   kommando som venter på svar fra en pipe henger for alltid. }
-function VilHaAuth: Boolean;
+function WantsAuth: Boolean;
 var
-  Svar: string;
+  Reply: string;
 begin
-  if HarFlagg('auth') then
+  if HasFlag('auth') then
     Exit(True);
-  if HarFlagg('no-auth') then
+  if HasFlag('no-auth') then
     Exit(False);
   if IsATTY(Input) = 0 then
     Exit(False);
 
   Write('Does this project need sign-in? [y/N] ');
   Flush(Output);
-  ReadLn(Svar);
-  Svar := LowerCase(Trim(Svar));
-  Result := (Svar = 'y') or (Svar = 'yes');
+  ReadLn(Reply);
+  Reply := LowerCase(Trim(Reply));
+  Result := (Reply = 'y') or (Reply = 'yes');
 end;
 
 procedure CmdMake(P: TProject);
 var
-  Slag, Navn: string;
+  Slag, Name_: string;
 begin
   Slag := LowerCase(ParamStr(2));
-  Navn := ParamStr(3);
+  Name_ := ParamStr(3);
   { auth tar ikke noe navn — det er ett sett filer, ikke en type. }
   if Slag = 'auth' then
-    Navn := 'auth';
-  if (Slag = '') or (Navn = '') then
+    Name_ := 'auth';
+  if (Slag = '') or (Name_ = '') then
   begin
     Si('Usage: askr make model|controller|migration|seeder|job|' +
       'middleware <Name>');
@@ -581,19 +581,19 @@ begin
     Halt(1);
   end;
   if Slag = 'model' then
-    LagModell(P.Root, Navn, HarFlagg('migration'))
+    LagModell(P.Root, Name_, HasFlag('migration'))
   else if Slag = 'controller' then
-    LagKontroller(P.Root, Navn)
+    LagKontroller(P.Root, Name_)
   else if Slag = 'migration' then
-    LagMigrasjon(P.Root, Navn)
+    LagMigrasjon(P.Root, Name_)
   else if Slag = 'seeder' then
-    LagSeeder(P.Root, Navn)
+    LagSeeder(P.Root, Name_)
   else if Slag = 'job' then
-    LagJobb(P.Root, Navn)
+    MakeJob(P.Root, Name_)
   else if Slag = 'middleware' then
-    LagMiddleware(P.Root, Navn)
+    LagMiddleware(P.Root, Name_)
   else if Slag = 'auth' then
-    LagAuth(P.Root, HarFlagg('force'))
+    LagAuth(P.Root, HasFlag('force'))
   else
   begin
     Si('Unknown: ' + Slag);
@@ -645,11 +645,11 @@ begin
       Si('Usage: askr new <name>');
       Halt(1);
     end;
-    NyttProsjekt(GetCurrentDir, ParamStr(2), VilHaAuth);
+    NyttProsjekt(GetCurrentDir, ParamStr(2), WantsAuth);
     Exit;
   end;
 
-  P := FinnProsjekt;
+  P := FindProject;
   try
     { Kommandoene som styrer selve pinnen må kjøres av verktøyet man
       startet. De andre skal kjøres av versjonen prosjektet peker på. }
@@ -663,12 +663,12 @@ begin
     else if Kommando = 'serve' then
       CmdServe(P)
     else if Kommando = 'routes' then
-      Halt(KjorApp(P, '--routes'))
+      Halt(RunApp(P, '--routes'))
     else if ErAppKommando(Kommando) then
       { Kommandoen hører til appen, ikke til verktøyet: migrasjonene,
         rutene, jobbene og planen er kompilert inn i binæren. Argumentene
         sendes med, slik at --step og --seed virker. }
-      Halt(KjorApp(P, '--' + Kommando))
+      Halt(RunApp(P, '--' + Kommando))
     else if Kommando = 'install' then
       Halt(CmdInstall(P))
     else if Kommando = 'update' then
@@ -686,13 +686,13 @@ begin
         utskriften trygg å lime inn i en feilrapport. }
       SetCurrentDir(P.Root);
       LoadConfig(P.Root);
-      Write(ConfigReport(HarFlagg('values')));
+      Write(ConfigReport(HasFlag('values')));
     end
     else if Kommando = 'run' then
     begin
       { Oversetter .run-filene uten å kompilere. Nyttig når man vil se på
         Pascal-koden som kommer ut. }
-      if not KjorRun(P, False) then
+      if not RunRun(P, False) then
         Halt(1);
     end
     else if Kommando = 'repl' then

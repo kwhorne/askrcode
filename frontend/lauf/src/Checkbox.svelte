@@ -1,7 +1,8 @@
-<!-- En avkrysningsboks med etiketten sin.
-     Etiketten står i komponenten og ikke i Field, fordi en avkrysningsboks
-     har teksten til høyre for seg og et vanlig felt har den over. Et Field
-     rundt en gruppe bokser bruker as="fieldset" og gir gruppa overskriften. -->
+<!-- A checkbox with its own label.
+     The label lives in the component rather than in Field, because a
+     checkbox has its text to the right of it while an ordinary field has
+     it above. A Field around a group of boxes uses as="fieldset" and
+     gives the group the heading. -->
 <script>
   import { getContext } from 'svelte'
   import { cn } from './utils.js'
@@ -9,10 +10,10 @@
 
   let {
     checked = $bindable(),
-    /** «Noen, men ikke alle». Tredje tilstand, som bare finnes som en
-        DOM-egenskap — det finnes ikke noe attributt for den, så den må
-        settes på elementet. aria-checked="mixed" er det en skjermleser
-        leser. Uten den ser boksen tom ut mens tolv rader er valgt. */
+    /** "Some, but not all." A third state that exists only as a DOM
+        property — there is no attribute for it, so it has to be set on
+        the element. aria-checked="mixed" is what a screen reader reads.
+        Without it the box looks empty while twelve rows are selected. */
     indeterminate = false,
     /** Navnet i <Form>. Faller tilbake til feltets navn. */
     name,
@@ -35,9 +36,9 @@
 
   let el = $state(null)
 
-  // indeterminate finnes bare som egenskap, ikke som attributt. Den må
-  // settes etter at elementet står i DOM-en, og settes på nytt hver gang
-  // den endrer seg.
+  // indeterminate exists only as a property, not as an attribute. It has
+  // to be set after the element is in the DOM, and set again every time
+  // it changes.
   $effect(() => {
     if (el) el.indeterminate = !!indeterminate
   })

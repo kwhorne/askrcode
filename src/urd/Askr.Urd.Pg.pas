@@ -79,7 +79,7 @@ type
     procedure FlushStatementCache;
 
     property Dsn: string read FDsn;
-    { Hvor mange statements som er forberedt mot serveren, og hvor mange kall
+    { Where_ mange statements som er forberedt mot serveren, og hvor mange kall
       som slapp unna med et cachet. }
     property PreparedCount: Int64 read FPrepared;
     property CacheHits: Int64 read FCacheHits;
@@ -93,7 +93,7 @@ type
     forkastes de. }
   TPgNoticeHandler = procedure(const Message_: string);
 
-{ Uten dette skriver libpq sin standardbehandler rett til stderr, midt i
+{ Without dette skriver libpq sin standardbehandler rett til stderr, midt i
   det programmet selv holder på å skrive ut. }
 procedure SetPgNoticeHandler(Handler: TPgNoticeHandler);
 
@@ -528,7 +528,7 @@ var
   Values: PPAnsiChar;
   Res: Pointer;
   Mark: TArenaMark;
-  Navn: string;
+  Name_: string;
 begin
   N := Length(Params);
   if N = 0 then
@@ -540,13 +540,13 @@ begin
     Mark := A.Mark;
     try
       Values := BuildParams(A, Params);
-      Navn := PreparedName(Sql);
-      if Navn = '' then
+      Name_ := PreparedName(Sql);
+      if Name_ = '' then
         Res := PQexecParams(FConn, PAnsiChar(AnsiString(Sql)), N,
           nil, Values, nil, nil, 0)
       else
       begin
-        Res := PQexecPrepared(FConn, PAnsiChar(AnsiString(Navn)), N,
+        Res := PQexecPrepared(FConn, PAnsiChar(AnsiString(Name_)), N,
           Values, nil, nil, 0);
         { SQL-setningen PREPARE er transaksjonell, men **PQprepare er ikke
           det**: den sender en Parse-melding i den utvidede protokollen, og
@@ -563,8 +563,8 @@ begin
         begin
           PQclear(Res);
           DropCached(Sql);
-          Navn := PreparedName(Sql);
-          Res := PQexecPrepared(FConn, PAnsiChar(AnsiString(Navn)), N,
+          Name_ := PreparedName(Sql);
+          Res := PQexecPrepared(FConn, PAnsiChar(AnsiString(Name_)), N,
             Values, nil, nil, 0);
         end;
       end;

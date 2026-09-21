@@ -1,10 +1,10 @@
-<!-- En bryter er en avkrysningsboks som ser annerledes ut, og skal være det
-     også for en skjermleser: role="switch" med aria-checked. En <div> med
-     en onclick ville ikke vært noen av delene.
+<!-- A switch is a checkbox that looks different, and it should be one to
+     a screen reader too: role="switch" with aria-checked. A <div> with an
+     onclick would be neither.
 
-     Den bygges på en ekte <input type="checkbox"> med role="switch", slik at
-     tastatur, skjema-innsending og «hopp til neste kontroll» virker uten at
-     vi skriver det selv. -->
+     It is built on a real <input type="checkbox"> with role="switch", so
+     that keyboard handling, form submission and "move to the next
+     control" all work without us writing any of it. -->
 <script>
   import { getContext } from 'svelte'
   import { cn } from './utils.js'

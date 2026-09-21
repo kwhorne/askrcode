@@ -26,12 +26,12 @@ type
   private
     FId: Int64;
     FTittel: string;
-    FTekst: string;
+    FText: string;
     FViktig: Boolean;
   published
     property Id: Int64 read FId write FId;
     property Tittel: string read FTittel write FTittel;
-    property Tekst: string read FTekst write FTekst;
+    property Text_: string read FText write FText;
     property Viktig: Boolean read FViktig write FViktig;
   public
     class procedure Describe(S: TSchema); override;
@@ -75,7 +75,7 @@ end;
 procedure TNote.Rules(V: TValidator);
 begin
   V.Field('Tittel').Required.MaxLen(120);
-  V.Field('Tekst').MaxLen(2000);
+  V.Field('Text_').MaxLen(2000);
 end;
 
 procedure EnsureSchema(C: TDbConnection);
@@ -106,7 +106,7 @@ begin
   end;
 end;
 
-function AlleNotater(A: TArena): TNoteList;
+function AllNotes(A: TArena): TNoteList;
 begin
   Result := TQuery<TNote>.New.OrderBy(Notes.Id, Desc).Get;
 end;
@@ -115,7 +115,7 @@ function TNotesController.Index(Req: TRequest): TResponse;
 var
   Liste: TNoteList;
 begin
-  Liste := AlleNotater(Req.Arena);
+  Liste := AllNotes(Req.Arena);
   Result := Inertia('Notes/Index',
     ['notes', Liste,
      'total', Int64(Liste.Count),
@@ -132,7 +132,7 @@ begin
 
   if not N.Validate then
   begin
-    Liste := AlleNotater(Req.Arena);
+    Liste := AllNotes(Req.Arena);
     Exit(Inertia('Notes/Index',
       ['notes', Liste, 'total', Int64(Liste.Count),
        'errors', N.Errors, 'sendt', N,
@@ -140,7 +140,7 @@ begin
   end;
 
   N.Save;
-  InertiaFlash('suksess', 'Lagret «' + N.Tittel + '»');
+  InertiaFlash('suksess', 'Stored «' + N.Tittel + '»');
   Result := Index(Req);
 end;
 

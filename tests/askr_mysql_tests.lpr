@@ -1,6 +1,6 @@
 { MySQL-tester.
 
-  Kjører mot en ekte server. Uten en, hopper suiten over seg selv og sier
+  Kjører mot en ekte server. Without en, hopper suiten over seg selv og sier
   hvorfor — den melder ikke grønt på noe den ikke har prøvd.
 
     ./askr db:up        # starter MySQL 8.4 på port 3308
@@ -71,43 +71,43 @@ begin
   WriteLn('— ', Name);
 end;
 
-procedure Ok(const Hva: string; Verdi: Boolean);
+procedure Ok(const What: string; Value_: Boolean);
 begin
-  if Verdi then
+  if Value_ then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
   end;
 end;
 
-procedure Like(const Hva, Forventet, Fikk: string);
+procedure Like(const What, Forventet, Fikk: string);
 begin
   if Forventet = Fikk then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Forventet);
     WriteLn('        fikk:      ', Fikk);
   end;
 end;
 
-procedure LikeI(const Hva: string; Forventet, Fikk: Int64);
+procedure LikeI(const What: string; Forventet, Fikk: Int64);
 begin
-  Like(Hva, IntToStr(Forventet), IntToStr(Fikk));
+  Like(What, IntToStr(Forventet), IntToStr(Fikk));
 end;
 
-{ Antall prepared statements serveren har åpne akkurat nå. }
-function AapneStatements(C: TDbConnection; A: TArena): Int64;
+{ Count_ prepared statements serveren har åpne akkurat nå. }
+function OpenStatements_(C: TDbConnection; A: TArena): Int64;
 var
   R: TDbResult;
 begin
@@ -152,13 +152,13 @@ type
     FPool: TDbPool;
     FRunder: Integer;
     FSum: Int64;
-    FFeil: string;
+    FErr: string;
   protected
     procedure Execute; override;
   public
     constructor Create(APool: TDbPool; ARunder: Integer);
     property Sum: Int64 read FSum;
-    property Feil: string read FFeil;
+    property Err: string read FErr;
   end;
 
 constructor TPoolTraad.Create(APool: TDbPool; ARunder: Integer);
@@ -191,7 +191,7 @@ begin
     end;
   except
     on E: Exception do
-      FFeil := E.ClassName + ': ' + E.Message;
+      FErr := E.ClassName + ': ' + E.Message;
   end;
 end;
 
@@ -206,7 +206,7 @@ var
   T: array[0..Traader - 1] of TPoolTraad;
   I: Integer;
   Sum, Fasit: Int64;
-  Feil: string;
+  Err: string;
 begin
   Start('pool og tråder');
   P := TDbPool.Create(Dsn, 3);
@@ -214,18 +214,18 @@ begin
     for I := 0 to Traader - 1 do
       T[I] := TPoolTraad.Create(P, Runder);
     Sum := 0;
-    Feil := '';
+    Err := '';
     for I := 0 to Traader - 1 do
     begin
       T[I].WaitFor;
       Inc(Sum, T[I].Sum);
-      if (Feil = '') and (T[I].Feil <> '') then
-        Feil := T[I].Feil;
+      if (Err = '') and (T[I].Err <> '') then
+        Err := T[I].Err;
       T[I].Free;
     end;
-    if Feil <> '' then
-      WriteLn('        feil fra en tråd: ', Feil);
-    Ok('ingen tråd feilet', Feil = '');
+    if Err <> '' then
+      WriteLn('        feil fra en tråd: ', Err);
+    Ok('ingen tråd feilet', Err = '');
     { 4 tråder x sum(2..51) }
     Fasit := Int64(Traader) * ((Int64(Runder) * (Runder + 1)) div 2 + Runder);
     LikeI('alle svarene stemmer', Fasit, Sum);
@@ -340,13 +340,13 @@ begin
   C.Exec(A, 'DROP TABLE IF EXISTS askr_migrations');
 end;
 
-procedure Kjor;
+procedure Run_;
 var
   C: TMySqlConnection;
   A: TArena;
   R: TDbResult;
   Id, Id2: Int64;
-  Feil, Tekst: string;
+  Err, Text_: string;
   V: Currency;
   D: TDateTime;
   B: Boolean;
@@ -354,7 +354,7 @@ var
   ForPrep, ForHits: Int64;
   B2: TStrBuilder;
   F: Double;
-  T0, Uten, Med, ForApne: Int64;
+  T0, Without, With_, ForApne: Int64;
 begin
   A := TArena.Create;
   C := TMySqlConnection.Create(Dsn);
@@ -399,19 +399,19 @@ begin
 
     Start('tekst og tegnsett');
     { utf8mb4 er hele poenget: MySQLs «utf8» klarer ikke firebyte-tegn. }
-    Tekst := 'Blåbærsyltetøy 🫐 — ¥€$';
+    Text_ := 'Blåbærsyltetøy 🫐 — ¥€$';
     C.ExecParams(A, 'UPDATE askr_customer SET note = ? WHERE id = ?',
-      [DbParam(A, Tekst), DbParam(A, Id)]);
+      [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT note FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Like('firebyte-tegn overlever tur-retur', Tekst, R.Value(0, 0).ToString);
+    Like('firebyte-tegn overlever tur-retur', Text_, R.Value(0, 0).ToString);
 
-    Tekst := 'he said "hi"; DROP TABLE x; -- ' + #39 + 'og' + #39;
+    Text_ := 'he said "hi"; DROP TABLE x; -- ' + #39 + 'og' + #39;
     C.ExecParams(A, 'UPDATE askr_customer SET note = ? WHERE id = ?',
-      [DbParam(A, Tekst), DbParam(A, Id)]);
+      [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT note FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Like('anførselstegn og semikolon er data, ikke SQL', Tekst,
+    Like('anførselstegn og semikolon er data, ikke SQL', Text_,
       R.Value(0, 0).ToString);
 
     Start('flyttall og regnede kolonner');
@@ -436,14 +436,14 @@ begin
     Ok('aggregat over DECIMAL gir verdi', R.Value(0, 0).Len > 0);
 
     { Lengre enn det faste bufferet på 192 bytes — tvinger andre runde. }
-    Tekst := '';
+    Text_ := '';
     for I := 1 to 200 do
-      Tekst := Tekst + 'æ';   { 400 bytes i UTF-8 }
+      Text_ := Text_ + 'æ';   { 400 bytes i UTF-8 }
     C.ExecParams(A, 'UPDATE askr_customer SET note = ? WHERE id = ?',
-      [DbParam(A, Tekst), DbParam(A, Id)]);
+      [DbParam(A, Text_), DbParam(A, Id)]);
     R := C.ExecParams(A, 'SELECT note FROM askr_customer WHERE id = ?',
       [DbParam(A, Id)]);
-    Like('lang tekst hentes i andre runde', Tekst, R.Value(0, 0).ToString);
+    Like('lang tekst hentes i andre runde', Text_, R.Value(0, 0).ToString);
 
     Start('dato');
     R := C.ExecParams(A, 'SELECT created_at FROM askr_customer WHERE id = ?',
@@ -464,7 +464,7 @@ begin
     LikeI('ingen treff gir null', 0, R.AffectedRows);
 
     Start('feil som skal kjennes igjen');
-    Feil := '';
+    Err := '';
     try
       C.ExecParams(A,
         'INSERT INTO askr_customer (name, email) VALUES (?, ?)',
@@ -472,24 +472,24 @@ begin
     except
       on E: EDbError do
       begin
-        Feil := E.SqlState;
+        Err := E.SqlState;
         Ok('unik-brudd kjennes igjen', E.IsUniqueViolation);
       end;
     end;
-    Like('oversatt til 23505', '23505', Feil);
+    Like('oversatt til 23505', '23505', Err);
 
-    Feil := '';
+    Err := '';
     try
       C.ExecParams(A, 'INSERT INTO askr_order (customer_id, amount) VALUES (?, ?)',
         [DbParam(A, Int64(999999)), DbParam(A, Currency(10))]);
     except
       on E: EDbError do
       begin
-        Feil := E.SqlState;
+        Err := E.SqlState;
         Ok('fremmednøkkelbrudd kjennes igjen', E.IsForeignKeyViolation);
       end;
     end;
-    Like('oversatt til 23503', '23503', Feil);
+    Like('oversatt til 23503', '23503', Err);
 
     Start('transaksjoner');
     C.StartTransaction;
@@ -519,10 +519,10 @@ begin
     LikeI('samme spørring forberedes én gang', 1, C.PreparedCount - ForPrep);
     LikeI('resten traff cachen', 19, C.CacheHits - ForHits);
 
-    { Serverens eget tall, ikke vårt. Uten dette kunne cachetellerne våre
+    { Serverens eget tall, ikke vårt. Without dette kunne cachetellerne våre
       vært riktige mens statements hopet seg opp på serveren — og det var
       nettopp det som skjedde før statements uten cache ble lukket. }
-    ForApne := AapneStatements(C, A);
+    ForApne := OpenStatements_(C, A);
     C.CacheLimit := 0;
     ForPrep := C.PreparedCount;
     for I := 1 to 50 do
@@ -530,15 +530,15 @@ begin
         [DbParam(A, Id)]);
     LikeI('cachen av: forberedes hver gang', 50, C.PreparedCount - ForPrep);
     LikeI('men ingen blir liggende åpne på serveren', 0,
-      AapneStatements(C, A) - ForApne);
+      OpenStatements_(C, A) - ForApne);
     C.CacheLimit := 64;
 
-    ForApne := AapneStatements(C, A);
+    ForApne := OpenStatements_(C, A);
     for I := 1 to 50 do
       C.ExecParams(A, 'SELECT name FROM askr_customer WHERE email = ?',
         [DbParam(A, 'ada@example.com')]);
     LikeI('med cache: nøyaktig ett står åpent', 1,
-      AapneStatements(C, A) - ForApne);
+      OpenStatements_(C, A) - ForApne);
 
     Start('mange rader');
     C.Exec(A, 'DELETE FROM askr_customer WHERE email LIKE ''bulk%''');
@@ -570,7 +570,7 @@ begin
     for I := 1 to 2000 do
       C.ExecParams(A, 'SELECT count(*) FROM askr_customer WHERE name = ?',
         [DbParam(A, 'Bulk ' + IntToStr(I))]);
-    Uten := MonotonicMs - T0;
+    Without := MonotonicMs - T0;
 
     C.CacheLimit := 64;
     C.FlushStatementCache;
@@ -578,11 +578,11 @@ begin
     for I := 1 to 2000 do
       C.ExecParams(A, 'SELECT count(*) FROM askr_customer WHERE name = ?',
         [DbParam(A, 'Bulk ' + IntToStr(I))]);
-    Med := MonotonicMs - T0;
+    With_ := MonotonicMs - T0;
 
-    WriteLn('        2000 spørringer: ', Uten, ' ms uten cache, ',
-            Med, ' ms med');
-    Ok('cachen gjorde det ikke tregere', Med <= Uten + (Uten div 4));
+    WriteLn('        2000 spørringer: ', Without, ' ms uten cache, ',
+            With_, ' ms med');
+    Ok('cachen gjorde det ikke tregere', With_ <= Without + (Without div 4));
 
     Start('tomt resultat');
     R := C.ExecParams(A, 'SELECT name FROM askr_customer WHERE id = ?',
@@ -611,7 +611,7 @@ begin
     A.Free;
   end;
   PoolDelen;
-  KoeDelen(Dsn);
+  QueuePart(Dsn);
 end;
 
 begin
@@ -636,7 +636,7 @@ begin
   WriteLn('bibliotek: ', MySqlLibraryName);
 
   try
-    Kjor;
+    Run_;
   except
     on E: EDbError do
       if Pos('Could not connect', E.Message) > 0 then

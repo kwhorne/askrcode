@@ -35,12 +35,12 @@ uses
 type
   EConfigError = class(Exception);
 
-  { Hvor en verdi kom fra. Til ConfigReport — «hvorfor er porten 9000» er
+  { Where_ en verdi kom fra. To_ ConfigReport — «hvorfor er porten 9000» er
     et spørsmål man stiller ofte nok til at svaret bør stå der. }
   TConfigSource = (csNone, csEnvironment, csDotEnv, csToml, csDefault);
 
 { Leser askr.toml og .env, begge funnet ved å lete oppover fra StartDir
-  (tom betyr gjeldende katalog). Kalles én gang, først i app.lpr. Mangler
+  (tom betyr gjeldende katalog). Kalles én gang, først i app.lpr. Missing
   en av dem, er det ikke en feil — en app i produksjon har gjerne bare
   ekte miljøvariabler. }
 procedure LoadConfig(const StartDir: string = '');
@@ -65,11 +65,11 @@ function EnvNameFor(const Key: string): string;
 function ConfigFile: string;
 function ConfigKeys: TStringArray;
 
-{ Til `askr config`. Uten ShowValues står bare nøkkel og kilde — det er
-  trygt å lime inn i en feilrapport. Med ShowValues vises verdiene, men
+{ To_ `askr config`. Without ShowValues står bare nøkkel og kilde — det er
+  trygt å lime inn i en feilrapport. With_ ShowValues vises verdiene, men
   nøkler som ser ut som hemmeligheter er fortsatt skjult. }
 function ConfigReport(ShowValues: Boolean = False): string;
-{ Ser nøkkelen ut til å holde en hemmelighet? Brukt av ConfigReport. }
+{ Ser nøkkelen ut til å holde en hemmelighet? Used av ConfigReport. }
 function LooksSecret(const Key: string): Boolean;
 
 { Leser en askr.toml-lignende fil inn i en TStringList som «seksjon.nøkkel»
@@ -144,7 +144,7 @@ end;
 
 { ------------------------------------------------------------ oppsett -- }
 
-function FinnOppover(const StartDir, Navn: string): string;
+function FindUpwards(const StartDir, Name_: string): string;
 var
   Dir, Prev: string;
 begin
@@ -154,8 +154,8 @@ begin
     Dir := StartDir;
   Dir := ExcludeTrailingPathDelimiter(ExpandFileName(Dir));
   repeat
-    if FileExists(IncludeTrailingPathDelimiter(Dir) + Navn) then
-      Exit(IncludeTrailingPathDelimiter(Dir) + Navn);
+    if FileExists(IncludeTrailingPathDelimiter(Dir) + Name_) then
+      Exit(IncludeTrailingPathDelimiter(Dir) + Name_);
     Prev := Dir;
     Dir := ExtractFileDir(Dir);
   until (Dir = Prev) or (Dir = '');
@@ -164,7 +164,7 @@ end;
 
 procedure LoadConfig(const StartDir: string);
 var
-  Sti: string;
+  Path_: string;
 begin
   { .env først, slik at Env() virker under resten av oppstarten. }
   LoadEnvUpwards(StartDir);
@@ -176,9 +176,9 @@ begin
     else
       GToml.Clear;
     GTomlFile := '';
-    Sti := FinnOppover(StartDir, 'askr.toml');
-    if (Sti <> '') and ParseTomlInto(Sti, GToml) then
-      GTomlFile := Sti;
+    Path_ := FindUpwards(StartDir, 'askr.toml');
+    if (Path_ <> '') and ParseTomlInto(Path_, GToml) then
+      GTomlFile := Path_;
   finally
     GLock.Release;
   end;
@@ -214,7 +214,7 @@ begin
       Result[I] := '_';
 end;
 
-function TomlVerdi(const Key: string; out V: string): Boolean;
+function TomlValue(const Key: string; out V: string): Boolean;
 var
   I: Integer;
 begin
@@ -235,14 +235,14 @@ end;
 
 function CfgSource(const Key: string): TConfigSource;
 var
-  EnvNavn, V: string;
+  EnvName, V: string;
 begin
-  EnvNavn := EnvNameFor(Key);
-  if GetEnvironmentVariable(EnvNavn) <> '' then
+  EnvName := EnvNameFor(Key);
+  if GetEnvironmentVariable(EnvName) <> '' then
     Exit(csEnvironment);
-  if EnvHas(EnvNavn) then
+  if EnvHas(EnvName) then
     Exit(csDotEnv);
-  if TomlVerdi(Key, V) then
+  if TomlValue(Key, V) then
     Exit(csToml);
   Result := csNone;
 end;
@@ -261,14 +261,14 @@ end;
 
 function Cfg(const Key, Default_: string): string;
 var
-  EnvNavn, V: string;
+  EnvName, V: string;
 begin
-  EnvNavn := EnvNameFor(Key);
+  EnvName := EnvNameFor(Key);
   { Env dekker både ekte miljøvariabler og .env, i den rekkefølgen. }
-  V := Env(EnvNavn);
+  V := Env(EnvName);
   if V <> '' then
     Exit(V);
-  if TomlVerdi(Key, V) and (V <> '') then
+  if TomlValue(Key, V) and (V <> '') then
     Exit(V);
   Result := Default_;
 end;
@@ -310,21 +310,21 @@ end;
 
 function CfgOrFail(const Key: string): string;
 var
-  Hvor: string;
+  Where_: string;
 begin
   Result := Trim(Cfg(Key));
   if Result <> '' then
     Exit;
-  { Meldingen sier hvilken miljøvariabel som ville satt den. Uten det er
+  { Meldingen sier hvilken miljøvariabel som ville satt den. Without det er
     oversettelsen fra app.port til APP_PORT noe man må slå opp. }
-  Hvor := 'the environment';
+  Where_ := 'the environment';
   if EnvFile <> '' then
-    Hvor := Hvor + ', ' + EnvFile;
+    Where_ := Where_ + ', ' + EnvFile;
   if GTomlFile <> '' then
-    Hvor := Hvor + ', ' + GTomlFile;
+    Where_ := Where_ + ', ' + GTomlFile;
   raise EConfigError.CreateFmt(
     'Missing configuration "%s". Set %s, or add it to askr.toml. ' +
-    'Looked in %s.', [Key, EnvNameFor(Key), Hvor]);
+    'Looked in %s.', [Key, EnvNameFor(Key), Where_]);
 end;
 
 { ------------------------------------------------------------ rapport -- }
@@ -333,7 +333,7 @@ function LooksSecret(const Key: string): Boolean;
 const
   { Ikke en fasit, og den kan ikke bli det. Den fanger navnene folk faktisk
     bruker, og standarden er uansett at ingen verdier vises. }
-  Ord_: array[0..7] of string = (
+  Word_: array[0..7] of string = (
     'secret', 'password', 'passwd', 'token', 'key', 'credential',
     'dsn', 'url');
 var
@@ -341,21 +341,21 @@ var
   I: Integer;
 begin
   K := LowerCase(Key);
-  for I := Low(Ord_) to High(Ord_) do
-    if Pos(Ord_[I], K) > 0 then
+  for I := Low(Word_) to High(Word_) do
+    if Pos(Word_[I], K) > 0 then
       Exit(True);
   Result := False;
 end;
 
 function ConfigKeys: TStringArray;
 var
-  Acc, Fra: TStringArray;
+  Acc, From_: TStringArray;
   I, N: Integer;
   K: string;
 
   { Samles i Acc, ikke i Result: inne i en nøstet funksjon er `Result` den
     nøstede funksjonens eget resultat, ikke den ytres. }
-  function Har(const S: string): Boolean;
+  function Has_(const S: string): Boolean;
   var
     J: Integer;
   begin
@@ -365,7 +365,7 @@ var
         Exit(True);
   end;
 
-  procedure Legg(const S: string);
+  procedure Put(const S: string);
   begin
     if N >= Length(Acc) then
       SetLength(Acc, Length(Acc) * 2);
@@ -380,10 +380,10 @@ begin
   SetLength(Acc, 64);
 
   { Først .env-nøklene, så askr.toml. Nøkler fra begge står én gang. }
-  Fra := EnvKeys;
-  for I := 0 to High(Fra) do
-    if not Har(Fra[I]) then
-      Legg(Fra[I]);
+  From_ := EnvKeys;
+  for I := 0 to High(From_) do
+    if not Has_(From_[I]) then
+      Put(From_[I]);
 
   GLock.Acquire;
   try
@@ -391,9 +391,9 @@ begin
       for I := 0 to GToml.Count - 1 do
       begin
         K := GToml.Names[I];
-        if (K = '') or Har(K) then
+        if (K = '') or Has_(K) then
           Continue;
-        Legg(K);
+        Put(K);
       end;
   finally
     GLock.Release;
@@ -407,14 +407,14 @@ function ConfigReport(ShowValues: Boolean): string;
 var
   Noekler: TStringArray;
   I: Integer;
-  K, V, Kilde: string;
-  Bredde: Integer;
+  K, V, Source_: string;
+  Width_: Integer;
 begin
   Noekler := ConfigKeys;
-  Bredde := 0;
+  Width_ := 0;
   for I := 0 to High(Noekler) do
-    if Length(Noekler[I]) > Bredde then
-      Bredde := Length(Noekler[I]);
+    if Length(Noekler[I]) > Width_ then
+      Width_ := Length(Noekler[I]);
 
   Result := '';
   if GTomlFile <> '' then
@@ -426,7 +426,7 @@ begin
   for I := 0 to High(Noekler) do
   begin
     K := Noekler[I];
-    Kilde := SourceName(CfgSource(K));
+    Source_ := SourceName(CfgSource(K));
     if not ShowValues then
       V := ''
     else if LooksSecret(K) then
@@ -435,7 +435,7 @@ begin
       V := '  (hidden)'
     else
       V := '  ' + Cfg(K);
-    Result := Result + Format('%-*s  %-12s%s', [Bredde, K, Kilde, V]) + #10;
+    Result := Result + Format('%-*s  %-12s%s', [Width_, K, Source_, V]) + #10;
   end;
 end;
 

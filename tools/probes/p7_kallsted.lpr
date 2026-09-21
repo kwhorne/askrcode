@@ -6,9 +6,9 @@ uses p2_generisk_funksjon_i_unit;
 type
   TKunde = class end;
 var
-  B: TBoks<TKunde>;
+  B: TBox<TKunde>;
 begin
-  B := Boks<TKunde>;
-  WriteLn('Boks<TKunde> gav: ', B.Klasse.ClassName);
+  B := Box<TKunde>;
+  WriteLn('Box<TKunde> gav: ', B.Klasse.ClassName);
   B.Free;
 end.

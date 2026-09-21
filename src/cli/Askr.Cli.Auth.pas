@@ -42,9 +42,9 @@ const
 
 { ------------------------------------------------------------- modellen -- }
 
-procedure SkrivBruker(const Rot: string);
+procedure WriteUser(const Rot: string);
 begin
-  Skriv(IncludeTrailingPathDelimiter(Rot) + 'app/Models/App.Models.User.pas',
+  Emit(IncludeTrailingPathDelimiter(Rot) + 'app/Models/App.Models.User.pas',
     'unit App.Models.User;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
     'interface' + #10 + #10 +
@@ -97,7 +97,7 @@ end;
 { Malen bygges linje for linje i stedet for som én kjedet streng. En
   kontroller på to hundre linjer skrevet som `'...' + #10 +` er ikke lesbar
   for den som skal endre den. Anførselstegn dobles, som i all Pascal. }
-procedure SkrivKontroller(const Rot: string);
+procedure WriteControllers(const Rot: string);
 var
   L: TStringList;
 
@@ -148,7 +148,7 @@ begin
     A('    function ShowReset(Req: TRequest): TResponse;');
     A('    function DoReset(Req: TRequest): TResponse;');
     A('');
-    A('    { Etter innlogging. Rene HTML-sider, som resten av auth: et');
+    A('    { After_ innlogging. Rene HTML-sider, som resten av auth: et');
     A('      nytt prosjekt skal kunne logge inn OG komme videre uten at');
     A('      npm install er kjørt. Bygger du appen i Inertia, bytter du');
     A('      disse tre ut — de er et utgangspunkt, ikke en ramme. }');
@@ -230,7 +230,7 @@ begin
     A('    ''</style></head><body><main>'' + Body + ''</main></body></html>'';');
     A('end;');
     A('');
-    A('function Melding(const S, Klasse: string): string;');
+    A('function Message_(const S, Klasse: string): string;');
     A('begin');
     A('  if S = '''' then');
     A('    Result := ''''');
@@ -263,7 +263,7 @@ begin
     A('  Result := Result + ''>'' + Esc(Etikett) + ''</a>'';');
     A('end;');
     A('');
-    A('function AppShell(const Title, Aktiv, Navn, Body: string): string;');
+    A('function AppShell(const Title, Aktiv, Name_, Body: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<!doctype html><html lang="en"><head><meta charset="utf-8">'' +');
@@ -336,7 +336,7 @@ begin
     A('      Nav(''/settings/profile'', ''Profile'', Aktiv) +');
     A('      Nav(''/settings/security'', ''Security'', Aktiv) +');
     A('    ''</nav>'' +');
-    A('    ''<div class="who"><div class="n">'' + Esc(Navn) + ''</div>'' +');
+    A('    ''<div class="who"><div class="n">'' + Esc(Name_) + ''</div>'' +');
     A('    ''<form method="post" action="/logout">'' + CsrfField +');
     A('    ''<button type="submit">Sign out</button></form></div>'' +');
     A('    ''</aside><main>'' + Body + ''</main></div></body></html>'';');
@@ -355,12 +355,12 @@ begin
     A('  Result := B.ToString;');
     A('end;');
     A('');
-    A('function Plassholdere(Antall: Integer): string;');
+    A('function Plassholdere(Count_: Integer): string;');
     A('var');
     A('  I: Integer;');
     A('begin');
     A('  Result := '''';');
-    A('  for I := 1 to Antall do');
+    A('  for I := 1 to Count_ do');
     A('  begin');
     A('    if I > 1 then');
     A('      Result := Result + '', '';');
@@ -384,7 +384,7 @@ begin
     A('');
     A('{ ------------------------------------------------------ bremsen -- }');
     A('');
-    A('{ Uten dette er innloggingsskjemaet et mål for gjetting i stor skala.');
+    A('{ Without dette er innloggingsskjemaet et mål for gjetting i stor skala.');
     A('  Cachen brukes hvis den finnes; er den ikke satt opp, hopper vi over');
     A('  bremsen i stedet for å ta ned innloggingen. Da står det i loggen.');
     A('');
@@ -445,8 +445,8 @@ begin
     A('    Exit(Redirect(''/dashboard''));');
     A('  Result := RespondHtml(Page(''Sign in'',');
     A('    ''<h1>Sign in</h1>'' +');
-    A('    Melding(CurrentSession.GetFlash(''error''), ''err'') +');
-    A('    Melding(CurrentSession.GetFlash(''notice''), ''ok'') +');
+    A('    Message_(CurrentSession.GetFlash(''error''), ''err'') +');
+    A('    Message_(CurrentSession.GetFlash(''notice''), ''ok'') +');
     A('    ''<form method="post" action="/login">'' + CsrfField +');
     A('    ''<label><span>Email</span>'' +');
     A('    ''<input type="email" name="email" autocomplete="username" '' +');
@@ -501,7 +501,7 @@ begin
     A('  end;');
     A('');
     A('  NullstillForsok(Epost);');
-    A('  { Login bytter sesjons-id. Uten det er session fixation åpent. }');
+    A('  { Login bytter sesjons-id. Without det er session fixation åpent. }');
     A('  Askr.Auth.Login(IntToStr(U.Id), Req.Form(''remember'').Len > 0);');
     A('  LogInfo(''login'', [''user'', U.Id]);');
     A('  Result := Redirect(''/dashboard'', 303);');
@@ -521,7 +521,7 @@ begin
     A('    Exit(Redirect(''/dashboard''));');
     A('  Result := RespondHtml(Page(''Create an account'',');
     A('    ''<h1>Create an account</h1>'' +');
-    A('    Melding(CurrentSession.GetFlash(''error''), ''err'') +');
+    A('    Message_(CurrentSession.GetFlash(''error''), ''err'') +');
     A('    ''<form method="post" action="/register">'' + CsrfField +');
     A('    ''<label><span>Name</span>'' +');
     A('    ''<input name="name" required autofocus></label>'' +');
@@ -554,14 +554,14 @@ begin
     A('function TAuthController.DoRegister(Req: TRequest): TResponse;');
     A('var');
     A('  U: TUser;');
-    A('  Passord, Feil: string;');
+    A('  Passord, Err: string;');
     A('begin');
     A('  Passord := Req.Form(''password'').ToString;');
-    A('  Feil := PassordFeil(Passord,');
+    A('  Err := PassordFeil(Passord,');
     A('    Req.Form(''password_confirmation'').ToString);');
-    A('  if Feil <> '''' then');
+    A('  if Err <> '''' then');
     A('  begin');
-    A('    CurrentSession.Flash(''error'', Feil);');
+    A('    CurrentSession.Flash(''error'', Err);');
     A('    Exit(Redirect(''/register'', 303));');
     A('  end;');
     A('');
@@ -590,7 +590,7 @@ begin
     A('begin');
     A('  Result := RespondHtml(Page(''Reset your password'',');
     A('    ''<h1>Reset your password</h1>'' +');
-    A('    Melding(CurrentSession.GetFlash(''notice''), ''ok'') +');
+    A('    Message_(CurrentSession.GetFlash(''notice''), ''ok'') +');
     A('    ''<form method="post" action="/forgot-password">'' + CsrfField +');
     A('    ''<label><span>Email</span>'' +');
     A('    ''<input type="email" name="email" required autofocus></label>'' +');
@@ -605,7 +605,7 @@ begin
     A('');
     A('function TAuthController.SendReset(Req: TRequest): TResponse;');
     A('var');
-    A('  Epost, Token, Lenke: string;');
+    A('  Epost, Token, Link_: string;');
     A('  U: TUser;');
     A('  A: TArena;');
     A('  M: TMailMessage;');
@@ -630,7 +630,7 @@ begin
     A('      [DbParam(A, Epost), DbParam(A, Sha256Hex(Token)),');
     A('       DbParam(A, UnixNowMs + ResetLevetidMs), DbParam(A, UnixNowMs)]);');
     A('');
-    A('    Lenke := Cfg(''app.url'', ''http://127.0.0.1:8080'') +');
+    A('    Link_ := Cfg(''app.url'', ''http://127.0.0.1:8080'') +');
     A('      ''/reset-password/'' + Token;');
     A('');
     A('    { I utvikling skriver TLogTransport e-posten til en fil, slik at');
@@ -638,7 +638,7 @@ begin
     A('    M := Mail.Message_;');
     A('    M.AddTo(Epost).Subject(''Reset your password'')');
     A('     .Text(''Open this link to choose a new password:'' + #10 + #10 +');
-    A('           Lenke + #10 + #10 + ''It expires in one hour.'');');
+    A('           Link_ + #10 + #10 + ''It expires in one hour.'');');
     A('    Mail.Send(M);');
     A('    LogInfo(''password reset requested'', [''user'', U.Id]);');
     A('  end;');
@@ -650,7 +650,7 @@ begin
     A('begin');
     A('  Result := RespondHtml(Page(''Choose a new password'',');
     A('    ''<h1>Choose a new password</h1>'' +');
-    A('    Melding(CurrentSession.GetFlash(''error''), ''err'') +');
+    A('    Message_(CurrentSession.GetFlash(''error''), ''err'') +');
     A('    ''<form method="post" action="/reset-password">'' + CsrfField +');
     A('    ''<input type="hidden" name="token" value="'' +');
     A('    Esc(Req.Param(''token'').ToString) + ''">'' +');
@@ -666,7 +666,7 @@ begin
     A('');
     A('function TAuthController.DoReset(Req: TRequest): TResponse;');
     A('var');
-    A('  Token, Passord, Feil, Epost: string;');
+    A('  Token, Passord, Err, Epost: string;');
     A('  A: TArena;');
     A('  R: TDbResult;');
     A('  U: TUser;');
@@ -674,11 +674,11 @@ begin
     A('  Token := Req.Form(''token'').ToString;');
     A('  Passord := Req.Form(''password'').ToString;');
     A('');
-    A('  Feil := PassordFeil(Passord,');
+    A('  Err := PassordFeil(Passord,');
     A('    Req.Form(''password_confirmation'').ToString);');
-    A('  if Feil <> '''' then');
+    A('  if Err <> '''' then');
     A('  begin');
-    A('    CurrentSession.Flash(''error'', Feil);');
+    A('    CurrentSession.Flash(''error'', Err);');
     A('    Exit(Redirect(''/reset-password/'' + Token, 303));');
     A('  end;');
     A('');
@@ -706,7 +706,7 @@ begin
     A('  U.PasswordHash := HashPassword(Passord);');
     A('  U.Save;');
     A('');
-    A('  { Engangsbruk. Alle tokens for adressen slettes, ikke bare det som');
+    A('  { Engangsbruk. All_ tokens for adressen slettes, ikke bare det som');
     A('    ble brukt — ba noen om to lenker, skal ikke den andre fortsatt');
     A('    virke. }');
     A('  CurrentDb.ExecParams(A,');
@@ -760,14 +760,14 @@ begin
     A('');
     A('{ ------------------------------------------------------ profil -- }');
     A('');
-    A('function ProfilSide(U: TUser; const Feil, Ok: string): string;');
+    A('function ProfilSide(U: TUser; const Err, Ok: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<h1>Settings</h1>'' +');
     A('    ''<p class="lead">Your account, and how it is secured.</p>'' +');
     A('    ''<section><div><h2>Profile</h2>'' +');
     A('    ''<p>This is how others will see you.</p></div><div>'' +');
-    A('    Melding(Feil, ''err'') + Melding(Ok, ''ok'') +');
+    A('    Message_(Err, ''err'') + Message_(Ok, ''ok'') +');
     A('    ''<form method="post" action="/settings/profile">'' + CsrfField +');
     A('    ''<label><span>Name</span>'' +');
     A('    ''<em>Your display name. It can be your real name or a'' +');
@@ -797,16 +797,16 @@ begin
     A('function TAuthController.SaveProfile(Req: TRequest): TResponse;');
     A('var');
     A('  U, Annen: TUser;');
-    A('  Navn, Epost: string;');
+    A('  Name_, Epost: string;');
     A('begin');
     A('  U := Meg;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('');
-    A('  Navn := Trim(Req.Form(''name'').ToString);');
+    A('  Name_ := Trim(Req.Form(''name'').ToString);');
     A('  Epost := LowerCase(Trim(Req.Form(''email'').ToString));');
     A('');
-    A('  if Navn = '''' then');
+    A('  if Name_ = '''' then');
     A('    Exit(RespondHtml(AppShell(''Profile'', ''/settings/profile'', U.Name,');
     A('      ProfilSide(U, ''Name is required.'', ''''))));');
     A('  if (Epost = '''') or (Pos(''@'', Epost) < 2) then');
@@ -823,7 +823,7 @@ begin
     A('        ProfilSide(U, ''That email is already in use.'', ''''))));');
     A('  end;');
     A('');
-    A('  U.Name := Navn;');
+    A('  U.Name := Name_;');
     A('  U.Email := Epost;');
     A('  U.Save;');
     A('  LogInfo(''profile updated'', [''user'', U.Id]);');
@@ -862,14 +862,14 @@ begin
     A('      ''</p></div>'';');
     A('end;');
     A('');
-    A('function SikkerhetSide(const Feil, Ok, Noklene: string): string;');
+    A('function SikkerhetSide(const Err, Ok, Noklene: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<h1>Security</h1>'' +');
     A('    ''<p class="lead">How you prove it is you.</p>'' +');
     A('    ''<section><div><h2>Password</h2>'' +');
     A('    ''<p>Changing it signs out every other session.</p></div><div>'' +');
-    A('    Melding(Feil, ''err'') + Melding(Ok, ''ok'') +');
+    A('    Message_(Err, ''err'') + Message_(Ok, ''ok'') +');
     A('    ''<form method="post" action="/settings/security">'' + CsrfField +');
     A('    ''<label><span>Current password</span>'' +');
     A('    ''<input name="current" type="password" required></label>'' +');
@@ -910,7 +910,7 @@ begin
     A('function TAuthController.ChangePassword(Req: TRequest): TResponse;');
     A('var');
     A('  U: TUser;');
-    A('  Naa, Nytt, Feil: string;');
+    A('  Now_, Nytt, Err: string;');
     A('');
     A('  function Avvis(const M: string): TResponse;');
     A('  begin');
@@ -923,17 +923,17 @@ begin
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('');
-    A('  Naa := Req.Form(''current'').ToString;');
+    A('  Now_ := Req.Form(''current'').ToString;');
     A('  Nytt := Req.Form(''password'').ToString;');
     A('');
     A('  { Det gamle passordet kreves selv om man alt er logget inn: uten');
     A('    det kan en åpen maskin overtas permanent av den som går forbi. }');
-    A('  if not VerifyPassword(Naa, U.PasswordHash) then');
+    A('  if not VerifyPassword(Now_, U.PasswordHash) then');
     A('    Exit(Avvis(''That is not your current password.''));');
     A('');
-    A('  Feil := PassordFeil(Nytt, Req.Form(''password_confirmation'').ToString);');
-    A('  if Feil <> '''' then');
-    A('    Exit(Avvis(Feil));');
+    A('  Err := PassordFeil(Nytt, Req.Form(''password_confirmation'').ToString);');
+    A('  if Err <> '''' then');
+    A('    Exit(Avvis(Err));');
     A('');
     A('  U.PasswordHash := HashPassword(Nytt);');
     A('  U.Save;');
@@ -1020,14 +1020,14 @@ begin
     A('');
     A('{ Askr.Urd.Bind sin JsonRoot er intern, saa kroppen parses her.');
     A('  Den leses to ganger i verste fall, og det er noen hundre byte. }');
-    A('function Kropp(Req: TRequest): PJsonValue;');
+    A('function Body_(Req: TRequest): PJsonValue;');
     A('var');
-    A('  FeilPos: SizeInt;');
+    A('  ErrPos: SizeInt;');
     A('begin');
     A('  Result := nil;');
     A('  if (not Req.IsJson) or (Req.Body.Len = 0) then');
     A('    Exit;');
-    A('  if not JsonParse(Req.Arena, Req.Body, Result, FeilPos) then');
+    A('  if not JsonParse(Req.Arena, Req.Body, Result, ErrPos) then');
     A('    Result := nil;');
     A('end;');
     A('');
@@ -1056,7 +1056,7 @@ begin
     A('    rp_id  = "example.com"');
     A('    origin = "https://example.com"');
     A('');
-    A('  Grunnen er at Host-hodet kommer fra klienten. Feil verdi gir ikke');
+    A('  Grunnen er at Host-hodet kommer fra klienten. Err verdi gir ikke');
     A('  et hull i seg selv -- nettleseren nekter aa bruke en passkey paa');
     A('  feil domene uansett -- men en fast verdi er det som gjoer at');
     A('  serveren ogsaa sier nei, og ikke bare nettleseren. }');
@@ -1110,7 +1110,7 @@ begin
     A('      Exit(False);');
     A('end;');
     A('');
-    A('{ Utfordringen lagres i sesjonen til svaret kommer. Uten det kunne');
+    A('{ Utfordringen lagres i sesjonen til svaret kommer. Without det kunne');
     A('  en angriper spille av et gammelt svar. }');
     A('function NyUtfordring: string;');
     A('begin');
@@ -1133,27 +1133,27 @@ begin
     A('  Result := RespondJson(S);');
     A('end;');
     A('');
-    A('function JsonFeil(const Melding: string; Status: Integer): TResponse;');
+    A('function JsonFeil(const Message_: string; Status: Integer): TResponse;');
     A('var');
     A('  W: TJsonWriter;');
     A('begin');
     A('  W.Init(CurrentArena, 256);');
     A('  W.BeginObject;');
-    A('  W.Field(' + Q + 'error' + Q + ', Melding);');
+    A('  W.Field(' + Q + 'error' + Q + ', Message_);');
     A('  W.EndObject;');
     A('  Result := RespondJson(W.ToString, Status);');
     A('end;');
     A('');
     A('{ Kroppen er JSON fra vaar egen JS. Feltene er base64url. }');
-    A('function JsonFelt(Req: TRequest; const Navn: string): TBytes;');
+    A('function JsonFelt(Req: TRequest; const Name_: string): TBytes;');
     A('var');
     A('  V: PJsonValue;');
     A('begin');
     A('  Result := nil;');
-    A('  V := Kropp(Req);');
+    A('  V := Body_(Req);');
     A('  if V = nil then');
     A('    Exit;');
-    A('  V := JsonMember(V, Navn);');
+    A('  V := JsonMember(V, Name_);');
     A('  if V = nil then');
     A('    Exit;');
     A('  Result := Base64UrlDecode(JsonAsString(V));');
@@ -1202,7 +1202,7 @@ begin
     A('  U: TUser;');
     A('  Reg: TRegistration;');
     A('  C: TCredential;');
-    A('  Navn: string;');
+    A('  Name_: string;');
     A('  V: PJsonValue;');
     A('begin');
     A('  U := Meg;');
@@ -1220,18 +1220,18 @@ begin
     A('    Exit(JsonFeil(Reg.Error, 400));');
     A('  end;');
     A('');
-    A('  Navn := ' + Q + Q + ';');
-    A('  V := Kropp(Req);');
+    A('  Name_ := ' + Q + Q + ';');
+    A('  V := Body_(Req);');
     A('  if V <> nil then');
     A('  begin');
     A('    V := JsonMember(V, ' + Q + 'label' + Q + ');');
     A('    if V <> nil then');
-    A('      Navn := Trim(JsonAsString(V));');
+    A('      Name_ := Trim(JsonAsString(V));');
     A('  end;');
-    A('  if Navn = ' + Q + Q + ' then');
-    A('    Navn := ' + Q + 'Passkey' + Q + ';');
-    A('  if Length(Navn) > 120 then');
-    A('    Navn := Copy(Navn, 1, 120);');
+    A('  if Name_ = ' + Q + Q + ' then');
+    A('    Name_ := ' + Q + 'Passkey' + Q + ';');
+    A('  if Length(Name_) > 120 then');
+    A('    Name_ := Copy(Name_, 1, 120);');
     A('');
     A('  C := Req.Arena.New<TCredential>;');
     A('  C.UserId := U.Id;');
@@ -1239,7 +1239,7 @@ begin
     A('  C.PublicKeyX := HexEncode(Reg.PublicKeyX);');
     A('  C.PublicKeyY := HexEncode(Reg.PublicKeyY);');
     A('  C.SignCount := Reg.SignCount;');
-    A('  C.Nickname := Navn;');
+    A('  C.Nickname := Name_;');
     A('  C.Save;');
     A('  LogInfo(' + Q + 'passkey registered' + Q + ', [' + Q + 'user' + Q + ', U.Id]);');
     A('  Result := JsonSvar(' + Q + '{"ok":true}' + Q + ');');
@@ -1253,7 +1253,7 @@ begin
     A('  U := Meg;');
     A('  if U = nil then');
     A('    Exit(Redirect(' + Q + '/login' + Q + ', 303));');
-    A('  { Eierskapet maa sjekkes. Uten det kan hvem som helst slette');
+    A('  { Eierskapet maa sjekkes. Without det kan hvem som helst slette');
     A('    andres noekler ved aa gjette en id. }');
     A('  C := TQuery<TCredential>.New');
     A('    .Where(ColInt64(' + Q + 'credentials' + Q + ', ' + Q + 'id' + Q + '), Eq,');
@@ -1294,7 +1294,7 @@ begin
     A('  V: PJsonValue;');
     A('  CredId: string;');
     A('begin');
-    A('  V := Kropp(Req);');
+    A('  V := Body_(Req);');
     A('  if V = nil then');
     A('    Exit(JsonFeil(' + Q + 'Malformed request.' + Q + ', 400));');
     A('  V := JsonMember(V, ' + Q + 'id' + Q + ');');
@@ -1344,7 +1344,7 @@ begin
     A('');
     A('end.');
 
-    Skriv(IncludeTrailingPathDelimiter(Rot) +
+    Emit(IncludeTrailingPathDelimiter(Rot) +
       'app/Http/App.Http.AuthController.pas', L.Text);
   finally
     L.Free;
@@ -1353,9 +1353,9 @@ end;
 
 { ---------------------------------------------------------- migrasjonene -- }
 
-procedure SkrivMigrasjoner(const Rot, Versjon: string);
+procedure WriteMigrations(const Rot, Versjon: string);
 begin
-  Skriv(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Rot) +
     'database/App.Migrations.CreateUsers.pas',
     'unit App.Migrations.CreateUsers;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
@@ -1394,7 +1394,7 @@ begin
     '  RegisterMigration(TCreateUsers);' + #10 + #10 +
     'end.' + #10);
 
-  Skriv(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Rot) +
     'database/App.Migrations.CreatePasswordResets.pas',
     'unit App.Migrations.CreatePasswordResets;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
@@ -1453,17 +1453,17 @@ const
 function InstallerRuter(const Rot: string): Boolean;
 var
   L: TStringList;
-  Sti: string;
+  Path_: string;
   I, IdxUses, IdxRuter: Integer;
 begin
   Result := False;
-  Sti := IncludeTrailingPathDelimiter(Rot) + 'app.lpr';
-  if not FileExists(Sti) then
+  Path_ := IncludeTrailingPathDelimiter(Rot) + 'app.lpr';
+  if not FileExists(Path_) then
     Exit;
 
   L := TStringList.Create;
   try
-    L.LoadFromFile(Sti);
+    L.LoadFromFile(Path_);
 
     { Allerede installert? Da er det ingenting å gjøre, og det er ikke en
       feil. }
@@ -1556,7 +1556,7 @@ begin
         Break;
       end;
 
-    L.SaveToFile(Sti);
+    L.SaveToFile(Path_);
     WriteLn('  edited app.lpr');
     Result := True;
   finally
@@ -1564,7 +1564,7 @@ begin
   end;
 end;
 
-procedure SkrivHjelp;
+procedure WriteHelp;
 begin
   WriteLn;
   WriteLn('Could not find the markers in app.lpr. Add this yourself:');
@@ -1605,9 +1605,9 @@ end;
 
 { ------------------------------------------------------------ passkeys -- }
 
-procedure SkrivCredential(const Rot: string);
+procedure WriteCredential(const Rot: string);
 begin
-  Skriv(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Rot) +
     'app/Models/App.Models.Credential.pas',
     '{ En registrert passkey.' + #10 + #10 +
     '  Her ligger bare den OFFENTLIGE noekkelen. Det er hele poenget med' + #10 +
@@ -1658,9 +1658,9 @@ begin
     'end.' + #10);
 end;
 
-procedure SkrivPasskeyMigrasjon(const Rot, Versjon: string);
+procedure WritePasskeyMigration(const Rot, Versjon: string);
 begin
-  Skriv(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Rot) +
     'database/App.Migrations.CreateCredentials.pas',
     'unit App.Migrations.CreateCredentials;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
@@ -1710,31 +1710,31 @@ end;
 
 procedure LagAuth(const Rot: string; Force: Boolean);
 var
-  Sti: string;
+  Path_: string;
 begin
-  Sti := IncludeTrailingPathDelimiter(Rot) +
+  Path_ := IncludeTrailingPathDelimiter(Rot) +
     'app/Http/App.Http.AuthController.pas';
-  if FileExists(Sti) and not Force then
+  if FileExists(Path_) and not Force then
   begin
     WriteLn('Auth is already installed. Pass --force to overwrite it.');
     Halt(1);
   end;
 
-  SkrivBruker(Rot);
-  SkrivCredential(Rot);
-  SkrivMigrasjoner(Rot, Tidsstempel);
+  WriteUser(Rot);
+  WriteCredential(Rot);
+  WriteMigrations(Rot, Tidsstempel);
   { Egen migrasjon, og TO tidsstempel senere: credentials peker paa
     users med en fremmednoekkel, saa tabellen maa finnes foerst — og
-    SkrivMigrasjoner bruker selv T og T+1. Med +1 fikk credentials
+    WriteMigrations bruker selv T og T+1. With_ +1 fikk credentials
     samme versjon som password_resets, og migratoren hoppet over den
     som alt kjoert. Tabellen ble da aldri laget, og sikkerhetssida
     svarte 500. }
-  SkrivPasskeyMigrasjon(Rot, IntToStr(StrToInt64(Tidsstempel) + 2));
-  SkrivKontroller(Rot);
-  OppdaterIndeks(Rot, 'database', 'App.Migrations', 'App.Migrations.');
+  WritePasskeyMigration(Rot, IntToStr(StrToInt64(Tidsstempel) + 2));
+  WriteControllers(Rot);
+  UpdateIndex(Rot, 'database', 'App.Migrations', 'App.Migrations.');
 
   if not InstallerRuter(Rot) then
-    SkrivHjelp;
+    WriteHelp;
 
   WriteLn;
   WriteLn('Next:');

@@ -1,7 +1,7 @@
-<!-- Skillet mellom leddene er CSS, ikke tekst. En «/» i markup leses opp
-     som «skråstrek» mellom hvert ledd, og det er ingen hjelp.
-     Siste ledd er ikke en lenke — man navigerer ikke til der man er — men
-     det bærer aria-current="page". -->
+<!-- The separator between crumbs is CSS, not text. A "/" in the markup
+     is read out as "slash" between every crumb, and that helps nobody.
+     The last crumb is not a link — you do not navigate to where you
+     already are — but it carries aria-current="page". -->
 <script>
   import { cn } from './utils.js'
 

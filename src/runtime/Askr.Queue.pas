@@ -67,7 +67,7 @@ type
     Id: Int64;            { lagerets id, 0 når det ikke har noen }
   end;
 
-  { Hvor jobbene ligger. To implementasjoner: i prosessen, som før, og i en
+  { Where_ jobbene ligger. To implementasjoner: i prosessen, som før, og i en
     database.
 
     Grensesnittet finnes for at det skal være **én** utførelsesvei. Et eget
@@ -89,7 +89,7 @@ type
     function Pending: Integer; virtual; abstract;
     { Overlever jobbene at prosessen starter på nytt? }
     function Durable: Boolean; virtual;
-    { Hvor lenge en worker uten arbeid venter før den ser etter igjen. Et
+    { Where_ lenge en worker uten arbeid venter før den ser etter igjen. Et
       lager i prosessen vekkes av et signal og kan vente kort; et lager i
       en database må spørre, og da er 20 ms å hamre på den. }
     function PollIntervalMs: Integer; virtual;
@@ -148,9 +148,9 @@ type
     FWorkerCount: Integer;
     FMaxAttempts: Integer;
     FRunning: LongInt;
-    { Navn til handler. En vanlig tabell med lineært søk, ikke TStringList
+    { Name_ til handler. En vanlig tabell med lineært søk, ikke TStringList
       med Objects: en prosedyrevariabel kan ikke castes til TObject i
-      Delphi-modus uten at kompilatoren tolker den som et kall. Antall
+      Delphi-modus uten at kompilatoren tolker den som et kall. Count_
       jobbtyper er uansett en håndfull. }
     FBindings: array of TJobBinding;
     FProcessed, FFailed, FRetried, FDropped: QWord;
@@ -160,7 +160,7 @@ type
   public
     constructor Create(AWorkers: Integer = 2;
       AMaxAttempts: Integer = 3); overload;
-    { Med et eget lager. Køen overtar eieskapet når OwnsStore er satt. }
+    { With_ et eget lager. Køen overtar eieskapet når OwnsStore er satt. }
     constructor Create(AStore: TJobStore; AWorkers: Integer = 2;
       AMaxAttempts: Integer = 3; AOwnsStore: Boolean = True); overload;
     destructor Destroy; override;
@@ -175,7 +175,7 @@ type
       DelaySeconds: Integer = 0); overload;
 
     procedure Start;
-    { Drain venter til køen er tom. Uten drain forkastes det som står igjen. }
+    { Drain venter til køen er tom. Without drain forkastes det som står igjen. }
     procedure Stop(Drain: Boolean = True);
     { Venter til køen er tom eller tiden er ute. Finnes for tester. }
     function WaitUntilEmpty(TimeoutMs: Integer): Boolean;
@@ -189,7 +189,7 @@ type
     property MaxAttempts: Integer read FMaxAttempts write FMaxAttempts;
     property OnError: TQueueErrorHandler read FOnError write FOnError;
     property Store: TJobStore read FStore;
-    { Overlever jobbene en omstart? Til statusendepunkter og til å si fra i
+    { Overlever jobbene en omstart? To_ statusendepunkter og til å si fra i
       oppstartsloggen hva slags kø dette faktisk er. }
     function Durable: Boolean;
   end;

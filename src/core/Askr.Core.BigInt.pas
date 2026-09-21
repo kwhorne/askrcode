@@ -12,7 +12,7 @@
     $FFFFFFFF * $FFFFFFFF + $FFFFFFFF + $FFFFFFFF
       = $FFFFFFFFFFFFFFFF
 
-  altså akkurat innenfor. Med 64-bits lemmer måtte hvert produkt vært
+  altså akkurat innenfor. With_ 64-bits lemmer måtte hvert produkt vært
   128 bit, og den typen finnes ikke i Free Pascal. Prisen er omtrent
   dobbelt så mange operasjoner; gevinsten er at ingenting her flyter
   over, så uniten trenger ingen avskrudd område- eller overflytkontroll
@@ -90,9 +90,9 @@ procedure U256To512(const A: TU256; out R: TU512);
 { Full 512 x 512 multiplikasjon, avkortet til 512 bit. }
 procedure U512MulLow(const A, B: TU512; out R: TU512);
 
-{ Skifter et 512-bits tall Antall lemmer mot høyre, altså deler på
-  2^(32*Antall). }
-procedure U512ShrLimbs(const A: TU512; Antall: Integer; out R: TU512);
+{ Skifter et 512-bits tall Count_ lemmer mot høyre, altså deler på
+  2^(32*Count_). }
+procedure U512ShrLimbs(const A: TU512; Count_: Integer; out R: TU512);
 
 { ---------------------------------------------------------------- byte -- }
 
@@ -169,7 +169,7 @@ function U256Cmp(const A, B: TU256): Integer;
 var
   I: Integer;
 begin
-  { Fra toppen: første ulike lemme avgjør. }
+  { From_ toppen: første ulike lemme avgjør. }
   for I := U256Limbs - 1 downto 0 do
   begin
     if A.L[I] < B.L[I] then Exit(-1);
@@ -247,7 +247,7 @@ begin
     Baerer := 0;
     for J := 0 to U256Limbs - 1 do
     begin
-      { Dette er linja som avgjorde lemmebredden. Med 32-bits lemmer
+      { Dette er linja som avgjorde lemmebredden. With_ 32-bits lemmer
         får produktet pluss to bærere akkurat plass i UInt64. }
       T := UInt64(A.L[I]) * UInt64(B.L[J]) + UInt64(R.L[I + J]) + Baerer;
       R.L[I + J] := UInt32(T and $FFFFFFFF);
@@ -380,15 +380,15 @@ begin
   end;
 end;
 
-procedure U512ShrLimbs(const A: TU512; Antall: Integer; out R: TU512);
+procedure U512ShrLimbs(const A: TU512; Count_: Integer; out R: TU512);
 var
   I: Integer;
 begin
   U512SetZero(R);
-  if Antall >= U512Limbs then
+  if Count_ >= U512Limbs then
     Exit;
-  for I := 0 to U512Limbs - 1 - Antall do
-    R.L[I] := A.L[I + Antall];
+  for I := 0 to U512Limbs - 1 - Count_ do
+    R.L[I] := A.L[I + Count_];
 end;
 
 { ---------------------------------------------------------------- byte -- }
@@ -421,7 +421,7 @@ begin
   end;
 end;
 
-function HexVerdi(C: Char; out V: Integer): Boolean;
+function HexValue(C: Char; out V: Integer): Boolean;
 begin
   Result := True;
   case C of
@@ -450,7 +450,7 @@ begin
   Bit := 0;
   for I := Length(T) downto 1 do
   begin
-    if not HexVerdi(T[I], V) then
+    if not HexValue(T[I], V) then
       Exit(False);
     R.L[Bit shr 5] := R.L[Bit shr 5] or (UInt32(V) shl (Bit and 31));
     Inc(Bit, 4);

@@ -1,4 +1,4 @@
-{ Lager databasen spiken introspiserer mot. Skjemaet finnes bare her — Rún-
+{ Storage databasen spiken introspiserer mot. Skjemaet finnes bare her — Rún-
   kilden nevner ingen kolonner, den leser dem. }
 program setupdb;
 
@@ -13,7 +13,7 @@ var
   C: TDbConnection;
   I, J, Ekstra: Integer;
 begin
-  { Med et tall som argument legges det på så mange ekstra tabeller. Skjemaet
+  { With_ et tall som argument legges det på så mange ekstra tabeller. Skjemaet
     en ekte app har er ikke to tabeller, og introspeksjonen kjører på hver
     eneste bygging — da må kostnaden måles på noe som likner. }
   Ekstra := StrToIntDef(ParamStr(1), 0);

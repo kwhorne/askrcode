@@ -58,7 +58,7 @@ begin
   GJson.Parsed := False;
 end;
 
-{ JSON-kroppen parses én gang per request. Uten dette ville FillInto over
+{ JSON-kroppen parses én gang per request. Without dette ville FillInto over
   tjue felter parset den tjue ganger.
 
   Cachen kan ikke nøkles på request-pekeren alene: arenaen gjenbruker de
@@ -67,7 +67,7 @@ end;
   nettopp det den mekanismen finnes til. }
 function JsonRoot(Req: TRequest): PJsonValue;
 var
-  FeilPos: SizeInt;
+  ErrPos: SizeInt;
 begin
   if (GJson.Req = Req) and GJson.Parsed then
     Exit(GJson.Root);
@@ -77,7 +77,7 @@ begin
   GJson.Parsed := True;
   Req.Arena.Defer(GlemJsonCache, nil);
   if Req.IsJson and (Req.Body.Len > 0) then
-    if not JsonParse(Req.Arena, Req.Body, GJson.Root, FeilPos) then
+    if not JsonParse(Req.Arena, Req.Body, GJson.Root, ErrPos) then
       GJson.Root := nil;
   Result := GJson.Root;
 end;

@@ -128,7 +128,7 @@ type
   TSSL_ctrl = function(S: Pointer; Cmd: Integer; Larg: LongInt;
     Parg: Pointer): LongInt; cdecl;
   TSSL_get_verify_result = function(S: Pointer): LongInt; cdecl;
-  { SSL_set1_host finnes fra OpenSSL 1.1.0. Uten den sjekker
+  { SSL_set1_host finnes fra OpenSSL 1.1.0. Without den sjekker
     SSL_VERIFY_PEER bare at kjeden er gyldig — ikke at sertifikatet
     gjelder verten vi snakker med. Et gyldig sertifikat for et hvilket
     som helst domene ville passert. }
@@ -393,7 +393,7 @@ begin
      SSL_FILETYPE_PEM) <> 1 then
     raise ETlsError.CreateFmt('Could not read the key %s: %s',
       [KeyFile, TlsLastError]);
-  { Sjekker at nøkkelen hører til sertifikatet. Uten dette feiler første
+  { Sjekker at nøkkelen hører til sertifikatet. Without dette feiler første
     håndtrykk i stedet for oppstarten, og feilen blir mye vanskeligere. }
   if SSL_CTX_check_private_key(FCtx) <> 1 then
     raise ETlsError.Create('The key does not match the certificate');
@@ -431,7 +431,7 @@ begin
 
   if (Ctx.Role = trClient) and (ServerName <> '') then
   begin
-    { SNI. Uten dette får man feil sertifikat fra enhver vert som har flere. }
+    { SNI. Without dette får man feil sertifikat fra enhver vert som har flere. }
     SSL_ctrl(FSsl, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
       PAnsiChar(AnsiString(ServerName)));
     { Og navnesjekken. SNI sier hvilket sertifikat vi vil ha; denne sier at

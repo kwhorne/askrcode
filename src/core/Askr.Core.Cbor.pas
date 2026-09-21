@@ -44,7 +44,7 @@ type
     FPos: Integer;
     { Leser hodet og flytter markøren. Major er hovedtypen, Arg det
       tilhørende tallet. }
-    function LesHode(out Major: Byte; out Arg: UInt64): Boolean;
+    function ReadHeader(out Major: Byte; out Arg: UInt64): Boolean;
   public
     procedure Init(ABuf: PByte; ASize: Integer);
 
@@ -57,29 +57,29 @@ type
     function Ferdig: Boolean;
 
     { Hovedtypen til neste verdi, uten å flytte markøren. }
-    function NesteType(out Major: Byte): Boolean;
+    function NextType(out Major: Byte): Boolean;
 
-    function LesUInt(out V: UInt64): Boolean;
+    function ReadUInt(out V: UInt64): Boolean;
     { Heltall av begge fortegn. Negative er -1 - Arg. }
-    function LesInt(out V: Int64): Boolean;
+    function ReadInt(out V: Int64): Boolean;
     { Utsnitt inn i bufferet. Start er absolutt indeks. }
-    function LesBytes(out Start, Len: Integer): Boolean;
-    function LesText(out Start, Len: Integer): Boolean;
+    function ReadBytes(out Start, Len: Integer): Boolean;
+    function ReadText(out Start, Len: Integer): Boolean;
     { Teksten som Pascal-streng. Bare for korte nøkler. }
-    function LesTextStr(out S: string): Boolean;
-    function LesArrayLen(out N: Integer): Boolean;
-    function LesMapLen(out N: Integer): Boolean;
+    function ReadTextStr(out S: string): Boolean;
+    function ReadArrayLen(out N: Integer): Boolean;
+    function ReadMapLen(out N: Integer): Boolean;
 
     { Hopper over neste verdi, uansett type, inkludert nøstede. Brukes
-      til å gå forbi felter vi ikke bryr oss om. Har et dybdetak, slik
+      til å gå forbi felter vi ikke bryr oss om. Has_ et dybdetak, slik
       at en dypt nøstet konstruksjon ikke blir en stakkoverflyt. }
-    function Hopp: Boolean;
+    function Skip: Boolean;
   end;
 
 implementation
 
 const
-  MaksDybde = 16;
+  MaxDepth = 16;
 
 procedure TCborReader.Init(ABuf: PByte; ASize: Integer);
 begin
@@ -109,7 +109,7 @@ begin
   Result := FPos = FSize;
 end;
 
-function TCborReader.LesHode(out Major: Byte; out Arg: UInt64): Boolean;
+function TCborReader.ReadHeader(out Major: Byte; out Arg: UInt64): Boolean;
 var
   B: Byte;
   Ekstra, I: Integer;
@@ -149,7 +149,7 @@ begin
   Result := True;
 end;
 
-function TCborReader.NesteType(out Major: Byte): Boolean;
+function TCborReader.NextType(out Major: Byte): Boolean;
 begin
   Major := 0;
   if FPos >= FSize then
@@ -158,21 +158,21 @@ begin
   Result := True;
 end;
 
-function TCborReader.LesUInt(out V: UInt64): Boolean;
+function TCborReader.ReadUInt(out V: UInt64): Boolean;
 var
   M: Byte;
 begin
   V := 0;
-  Result := LesHode(M, V) and (M = CborUInt);
+  Result := ReadHeader(M, V) and (M = CborUInt);
 end;
 
-function TCborReader.LesInt(out V: Int64): Boolean;
+function TCborReader.ReadInt(out V: Int64): Boolean;
 var
   M: Byte;
   Arg: UInt64;
 begin
   V := 0;
-  if not LesHode(M, Arg) then
+  if not ReadHeader(M, Arg) then
     Exit(False);
   if M = CborUInt then
   begin
@@ -193,13 +193,13 @@ begin
   Result := False;
 end;
 
-function TCborReader.LesBytes(out Start, Len: Integer): Boolean;
+function TCborReader.ReadBytes(out Start, Len: Integer): Boolean;
 var
   M: Byte;
   Arg: UInt64;
 begin
   Start := 0; Len := 0;
-  if not LesHode(M, Arg) then Exit(False);
+  if not ReadHeader(M, Arg) then Exit(False);
   if M <> CborBytes then Exit(False);
   { Lengden kommer fra data en angriper skriver. En lengde som ikke får
     plass i bufferet er en feil, ikke noe å klippe til. }
@@ -210,13 +210,13 @@ begin
   Result := True;
 end;
 
-function TCborReader.LesText(out Start, Len: Integer): Boolean;
+function TCborReader.ReadText(out Start, Len: Integer): Boolean;
 var
   M: Byte;
   Arg: UInt64;
 begin
   Start := 0; Len := 0;
-  if not LesHode(M, Arg) then Exit(False);
+  if not ReadHeader(M, Arg) then Exit(False);
   if M <> CborText then Exit(False);
   if Arg > UInt64(FSize - FPos) then Exit(False);
   Start := FPos;
@@ -225,12 +225,12 @@ begin
   Result := True;
 end;
 
-function TCborReader.LesTextStr(out S: string): Boolean;
+function TCborReader.ReadTextStr(out S: string): Boolean;
 var
   Start, Len, I: Integer;
 begin
   S := '';
-  if not LesText(Start, Len) then
+  if not ReadText(Start, Len) then
     Exit(False);
   { Taket er der for at en nøkkel på en megabyte ikke skal bli en
     streng. Nøklene vi leter etter er noen få tegn. }
@@ -242,29 +242,29 @@ begin
   Result := True;
 end;
 
-function TCborReader.LesArrayLen(out N: Integer): Boolean;
+function TCborReader.ReadArrayLen(out N: Integer): Boolean;
 var
   M: Byte;
   Arg: UInt64;
 begin
   N := 0;
-  if not LesHode(M, Arg) then Exit(False);
+  if not ReadHeader(M, Arg) then Exit(False);
   if M <> CborArray then Exit(False);
   { En lengde større enn det som er igjen av bufferet kan ikke stemme:
-    hvert element er minst én byte. Uten denne kan en liten melding be
+    hvert element er minst én byte. Without denne kan en liten melding be
     om milliarder av runder. }
   if Arg > UInt64(FSize - FPos) then Exit(False);
   N := Integer(Arg);
   Result := True;
 end;
 
-function TCborReader.LesMapLen(out N: Integer): Boolean;
+function TCborReader.ReadMapLen(out N: Integer): Boolean;
 var
   M: Byte;
   Arg: UInt64;
 begin
   N := 0;
-  if not LesHode(M, Arg) then Exit(False);
+  if not ReadHeader(M, Arg) then Exit(False);
   if M <> CborMap then Exit(False);
   { Hvert par er minst to byte. }
   if Arg > UInt64((FSize - FPos) div 2) then Exit(False);
@@ -272,22 +272,22 @@ begin
   Result := True;
 end;
 
-function HoppIndre(var R: TCborReader; Dybde: Integer): Boolean; forward;
+function SkipInner(var R: TCborReader; Depth_: Integer): Boolean; forward;
 
-function TCborReader.Hopp: Boolean;
+function TCborReader.Skip: Boolean;
 begin
-  Result := HoppIndre(Self, 0);
+  Result := SkipInner(Self, 0);
 end;
 
-function HoppIndre(var R: TCborReader; Dybde: Integer): Boolean;
+function SkipInner(var R: TCborReader; Depth_: Integer): Boolean;
 var
   M: Byte;
   Arg: UInt64;
   N, I: Integer;
 begin
-  if Dybde > MaksDybde then
+  if Depth_ > MaxDepth then
     Exit(False);
-  if not R.LesHode(M, Arg) then
+  if not R.ReadHeader(M, Arg) then
     Exit(False);
 
   case M of
@@ -305,7 +305,7 @@ begin
         if Arg > UInt64(R.FSize - R.FPos) then Exit(False);
         N := Integer(Arg);
         for I := 1 to N do
-          if not HoppIndre(R, Dybde + 1) then
+          if not SkipInner(R, Depth_ + 1) then
             Exit(False);
         Result := True;
       end;
@@ -315,8 +315,8 @@ begin
         N := Integer(Arg);
         for I := 1 to N do
         begin
-          if not HoppIndre(R, Dybde + 1) then Exit(False);   { nøkkel }
-          if not HoppIndre(R, Dybde + 1) then Exit(False);   { verdi }
+          if not SkipInner(R, Depth_ + 1) then Exit(False);   { nøkkel }
+          if not SkipInner(R, Depth_ + 1) then Exit(False);   { verdi }
         end;
         Result := True;
       end;

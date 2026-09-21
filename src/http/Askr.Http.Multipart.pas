@@ -109,7 +109,7 @@ type
   stå i anførselstegn, og da hører de ikke med. }
 function MultipartBoundary(const ContentType: TStr): TStr;
 
-{ Deler kroppen. Returnerer False og setter Error ved feil — en ødelagt
+{ Parts_ kroppen. Returnerer False og setter Error ved feil — en ødelagt
   kropp er en 400 fra kalleren, ikke en exception herfra. }
 function ParseMultipart(A: TArena; const Body, Boundary: TStr;
   out Form: TMultipartForm): Boolean;
@@ -226,7 +226,7 @@ end;
 
 function TUploadedFile.StoreIn(const Dir: string): string;
 var
-  Sti: string;
+  Path_: string;
 begin
   Result := '';
   if not ForceDirectories(Dir) then
@@ -235,10 +235,10 @@ begin
     skal ikke skrive over hverandre, og klientens navn skal ikke nå
     filsystemet i det hele tatt. Det opprinnelige navnet er fortsatt der i
     ClientName hvis appen vil lagre det ved siden av. }
-  Sti := IncludeTrailingPathDelimiter(Dir) + RandomHex(16) + Extension;
-  if not SaveAs(Sti) then
+  Path_ := IncludeTrailingPathDelimiter(Dir) + RandomHex(16) + Extension;
+  if not SaveAs(Path_) then
     Exit;
-  Result := Sti;
+  Result := Path_;
 end;
 
 { -------------------------------------------------------- TMultipartForm -- }
@@ -414,21 +414,21 @@ var
   Skille: TStrBuilder;
   Delim, Start: TStr;
   P, HodeSlutt, Neste: SizeInt;
-  Hode, Innhold, Disp, Navn, Filnavn: TStr;
-  AntFelt, AntFil, AntDeler: Integer;
-  KapFelt, KapFil: Integer;
-  NyFelt: PMultipartField;
-  NyFil: PUploadedFile;
+  Hode, Content_, Disp, Name_, Filnavn: TStr;
+  FieldsSeen, FilesSeen, PartsSeen: Integer;
+  FieldCap, KapFil: Integer;
+  NewField: PMultipartField;
+  NewFile: PUploadedFile;
 begin
   Form.Fields := nil;
   Form.FieldCount := 0;
   Form.Files := nil;
   Form.FileCount := 0;
   Form.Error := mpOk;
-  AntFelt := 0;
-  AntFil := 0;
-  AntDeler := 0;
-  KapFelt := 0;
+  FieldsSeen := 0;
+  FilesSeen := 0;
+  PartsSeen := 0;
+  FieldCap := 0;
   KapFil := 0;
 
   if Boundary.Len = 0 then
@@ -454,7 +454,7 @@ begin
     P := Start.Len
   else
   begin
-    { Med preambel: let etter den første ekte grensen. }
+    { With_ preambel: let etter den første ekte grensen. }
     P := Body.IndexOfStr(Delim);
     if P < 0 then
     begin
@@ -466,7 +466,7 @@ begin
 
   while True do
   begin
-    { Etter grensen: enten "--" og slutt, eller CRLF og en del til. }
+    { After_ grensen: enten "--" og slutt, eller CRLF og en del til. }
     if P + 2 > Body.Len then
     begin
       Form.Error := mpMalformed;
@@ -476,7 +476,7 @@ begin
       Break;
     if ((Body.Data + P)^ <> 13) or ((Body.Data + P + 1)^ <> 10) then
     begin
-      { Noen klienter legger på mellomrom etter grensen. Hopp over dem
+      { Noen klienter legger på mellomrom etter grensen. Skip over dem
         heller enn å avvise en kropp som ellers er i orden. }
       while (P < Body.Len) and
             (((Body.Data + P)^ = 32) or ((Body.Data + P)^ = 9)) do
@@ -490,8 +490,8 @@ begin
     end;
     Inc(P, 2);
 
-    Inc(AntDeler);
-    if AntDeler > MaxMultipartParts then
+    Inc(PartsSeen);
+    if PartsSeen > MaxMultipartParts then
     begin
       Form.Error := mpTooManyParts;
       Exit(False);
@@ -509,17 +509,17 @@ begin
     Neste := Body.IndexOfStr(Delim, P);
     if Neste < 0 then
     begin
-      { Uten en avsluttende grense er kroppen kuttet. Å ta med resten
+      { Without en avsluttende grense er kroppen kuttet. Å ta med resten
         likevel ville gitt en halv fil som ser hel ut. }
       Form.Error := mpMalformed;
       Exit(False);
     end;
-    Innhold := Body.Slice(P, Neste - P);
+    Content_ := Body.Slice(P, Neste - P);
     P := Neste + Delim.Len;
 
     Disp := PartHeader(Hode, 'Content-Disposition');
-    Navn := DispositionParam(Disp, 'name');
-    if Navn.Len = 0 then
+    Name_ := DispositionParam(Disp, 'name');
+    if Name_.Len = 0 then
       { En del uten navn hører ikke til skjemaet. Den hoppes over i stedet
         for å velte hele kroppen. }
       Continue;
@@ -532,46 +532,46 @@ begin
       { Dobling i arenaen. Den forrige blokken blir liggende til Reset —
         samme avveining som TStrBuilder gjør, og den koster ingenting i en
         arena. Et skjema har som regel én fil, så det blir null vekster. }
-      if AntFil >= KapFil then
+      if FilesSeen >= KapFil then
       begin
         if KapFil = 0 then
           KapFil := 4
         else
           KapFil := KapFil * 2;
-        NyFil := PUploadedFile(A.Alloc(PtrUInt(KapFil) * SizeOf(TUploadedFile)));
-        if AntFil > 0 then
-          Move(Form.Files^, NyFil^, PtrUInt(AntFil) * SizeOf(TUploadedFile));
-        Form.Files := NyFil;
+        NewFile := PUploadedFile(A.Alloc(PtrUInt(KapFil) * SizeOf(TUploadedFile)));
+        if FilesSeen > 0 then
+          Move(Form.Files^, NewFile^, PtrUInt(FilesSeen) * SizeOf(TUploadedFile));
+        Form.Files := NewFile;
       end;
-      NyFil := Form.Files;
-      Inc(NyFil, AntFil);
-      NyFil^.FieldName := Navn;
-      NyFil^.ClientName := Filnavn;
-      NyFil^.ContentType := PartHeader(Hode, 'Content-Type');
-      NyFil^.Content := Innhold;
-      Inc(AntFil);
-      Form.FileCount := AntFil;
+      NewFile := Form.Files;
+      Inc(NewFile, FilesSeen);
+      NewFile^.FieldName := Name_;
+      NewFile^.ClientName := Filnavn;
+      NewFile^.ContentType := PartHeader(Hode, 'Content-Type');
+      NewFile^.Content := Content_;
+      Inc(FilesSeen);
+      Form.FileCount := FilesSeen;
     end
     else
     begin
-      if AntFelt >= KapFelt then
+      if FieldsSeen >= FieldCap then
       begin
-        if KapFelt = 0 then
-          KapFelt := 8
+        if FieldCap = 0 then
+          FieldCap := 8
         else
-          KapFelt := KapFelt * 2;
-        NyFelt := PMultipartField(
-          A.Alloc(PtrUInt(KapFelt) * SizeOf(TMultipartField)));
-        if AntFelt > 0 then
-          Move(Form.Fields^, NyFelt^, PtrUInt(AntFelt) * SizeOf(TMultipartField));
-        Form.Fields := NyFelt;
+          FieldCap := FieldCap * 2;
+        NewField := PMultipartField(
+          A.Alloc(PtrUInt(FieldCap) * SizeOf(TMultipartField)));
+        if FieldsSeen > 0 then
+          Move(Form.Fields^, NewField^, PtrUInt(FieldsSeen) * SizeOf(TMultipartField));
+        Form.Fields := NewField;
       end;
-      NyFelt := Form.Fields;
-      Inc(NyFelt, AntFelt);
-      NyFelt^.Name := Navn;
-      NyFelt^.Value := Innhold;
-      Inc(AntFelt);
-      Form.FieldCount := AntFelt;
+      NewField := Form.Fields;
+      Inc(NewField, FieldsSeen);
+      NewField^.Name := Name_;
+      NewField^.Value := Content_;
+      Inc(FieldsSeen);
+      Form.FieldCount := FieldsSeen;
     end;
   end;
 

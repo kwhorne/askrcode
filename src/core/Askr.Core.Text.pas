@@ -49,8 +49,8 @@ type
     function IndexOfStr(const Needle: string; StartAt: SizeInt = 0): SizeInt; overload;
     function Slice(Start: SizeInt; Count: SizeInt = -1): TStr;
     function TrimSpace: TStr;
-    { Deler på første forekomst av B. Left/Right peker inn i samme buffer.
-      Uten treff blir Left hele strengen og Right tom, og False returneres.
+    { Parts_ på første forekomst av B. Left/Right peker inn i samme buffer.
+      Without treff blir Left hele strengen og Right tom, og False returneres.
       Trygt når Left eller Right er den samme variabelen som Self. }
     function SplitAt(B: Byte; out Left, Right: TStr): Boolean;
     function ToInt64(out V: Int64): Boolean;
@@ -61,7 +61,7 @@ type
     til å samle innkommende bytes.
 
     Vekst kaster den forrige blokken (den frigjøres først ved Reset), så
-    startkapasiteten bør være i riktig størrelsesorden. Til gjengjeld er
+    startkapasiteten bør være i riktig størrelsesorden. To_ gjengjeld er
     append gratis når kapasiteten holder. }
   TStrBuilder = record
   private

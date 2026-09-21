@@ -139,7 +139,7 @@ function GenerateAppKey: string;
 
 { Signerer en tekst med appnøkkelen. Resultatet er `<tekst>.<signatur>`, og
   teksten er **lesbar** — signaturen beviser at den ikke er endret, den
-  skjuler den ikke. Legg aldri noe hemmelig i en signert verdi. }
+  skjuler den ikke. Put aldri noe hemmelig i en signert verdi. }
 function Sign(const Payload: string): string;
 { Sjekker signaturen og gir teksten tilbake. False hvis den ikke stemmer,
   mangler eller er tuklet med. Sammenligningen går i konstant tid. }
@@ -223,7 +223,7 @@ end;
 
 { --------------------------------------------------------------- SHA-256 -- }
 
-{ SHA-256 regner modulo 2^32, og addisjonene flyter over med vilje. Uten
+{ SHA-256 regner modulo 2^32, og addisjonene flyter over med vilje. Without
   denne merkingen krasjer hele uniten med ERangeError i enhver bygging med
   -Cr eller -Co, som ./askr check gjør. Samme grunn som FNV-hashene i
   Askr.Cache. }
@@ -602,14 +602,14 @@ end;
 
 function DecodeWith(const S: string; const Alphabet: string): TBytes;
 var
-  Verdi: array[0..255] of ShortInt;
+  Value_: array[0..255] of ShortInt;
   I, N, Bits, Acc, Out_: Integer;
   C: Char;
 begin
   Result := nil;
-  FillChar(Verdi, SizeOf(Verdi), Byte(-1));
+  FillChar(Value_, SizeOf(Value_), Byte(-1));
   for I := 1 to Length(Alphabet) do
-    Verdi[Ord(Alphabet[I])] := I - 1;
+    Value_[Ord(Alphabet[I])] := I - 1;
 
   SetLength(Result, (Length(S) * 3) div 4 + 3);
   Acc := 0;
@@ -621,9 +621,9 @@ begin
     C := S[I];
     if C = '=' then
       Break;
-    if Verdi[Ord(C)] < 0 then
+    if Value_[Ord(C)] < 0 then
       raise ECryptoError.Create('Invalid base64 input');
-    Acc := (Acc shl 6) or Verdi[Ord(C)];
+    Acc := (Acc shl 6) or Value_[Ord(C)];
     Inc(Bits, 6);
     if Bits >= 8 then
     begin
@@ -775,12 +775,12 @@ end;
 
 function NeedsRehash(const Hash: string; Iterations: Integer): Boolean;
 var
-  Har: Integer;
+  Has_: Integer;
   Salt, Dk: TBytes;
 begin
-  if not ParsePhc(Hash, Har, Salt, Dk) then
+  if not ParsePhc(Hash, Has_, Salt, Dk) then
     Exit(True);
-  Result := Har < Iterations;
+  Result := Has_ < Iterations;
 end;
 
 

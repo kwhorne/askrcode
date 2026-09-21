@@ -96,7 +96,7 @@ type
     { Én opplastet fil. `IsEmpty` er True når feltet ikke fantes eller
       brukeren ikke valgte noen fil. }
     function Upload(const AName: string): TUploadedFile;
-    { Alle filene under samme navn, som i `<input type="file" multiple>`. }
+    { All_ filene under samme navn, som i `<input type="file" multiple>`. }
     function Uploads(const AName: string): TUploadedFiles;
 
     property Method: THttpMethod read FMethod;

@@ -25,9 +25,9 @@ var
   Failed: Integer = 0;
   CurrentGroup: string = '';
 
-procedure Si2(const Etikett, Verdi: string);
+procedure Si2(const Etikett, Value_: string);
 begin
-  WriteLn('    ', Etikett, ': ', Verdi);
+  WriteLn('    ', Etikett, ': ', Value_);
 end;
 
 procedure Group(const Name: string);
@@ -171,7 +171,7 @@ begin
       UseArena(Prev);
     end;
 
-    { Uten omgivende arena skal klassen oppføre seg som en vanlig TObject. }
+    { Without omgivende arena skal klassen oppføre seg som en vanlig TObject. }
     T := TThing.Create(7);
     Check(not T.IsArenaAllocated, 'uten arena faller TArenaObject til heapen');
     T.Free;
@@ -237,7 +237,7 @@ var
   Reservert: PtrUInt;
   I, J: Integer;
   Forrige: Pointer;
-  AlleUnike: Boolean;
+  AllUnique: Boolean;
 begin
   Group('Arena — New<T>');
 
@@ -294,17 +294,17 @@ begin
     { Mange objekter: ingen skal overlappe, og arenaen skal flate ut. }
     A.Reset;
     Forrige := nil;
-    AlleUnike := True;
+    AllUnique := True;
     for I := 1 to 10000 do
     begin
       K := A.New<TKatt>;
       if Pointer(K) = Forrige then
-        AlleUnike := False;
+        AllUnique := False;
       Forrige := Pointer(K);
       if K.Bein <> 4 then
-        AlleUnike := False;
+        AllUnique := False;
     end;
-    Check(AlleUnike, '10 000 objekter fikk hver sin adresse og riktig innhold');
+    Check(AllUnique, '10 000 objekter fikk hver sin adresse og riktig innhold');
     Reservert := A.BytesReserved;
     for I := 1 to 10 do
     begin
@@ -323,37 +323,37 @@ end;
 { --------------------------------------------------- arena og string-felt -- }
 
 type
-  { Har en refcountet string — RTTI-tabellen er ikke tom. }
-  TMedStreng = class(TArenaObject)
+  { Has_ en refcountet string — RTTI-tabellen er ikke tom. }
+  TWithString = class(TArenaObject)
   public
     Name: string;
-    Tall: Integer;
+    Number: Integer;
   end;
 
   { Bare ShortString og tall — ingenting å finalisere. }
-  TUtenStreng = class(TArenaObject)
+  TWithoutString = class(TArenaObject)
   public
     Kort: string[16];
-    Tall: Integer;
+    Number: Integer;
   end;
 
 procedure TestArenaFinalisering;
 var
   A: TArena;
   Prev: TArena;
-  M: TMedStreng;
-  U: TUtenStreng;
-  Brukt: PtrUInt;
+  M: TWithString;
+  U: TWithoutString;
+  Used: PtrUInt;
 begin
   Group('Arena — finalisering av string-felt');
 
-  Check(ClassNeedsFinalization(TMedStreng),
+  Check(ClassNeedsFinalization(TWithString),
     'klasse med string trenger finalisering');
   { TKatt deklarerer ingen managed felter selv, men arver ett fra TDyr.
     Egen init-tabell er tom, så sjekken må gå opp arvekjeden. }
   Check(ClassNeedsFinalization(TKatt),
     'underklasse som arver et string-felt trenger det også');
-  Check(not ClassNeedsFinalization(TUtenStreng),
+  Check(not ClassNeedsFinalization(TWithoutString),
     'klasse med bare ShortString gjør ikke det');
   Check(not ClassNeedsFinalization(TRequest),
     'TRequest betaler ingenting for mekanismen');
@@ -363,19 +363,19 @@ begin
   A := TArena.Create(8192);
   Prev := UseArena(A);
   try
-    U := TUtenStreng.Create;
-    U.Tall := 1;
-    Brukt := A.BytesLive;
-    Check(Brukt <= U.InstanceSize + ArenaAlignment,
+    U := TWithoutString.Create;
+    U.Number := 1;
+    Used := A.BytesLive;
+    Check(Used <= U.InstanceSize + ArenaAlignment,
       'objekt uten managed felter koster ingen defer-node');
 
-    M := TMedStreng.Create;
+    M := TWithString.Create;
     { Ren ASCII, slik at Length teller det samme som antall tegn. }
     M.Name := 'en streng lang nok til aa havne paa heapen og ikke i datasegmentet';
     CheckEqI(Length(M.Name), 66, 'strengen ble satt');
 
     A.Reset;
-    { Etter Reset er minnet gjenbrukbart. At strengen faktisk ble frigjort
+    { After_ Reset er minnet gjenbrukbart. At strengen faktisk ble frigjort
       vises ved at refcounten falt — vi leser den ikke direkte, men
       finaliseringen nullstiller feltet. }
     CheckEqI(Length(M.Name), 0, 'Reset finaliserte string-feltet');
@@ -462,7 +462,7 @@ var
   V: Int64;
   I: Integer;
 begin
-  Group('Tekst');
+  Group('Text_');
   A := TArena.Create(4096);
   try
     S := Str('Hallo, verden');
@@ -570,7 +570,7 @@ end;
   fordi det er nettopp CRLF-ene rundt grensene testen handler om. }
 { FileUtil hører til Lazarus, ikke til FPCs RTL. Ryddingen skrives derfor
   ut for hånd. }
-procedure RyddMappe(const Dir: string);
+procedure RemoveDir_(const Dir: string);
 var
   R: TSearchRec;
 begin
@@ -585,15 +585,15 @@ begin
   RemoveDir(Dir);
 end;
 
-function MpDel(const Grense, Disp, Type_, Innhold: string): string;
+function MpPart(const Boundary, Disp, Type_, Content_: string): string;
 begin
-  Result := '--' + Grense + #13#10 + 'Content-Disposition: ' + Disp + #13#10;
+  Result := '--' + Boundary + #13#10 + 'Content-Disposition: ' + Disp + #13#10;
   if Type_ <> '' then
     Result := Result + 'Content-Type: ' + Type_ + #13#10;
-  Result := Result + #13#10 + Innhold + #13#10;
+  Result := Result + #13#10 + Content_ + #13#10;
 end;
 
-function ParseMedKropp(A: TArena; const Head, Kropp: string;
+function ParseWithBody(A: TArena; const Head, Body_: string;
   out Req: TRequest): TParseState;
 var
   Prev: TArena;
@@ -602,9 +602,9 @@ begin
   try
     Req := TRequest.Create;
     Result := Req.ParseHead(StrDup(A, Head + #13#10'Content-Length: ' +
-      IntToStr(Length(Kropp))), DefaultMaxBodyBytes);
+      IntToStr(Length(Body_))), DefaultMaxBodyBytes);
     if Result = psOk then
-      Req.SetBody(StrDup(A, Kropp));
+      Req.SetBody(StrDup(A, Body_));
   finally
     UseArena(Prev);
   end;
@@ -617,9 +617,9 @@ var
   A: TArena;
   Req: TRequest;
   St: TParseState;
-  Kropp, Sti, Mappe: string;
+  Body_, Path_, Folder: string;
   F: TUploadedFile;
-  Flere: TUploadedFiles;
+  More: TUploadedFiles;
   Form: TMultipartForm;
   Bin: string;
   I: Integer;
@@ -628,15 +628,15 @@ begin
   Group('Multipart');
   A := TArena.Create(64 * 1024);
   try
-    Kropp :=
-      MpDel(G, 'form-data; name="title"', '', 'Årsrapport') +
-      MpDel(G, 'form-data; name="_token"', '', 'abc123') +
-      MpDel(G, 'form-data; name="doc"; filename="rapport.pdf"',
+    Body_ :=
+      MpPart(G, 'form-data; name="title"', '', 'Årsrapport') +
+      MpPart(G, 'form-data; name="_token"', '', 'abc123') +
+      MpPart(G, 'form-data; name="doc"; filename="rapport.pdf"',
         'application/pdf', '%PDF-1.4 innhold') +
       '--' + G + '--' + #13#10;
 
-    St := ParseMedKropp(A, 'POST /upload HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    St := ParseWithBody(A, 'POST /upload HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     Check(St = psOk, 'requesten parser');
     Check(Req.IsMultipart, 'gjenkjent som multipart');
     Check(Req.Multipart.Ok, 'kroppen lot seg dele');
@@ -671,10 +671,10 @@ begin
     { Binært innhold med CRLF og med noe som ligner grensen inni. Kutter
       parseren på feil sted, blir fila ødelagt uten at noe sier fra. }
     Bin := 'AB'#13#10'--ikke-grensen'#13#10#0#1#2#255'CD';
-    Kropp := MpDel(G, 'form-data; name="f"; filename="a.bin"',
+    Body_ := MpPart(G, 'form-data; name="f"; filename="a.bin"',
       'application/octet-stream', Bin) + '--' + G + '--' + #13#10;
-    St := ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    St := ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     Check(St = psOk, 'binær kropp parser');
     F := Req.Upload('f');
     CheckEqI(F.Size, Length(Bin), 'binært innhold beholder hver byte');
@@ -683,50 +683,50 @@ begin
 
     A.Reset;
     { Grensen i anførselstegn, som noen klienter sender. }
-    Kropp := MpDel(G, 'form-data; name="a"', '', 'x') + '--' + G + '--'#13#10;
-    St := ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary="' + G + '"', Kropp, Req);
+    Body_ := MpPart(G, 'form-data; name="a"', '', 'x') + '--' + G + '--'#13#10;
+    St := ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary="' + G + '"', Body_, Req);
     CheckEqS(Req.Form('a').ToString, 'x', 'grense i anførselstegn');
 
     A.Reset;
-    { Flere filer under samme navn: <input type="file" multiple>. }
-    Kropp :=
-      MpDel(G, 'form-data; name="bilder"; filename="en.png"', 'image/png', '1') +
-      MpDel(G, 'form-data; name="bilder"; filename="to.png"', 'image/png', '22') +
-      MpDel(G, 'form-data; name="annet"; filename="tre.txt"', 'text/plain', '333') +
+    { More filer under samme navn: <input type="file" multiple>. }
+    Body_ :=
+      MpPart(G, 'form-data; name="bilder"; filename="en.png"', 'image/png', '1') +
+      MpPart(G, 'form-data; name="bilder"; filename="to.png"', 'image/png', '22') +
+      MpPart(G, 'form-data; name="annet"; filename="tre.txt"', 'text/plain', '333') +
       '--' + G + '--'#13#10;
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
-    Flere := Req.Uploads('bilder');
-    CheckEqI(Length(Flere), 2, 'to filer under samme navn');
-    CheckEqS(Flere[1].ClientName.ToString, 'to.png', 'rekkefølgen holder');
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
+    More := Req.Uploads('bilder');
+    CheckEqI(Length(More), 2, 'to filer under samme navn');
+    CheckEqS(More[1].ClientName.ToString, 'to.png', 'rekkefølgen holder');
     CheckEqI(Length(Req.Uploads('annet')), 1, 'og én under et annet');
 
     A.Reset;
     { Et filfelt brukeren ikke fylte ut: tomt filnavn, null bytes. Det skal
       ikke se ut som en opplasting. }
-    Kropp := MpDel(G, 'form-data; name="valgfri"; filename=""', '', '') +
+    Body_ := MpPart(G, 'form-data; name="valgfri"; filename=""', '', '') +
       '--' + G + '--'#13#10;
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     Check(Req.Upload('valgfri').IsEmpty, 'et tomt filfelt er ikke en fil');
 
     A.Reset;
     { Ødelagte kropper skal gi Ok = False, ikke en exception og ikke en
       halv fil. }
-    Kropp := MpDel(G, 'form-data; name="a"', '', 'x');  { uten avsluttende grense }
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    Body_ := MpPart(G, 'form-data; name="a"', '', 'x');  { uten avsluttende grense }
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     Check(not Req.Multipart.Ok, 'kropp uten avsluttende grense avvises');
 
     A.Reset;
-    Kropp := 'ingenting som ligner';
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    Body_ := 'ingenting som ligner';
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     Check(not Req.Multipart.Ok, 'søppel avvises');
 
     A.Reset;
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data', '', Req);
     Check(not Req.Multipart.Ok, 'multipart uten boundary avvises');
     Check(Req.Multipart.Error = mpNoBoundary, 'og sier hvorfor');
@@ -734,13 +734,13 @@ begin
     A.Reset;
     { For mange deler. Grensen er mot en kropp som er liten, men som koster
       i parsing og allokering. }
-    Kropp := '';
+    Body_ := '';
     for I := 1 to MaxMultipartParts + 5 do
-      Kropp := Kropp + MpDel(G, 'form-data; name="f' + IntToStr(I) + '"',
+      Body_ := Body_ + MpPart(G, 'form-data; name="f' + IntToStr(I) + '"',
         '', 'x');
-    Kropp := Kropp + '--' + G + '--'#13#10;
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    Body_ := Body_ + '--' + G + '--'#13#10;
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     Check(Req.Multipart.Error = mpTooManyParts, 'for mange deler avvises');
   finally
     A.Free;
@@ -771,37 +771,37 @@ begin
   { ---- lagring ---- }
   Group('Multipart: lagring');
   A := TArena.Create(16 * 1024);
-  Mappe := '.build/upload-test';
+  Folder := '.build/upload-test';
   try
-    Kropp := MpDel(G, 'form-data; name="f"; filename="../../onde.TXT"',
+    Body_ := MpPart(G, 'form-data; name="f"; filename="../../onde.TXT"',
       'text/plain', 'hei') + '--' + G + '--'#13#10;
-    ParseMedKropp(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
-      'Content-Type: multipart/form-data; boundary=' + G, Kropp, Req);
+    ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
+      'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     F := Req.Upload('f');
     CheckEqS(F.SafeName, 'onde.TXT', 'SafeName rydder navnet');
     CheckEqS(F.Extension, '.txt', 'endelsen er i små bokstaver');
 
-    Sti := F.StoreIn(Mappe);
-    Check(Sti <> '', 'StoreIn skrev fila');
-    Check(FileExists(Sti), 'og den finnes');
+    Path_ := F.StoreIn(Folder);
+    Check(Path_ <> '', 'StoreIn skrev fila');
+    Check(FileExists(Path_), 'og den finnes');
     { Klientens navn skal ikke nå filsystemet i det hele tatt. }
-    Check(Pos('onde', Sti) = 0, 'klientens navn brukes ikke som filnavn');
-    Check(Pos(Mappe, Sti) = 1, 'og fila havnet i katalogen vi ba om');
-    CheckEqS(ExtractFileExt(Sti), '.txt', 'men endelsen er med');
+    Check(Pos('onde', Path_) = 0, 'klientens navn brukes ikke som filnavn');
+    Check(Pos(Folder, Path_) = 1, 'og fila havnet i katalogen vi ba om');
+    CheckEqS(ExtractFileExt(Path_), '.txt', 'men endelsen er med');
 
     L := TStringList.Create;
     try
-      L.LoadFromFile(Sti);
+      L.LoadFromFile(Path_);
       CheckEqS(Trim(L.Text), 'hei', 'innholdet kom uendret på disk');
     finally
       L.Free;
     end;
 
     { To lagringer av samme fil skal ikke skrive over hverandre. }
-    Check(F.StoreIn(Mappe) <> Sti, 'to lagringer gir to filer');
+    Check(F.StoreIn(Folder) <> Path_, 'to lagringer gir to filer');
   finally
     A.Free;
-    RyddMappe(Mappe);
+    RemoveDir_(Folder);
   end;
 end;
 
@@ -1045,7 +1045,7 @@ procedure TestJsonSkriv;
 var
   A: TArena;
   W: TJsonWriter;
-  Verdi: Currency;
+  Value_: Currency;
 begin
   Group('JSON — skriving');
   A := TArena.Create(8192);
@@ -1098,17 +1098,17 @@ begin
     CheckEqS(W.ToString, '"æøå — 日本"', 'UTF-8 slipper gjennom uendret');
 
     { Currency må aldri få desimalkomma, uansett locale. }
-    Verdi := 1234.5;
+    Value_ := 1234.5;
     W.Init(A, 64);
-    W.Money(Verdi);
+    W.Money(Value_);
     CheckEqS(W.ToString, '1234.5', 'Currency med desimaler');
-    Verdi := 1234;
+    Value_ := 1234;
     W.Init(A, 64);
-    W.Money(Verdi);
+    W.Money(Value_);
     CheckEqS(W.ToString, '1234', 'Currency uten desimaler');
-    Verdi := -0.05;
+    Value_ := -0.05;
     W.Init(A, 64);
-    W.Money(Verdi);
+    W.Money(Value_);
     CheckEqS(W.ToString, '-0.05', 'negativ Currency');
 
     W.Init(A, 64);
@@ -1131,13 +1131,13 @@ procedure TestJsonLes;
 var
   A: TArena;
   V, M: PJsonValue;
-  FeilPos: SizeInt;
+  ErrPos: SizeInt;
 begin
   Group('JSON — lesing');
   A := TArena.Create(8192);
   try
     Check(JsonParse(A, Str('{"a":1,"b":"to","c":true,"d":null,"e":[1,2]}'),
-      V, FeilPos), 'parser et objekt');
+      V, ErrPos), 'parser et objekt');
     Check(V^.Kind = jkObject, 'rot er objekt');
     CheckEqI(V^.Count, 5, 'fem medlemmer');
     CheckEqI(JsonAsInt(JsonMember(V, 'a')), 1, 'tall');
@@ -1150,29 +1150,29 @@ begin
     CheckEqI(JsonAsInt(JsonAt(M, 1)), 2, 'element etter indeks');
     Check(JsonMember(V, 'finnes-ikke') = nil, 'ukjent nøkkel gir nil');
 
-    Check(JsonParse(A, Str('"med \" og \\ og \n"'), V, FeilPos),
+    Check(JsonParse(A, Str('"med \" og \\ og \n"'), V, ErrPos),
       'escapes i streng');
     CheckEqS(JsonAsString(V), 'med " og \ og ' + #10, 'escapes avkodet');
 
-    Check(JsonParse(A, Str('"æøå"'), V, FeilPos), 'u-escapes');
+    Check(JsonParse(A, Str('"æøå"'), V, ErrPos), 'u-escapes');
     CheckEqS(JsonAsString(V), 'æøå', 'u-escapes blir UTF-8');
 
-    Check(JsonParse(A, Str('"😀"'), V, FeilPos), 'surrogatpar');
+    Check(JsonParse(A, Str('"😀"'), V, ErrPos), 'surrogatpar');
     CheckEqI(Length(JsonAsString(V)), 4, 'emoji er fire bytes i UTF-8');
 
-    Check(JsonParse(A, Str('  [ 1 , 2 ]  '), V, FeilPos), 'whitespace');
+    Check(JsonParse(A, Str('  [ 1 , 2 ]  '), V, ErrPos), 'whitespace');
     CheckEqI(V^.Count, 2, 'to elementer tross mellomrom');
 
-    Check(JsonParse(A, Str('-12.5e3'), V, FeilPos), 'tall med eksponent');
+    Check(JsonParse(A, Str('-12.5e3'), V, ErrPos), 'tall med eksponent');
     CheckEqS(JsonAsStr(V).ToString, '-12.5e3', 'tallet beholdes som tekst');
 
-    Check(not JsonParse(A, Str('{"a":}'), V, FeilPos),
+    Check(not JsonParse(A, Str('{"a":}'), V, ErrPos),
       'manglende verdi avvises');
-    Check(not JsonParse(A, Str('{"a":1'), V, FeilPos),
+    Check(not JsonParse(A, Str('{"a":1'), V, ErrPos),
       'uavsluttet objekt avvises');
-    Check(not JsonParse(A, Str('[1,2] tull'), V, FeilPos),
+    Check(not JsonParse(A, Str('[1,2] tull'), V, ErrPos),
       'søppel etter avvises');
-    Check(not JsonParse(A, Str(''), V, FeilPos), 'tom streng avvises');
+    Check(not JsonParse(A, Str(''), V, ErrPos), 'tom streng avvises');
   finally
     A.Free;
   end;
@@ -1193,7 +1193,7 @@ begin
   end;
 end;
 
-function Svar(A: TArena; R: TResponse): string;
+function Reply(A: TArena; R: TResponse): string;
 var
   B: TStrBuilder;
 begin
@@ -1218,14 +1218,14 @@ begin
   try
     TInertia.SetVersion('abc123');
 
-    { Uten X-Inertia: hele HTML-skallet. }
+    { Without X-Inertia: hele HTML-skallet. }
     Req := LagRequest(A, 'GET /customers?side=2 HTTP/1.1'#13#10'Host: test');
     UseRequest(Req);
     { Propverdien inneholder med vilje noe som ville avsluttet script-blokka
       hvis escapingen ikke virket. }
     R := Inertia('Customers/Index',
       ['antall', Int64(3), 'ondsinnet', '</script><img src=x onerror=alert(1)>']);
-    Raw := Svar(A, R);
+    Raw := Reply(A, R);
     Check(Pos('text/html', Raw) > 0, 'vanlig request gir HTML');
     Check(Pos('</script><img', Raw) = 0,
       'en propverdi kan ikke bryte ut av script-blokka');
@@ -1245,7 +1245,7 @@ begin
     Check(Pos('lang="en"', Raw) > 0, 'og lang er en, ikke no');
 
     TInertia.SetTitle('Ada & <Co>');
-    Raw := Svar(A, Inertia('Customers/Index', ['antall', Int64(1)]));
+    Raw := Reply(A, Inertia('Customers/Index', ['antall', Int64(1)]));
     Check(Pos('<title>Ada &amp; &lt;Co&gt;</title>', Raw) > 0,
       'tittelen escapes — den er brukerkontrollert');
     TInertia.SetTitle('Askr');
@@ -1253,14 +1253,14 @@ begin
       'skråstrek er escapet også i vanlige verdier');
     Check(Pos('Vary: X-Inertia', Raw) > 0, 'Vary settes også på HTML');
 
-    { Med X-Inertia: ren JSON. }
+    { With_ X-Inertia: ren JSON. }
     A.Reset;
     Req := LagRequest(A, 'GET /customers?side=2 HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true');
     UseRequest(Req);
     R := Inertia('Customers/Index', ['antall', Int64(3)]);
     Body := R.Body.ToString;
-    Raw := Svar(A, R);
+    Raw := Reply(A, R);
     Check(Pos('X-Inertia: true', Raw) > 0, 'X-Inertia settes på svaret');
     Check(Pos('application/json', Raw) > 0, 'Content-Type er JSON');
     CheckEqS(Body,
@@ -1276,7 +1276,7 @@ begin
     UseRequest(Req);
     R := Inertia('Customers/Index', ['antall', Int64(3)]);
     CheckEqI(R.StatusCode, 409, 'versjonsavvik gir 409');
-    Check(Pos('X-Inertia-Location: /customers', Svar(A, R)) > 0,
+    Check(Pos('X-Inertia-Location: /customers', Reply(A, R)) > 0,
       'og peker klienten på adressen igjen');
 
     A.Reset;
@@ -1401,9 +1401,9 @@ type
     function Index(Req: TRequest): TResponse;
     function Vis(Req: TRequest): TResponse;
     function Ny(Req: TRequest): TResponse;
-    function Lagre(Req: TRequest): TResponse;
+    function Save(Req: TRequest): TResponse;
     function Fil(Req: TRequest): TResponse;
-    function Stopp(Req: TRequest): TResponse;
+    function Stop_(Req: TRequest): TResponse;
     function SlippGjennom(Req: TRequest): TResponse;
   end;
 
@@ -1425,7 +1425,7 @@ begin
   Result := RespondText('new');
 end;
 
-function TRuteSpor.Lagre(Req: TRequest): TResponse;
+function TRuteSpor.Save(Req: TRequest): TResponse;
 begin
   Truffet := 'lagre';
   Result := RespondText('lagre');
@@ -1437,7 +1437,7 @@ begin
   Result := RespondText(Truffet);
 end;
 
-function TRuteSpor.Stopp(Req: TRequest): TResponse;
+function TRuteSpor.Stop_(Req: TRequest): TResponse;
 begin
   Result := RespondText('stoppet av middleware', 403);
 end;
@@ -1454,8 +1454,8 @@ var
   R: TRouter;
   Spor: TRuteSpor;
   Req: TRequest;
-  Svar_: TResponse;
-  Linjer: TStringList;
+  Reply_: TResponse;
+  Lines: TStringList;
 begin
   Group('Ruter');
   A := TArena.Create(32 * 1024);
@@ -1466,14 +1466,14 @@ begin
     R.Get('/customers', Spor.Index);
     R.Get('/customers/:id', Spor.Vis);
     R.Get('/customers/new', Spor.Ny);
-    R.Post('/customers', Spor.Lagre);
+    R.Post('/customers', Spor.Save);
     R.Get('/files/*sti', Spor.Fil);
     R.AsName('files');
 
     Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t');
-    Svar_ := R.Handle(Req);
+    Reply_ := R.Handle(Req);
     CheckEqS(Spor.Truffet, 'index', 'fast rute treffer');
-    CheckEqI(Svar_.StatusCode, 200, 'og svarer 200');
+    CheckEqI(Reply_.StatusCode, 200, 'og svarer 200');
 
     A.Reset;
     Req := LagRequest(A, 'GET /customers/42 HTTP/1.1'#13#10'Host: t');
@@ -1500,31 +1500,31 @@ begin
 
     A.Reset;
     Req := LagRequest(A, 'HEAD /customers HTTP/1.1'#13#10'Host: t');
-    Svar_ := R.Handle(Req);
-    CheckEqI(Svar_.StatusCode, 200, 'HEAD treffer GET-ruten');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 200, 'HEAD treffer GET-ruten');
 
     A.Reset;
     Req := LagRequest(A, 'DELETE /customers HTTP/1.1'#13#10'Host: t');
-    Svar_ := R.Handle(Req);
-    CheckEqI(Svar_.StatusCode, 405, 'kjent sti, ukjent metode gir 405');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 405, 'kjent sti, ukjent metode gir 405');
 
     A.Reset;
     Req := LagRequest(A, 'GET /finnes-ikke HTTP/1.1'#13#10'Host: t');
-    Svar_ := R.Handle(Req);
-    CheckEqI(Svar_.StatusCode, 404, 'ukjent sti gir 404');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 404, 'ukjent sti gir 404');
 
     A.Reset;
     Req := LagRequest(A, 'GET /customers/42/order HTTP/1.1'#13#10'Host: t');
-    Svar_ := R.Handle(Req);
-    CheckEqI(Svar_.StatusCode, 404, 'for mange segmenter treffer ikke');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 404, 'for mange segmenter treffer ikke');
 
-    Linjer := TStringList.Create;
+    Lines := TStringList.Create;
     try
-      R.Describe(Linjer);
-      CheckEqI(Linjer.Count, 5, 'Describe lister alle rutene');
-      Check(Pos('(files)', Linjer.Text) > 0, 'navngitt rute vises med name');
+      R.Describe(Lines);
+      CheckEqI(Lines.Count, 5, 'Describe lister alle rutene');
+      Check(Pos('(files)', Lines.Text) > 0, 'navngitt rute vises med name');
     finally
-      Linjer.Free;
+      Lines.Free;
     end;
   finally
     R.Free;
@@ -1541,11 +1541,11 @@ begin
   try
     Spor.Truffet := '';
     R.Use(Spor.SlippGjennom);
-    R.Use(Spor.Stopp);
+    R.Use(Spor.Stop_);
     R.Get('/', Spor.Index);
     Req := LagRequest(A, 'GET / HTTP/1.1'#13#10'Host: t');
-    Svar_ := R.Handle(Req);
-    CheckEqI(Svar_.StatusCode, 403, 'middleware kan stoppe requesten');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 403, 'middleware kan stoppe requesten');
     CheckEqS(Spor.Truffet, '', 'og handleren kjørte aldri');
   finally
     R.Free;
@@ -1697,7 +1697,7 @@ end;
 
 { ---------------------------------------------------------------- binding -- }
 
-function LagRequestMedKropp(A: TArena; const Head, Kropp: string): TRequest;
+function MakeRequestWithBody(A: TArena; const Head, Body_: string): TRequest;
 var
   Prev: TArena;
 begin
@@ -1705,7 +1705,7 @@ begin
   try
     Result := TRequest.Create;
     Result.ParseHead(StrDup(A, Head), DefaultMaxBodyBytes);
-    Result.SetBody(StrDup(A, Kropp));
+    Result.SetBody(StrDup(A, Body_));
   finally
     UseArena(Prev);
   end;
@@ -1723,7 +1723,7 @@ begin
   PrevA := UseArena(A);
   try
     { JSON-kropp. }
-    Req := LagRequestMedKropp(A,
+    Req := MakeRequestWithBody(A,
       'POST /customers HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/json'#13#10'Content-Length: 99',
       '{"name":"Knut","email":"kh@gets.no","balance":1234.50,"status":"active"}');
@@ -1736,7 +1736,7 @@ begin
 
     { Primærnøkkelen fylles aldri, uansett hva klienten sender. }
     A.Reset;
-    Req := LagRequestMedKropp(A,
+    Req := MakeRequestWithBody(A,
       'POST /customers HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/json'#13#10'Content-Length: 30',
       '{"id":999,"name":"Forsøk"}');
@@ -1748,7 +1748,7 @@ begin
 
     { Skjemakropp. }
     A.Reset;
-    Req := LagRequestMedKropp(A,
+    Req := MakeRequestWithBody(A,
       'POST /customers HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/x-www-form-urlencoded'#13#10 +
       'Content-Length: 40',
@@ -1769,7 +1769,7 @@ begin
 
     { Delvis: felter som ikke er sendt røres ikke. }
     A.Reset;
-    Req := LagRequestMedKropp(A,
+    Req := MakeRequestWithBody(A,
       'PATCH /customers/1 HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/json'#13#10'Content-Length: 20',
       '{"balance":42}');
@@ -1783,7 +1783,7 @@ begin
 
     { Input og HasInput. }
     A.Reset;
-    Req := LagRequestMedKropp(A,
+    Req := MakeRequestWithBody(A,
       'POST /x HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/json'#13#10'Content-Length: 40',
       '{"a":"en","b":2,"c":true,"d":null}');
@@ -1988,8 +1988,8 @@ var
   V: TStr;
   S: string;
   I: Integer;
-  Fyll: PByte;
-  Funnet: Integer;
+  Fill: PByte;
+  Found: Integer;
 begin
   Group('Cache');
   C := TCache.Create(256, 8);
@@ -2005,13 +2005,13 @@ begin
 
     { Dette er selve spørsmålet. Verdien legges inn fra en arena, arenaen
       nullstilles og skrives full av noe annet, og verdien må fortsatt
-      stemme. Uten kopien i Put ville den vært søppel her. }
+      stemme. Without kopien i Put ville den vært søppel her. }
     A.Reset;
     V := StrDup(A, 'fra request-arenaen');
     C.Put('fra-arena', V);
     A.Reset;
-    Fyll := PByte(A.Alloc(8192));
-    FillChar(Fyll^, 8192, Ord('X'));
+    Fill := PByte(A.Alloc(8192));
+    FillChar(Fill^, 8192, Ord('X'));
     Check(C.Get(B, 'fra-arena', V), 'posten finnes etter Reset');
     CheckEqS(V.ToString, 'fra request-arenaen',
       'Put kopierte ut av arenaen — verdien overlevde');
@@ -2036,11 +2036,11 @@ begin
       C.Put('n' + IntToStr(I), 'v' + IntToStr(I));
     Check(C.Count <= 256, 'cachen holder seg innenfor grensen');
     Check(C.Evictions > 0, 'og kastet ut det den måtte');
-    Funnet := 0;
+    Found := 0;
     for I := 1990 to 2000 do
       if C.Get(A, 'n' + IntToStr(I), V) then
-        Inc(Funnet);
-    Check(Funnet >= 8, 'de sist skrevne er stort sett beholdt');
+        Inc(Found);
+    Check(Found >= 8, 'de sist skrevne er stort sett beholdt');
 
     C.Flush;
     CheckEqI(C.Count, 0, 'Flush tømmer');
@@ -2062,10 +2062,10 @@ end;
 
 var
   QSum: LongInt = 0;
-  QSiste: string = '';
-  QForsok: LongInt = 0;
+  QLast: string = '';
+  QAttempts: LongInt = 0;
   QFeilmeldinger: LongInt = 0;
-  QLaas: TRTLCriticalSection;
+  QLock: TRTLCriticalSection;
 
 procedure JobbTell(const Ctx: TJobContext);
 var
@@ -2077,18 +2077,18 @@ end;
 
 procedure JobbHusk(const Ctx: TJobContext);
 begin
-  EnterCriticalSection(QLaas);
+  EnterCriticalSection(QLock);
   try
-    QSiste := Ctx.Payload.ToString;
+    QLast := Ctx.Payload.ToString;
   finally
-    LeaveCriticalSection(QLaas);
+    LeaveCriticalSection(QLock);
   end;
 end;
 
 { Feiler de to første gangene, lykkes på tredje. }
 procedure JobbFlakete(const Ctx: TJobContext);
 begin
-  InterLockedIncrement(QForsok);
+  InterLockedIncrement(QAttempts);
   if Ctx.Attempt < 3 then
     raise Exception.Create('ikke ennå');
 end;
@@ -2111,11 +2111,11 @@ begin
   B.Init(Ctx.Arena, 128);
   B.Append('jobb:');
   B.Append(Ctx.Payload);
-  EnterCriticalSection(QLaas);
+  EnterCriticalSection(QLock);
   try
-    QSiste := B.ToString;
+    QLast := B.ToString;
   finally
-    LeaveCriticalSection(QLaas);
+    LeaveCriticalSection(QLock);
   end;
 end;
 
@@ -2123,7 +2123,7 @@ end;
 
 var
   MlHendelser: string;
-  MlSlugFraHook: string;
+  MlSlugFromHook: string;
 
 type
   { En modell med tidsstempler, soft deletes og hendelser. }
@@ -2187,7 +2187,7 @@ begin
     vanligste de brukes til: utlede et felt av et annet. }
   if FSlug = '' then
     FSlug := LowerCase(StringReplace(FTitle, ' ', '-', [rfReplaceAll]));
-  MlSlugFraHook := FSlug;
+  MlSlugFromHook := FSlug;
 end;
 
 procedure TMlPost.AfterSave;   begin MlHendelser := MlHendelser + 'AS,'; end;
@@ -2206,16 +2206,16 @@ procedure TMlPost.AfterDelete;  begin MlHendelser := MlHendelser + 'AD,'; end;
   TMlPost, fordi en metode som returnerer TQuery<TMlPost> ville
   fremoverreferert klassen sin egen type. Det er den samme grensen som
   gjelder TModelList<M>. }
-function NyestePoster(Antall: Integer): TQuery<TMlPost>;
+function NyestePoster(Count_: Integer): TQuery<TMlPost>;
 begin
   Result := TQuery<TMlPost>.New
     .OrderBy(ColDateTime('ml_posts', 'created_at'), Desc)
-    .Limit(Antall);
+    .Limit(Count_);
 end;
 
 { Rader i tabellen uten hensyn til deleted_at — poenget er å se at en
   myktslettet rad fortsatt finnes. }
-function MlRaaAntall(C: TDbConnection; A: TArena): Int64;
+function MlRawCount(C: TDbConnection; A: TArena): Int64;
 var
   R: TDbResult;
 begin
@@ -2232,11 +2232,11 @@ var
   Stmts: TStringArray;
   I: Integer;
   P: TMlPost;
-  Laget, Oppdatert: TDateTime;
+  Made, Oppdatert: TDateTime;
   Liste: TModelList<TMlPost>;
   Skjema: TDbSchema;
   Tab: TDbTable;
-  Feil: string;
+  Err: string;
 begin
   Group('Modell: tidsstempler, soft deletes, hendelser');
   if not SqliteAvailable then
@@ -2273,8 +2273,8 @@ begin
     P := A.New<TMlPost>;
     P.Title := 'Første post';
     P.Save;
-    Laget := P.CreatedAt;
-    Check(Laget > 0, 'created_at ble satt ved INSERT');
+    Made := P.CreatedAt;
+    Check(Made > 0, 'created_at ble satt ved INSERT');
     Check(P.UpdatedAt > 0, 'updated_at også');
     { UTC, ikke lokaltid: to servere i hver sin sone skal skrive det samme
       for det samme øyeblikket. Toleransen er ett minutt. }
@@ -2291,8 +2291,8 @@ begin
     P.Save;
     Oppdatert := P.UpdatedAt;
     CheckEqS(MlHendelser, 'BS,BU,AU,AS,', 'hendelsene ved UPDATE');
-    Check(P.CreatedAt = Laget, 'created_at røres ikke ved UPDATE');
-    Check(Oppdatert > Laget, 'men updated_at flyttes');
+    Check(P.CreatedAt = Made, 'created_at røres ikke ved UPDATE');
+    Check(Oppdatert > Made, 'men updated_at flyttes');
 
     { En import som bevarer opprinnelige tidspunkter skal ikke få dem
       overskrevet. }
@@ -2305,14 +2305,14 @@ begin
 
     { ---- soft deletes ---- }
     CheckEqI(TQuery<TMlPost>.New.Count, 2, 'to poster synlige');
-    CheckEqI(MlRaaAntall(C, A), 2, 'og to rader i tabellen');
+    CheckEqI(MlRawCount(C, A), 2, 'og to rader i tabellen');
 
     MlHendelser := '';
     P.Delete;
     CheckEqS(MlHendelser, 'BD,AD,', 'hendelsene ved DELETE');
     Check(P.IsTrashed, 'modellen vet at den er slettet');
     { Dette er hele poenget: raden er der, men spørringene ser den ikke. }
-    CheckEqI(MlRaaAntall(C, A), 2, 'raden ligger fortsatt i tabellen');
+    CheckEqI(MlRawCount(C, A), 2, 'raden ligger fortsatt i tabellen');
     CheckEqI(TQuery<TMlPost>.New.Count, 1, 'men spørringen ser den ikke');
     CheckEqI(TQuery<TMlPost>.New.WithTrashed.Count, 2,
       'WithTrashed tar den med');
@@ -2335,25 +2335,25 @@ begin
     { ---- på spørringsnivå ---- }
     CheckEqI(TQuery<TMlPost>.New.DeleteAll, 2,
       'DeleteAll sletter mykt når modellen har soft deletes');
-    CheckEqI(MlRaaAntall(C, A), 2, 'radene er der fortsatt');
+    CheckEqI(MlRawCount(C, A), 2, 'radene er der fortsatt');
     CheckEqI(TQuery<TMlPost>.New.Count, 0, 'men ingen er synlige');
     CheckEqI(TQuery<TMlPost>.New.RestoreAll, 2, 'RestoreAll tar dem tilbake');
     CheckEqI(TQuery<TMlPost>.New.Count, 2, 'og de er synlige');
 
     CheckEqI(TQuery<TMlPost>.New.ForceDeleteAll, 2,
       'ForceDeleteAll sletter for godt');
-    CheckEqI(MlRaaAntall(C, A), 0, 'og da er tabellen tom');
+    CheckEqI(MlRawCount(C, A), 0, 'og da er tabellen tom');
 
     { ForceDelete på én modell. }
     P := A.New<TMlPost>;
     P.Title := 'Skal bort';
     P.Save;
-    CheckEqI(MlRaaAntall(C, A), 1, 'én rad');
+    CheckEqI(MlRawCount(C, A), 1, 'én rad');
     P.ForceDelete;
-    CheckEqI(MlRaaAntall(C, A), 0, 'ForceDelete fjernet den');
+    CheckEqI(MlRawCount(C, A), 0, 'ForceDelete fjernet den');
 
     { ---- det som skal kaste ---- }
-    Feil := '';
+    Err := '';
     try
       TMlBar.Meta;
       P := A.New<TMlPost>;
@@ -2363,9 +2363,9 @@ begin
       { En modell uten SoftDeletes har ingenting å gjenopprette. }
       A.New<TMlBar>.Restore;
     except
-      on E: EModelError do Feil := E.Message;
+      on E: EModelError do Err := E.Message;
     end;
-    Check(Pos('no soft deletes', Feil) > 0,
+    Check(Pos('no soft deletes', Err) > 0,
       'Restore uten SoftDeletes kaster, og sier hva som mangler');
 
     { En modell uten deleted_at ser alle rader — soft-delete-leddet legges
@@ -2379,7 +2379,7 @@ begin
     { ---- tidsstempler overlever rundturen ---- }
     { Det som virkelig betyr noe med DATETIME i SQLite: at
       introspeksjonen ser en dato, og at verdien kommer tilbake som en
-      dato. Uten begge deler er den erklærte typen bare pynt. }
+      dato. Without begge deler er den erklærte typen bare pynt. }
     Skjema := IntrospectSchema(C);
     try
       Tab := Skjema.Table('ml_posts');
@@ -2424,11 +2424,11 @@ var
   A: TArena;
   I: Integer;
   V: TStr;
-  Fyll: PByte;
+  Fill: PByte;
   Frist: Integer;
 begin
   Group('Kø');
-  InitCriticalSection(QLaas);
+  InitCriticalSection(QLock);
   A := TArena.Create(16 * 1024);
   Q := TQueue.Create(3, 3);
   try
@@ -2454,63 +2454,63 @@ begin
       skrives over, og jobben må likevel se riktig innhold. }
     A.Reset;
     V := StrDup(A, 'payload fra requesten');
-    QSiste := '';
+    QLast := '';
     Q.Push('husk', V);
     A.Reset;
-    Fyll := PByte(A.Alloc(8192));
-    FillChar(Fyll^, 8192, Ord('Z'));
+    Fill := PByte(A.Alloc(8192));
+    FillChar(Fill^, 8192, Ord('Z'));
     Check(Q.WaitUntilEmpty(5000), 'jobben ble tatt');
     Sleep(80);
-    EnterCriticalSection(QLaas);
+    EnterCriticalSection(QLock);
     try
-      CheckEqS(QSiste, 'payload fra requesten',
+      CheckEqS(QLast, 'payload fra requesten',
         'Push kopierte ut av arenaen — payloaden overlevde');
     finally
-      LeaveCriticalSection(QLaas);
+      LeaveCriticalSection(QLock);
     end;
 
     { Handleren får payloaden i sin egen arena og kan bruke den som vanlig. }
-    QSiste := '';
+    QLast := '';
     Q.Push('arena', 'noe');
     Check(Q.WaitUntilEmpty(5000), 'arena-jobben ble tatt');
     Sleep(80);
-    EnterCriticalSection(QLaas);
+    EnterCriticalSection(QLock);
     try
-      CheckEqS(QSiste, 'jobb:noe', 'handleren brukte sin egen arena');
+      CheckEqS(QLast, 'jobb:noe', 'handleren brukte sin egen arena');
     finally
-      LeaveCriticalSection(QLaas);
+      LeaveCriticalSection(QLock);
     end;
 
     { Forsinkelse. }
-    QSiste := '';
+    QLast := '';
     Q.Push('husk', 'forsinket', 1);
     Sleep(200);
-    EnterCriticalSection(QLaas);
+    EnterCriticalSection(QLock);
     try
-      CheckEqS(QSiste, '', 'forsinket jobb kjører ikke med en gang');
+      CheckEqS(QLast, '', 'forsinket jobb kjører ikke med en gang');
     finally
-      LeaveCriticalSection(QLaas);
+      LeaveCriticalSection(QLock);
     end;
     Check(Q.WaitUntilEmpty(4000), 'men den kjører etter hvert');
     Sleep(80);
-    EnterCriticalSection(QLaas);
+    EnterCriticalSection(QLock);
     try
-      CheckEqS(QSiste, 'forsinket', 'og med riktig payload');
+      CheckEqS(QLast, 'forsinket', 'og med riktig payload');
     finally
-      LeaveCriticalSection(QLaas);
+      LeaveCriticalSection(QLock);
     end;
 
     { Retry med backoff, så suksess. Samme grunn til å vente på tallet. }
-    QForsok := 0;
+    QAttempts := 0;
     Q.Push('flakete', 'x');
     Check(Q.WaitUntilEmpty(6000), 'flakete jobb ble ferdig');
     Frist := 0;
-    while (QForsok < 3) and (Frist < 5000) do
+    while (QAttempts < 3) and (Frist < 5000) do
     begin
       Sleep(20);
       Inc(Frist, 20);
     end;
-    CheckEqI(QForsok, 3, 'tre forsøk før den lyktes');
+    CheckEqI(QAttempts, 3, 'tre forsøk før den lyktes');
     Check(Q.Retried >= 2, 'to av dem var retries');
 
     { Gir opp etter MaxAttempts.
@@ -2546,7 +2546,7 @@ begin
   finally
     Q.Free;
     A.Free;
-    DoneCriticalSection(QLaas);
+    DoneCriticalSection(QLock);
   end;
 end;
 
@@ -2622,7 +2622,7 @@ var
     Sum_: TColCurrency;
   end;
 
-procedure SettOppKolonner;
+procedure SetUpColumns;
 begin
   SqCustomers.Id := ColInt64('sq_customers', 'id');
   SqCustomers.Name := ColStr('sq_customers', 'name');
@@ -2646,7 +2646,7 @@ var
   K: TSqCustomer;
   O: TSqOrder;
   Liste: TSqCustomerList;
-  Antall: Integer;
+  Count_: Integer;
   Reservert: PtrUInt;
   Sq: TSqliteConnection;
   R2: TDbResult;
@@ -2657,7 +2657,7 @@ var
   GW: TJsonWriter;
   GJson: string;
   Feilet_: Boolean;
-  T0, Uten, Med: Int64;
+  T0, Without, With_: Int64;
   Kr: Integer;
 begin
   Group('SQLite');
@@ -2670,7 +2670,7 @@ begin
   Check(True, 'libsqlite3 lastet med dlopen');
   Si2('sqlite-versjon', SqliteVersion);
 
-  SettOppKolonner;
+  SetUpColumns;
   A := TArena.Create(64 * 1024);
   PrevA := UseArena(A);
   { Ingen fil, ingen server: hele datalaget testes i minnet. }
@@ -2757,7 +2757,7 @@ begin
 
     { OR-gruppe: fritekstsøk over flere kolonner.
 
-      Uten den har TQuery bare AND, og «finn Ada i navn eller e-post» lar
+      Without den har TQuery bare AND, og «finn Ada i navn eller e-post» lar
       seg ikke uttrykke. Parentesen er det som betyr noe: uten den binder
       et Where som står fra før seg til bare det første leddet i gruppa, og
       søket lekker rader. }
@@ -2800,7 +2800,7 @@ begin
       { Tellingen leses fra databasen i stedet for å antas. Fiksturen over
         endrer seg, og en test som hardkoder antallet ryker av grunner som
         ikke har noe med griden å gjøre. }
-      Antall := TQuery<TSqCustomer>.New.Count;
+      Count_ := TQuery<TSqCustomer>.New.Count;
       { Standardtilstand: ingen parametre i det hele tatt. }
       G := TGrid<TSqCustomer>.New;
       G.Read(LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
@@ -2811,7 +2811,7 @@ begin
        .PerPage(2);
       Liste := G.Rows(TQuery<TSqCustomer>.New);
       CheckEqI(Liste.Count, 2, 'griden gir én side');
-      CheckEqI(G.Total, Antall, 'men teller hele settet');
+      CheckEqI(G.Total, Count_, 'men teller hele settet');
       CheckEqS(Liste[0].Name, 'Ada', 'standardsorteringen gjelder');
 
       { Side to. }
@@ -2840,7 +2840,7 @@ begin
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(10);
       Liste := G.Rows(TQuery<TSqCustomer>.New);
       CheckEqS(Liste[0].Name, 'Ada', 'ukjent sorteringskolonne faller tilbake');
-      CheckEqI(TQuery<TSqCustomer>.New.Count, Antall, 'og tabellen står der fortsatt');
+      CheckEqI(TQuery<TSqCustomer>.New.Count, Count_, 'og tabellen står der fortsatt');
 
       { Søk over flere kolonner. }
       G := TGrid<TSqCustomer>.New;
@@ -2862,7 +2862,7 @@ begin
       Liste := G.Rows(TQuery<TSqCustomer>.New.Where(SqCustomers.Balance, GT, 300));
       CheckEqI(Liste.Count, 2, 'søk og eget Where gjelder samtidig');
 
-      { Taket på sidestørrelse. Uten det er per=1000000 en måte å be om
+      { Taket på sidestørrelse. Without det er per=1000000 en måte å be om
         hele tabellen på. }
       G := TGrid<TSqCustomer>.New;
       G.Read(LagRequest(A, 'GET /c?per=100000 HTTP/1.1'#13#10'Host: t'))
@@ -2874,7 +2874,7 @@ begin
       GW.Init(A, 256);
       G.WriteJson(GW);
       GJson := GW.ToString;
-      Check(Pos('"total":' + IntToStr(Antall), GJson) > 0,
+      Check(Pos('"total":' + IntToStr(Count_), GJson) > 0,
         'grid-proppen bærer totalen');
       Check(Pos('"pages":', GJson) > 0, 'og antall sider');
       Check(Pos('"per":3', GJson) > 0, 'og sidestørrelsen etter taket');
@@ -2889,11 +2889,11 @@ begin
 
     { Eager loading. }
     Liste := TQuery<TSqCustomer>.New.Preload(['Order']).OrderBy(SqCustomers.Id).Get;
-    Antall := 0;
+    Count_ := 0;
     for I := 0 to Liste.Count - 1 do
       if Liste[I].Order <> nil then
-        Antall := Antall + Liste[I].Order.Count;
-    CheckEqI(Antall, 1 + 2 + 3 + 4, 'eager loading fordelte alle orders');
+        Count_ := Count_ + Liste[I].Order.Count;
+    CheckEqI(Count_, 1 + 2 + 3 + 4, 'eager loading fordelte alle orders');
     CheckEqI(Liste[0].Order.Count, 0, 'første customer har ingen');
     CheckEqI(Liste[4].Order.Count, 4, 'siste har fire');
 
@@ -2985,20 +2985,20 @@ begin
     CheckEqI(Sq.OpenStatements - ForApne, 1,
       'og SQLite har nøyaktig ett statement åpent');
 
-    { Bindinger fra forrige kjøring må ikke henge igjen. Uten
+    { Bindinger fra forrige kjøring må ikke henge igjen. Without
       sqlite3_clear_bindings ville et kall med færre eller andre parametre
       sett verdier fra forrige runde. }
     A.Reset;
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name = ?',
       [DbParam(A, 'Ada')]);
-    Antall := Integer(R2.AsInt64(0, 0));
+    Count_ := Integer(R2.AsInt64(0, 0));
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name = ?',
       [DbParam(A, 'finnes-ikke')]);
     CheckEqI(R2.AsInt64(0, 0), 0,
       'gjenbrukt statement bruker de nye parametrene');
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name = ?',
       [DbParam(A, 'Ada')]);
-    CheckEqI(R2.AsInt64(0, 0), Antall,
+    CheckEqI(R2.AsInt64(0, 0), Count_,
       'og gir samme svar som før når parameteren er den samme');
 
     { NULL etter en ikke-NULL-verdi på samme statement. }
@@ -3058,16 +3058,16 @@ begin
     for I := 1 to 2000 do
       C.ExecParams(A, 'SELECT name FROM sq_customers WHERE id = ?',
         [DbParam(A, Int64(1))]);
-    Uten := MonotonicMs - T0;
+    Without := MonotonicMs - T0;
     Sq.CacheLimit := 64;
     Sq.FlushStatementCache;
     T0 := MonotonicMs;
     for I := 1 to 2000 do
       C.ExecParams(A, 'SELECT name FROM sq_customers WHERE id = ?',
         [DbParam(A, Int64(1))]);
-    Med := MonotonicMs - T0;
-    Si2('2000 spørringer', Format('%d ms uten cache, %d ms med', [Uten, Med]));
-    Check(Med <= Uten + (Uten div 4) + 2, 'cachen gjorde det ikke tregere');
+    With_ := MonotonicMs - T0;
+    Si2('2000 spørringer', Format('%d ms uten cache, %d ms med', [Without, With_]));
+    Check(With_ <= Without + (Without div 4) + 2, 'cachen gjorde det ikke tregere');
   finally
     UseDb(PrevDb);
     UseArena(PrevA);
@@ -3111,7 +3111,7 @@ begin
     CloseSocket(Sock);
     Exit;
   end;
-  { Uten dette blir en feil i verten til en testsuite som står i stampe. }
+  { Without dette blir en feil i verten til en testsuite som står i stampe. }
   TV.tv_sec := 3;
   TV.tv_usec := 0;
   fpSetSockOpt(Sock, SOL_SOCKET, SO_RCVTIMEO, @TV, SizeOf(TV));
@@ -3195,7 +3195,7 @@ type
   virker. Suiten kjører med 16 kB blokker, så 6000 byte lander på riktig
   side: hodet og TRequest tar et par kB, og resten er ledig. }
 const
-  StatiskStorrelse = 6000;
+  StaticSize = 6000;
 
 function TE2EHandler.Handle(Req: TRequest): TResponse;
 begin
@@ -3236,13 +3236,13 @@ var
   Port: Word;
   I: Integer;
   Reserved1, Reserved2: PtrUInt;
-  MpKropp, MpInnhold: string;
+  MpBody, MpContent: string;
   StatiskFil: TStringList;
 begin
   Group('Ende-til-ende over socket');
-  { Innhold med CRLF i, og med noe som ligner grensen. Går det hele veien
+  { Content_ med CRLF i, og med noe som ligner grensen. Går det hele veien
     gjennom en socket uendret, holder rammeverket. }
-  MpInnhold := 'linje1'#13#10'--XA'#13#10'linje2';
+  MpContent := 'linje1'#13#10'--XA'#13#10'linje2';
 
   Opts := DefaultServerOptions;
   Opts.Port := 0;             { la kjernen velge }
@@ -3254,7 +3254,7 @@ begin
   ForceDirectories('.build' + PathDelim + 'e2e-statisk' + PathDelim + 'statisk');
   StatiskFil := TStringList.Create;
   try
-    StatiskFil.Text := StringOfChar('a', StatiskStorrelse - 1);
+    StatiskFil.Text := StringOfChar('a', StaticSize - 1);
     StatiskFil.SaveToFile('.build' + PathDelim + 'e2e-statisk' + PathDelim +
       'statisk' + PathDelim + 'stor.css');
   finally
@@ -3298,7 +3298,7 @@ begin
     Check(C.ReadResponse(Head, Body), 'fikk svar på den statiske fila');
     Check(Pos('HTTP/1.1 200 OK', Head) = 1,
       'statisk fil etter en side på samme tilkobling');
-    CheckEqI(Length(Body), StatiskStorrelse, 'og hele fila kom med');
+    CheckEqI(Length(Body), StaticSize, 'og hele fila kom med');
     Check(Pos('text/css', Head) > 0, 'med riktig innholdstype');
 
     { Og én gang til, for å vise at det ikke var én tilfeldig gang. }
@@ -3316,19 +3316,19 @@ begin
     { En ekte opplasting over socketen. Alt annet om multipart testes mot
       en kropp som allerede ligger i minnet; dette er den eneste testen der
       bytene faktisk går gjennom lesebufferet og Content-Length. }
-    MpKropp :=
+    MpBody :=
       '--XB'#13#10'Content-Disposition: form-data; name="tittel"'#13#10#13#10 +
       'Rapport'#13#10 +
       '--XB'#13#10'Content-Disposition: form-data; name="fil"; ' +
       'filename="data.bin"'#13#10'Content-Type: application/octet-stream' +
-      #13#10#13#10 + MpInnhold + #13#10 +
+      #13#10#13#10 + MpContent + #13#10 +
       '--XB--'#13#10;
     C.SendRaw('POST /last-opp HTTP/1.1'#13#10'Host: test'#13#10 +
       'Content-Type: multipart/form-data; boundary=XB'#13#10 +
-      'Content-Length: ' + IntToStr(Length(MpKropp)) + #13#10#13#10 + MpKropp);
+      'Content-Length: ' + IntToStr(Length(MpBody)) + #13#10#13#10 + MpBody);
     Check(C.ReadResponse(Head, Body), 'opplastingen ble besvart');
-    CheckEqS(Body, 'Rapport|data.bin|' + IntToStr(Length(MpInnhold)) + '|' +
-      MpInnhold, 'fil og felt kom hele gjennom socketen');
+    CheckEqS(Body, 'Rapport|data.bin|' + IntToStr(Length(MpContent)) + '|' +
+      MpContent, 'fil og felt kom hele gjennom socketen');
 
     C.SendRaw('POST /ekko HTTP/1.1'#13#10'Host: test'#13#10 +
               'Content-Length: 11'#13#10#13#10'hallo arena');
@@ -3400,7 +3400,7 @@ end;
 
 begin
   { Denne suiten tester ikke loggen, og ende-til-ende-delen kaster med
-    vilje i /sprekk. Uten dette havner en ERROR-linje midt i utskriften og
+    vilje i /sprekk. Without dette havner en ERROR-linje midt i utskriften og
     ser ut som en feil i testen. }
   SetLogLevel(llNone);
   WriteLn('Askr — testsuite for fase 1, steg 1');

@@ -40,7 +40,7 @@ type
     Found: Boolean;
   end;
 
-  { Hvor rammeverket kom fra. Brukes i utskrift, slik at «askr version»
+  { Where_ rammeverket kom fra. Brukes i utskrift, slik at «askr version»
     kan si om du kjører en pinnet versjon eller en lokal utsjekking —
     forskjellen forklarer nesten alle «men det virket i går». }
   TPkgOrigin = (poNone, poPath, poCache);
@@ -67,14 +67,14 @@ function TreeLaufVersion(const Dir: string): string;
 function TreeIsComplete(const Dir: string): Boolean;
 
 { Stien rammeverket skal bygges fra. Tom streng når den ikke kan løses;
-  Feil sier da hva som mangler og hva man skal gjøre. }
+  Err sier da hva som mangler og hva man skal gjøre. }
 function ResolveFramework(P: TProject; out Origin: TPkgOrigin;
-  out Feil: string): string;
+  out Err: string): string;
 
 function InstalledVersions: TStringArray;
 function RemoteVersions(const Source: string): TStringArray;
 
-function Fetch(const Source, Version: string; out Commit, Feil: string): Boolean;
+function Fetch(const Source, Version: string; out Commit, Err: string): Boolean;
 
 function CmdInstall(P: TProject): Integer;
 function CmdUpdate(P: TProject; const Target: string): Integer;
@@ -182,14 +182,14 @@ begin
   end;
 end;
 
-function HarGit: Boolean;
+function HasGit: Boolean;
 var
   Ut: string;
 begin
   Result := RunCapture('/usr/bin/env', ['git', '--version'], '', Ut) = 0;
 end;
 
-{ Commit-en et tre faktisk står på. Uten denne ble lockfila
+{ Commit-en et tre faktisk står på. Without denne ble lockfila
   meningsløs: CmdInstall falt tilbake til L.Commit når cachen alt var
   full, og sammenlignet dermed verdien med seg selv. En tuklet lock gikk
   rett gjennom og ble skrevet ut som om den var ekte. }
@@ -286,15 +286,15 @@ var
   F: TStringList;
   I, A, B: Integer;
   S: string;
-  Sti: string;
+  Path_: string;
 begin
   Result := '';
-  Sti := IncludeTrailingPathDelimiter(Dir) + 'src/core/Askr.Core.Version.pas';
-  if not FileExists(Sti) then
+  Path_ := IncludeTrailingPathDelimiter(Dir) + 'src/core/Askr.Core.Version.pas';
+  if not FileExists(Path_) then
     Exit;
   F := TStringList.Create;
   try
-    F.LoadFromFile(Sti);
+    F.LoadFromFile(Path_);
     for I := 0 to F.Count - 1 do
     begin
       S := Trim(F[I]);
@@ -316,15 +316,15 @@ function TreeLaufVersion(const Dir: string): string;
 var
   F: TStringList;
   I, A, B: Integer;
-  S, Sti: string;
+  S, Path_: string;
 begin
   Result := '';
-  Sti := IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf/package.json';
-  if not FileExists(Sti) then
+  Path_ := IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf/package.json';
+  if not FileExists(Path_) then
     Exit;
   F := TStringList.Create;
   try
-    F.LoadFromFile(Sti);
+    F.LoadFromFile(Path_);
     for I := 0 to F.Count - 1 do
     begin
       S := Trim(F[I]);
@@ -354,13 +354,13 @@ end;
 { ------------------------------------------------------------- løsing -- }
 
 function ResolveFramework(P: TProject; out Origin: TPkgOrigin;
-  out Feil: string): string;
+  out Err: string): string;
 var
   L: TLock;
   Dir, Onsket: string;
 begin
   Result := '';
-  Feil := '';
+  Err := '';
   Origin := poNone;
 
   { 1. En eksplisitt sti vinner alltid. Den som utvikler rammeverket skal
@@ -370,7 +370,7 @@ begin
   begin
     if not TreeIsComplete(Dir) then
     begin
-      Feil := 'askr.toml points at ' + Dir + ' but that is not an Askr' +
+      Err := 'askr.toml points at ' + Dir + ' but that is not an Askr' +
               ' checkout (no src/core/Askr.Core.Version.pas).';
       Exit;
     end;
@@ -385,7 +385,7 @@ begin
     Onsket := P.AskrWantedVersion;
   if Onsket = '' then
   begin
-    Feil := 'this project does not say which Askr version it needs.' + LineEnding +
+    Err := 'this project does not say which Askr version it needs.' + LineEnding +
             LineEnding +
             '  add it to askr.toml:' + LineEnding +
             LineEnding +
@@ -399,7 +399,7 @@ begin
   Dir := CacheDirFor(Onsket);
   if not TreeIsComplete(Dir) then
   begin
-    Feil := 'Askr ' + Onsket + ' is not installed.' + LineEnding +
+    Err := 'Askr ' + Onsket + ' is not installed.' + LineEnding +
             LineEnding +
             '  looked in  ' + Dir + LineEnding +
             LineEnding +
@@ -453,7 +453,7 @@ end;
   ved hjelp av returverdien fra git. }
 function RemoteVersions(const Source: string): TStringArray;
 var
-  Ut, Linje, Tag: string;
+  Ut, Line_, Tag: string;
   L: TStringList;
   I, P2, N: Integer;
   Tmp: string;
@@ -472,11 +472,11 @@ begin
     N := 0;
     for I := 0 to L.Count - 1 do
     begin
-      Linje := L[I];
-      P2 := Pos('refs/tags/', Linje);
+      Line_ := L[I];
+      P2 := Pos('refs/tags/', Line_);
       if P2 = 0 then
         Continue;
-      Tag := Trim(Copy(Linje, P2 + Length('refs/tags/'), Length(Linje)));
+      Tag := Trim(Copy(Line_, P2 + Length('refs/tags/'), Length(Line_)));
       if not ParseSemVer(Tag).Valid then
         Continue;
       SetLength(Liste, N + 1);
@@ -510,26 +510,26 @@ end;
 
 { ------------------------------------------------------------- henting -- }
 
-function Fetch(const Source, Version: string; out Commit, Feil: string): Boolean;
+function Fetch(const Source, Version: string; out Commit, Err: string): Boolean;
 var
-  Maal, Midl, Ut, Fant, Klonelogg: string;
+  Target, Midl, Ut, Fant, Klonelogg: string;
 begin
   Result := False;
   Commit := '';
-  Feil := '';
+  Err := '';
 
-  if not HarGit then
+  if not HasGit then
   begin
-    Feil := 'git was not found on PATH. askr install fetches the' +
+    Err := 'git was not found on PATH. askr install fetches the' +
             ' framework with git.';
     Exit;
   end;
 
-  Maal := CacheDirFor(Version);
-  if TreeIsComplete(Maal) then
+  Target := CacheDirFor(Version);
+  if TreeIsComplete(Target) then
   begin
     { Allerede der. Commit-en leses ut av utsjekkingen. }
-    RunCapture('/usr/bin/env', ['git', 'rev-parse', 'HEAD'], Maal, Ut);
+    RunCapture('/usr/bin/env', ['git', 'rev-parse', 'HEAD'], Target, Ut);
     Commit := Trim(Ut);
     Exit(True);
   end;
@@ -537,7 +537,7 @@ begin
   ForceDirectories(CacheRoot);
   { Hentes til en midlertidig katalog og flyttes på plass til slutt. En
     avbrutt nedlasting skal ikke etterlate noe som ser installert ut. }
-  Midl := Maal + '.tmp';
+  Midl := Target + '.tmp';
   if DirectoryExists(Midl) then
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
 
@@ -554,7 +554,7 @@ begin
   begin
     Si(Klonelogg);
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
-    Feil := 'could not fetch v' + Version + ' from ' + Source + '.' +
+    Err := 'could not fetch v' + Version + ' from ' + Source + '.' +
             LineEnding + LineEnding +
             '  the tag may not exist. see what is published with:' +
             LineEnding + '    askr outdated';
@@ -568,10 +568,10 @@ begin
   begin
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
     if Fant = '' then
-      Feil := 'the tag v' + Version + ' does not look like an Askr' +
+      Err := 'the tag v' + Version + ' does not look like an Askr' +
               ' checkout: src/core/Askr.Core.Version.pas is missing.'
     else
-      Feil := 'the tag v' + Version + ' contains Askr ' + Fant +
+      Err := 'the tag v' + Version + ' contains Askr ' + Fant +
               '. Refusing to install it under the wrong name.';
     Exit;
   end;
@@ -579,10 +579,10 @@ begin
   RunCapture('/usr/bin/env', ['git', 'rev-parse', 'HEAD'], Midl, Ut);
   Commit := Trim(Ut);
 
-  if not RenameFile(Midl, Maal) then
+  if not RenameFile(Midl, Target) then
   begin
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
-    Feil := 'could not move the download into ' + Maal;
+    Err := 'could not move the download into ' + Target;
     Exit;
   end;
   Result := True;
@@ -590,7 +590,7 @@ end;
 
 { Peker frontend/.askr/lauf paa den installerte utgivelsen.
 
-  Uten den maa package.json baere en absolutt sti inn i DIN cache, og da
+  Without den maa package.json baere en absolutt sti inn i DIN cache, og da
   gir fila en diff som endrer seg per maskin. Symlinken er gitignorert
   og lages av install, saa den committede stien er `file:./.askr/lauf`
   og lik overalt.
@@ -598,25 +598,25 @@ end;
   Returnerer stien som skal staa i package.json. Kan symlinken ikke
   lages -- et filsystem uten dem, eller Windows -- faller den tilbake
   til den absolutte stien, som virker like godt lokalt. }
-function LaufSti(P: TProject; const Dir: string): string;
+function LaufPath(P: TProject; const Dir: string): string;
 var
-  Mappe, Lenke, Maal: string;
+  Folder, Link_, Target: string;
 begin
-  Maal := IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf';
-  Result := 'file:' + Maal;
+  Target := IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf';
+  Result := 'file:' + Target;
   if P.FrontendDir = '' then
     Exit;
 
-  Mappe := IncludeTrailingPathDelimiter(P.FrontendDir) + '.askr';
-  Lenke := IncludeTrailingPathDelimiter(Mappe) + 'lauf';
-  if not ForceDirectories(Mappe) then
+  Folder := IncludeTrailingPathDelimiter(P.FrontendDir) + '.askr';
+  Link_ := IncludeTrailingPathDelimiter(Folder) + 'lauf';
+  if not ForceDirectories(Folder) then
     Exit;
 
 {$IFDEF UNIX}
   { En gammel lenke kan peke paa forrige versjon. fpUnlink bryr seg ikke
     om at den ikke finnes. }
-  fpUnlink(PChar(Lenke));
-  if fpSymlink(PChar(Maal), PChar(Lenke)) = 0 then
+  fpUnlink(PChar(Link_));
+  if fpSymlink(PChar(Target), PChar(Link_)) = 0 then
     Result := 'file:./.askr/lauf';
 {$ENDIF}
 end;
@@ -625,7 +625,7 @@ end;
 
 { Skriver @askrcode/lauf-versjonen inn i frontend/package.json.
 
-  Bare selve verdien byttes. Første utgave tok Pos(':', Linje) — den
+  Bare selve verdien byttes. Første utgave tok Pos(':', Line_) — den
   FØRSTE kolonen på linja — og på en kompakt package.json tilhører den
   "dependencies", ikke "@askrcode/lauf". Resultatet var at hele
   dependencies-objektet ble erstattet av én streng: @inertiajs/svelte
@@ -636,12 +636,12 @@ end;
   den byttes ut. Ser linja ikke ut som forventet, gjettes det ikke:
   funksjonen sier hva som skal stå. Samme regel som InstallerRuter i
   stillaset. }
-function SettLaufAvhengighet(P: TProject; const LaufSpec: string;
+function SetLaufDependency(P: TProject; const LaufSpec: string;
   out Endret: Boolean): Boolean;
 const
-  Nokkel = '"@askrcode/lauf"';
+  Key_ = '"@askrcode/lauf"';
 var
-  Sti, S, Ny: string;
+  Path_, S, Ny: string;
   F: TStringList;
   I, PN, A, V1, V2: Integer;
 begin
@@ -651,8 +651,8 @@ begin
     suksess. }
   if P.FrontendDir = '' then
     Exit(True);   { prosjektet har ingen frontend }
-  Sti := IncludeTrailingPathDelimiter(P.FrontendDir) + 'package.json';
-  if not FileExists(Sti) then
+  Path_ := IncludeTrailingPathDelimiter(P.FrontendDir) + 'package.json';
+  if not FileExists(Path_) then
   begin
     Si('  no package.json in ' + P.FrontendDir + ' -- skipping the Lauf pin.');
     Exit(True);
@@ -660,16 +660,16 @@ begin
 
   F := TStringList.Create;
   try
-    F.LoadFromFile(Sti);
+    F.LoadFromFile(Path_);
     for I := 0 to F.Count - 1 do
     begin
       S := F[I];
-      PN := Pos(Nokkel, S);
+      PN := Pos(Key_, S);
       if PN = 0 then
         Continue;
 
       { Kolonen som hører til NØKKELEN, ikke den første på linja. }
-      A := Pos(':', S, PN + Length(Nokkel));
+      A := Pos(':', S, PN + Length(Key_));
       if A = 0 then
         Break;
 
@@ -692,7 +692,7 @@ begin
       if Ny <> S then
       begin
         F[I] := Ny;
-        F.SaveToFile(Sti);
+        F.SaveToFile(Path_);
         Endret := True;
       end;
       Exit(True);
@@ -701,10 +701,10 @@ begin
     F.Free;
   end;
 
-  Si('  could not find ' + Nokkel + ' in ' + Sti);
+  Si('  could not find ' + Key_ + ' in ' + Path_);
   Si('  add this to its "dependencies" yourself:');
   Si('');
-  Si('    ' + Nokkel + ': ' + LaufSpec);
+  Si('    ' + Key_ + ': ' + LaufSpec);
   Si('');
   Result := False;
 end;
@@ -712,18 +712,18 @@ end;
 { Setter [askr] version i askr.toml. Finner den ikke linja, gjetter den
   ikke -- den sier hva som skal stå. Samme regel som InstallerRuter i
   stillaset. }
-function SettPinnetVersjon(P: TProject; const Versjon: string): Boolean;
+function SetPinnedVersion(P: TProject; const Versjon: string): Boolean;
 var
   F: TStringList;
   I, A: Integer;
-  S2, Sti: string;
+  S2, Path_: string;
   ISeksjon: Boolean;
 begin
   Result := False;
-  Sti := IncludeTrailingPathDelimiter(P.Root) + 'askr.toml';
+  Path_ := IncludeTrailingPathDelimiter(P.Root) + 'askr.toml';
   F := TStringList.Create;
   try
-    F.LoadFromFile(Sti);
+    F.LoadFromFile(Path_);
     ISeksjon := False;
     for I := 0 to F.Count - 1 do
     begin
@@ -741,7 +741,7 @@ begin
       if A = 0 then
         Continue;
       F[I] := Copy(F[I], 1, A) + ' "' + Versjon + '"';
-      F.SaveToFile(Sti);
+      F.SaveToFile(Path_);
       Exit(True);
     end;
   finally
@@ -758,16 +758,16 @@ end;
 
 { --------------------------------------------- oppgraderingsnotater -- }
 
-{ Henter avsnittene i UPGRADE.md som gjelder strekningen Fra..Til.
+{ Henter avsnittene i UPGRADE.md som gjelder strekningen From_..To_.
 
   Formatet er en H2 per versjon: `## 0.7.0`. Alt mellom en overskrift og
   den neste hører til den versjonen. }
-function UpgradeNotes(const Dir, Fra, Til: string): string;
+function UpgradeNotes(const Dir, From_, To_: string): string;
 var
   F: TStringList;
   I: Integer;
   S, V, Ut: string;
-  Med: Boolean;
+  With_: Boolean;
 begin
   Result := '';
   if not FileExists(IncludeTrailingPathDelimiter(Dir) + 'UPGRADE.md') then
@@ -775,7 +775,7 @@ begin
   F := TStringList.Create;
   try
     F.LoadFromFile(IncludeTrailingPathDelimiter(Dir) + 'UPGRADE.md');
-    Med := False;
+    With_ := False;
     Ut := '';
     for I := 0 to F.Count - 1 do
     begin
@@ -783,13 +783,13 @@ begin
       if Pos('## ', S) = 1 then
       begin
         V := Trim(Copy(S, 4, Length(S)));
-        { Med når versjonen er nyere enn den vi står på, og ikke nyere
+        { With_ når versjonen er nyere enn den vi står på, og ikke nyere
           enn den vi skal til. }
-        Med := ParseSemVer(V).Valid and
-               (CompareSemVer(V, Fra) > 0) and
-               (CompareSemVer(V, Til) <= 0);
+        With_ := ParseSemVer(V).Valid and
+               (CompareSemVer(V, From_) > 0) and
+               (CompareSemVer(V, To_) <= 0);
       end;
-      if Med then
+      if With_ then
         Ut := Ut + S + LineEnding;
     end;
     Result := Trim(Ut);
@@ -803,7 +803,7 @@ end;
 function CmdInstall(P: TProject): Integer;
 var
   L: TLock;
-  Onsket, Dir, Commit, Feil, Lauf: string;
+  Onsket, Dir, Commit, Err, Lauf: string;
   Endret: Boolean;
 begin
   Result := 0;
@@ -838,9 +838,9 @@ begin
       poenget med sjekken under. }
     Commit := CommitOf(Dir);
   end
-  else if not Fetch(P.AskrSource, Onsket, Commit, Feil) then
+  else if not Fetch(P.AskrSource, Onsket, Commit, Err) then
   begin
-    Si('askr: ' + Feil);
+    Si('askr: ' + Err);
     Exit(1);
   end;
 
@@ -864,9 +864,9 @@ begin
     Lauf := Onsket;
 
   { Lauf er ikke publisert på npm ennå, så avhengigheten peker inn i den
-    versjonen vi nettopp installerte. Naar pakka er publisert, blir dette
+    versjonen vi nettopp installerte. When_ pakka er publisert, blir dette
     versjonsnummeret og ingenting annet endrer seg. }
-  if not SettLaufAvhengighet(P, LaufSti(P, Dir), Endret) then
+  if not SetLaufDependency(P, LaufPath(P, Dir), Endret) then
     Result := 1;
 
   L.Version := Onsket;
@@ -891,7 +891,7 @@ function CmdUpdate(P: TProject; const Target: string): Integer;
 var
   L: TLock;
   Tags: TStringArray;
-  Naa, Til, Notater, Commit, Feil: string;
+  Now_, To_, Notater, Commit, Err: string;
   I: Integer;
   Spec: string;
 begin
@@ -905,13 +905,13 @@ begin
   end;
 
   L := ReadLock(P.Root);
-  Naa := L.Version;
-  if Naa = '' then
-    Naa := P.AskrWantedVersion;
+  Now_ := L.Version;
+  if Now_ = '' then
+    Now_ := P.AskrWantedVersion;
 
   Tags := nil;
   if Target <> '' then
-    Til := Target
+    To_ := Target
   else
   begin
     Si('Looking for newer releases...');
@@ -925,64 +925,64 @@ begin
     { askr.toml kan begrense hvor langt update får gå, med samme
       skrivemåte som package.json: ^0.6.0 eller ~0.6.0. }
     Spec := P.AskrWantedVersion;
-    Til := '';
+    To_ := '';
     for I := High(Tags) downto 0 do
       if (Spec = '') or SatisfiesRange(Tags[I], Spec) then
       begin
-        Til := Tags[I];
+        To_ := Tags[I];
         Break;
       end;
-    if Til = '' then
+    if To_ = '' then
     begin
       Si('askr: nothing published matches ' + Spec);
       Exit(1);
     end;
   end;
 
-  if (Naa <> '') and (CompareSemVer(Til, Naa) = 0) then
+  if (Now_ <> '') and (CompareSemVer(To_, Now_) = 0) then
   begin
-    Si('Already on Askr ' + Naa + '.');
+    Si('Already on Askr ' + Now_ + '.');
     { En nøyaktig pin gjør at update aldri flytter seg. Det er riktig,
       men uten forklaring motsier det `askr outdated`, som nettopp sa at
       noe nyere finnes. Si hvorfor, og hva man gjør. }
     if (Target = '') and (Length(Tags) > 0) and
-       (CompareSemVer(Tags[High(Tags)], Naa) > 0) then
+       (CompareSemVer(Tags[High(Tags)], Now_) > 0) then
     begin
       Si('');
       Si('Askr ' + Tags[High(Tags)] + ' is published, but askr.toml pins ' +
          P.AskrWantedVersion + ',');
-      Si('which only allows ' + Naa + '. To move:');
+      Si('which only allows ' + Now_ + '. To move:');
       Si('');
       Si('  askr update ' + Tags[High(Tags)] +
          '        take that release, and update the pin');
-      Si('  askr update ^' + Naa +
+      Si('  askr update ^' + Now_ +
          '       or widen the pin in askr.toml by hand');
     end;
     Exit;
   end;
 
-  if (Naa <> '') and (CompareSemVer(Til, Naa) < 0) then
-    Si('Going back from ' + Naa + ' to ' + Til + '.')
-  else if Naa <> '' then
-    Si('Askr ' + Naa + ' → ' + Til)
+  if (Now_ <> '') and (CompareSemVer(To_, Now_) < 0) then
+    Si('Going back from ' + Now_ + ' to ' + To_ + '.')
+  else if Now_ <> '' then
+    Si('Askr ' + Now_ + ' → ' + To_)
   else
-    Si('Installing Askr ' + Til);
+    Si('Installing Askr ' + To_);
 
-  if not Fetch(P.AskrSource, Til, Commit, Feil) then
+  if not Fetch(P.AskrSource, To_, Commit, Err) then
   begin
-    Si('askr: ' + Feil);
+    Si('askr: ' + Err);
     Exit(1);
   end;
 
   { Notatene skrives ut FØR noe er endret i prosjektet. En oppgradering
     man ikke har lest er en oppgradering man feilsoker etterpå. }
-  if Naa <> '' then
+  if Now_ <> '' then
   begin
-    Notater := UpgradeNotes(CacheDirFor(Til), Naa, Til);
+    Notater := UpgradeNotes(CacheDirFor(To_), Now_, To_);
     if Notater <> '' then
     begin
       Si('');
-      Si('--- what changes between ' + Naa + ' and ' + Til +
+      Si('--- what changes between ' + Now_ + ' and ' + To_ +
          ' --------------------');
       Si('');
       Si(Notater);
@@ -993,14 +993,14 @@ begin
 
   { Pinnen i askr.toml må følge med, ellers sier fila og lockfila to
     forskjellige ting, og neste `askr install` drar deg tilbake. }
-  if (Target <> '') and (P.AskrWantedVersion <> Til) then
-    SettPinnetVersjon(P, Til);
+  if (Target <> '') and (P.AskrWantedVersion <> To_) then
+    SetPinnedVersion(P, To_);
 
-  L.Version := Til;
+  L.Version := To_;
   L.Commit := Commit;
-  L.Lauf := TreeLaufVersion(CacheDirFor(Til));
+  L.Lauf := TreeLaufVersion(CacheDirFor(To_));
   if L.Lauf = '' then
-    L.Lauf := Til;
+    L.Lauf := To_;
   WriteLock(P.Root, L);
 
   Result := CmdInstall(P);
@@ -1017,22 +1017,22 @@ function CmdOutdated(P: TProject): Integer;
 var
   L: TLock;
   Tags: TStringArray;
-  Naa: string;
+  Now_: string;
   I: Integer;
   Nyeste: string;
 begin
   Result := 0;
   L := ReadLock(P.Root);
-  Naa := L.Version;
-  if Naa = '' then
-    Naa := P.AskrWantedVersion;
+  Now_ := L.Version;
+  if Now_ = '' then
+    Now_ := P.AskrWantedVersion;
 
   if P.AskrPath <> '' then
     Si('local path  ' + P.AskrPath + '  (Askr ' + TreeVersion(P.AskrPath) + ')')
-  else if Naa = '' then
+  else if Now_ = '' then
     Si('this project does not pin a version')
   else
-    Si('installed   ' + Naa);
+    Si('installed   ' + Now_);
 
   Tags := RemoteVersions(P.AskrSource);
   if Length(Tags) = 0 then
@@ -1046,12 +1046,12 @@ begin
   Si('');
   Si('published releases:');
   for I := High(Tags) downto 0 do
-    if Tags[I] = Naa then
+    if Tags[I] = Now_ then
       Si('  ' + Tags[I] + '   <- this project')
     else
       Si('  ' + Tags[I]);
 
-  if (Naa <> '') and (CompareSemVer(Nyeste, Naa) > 0) then
+  if (Now_ <> '') and (CompareSemVer(Nyeste, Now_) > 0) then
   begin
     Si('');
     Si('Askr ' + Nyeste + ' is available. Read what changes, then take it:');
@@ -1061,7 +1061,7 @@ end;
 
 function DelegateIfNeeded(P: TProject; out ExitKode: Integer): Boolean;
 var
-  Dir, Feil, Binaer, Skall, Bygglogg: string;
+  Dir, Err, Binaer, Skall, Bygglogg: string;
   O: TPkgOrigin;
   Args: array of string;
   I: Integer;
@@ -1069,11 +1069,11 @@ begin
   Result := False;
   ExitKode := 0;
 
-  { Uten denne ville den delegerte prosessen delegert videre i ring. }
+  { Without denne ville den delegerte prosessen delegert videre i ring. }
   if GetEnvironmentVariable('ASKR_DELEGATED') = '1' then
     Exit;
 
-  Dir := ResolveFramework(P, O, Feil);
+  Dir := ResolveFramework(P, O, Err);
   if (Dir = '') or (TreeVersion(Dir) = AskrVersion) then
     Exit;
 
@@ -1125,7 +1125,7 @@ end;
 
 function CmdVersionInfo(P: TProject): Integer;
 var
-  Dir, Feil: string;
+  Dir, Err: string;
   O: TPkgOrigin;
   L: TLock;
 begin
@@ -1134,13 +1134,13 @@ begin
   if P = nil then
     Exit;
 
-  Dir := ResolveFramework(P, O, Feil);
+  Dir := ResolveFramework(P, O, Err);
   Si('');
   if Dir = '' then
   begin
     Si('framework   not resolved');
     Si('');
-    Si(Feil);
+    Si(Err);
     Exit(1);
   end;
 

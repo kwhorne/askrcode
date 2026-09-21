@@ -7,7 +7,7 @@
 
     ./askr desktop:linux
 
-  Uten GTK eller uten skjerm hopper suiten over seg selv og sier hvorfor.
+  Without GTK eller uten skjerm hopper suiten over seg selv og sier hvorfor.
 
   macOS og Windows hopper over: begge åpner et vindu som må lukkes for hånd
   (macOS mangler AutoCloseMs), og Windows-skallet har ingen maskin å kjøre
@@ -26,31 +26,31 @@ uses
 var
   Bestatt: Integer = 0;
   Feilet: Integer = 0;
-  Laas: TCriticalSection;
-  TreffSide: Integer = 0;
+  Lock_: TCriticalSection;
+  MatchPage: Integer = 0;
   TreffPing: Integer = 0;
 
-procedure Ok(const Hva: string; Verdi: Boolean);
+procedure Ok(const What: string; Value_: Boolean);
 begin
-  if Verdi then
+  if Value_ then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
   end;
 end;
 
 function Side(Req: TRequest): TResponse;
 begin
-  Laas.Acquire;
+  Lock_.Acquire;
   try
-    Inc(TreffSide);
+    Inc(MatchPage);
   finally
-    Laas.Release;
+    Lock_.Release;
   end;
   { Skriptet beviser at nettmotoren kjører, ikke bare at noe hentet HTML. }
   Result := RespondHtml(
@@ -63,11 +63,11 @@ end;
 
 function Ping(Req: TRequest): TResponse;
 begin
-  Laas.Acquire;
+  Lock_.Acquire;
   try
     Inc(TreffPing);
   finally
-    Laas.Release;
+    Lock_.Release;
   end;
   Result := RespondText('pong', 200);
 end;
@@ -79,10 +79,10 @@ begin
 end;
 
 var
-  Feil: string;
-  HarSkjerm: Boolean;
+  Err: string;
+  HasDisplay: Boolean;
 begin
-  Laas := TCriticalSection.Create;
+  Lock_ := TCriticalSection.Create;
   WriteLn('askr — desktop');
 
 {$IFDEF WINDOWS}
@@ -114,30 +114,30 @@ begin
     Pos('WebKitGTK', WebviewBackend) > 0);
   Ok('ingen feil å melde når biblioteket er der', WebviewError = '');
 
-  HarSkjerm := (GetEnvironmentVariable('DISPLAY') <> '') or
+  HasDisplay := (GetEnvironmentVariable('DISPLAY') <> '') or
                (GetEnvironmentVariable('WAYLAND_DISPLAY') <> '');
 
   DesktopApp.RegisterRoutes(Ruter);
   DesktopApp.Window('Askr desktop', 900, 600);
 
-  if not HarSkjerm then
+  if not HasDisplay then
   begin
-    { Uten skjerm skal GTK gi en forklaring, ikke drepe prosessen.
+    { Without skjerm skal GTK gi en forklaring, ikke drepe prosessen.
       gtk_init ville kalt exit() her; gtk_init_check gjør det ikke. }
     WriteLn;
     WriteLn('— uten skjerm');
-    Feil := '';
+    Err := '';
     try
       DesktopApp.Run;
     except
-      on E: EDesktopError do Feil := E.Message;
+      on E: EDesktopError do Err := E.Message;
     end;
     { At vi i det hele tatt er her, er poenget: gtk_init ville kalt exit().
       Men det er de to neste som faktisk kan feile — en påstand som ikke kan
       feile er ingen påstand. }
-    Ok('feilen nevner DISPLAY', Pos('DISPLAY', Feil) > 0);
+    Ok('feilen nevner DISPLAY', Pos('DISPLAY', Err) > 0);
     Ok('og sier at appen kjører som webtjeneste likevel',
-      Pos('webtjeneste', Feil) > 0);
+      Pos('webtjeneste', Err) > 0);
   end
   else
   begin
@@ -148,14 +148,14 @@ begin
     DesktopApp.Run;
 
     Ok('serveren fikk en port', DesktopApp.Port > 0);
-    WriteLn('        treff: / = ', TreffSide, ', /ping = ', TreffPing);
-    Ok('webviewen hentet siden', TreffSide > 0);
+    WriteLn('        treff: / = ', MatchPage, ', /ping = ', TreffPing);
+    Ok('webviewen hentet siden', MatchPage > 0);
     Ok('og JavaScript på siden kalte tilbake', TreffPing > 0);
   end;
 
   WriteLn;
   WriteLn('— ', Bestatt, ' bestått, ', Feilet, ' feilet');
-  Laas.Free;
+  Lock_.Free;
   if Feilet > 0 then
     Halt(1);
 end.

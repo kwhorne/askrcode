@@ -3,7 +3,7 @@
   Angrepet: en side på et annet domene får nettleseren din til å sende en
   POST til denne appen. Nettleseren legger ved sesjonskaka helt av seg selv,
   fordi det er det kaker gjør, og serveren ser en fullt legitim forespørsel
-  fra en innlogget bruker. Uten et mottiltak er hvert eneste skjema i appen
+  fra en innlogget bruker. Without et mottiltak er hvert eneste skjema i appen
   et endepunkt hvem som helst kan kalle på brukerens vegne.
 
   Mottiltaket er en hemmelighet som ligger i **sesjonen** og må sendes med i
@@ -59,21 +59,21 @@ const
   tom streng ville gjort den feilen usynlig. }
 function CsrfToken: string;
 
-{ Skjult felt til et HTML-skjema. Skrives rett inn i markupen:
+{ Hidden felt til et HTML-skjema. Skrives rett inn i markupen:
 
       <form method="post">
         <%= CsrfField %>
         ... }
 function CsrfField: string;
 
-{ Sjekker en request uten å svare på den. Til kode som vil ta avgjørelsen
+{ Sjekker en request uten å svare på den. To_ kode som vil ta avgjørelsen
   selv. `UseCsrf` bruker den. }
 function CsrfValid(Req: TRequest): Boolean;
 
 { True for metodene som skal sjekkes. GET, HEAD og OPTIONS er unntatt. }
 function CsrfMethodNeedsCheck(M: THttpMethod): Boolean;
 
-{ Unnta en sti fra sjekken. Til webhooks, som kommer fra en tredjepart som
+{ Unnta en sti fra sjekken. To_ webhooks, som kommer fra en tredjepart som
   umulig kan ha tokenet, og som må autentiseres på en annen måte — en
   signatur i en header. Mønsteret matcher enten eksakt eller med `*` til
   slutt: `/webhooks/*`.

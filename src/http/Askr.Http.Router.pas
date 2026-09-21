@@ -72,7 +72,7 @@ type
     procedure Parse(const APattern: string);
   public
     constructor Create(AMethod: THttpMethod; const APattern: string);
-    { Med og uten metodesjekk. Den siste finnes for å kunne svare 405 i
+    { With_ og uten metodesjekk. Den siste finnes for å kunne svare 405 i
       stedet for 404 når stien finnes, men metoden er en annen. }
     function Matches(Req: TRequest; const Path: TStr): Boolean;
     function MatchesPath(Req: TRequest; const Path: TStr): Boolean;
@@ -111,7 +111,7 @@ type
     procedure Delete(const Pattern: string; H: TRouteHandler); overload;
     procedure Any(const Pattern: string; H: TRouteHandler); overload;
 
-    { Navn på sist registrerte rute. `askr routes` lister dem i steg 6. }
+    { Name_ på sist registrerte rute. `askr routes` lister dem i steg 6. }
     procedure AsName(const AName: string);
 
     procedure Use(M: TMiddleware); overload;
@@ -124,13 +124,13 @@ type
     procedure After(F: TResponseFilter); overload;
     procedure After(F: TResponseFilterProc); overload;
 
-    { Kalles når ingen rute passer. Uten en satt, svares det 404. }
+    { Kalles når ingen rute passer. Without en satt, svares det 404. }
     procedure SetNotFound(H: TRouteHandler);
 
     { Heter ikke Dispatch: det skygger for TObject.Dispatch. }
     function Handle(Req: TRequest): TResponse;
 
-    { Til `askr routes`. Én linje per rute. }
+    { To_ `askr routes`. Én linje per rute. }
     procedure Describe(Lines: TStrings);
     function Count: Integer;
   end;

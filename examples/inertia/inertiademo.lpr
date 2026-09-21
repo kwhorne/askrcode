@@ -90,22 +90,22 @@ type
   end;
 
 var
-  GLagret: array of TStoredCustomer;
-  GLagretLaas: TRTLCriticalSection;
+  GStored: array of TStoredCustomer;
+  GStoredLock: TRTLCriticalSection;
 
 procedure SaveCustomer(const AName, AEmail: string; ABalance: Currency);
 var
   N: Integer;
 begin
-  EnterCriticalSection(GLagretLaas);
+  EnterCriticalSection(GStoredLock);
   try
-    N := Length(GLagret);
-    SetLength(GLagret, N + 1);
-    GLagret[N].Name := AName;
-    GLagret[N].Email := AEmail;
-    GLagret[N].Balance := ABalance;
+    N := Length(GStored);
+    SetLength(GStored, N + 1);
+    GStored[N].Name := AName;
+    GStored[N].Email := AEmail;
+    GStored[N].Balance := ABalance;
   finally
-    LeaveCriticalSection(GLagretLaas);
+    LeaveCriticalSection(GStoredLock);
   end;
 end;
 
@@ -153,22 +153,22 @@ begin
   end;
 
   { Så det som er lagt til gjennom skjemaet. }
-  EnterCriticalSection(GLagretLaas);
+  EnterCriticalSection(GStoredLock);
   try
-    for I := 0 to High(GLagret) do
+    for I := 0 to High(GStored) do
     begin
       K := A.New<TCustomer>;
       K.Id := 100 + I;
-      K.Name := GLagret[I].Name;
-      K.Email := GLagret[I].Email;
-      K.Balance := GLagret[I].Balance;
+      K.Name := GStored[I].Name;
+      K.Email := GStored[I].Email;
+      K.Balance := GStored[I].Balance;
       K.Active := True;
       if WithOrders then
         K.Orders := A.New<TOrderList>;
       Result.Add(K);
     end;
   finally
-    LeaveCriticalSection(GLagretLaas);
+    LeaveCriticalSection(GStoredLock);
   end;
 end;
 
@@ -188,12 +188,12 @@ var
   GHeadTags: string = '';
   GAssetVersion: string = 'dev';
 
-procedure LesViteManifest(const Path: string);
+procedure ReadViteManifest(const Path: string);
 var
   A: TArena;
   L: TStringList;
   Root, Entry, Css, Item: PJsonValue;
-  FeilPos: SizeInt;
+  ErrPos: SizeInt;
   I: Integer;
   JsFil: string;
 begin
@@ -207,9 +207,9 @@ begin
   L := TStringList.Create;
   try
     L.LoadFromFile(Path);
-    if not JsonParse(A, StrDup(A, L.Text), Root, FeilPos) then
+    if not JsonParse(A, StrDup(A, L.Text), Root, ErrPos) then
     begin
-      WriteLn('Ugyldig manifest ved posisjon ', FeilPos);
+      WriteLn('Ugyldig manifest ved posisjon ', ErrPos);
       Halt(1);
     end;
 
@@ -360,11 +360,11 @@ var
   Ctrl: TAppController;
   Statisk: TStaticMiddleware;
   R: TRouter;
-  Linjer: TStringList;
+  Lines: TStringList;
   Rot, PublicDir: string;
   I: Integer;
 begin
-  InitCriticalSection(GLagretLaas);
+  InitCriticalSection(GStoredLock);
   { Prosjektrota er der appen kjøres fra. `askr serve` setter arbeidsmappa
     dit; kjøres binæren for hånd, er det mappa man står i. }
   Rot := GetEnvironmentVariable('ASKR_WEB_ROOT');
@@ -373,7 +373,7 @@ begin
   Rot := ExpandFileName(Rot);
   PublicDir := IncludeTrailingPathDelimiter(Rot) + 'public';
 
-  LesViteManifest(IncludeTrailingPathDelimiter(PublicDir) +
+  ReadViteManifest(IncludeTrailingPathDelimiter(PublicDir) +
     'build' + PathDelim + '.vite' + PathDelim + 'manifest.json');
 
   TInertia.SetVersion(GAssetVersion);
@@ -422,14 +422,14 @@ begin
       [Opts.Host, Server.BoundPort]));
     WriteLn('Statiske filer fra ', PublicDir);
     WriteLn('Inertia-versjon ', TInertia.Version);
-    Linjer := TStringList.Create;
+    Lines := TStringList.Create;
     try
-      R.Describe(Linjer);
+      R.Describe(Lines);
       WriteLn('Ruter:');
-      for I := 0 to Linjer.Count - 1 do
-        WriteLn('  ', Linjer[I]);
+      for I := 0 to Lines.Count - 1 do
+        WriteLn('  ', Lines[I]);
     finally
-      Linjer.Free;
+      Lines.Free;
     end;
     WriteLn('Ctrl-C for å stoppe.');
     while Server.Running do
@@ -439,7 +439,7 @@ begin
     R.Free;
     Statisk.Free;
     Ctrl.Free;
-    DoneCriticalSection(GLagretLaas);
+    DoneCriticalSection(GStoredLock);
   end;
 end.
 

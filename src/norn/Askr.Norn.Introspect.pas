@@ -229,7 +229,7 @@ begin
     sammenlikningen. }
   if Pos('(', T) > 0 then
     T := Trim(Copy(T, 1, Pos('(', T) - 1));
-  { Resten av MySQLs heltallstyper. Uten dem ville en mediumint blitt tekst. }
+  { Resten av MySQLs heltallstyper. Without dem ville en mediumint blitt tekst. }
   if (T = 'tinyint') or (T = 'mediumint') or (T = 'year') then
     Exit('TColInt64');
   if (T = 'bigint') or (T = 'integer') or (T = 'int') or (T = 'smallint') then
@@ -598,28 +598,28 @@ var
   T: TDbTable;
   C: TDbColumn;
   FK: TDbForeignKey;
-  Navn, IdxNavn: string;
-  Tabeller: array of string;
+  Name_, IndexName: string;
+  Tables_: array of string;
 begin
   Result := TDbSchema.Create;
   try
     A.Reset;
     R := Conn.Exec(A, 'SELECT name FROM sqlite_master ' +
       'WHERE type = ''table'' AND name NOT LIKE ''sqlite_%'' ORDER BY name');
-    SetLength(Tabeller, R.RowCount);
+    SetLength(Tables_, R.RowCount);
     for I := 0 to R.RowCount - 1 do
     begin
-      Tabeller[I] := R.Value(I, 0).ToString;
-      Result.AddTable(Tabeller[I]);
+      Tables_[I] := R.Value(I, 0).ToString;
+      Result.AddTable(Tables_[I]);
     end;
 
-    for I := 0 to High(Tabeller) do
+    for I := 0 to High(Tables_) do
     begin
-      Navn := Tabeller[I];
-      T := Result.Table(Navn);
+      Name_ := Tables_[I];
+      T := Result.Table(Name_);
 
       A.Reset;
-      RC := Conn.Exec(A, 'PRAGMA table_info(''' + Navn + ''')');
+      RC := Conn.Exec(A, 'PRAGMA table_info(''' + Name_ + ''')');
       for J := 0 to RC.RowCount - 1 do
       begin
         { cid, name, type, notnull, dflt_value, pk }
@@ -644,14 +644,14 @@ begin
       end;
 
       A.Reset;
-      RI := Conn.Exec(A, 'PRAGMA index_list(''' + Navn + ''')');
+      RI := Conn.Exec(A, 'PRAGMA index_list(''' + Name_ + ''')');
       for J := 0 to RI.RowCount - 1 do
       begin
         { seq, name, unique, origin, partial }
-        IdxNavn := RI.Value(J, 1).ToString;
+        IndexName := RI.Value(J, 1).ToString;
         N := Length(T.FIndexes);
         SetLength(T.FIndexes, N + 1);
-        T.FIndexes[N].Name := IdxNavn;
+        T.FIndexes[N].Name := IndexName;
         T.FIndexes[N].IsUnique := not RI.Value(J, 2).EqualsStr('0');
         T.FIndexes[N].IsPrimary := RI.Value(J, 3).EqualsStr('pk');
         SetLength(T.FIndexes[N].Columns, 0);
@@ -668,7 +668,7 @@ begin
       end;
 
       A.Reset;
-      RF := Conn.Exec(A, 'PRAGMA foreign_key_list(''' + Navn + ''')');
+      RF := Conn.Exec(A, 'PRAGMA foreign_key_list(''' + Name_ + ''')');
       for J := 0 to RF.RowCount - 1 do
       begin
         { id, seq, table, from, to, on_update, on_delete, match }
@@ -677,7 +677,7 @@ begin
         FK.RefColumn := RF.Value(J, 4).ToString;
         if FK.RefColumn = '' then
           FK.RefColumn := 'id';
-        FK.Name := Format('%s_%s_fk', [Navn, FK.Column]);
+        FK.Name := Format('%s_%s_fk', [Name_, FK.Column]);
         N := Length(T.FForeignKeys);
         SetLength(T.FForeignKeys, N + 1);
         T.FForeignKeys[N] := FK;

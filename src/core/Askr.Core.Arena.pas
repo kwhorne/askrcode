@@ -31,7 +31,7 @@ const
     den samme blokken request etter request. }
   ArenaDefaultBlockSize = 64 * 1024;
 
-  { Alle allokeringer rundes opp hit. 16 holder for SSE-alignet last/store og
+  { All_ allokeringer rundes opp hit. 16 holder for SSE-alignet last/store og
     for alt Free Pascal selv krever på både x86-64 og aarch64. }
   ArenaAlignment = 16;
 
@@ -85,7 +85,7 @@ type
     constructor Create(ABlockSize: PtrUInt = ArenaDefaultBlockSize);
     destructor Destroy; override;
 
-    { Deler ut Size bytes. Innholdet er udefinert. }
+    { Parts_ ut Size bytes. Innholdet er udefinert. }
     function Alloc(Size: PtrUInt): Pointer;
     { Som Alloc, men nullstilt. }
     function AllocZero(Size: PtrUInt): Pointer;
@@ -148,7 +148,7 @@ type
     en helt vanlig TCustomer.Create allokerer i arenaen og kjører constructoren
     som normalt. FreeInstance gjør ingenting: minnet forsvinner ved Reset.
 
-    Har klassen felter kompilatoren håndterer — string, dynamisk array,
+    Has_ klassen felter kompilatoren håndterer — string, dynamisk array,
     interface — registreres en finalisering som kjører ved Reset. Det er
     nødvendig fordi destructoren aldri kjøres: uten det ville hver
     string-property på en modell lekket heap-minne per request. Klasser uten
@@ -283,7 +283,7 @@ function TArena.BlockFor(Need: PtrUInt): PArenaBlock;
 var
   B: PArenaBlock;
 begin
-  { Etter Reset står hele kjeden ledig, så vi leter framover før vi ber OS om
+  { After_ Reset står hele kjeden ledig, så vi leter framover før vi ber OS om
     mer. Det er denne gjenbruken som gjør at RSS flater ut. }
   if FCurrent <> nil then
   begin
@@ -378,7 +378,7 @@ begin
     try
       N^.Proc(N^.Data);
     except
-      { Med vilje. Se kommentaren ved Defer. }
+      { With_ vilje. Se kommentaren ved Defer. }
     end;
   end;
 end;

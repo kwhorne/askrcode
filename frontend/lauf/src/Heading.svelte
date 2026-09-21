@@ -2,10 +2,11 @@
   import { cn } from './utils.js'
 
   let {
-    /** 1–4. Styrer både taggen og størrelsen, med mindre `as` sier noe annet. */
+    /** 1-4. Drives both the tag and the size, unless `as` says otherwise. */
     level = 2,
-    /** Overstyrer taggen uten å endre utseendet. Nivå er struktur, størrelse
-        er utseende, og en side kan trenge en h2 som ser liten ut. */
+    /** Overrides the tag without changing how it looks. Level is
+        structure, size is appearance, and a page may need an h2 that
+        looks small. */
     as,
     children,
     class: klass,

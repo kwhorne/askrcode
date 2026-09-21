@@ -95,8 +95,8 @@ type
     procedure FlushStatementCache;
 
     property Dsn: string read FDsn;
-    { Hvor mange statements som er forberedt mot serveren, og hvor mange kall
-      som slapp unna med et cachet. Til testene og til å se at cachen virker. }
+    { Where_ mange statements som er forberedt mot serveren, og hvor mange kall
+      som slapp unna med et cachet. To_ testene og til å se at cachen virker. }
     property PreparedCount: Int64 read FPrepared;
     property CacheHits: Int64 read FCacheHits;
     { 0 slår cachen av. Standard er 64. }
@@ -572,7 +572,7 @@ begin
   mysql_options(FMysql, MYSQL_SET_CHARSET_NAME, PAnsiChar(BChar));
 
   { CLIENT_FOUND_ROWS gjør at UPDATE rapporterer rader som traff, ikke rader
-    som faktisk endret seg. Uten det melder «lagre uten endringer» 0 rader,
+    som faktisk endret seg. Without det melder «lagre uten endringer» 0 rader,
     og kallende kode tror raden er borte. }
   if mysql_real_connect(FMysql,
        NilOrPChar(Info.Host, BHost), NilOrPChar(Info.User, BUser),
@@ -609,7 +609,7 @@ begin
 end;
 
 { mysql_thread_init må kalles én gang i hver tråd som rører biblioteket.
-  Uten det virker enkle spørringer tilsynelatende, men konverteringen av
+  Without det virker enkle spørringer tilsynelatende, men konverteringen av
   resultater over prepared-protokollen bruker trådlokale buffere som ikke
   finnes — og verdiene kommer tomme tilbake uten at noe melder feil.
 
@@ -866,8 +866,8 @@ var
   Cells: PDbCell;
   Fld: Pointer;
   Buf, Small: PByte;
-  Feil: EDbError;
-  Cachet, MaaLukkes: Boolean;
+  Err: EDbError;
+  Cachet, MustClose: Boolean;
 const
   SmallBuf = 192;
 begin
@@ -875,7 +875,7 @@ begin
   Stmt := Prepared(Sql, Cachet);
   { Et cachet statement eies av cachen og lukkes ved utkasting eller ved
     Destroy. Et ucachet eies av dette kallet. }
-  MaaLukkes := not Cachet;
+  MustClose := not Cachet;
   try
 
   { Parametrene må ligge i minne som overlever execute. De allokeres derfor
@@ -915,7 +915,7 @@ begin
 
       Statementet kastes ut fordi et cachet statement kan være forberedt mot
       en tabell som siden er endret; neste forsøk skal forberede på nytt. }
-      Feil := StmtError(Stmt, Sql);
+      Err := StmtError(Stmt, Sql);
       { DropCached lukker selv. Lukkes det så én gang til i finally, er det
         en dobbeltfrigjøring — og den viste seg som en access violation i
         unik-brudd-testen, ikke som noe som lignet årsaken. }
@@ -923,8 +923,8 @@ begin
         DropCached(Sql)
       else
         mysql_stmt_close(Stmt);
-      MaaLukkes := False;
-      raise Feil;
+      MustClose := False;
+      raise Err;
     end;
 
     Meta := mysql_stmt_result_metadata(Stmt);
@@ -957,7 +957,7 @@ begin
       setter klienten lengden til null. Resultatet ble tomme verdier for
       hver eneste flyttallskolonne, uten en feil noe sted.
 
-      Med et buffer på 192 bytes får tall, datoer og korte strenger plass med
+      With_ et buffer på 192 bytes får tall, datoer og korte strenger plass med
       én gang, og lengre tekst tas i andre runde der Lens nå er til å stole
       på fordi konverteringen faktisk har skjedd. }
     Outs := PMysqlBind(A.AllocZero(PtrUInt(Cols) * SizeOf(TMysqlBind)));
@@ -1062,14 +1062,14 @@ begin
     finally
       mysql_free_result(Meta);
       { Resultatet må frigjøres på serveren før statementet kan brukes igjen.
-        Uten dette gir neste execute «commands out of sync». }
+        Without dette gir neste execute «commands out of sync». }
       mysql_stmt_free_result(Stmt);
     end;
   finally
-    { Et statement som ikke havnet i cachen eies av dette kallet. Uten denne
+    { Et statement som ikke havnet i cachen eies av dette kallet. Without denne
       lukkingen lekker CacheLimit := 0 ett statement per spørring — både i
       klienten og på serveren. }
-    if MaaLukkes then
+    if MustClose then
       mysql_stmt_close(Stmt);
   end;
 end;

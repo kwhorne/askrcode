@@ -69,7 +69,7 @@ type
     function OpenStatements: Integer;
 
     property Path: string read FPath;
-    { Hvor mange statements som er forberedt, og hvor mange kall som slapp
+    { Where_ mange statements som er forberedt, og hvor mange kall som slapp
       unna med et cachet. Samme flate som Postgres- og MySQL-driveren. }
     property PreparedCount: Int64 read FPrepared;
     property CacheHits: Int64 read FCacheHits;
@@ -308,7 +308,7 @@ begin
       [FPath, Rc]);
   end;
 
-  { WAL lar lesere og én skriver jobbe samtidig. Uten busy_timeout gir en
+  { WAL lar lesere og én skriver jobbe samtidig. Without busy_timeout gir en
     pool med flere workere SQLITE_BUSY i stedet for å vente. En fil i minnet
     har ingen WAL. }
   if FPath <> ':memory:' then
@@ -488,7 +488,7 @@ begin
         sqlite3_bind_null(Stmt, I + 1);
         Continue;
       end;
-      { SQLITE_TRANSIENT (-1) ber SQLite ta sin egen kopi. Uten det måtte
+      { SQLITE_TRANSIENT (-1) ber SQLite ta sin egen kopi. Without det måtte
         bufferet overleve helt til finalize, og arenaen spoles ofte før. }
       Buf := PByte(A.Alloc(PtrUInt(Params[I].Value.Len) + 1));
       if Params[I].Value.Len > 0 then
@@ -572,7 +572,7 @@ end;
 
 function TSqliteConnection.Exec(A: TArena; const Sql: string): TDbResult;
 begin
-  { Uten parametre caches det ikke. Det er her migrasjoner og DDL havner,
+  { Without parametre caches det ikke. Det er her migrasjoner og DDL havner,
     og et cachet CREATE TABLE er verken til nytte eller ønskelig. Samme
     deling som i Postgres- og MySQL-driveren. }
   Result := Run(A, Sql, [], False);

@@ -40,7 +40,7 @@ uses
 type
   ERunError = class(Exception);
 
-  { Det oversettelsen kostet og hva den fant. Til logging og til å måle
+  { Det oversettelsen kostet og hva den fant. To_ logging og til å måle
     at Rún fortsatt får plass i utviklerløkka. }
   TRunStats = record
     Models: Integer;
@@ -142,7 +142,7 @@ var
 
 { ------------------------------------------------------------- feil -- }
 
-procedure Feil(Line: Integer; const Msg: string);
+procedure Err(Line: Integer; const Msg: string);
 begin
   raise ERunError.CreateFmt('%s:%d: %s', [GFile, Line, Msg]);
 end;
@@ -190,7 +190,7 @@ end;
 
 { ------------------------------------------------------------ lexer -- }
 
-procedure NesteToken;
+procedure NextToken;
 var
   Start: Integer;
 begin
@@ -276,25 +276,25 @@ begin
   Result := (GTok.Kind = tkIdent) and (GTok.Text_ = S);
 end;
 
-procedure Krev(const S: string);
+procedure Expect(const S: string);
 begin
   if (GTok.Text_ <> S) or
      ((GTok.Kind <> tkIdent) and (GTok.Kind <> tkOp)) then
-    Feil(GTok.Line, Format('expected "%s", found "%s"', [S, GTok.Text_]));
-  NesteToken;
+    Err(GTok.Line, Format('expected "%s", found "%s"', [S, GTok.Text_]));
+  NextToken;
 end;
 
-function KrevIdent: string;
+function ExpectIdent: string;
 begin
   if GTok.Kind <> tkIdent then
-    Feil(GTok.Line, Format('expected a name, found "%s"', [GTok.Text_]));
+    Err(GTok.Line, Format('expected a name, found "%s"', [GTok.Text_]));
   Result := GTok.Text_;
-  NesteToken;
+  NextToken;
 end;
 
 { ----------------------------------------------------------- parser -- }
 
-function KindFraNavn(const S: string; Line: Integer): TRunKind;
+function KindFromName(const S: string; Line: Integer): TRunKind;
 begin
   if S = 'int' then Exit(rkInt);
   if S = 'text' then Exit(rkText);
@@ -302,7 +302,7 @@ begin
   if S = 'money' then Exit(rkMoney);
   if S = 'float' then Exit(rkFloat);
   if S = 'time' then Exit(rkTime);
-  Feil(Line, Format('unknown type "%s". Known: int, text, bool, money, ' +
+  Err(Line, Format('unknown type "%s". Known: int, text, bool, money, ' +
     'float, time', [S]));
   Result := rkText;
 end;
@@ -312,10 +312,10 @@ var
   M: TModelDecl;
 begin
   M.Line := GTok.Line;
-  NesteToken;
-  M.Name := KrevIdent;
-  Krev('from');
-  M.Table := KrevIdent;
+  NextToken;
+  M.Name := ExpectIdent;
+  Expect('from');
+  M.Table := ExpectIdent;
   SetLength(GModels, Length(GModels) + 1);
   GModels[High(GModels)] := M;
 end;
@@ -329,46 +329,46 @@ var
 begin
   FillChar(Q, SizeOf(Q), 0);
   Q.Line := GTok.Line;
-  NesteToken;
+  NextToken;
 
   { query<M> er en generisk spørring. Én erklæring, én konkret funksjon per
     modell i for-lista. Det er dette Pascal ikke kan uttrykke, og grunnen
     til at Rún finnes. }
   if GTok.Text_ = '<' then
   begin
-    NesteToken;
-    Q.TypeParam := KrevIdent;
-    Krev('>');
+    NextToken;
+    Q.TypeParam := ExpectIdent;
+    Expect('>');
   end;
 
-  Q.Name := KrevIdent;
+  Q.Name := ExpectIdent;
 
-  Krev('(');
+  Expect('(');
   while GTok.Text_ <> ')' do
   begin
-    P.Name := KrevIdent;
-    Krev(':');
-    P.Kind := KindFraNavn(KrevIdent, GTok.Line);
+    P.Name := ExpectIdent;
+    Expect(':');
+    P.Kind := KindFromName(ExpectIdent, GTok.Line);
     SetLength(Q.Params, Length(Q.Params) + 1);
     Q.Params[High(Q.Params)] := P;
     if GTok.Text_ = ',' then
-      NesteToken;
+      NextToken;
   end;
-  Krev(')');
+  Expect(')');
 
   { -> M gir én rad, -> [M] gir mange. }
   if GTok.Text_ = '->' then
   begin
-    NesteToken;
+    NextToken;
     if GTok.Text_ = '[' then
     begin
-      NesteToken;
-      KrevIdent;
-      Krev(']');
+      NextToken;
+      ExpectIdent;
+      Expect(']');
     end
     else
     begin
-      KrevIdent;
+      ExpectIdent;
       Q.Single := True;
     end;
   end;
@@ -376,19 +376,19 @@ begin
   if ErIdent('for') then
   begin
     if Q.TypeParam = '' then
-      Feil(GTok.Line, '"for" belongs to a generic query: query<M> Name(...) -> M for A, B');
-    NesteToken;
+      Err(GTok.Line, '"for" belongs to a generic query: query<M> Name(...) -> M for A, B');
+    NextToken;
     repeat
       SetLength(Q.For_, Length(Q.For_) + 1);
-      Q.For_[High(Q.For_)] := KrevIdent;
+      Q.For_[High(Q.For_)] := ExpectIdent;
       if GTok.Text_ = ',' then
-        NesteToken
+        NextToken
       else
         Break;
     until False;
   end;
   if (Q.TypeParam <> '') and (Length(Q.For_) = 0) then
-    Feil(Q.Line, Format('the generic query "%s" is missing "for". ' +
+    Err(Q.Line, Format('the generic query "%s" is missing "for". ' +
       'Write "for Customer, Order" after the return type.', [Q.Name]));
 
   { En generisk spørring som bare henter på primærnøkkel trenger ingen
@@ -410,11 +410,11 @@ begin
     Exit;
   end;
 
-  Krev(':');
-  Krev('from');
-  Q.ModelName := KrevIdent;
+  Expect(':');
+  Expect('from');
+  Q.ModelName := ExpectIdent;
   if (Q.TypeParam <> '') and (Q.ModelName <> Q.TypeParam) then
-    Feil(GTok.Line, Format('a generic query selects from "%s", not "%s"', [Q.TypeParam, Q.ModelName]));
+    Err(GTok.Line, Format('a generic query selects from "%s", not "%s"', [Q.TypeParam, Q.ModelName]));
 
   while (GTok.Kind = tkIdent) and
         ((GTok.Text_ = 'where') or (GTok.Text_ = 'order') or
@@ -423,26 +423,26 @@ begin
   begin
     if GTok.Text_ = 'where' then
     begin
-      NesteToken;
+      NextToken;
       repeat
         FillChar(W, SizeOf(W), 0);
         W.Line := GTok.Line;
-        W.Col := KrevIdent;
+        W.Col := ExpectIdent;
 
         { «is null» og «is not null» har ingen høyreside. }
         if ErIdent('is') then
         begin
-          NesteToken;
+          NextToken;
           if ErIdent('not') then
           begin
-            NesteToken;
+            NextToken;
             W.Op := 'is not';
           end
           else
             W.Op := 'is';
           if not ErIdent('null') then
-            Feil(GTok.Line, '"is" must be followed by "null" or "not null"');
-          NesteToken;
+            Err(GTok.Line, '"is" must be followed by "null" or "not null"');
+          NextToken;
           W.HasOperand := False;
         end
         else
@@ -450,17 +450,17 @@ begin
           if ErIdent('like') then
           begin
             W.Op := 'like';
-            NesteToken;
+            NextToken;
           end
           else
           begin
             if GTok.Kind <> tkOp then
-              Feil(GTok.Line, 'ventet en sammenlikning');
+              Err(GTok.Line, 'ventet en sammenlikning');
             W.Op := GTok.Text_;
             if (W.Op <> '==') and (W.Op <> '!=') and (W.Op <> '<') and
                (W.Op <> '<=') and (W.Op <> '>') and (W.Op <> '>=') then
-              Feil(GTok.Line, Format('"%s" is not a comparison', [W.Op]));
-            NesteToken;
+              Err(GTok.Line, Format('"%s" is not a comparison', [W.Op]));
+            NextToken;
           end;
           W.HasOperand := True;
           case GTok.Kind of
@@ -492,15 +492,15 @@ begin
                 W.Operand := GTok.Text_;
               end;
           else
-            Feil(GTok.Line, 'expected a value or a parameter name');
+            Err(GTok.Line, 'expected a value or a parameter name');
           end;
-          NesteToken;
+          NextToken;
         end;
 
         SetLength(Q.Wheres, Length(Q.Wheres) + 1);
         Q.Wheres[High(Q.Wheres)] := W;
         if ErIdent('and') then
-          NesteToken
+          NextToken
         else
           Break;
       until False;
@@ -510,54 +510,54 @@ begin
       { «with» er reservert i Pascal og kan ikke brukes til eager loading
         der. Her kan det. Relasjonen slås opp i fremmednøklene i skjemaet —
         den erklæres ikke. }
-      NesteToken;
+      NextToken;
       repeat
         SetLength(Q.Withs, Length(Q.Withs) + 1);
-        Q.Withs[High(Q.Withs)] := KrevIdent;
+        Q.Withs[High(Q.Withs)] := ExpectIdent;
         if GTok.Text_ = ',' then
-          NesteToken
+          NextToken
         else
           Break;
       until False;
     end
     else if GTok.Text_ = 'order' then
     begin
-      NesteToken;
-      Krev('by');
+      NextToken;
+      Expect('by');
       repeat
         FillChar(O, SizeOf(O), 0);
         O.Line := GTok.Line;
-        O.Col := KrevIdent;
+        O.Col := ExpectIdent;
         if ErIdent('desc') then
         begin
           O.Desc := True;
-          NesteToken;
+          NextToken;
         end
         else if ErIdent('asc') then
-          NesteToken;
+          NextToken;
         SetLength(Q.Orders, Length(Q.Orders) + 1);
         Q.Orders[High(Q.Orders)] := O;
         if GTok.Text_ = ',' then
-          NesteToken
+          NextToken
         else
           Break;
       until False;
     end
     else if GTok.Text_ = 'offset' then
     begin
-      NesteToken;
+      NextToken;
       if GTok.Kind <> tkNumber then
-        Feil(GTok.Line, 'offset expects a number');
+        Err(GTok.Line, 'offset expects a number');
       Q.Offset := StrToIntDef(GTok.Text_, 0);
-      NesteToken;
+      NextToken;
     end
     else
     begin
-      NesteToken;
+      NextToken;
       if GTok.Kind <> tkNumber then
-        Feil(GTok.Line, 'limit expects a number');
+        Err(GTok.Line, 'limit expects a number');
       Q.Limit := StrToIntDef(GTok.Text_, 0);
-      NesteToken;
+      NextToken;
     end;
   end;
 
@@ -570,15 +570,15 @@ begin
   GSrc := Src;
   GPos := 1;
   GLine := 1;
-  NesteToken;
+  NextToken;
 
   if not ErIdent('db') then
-    Feil(GTok.Line, 'the file must start with db "<dsn>"');
-  NesteToken;
+    Err(GTok.Line, 'the file must start with db "<dsn>"');
+  NextToken;
   if GTok.Kind <> tkString then
-    Feil(GTok.Line, 'db expects a quoted DSN');
+    Err(GTok.Line, 'db expects a quoted DSN');
   GDsn := GTok.Text_;
-  NesteToken;
+  NextToken;
 
   while GTok.Kind <> tkEnd do
   begin
@@ -587,7 +587,7 @@ begin
     else if ErIdent('query') then
       ParseQuery
     else
-      Feil(GTok.Line,
+      Err(GTok.Line,
         Format('expected "model" or "query", found "%s"', [GTok.Text_]));
   end;
 end;
@@ -599,7 +599,7 @@ var
   GConn: TDbConnection;
   GDialect: TSqlDialect;
 
-function KindFraSql(const SqlType: string; Scale: Integer): TRunKind;
+function KindFromSql(const SqlType: string; Scale: Integer): TRunKind;
 var
   A: string;
 begin
@@ -614,7 +614,7 @@ begin
   Result := rkText;
 end;
 
-function KindNavn(K: TRunKind): string;
+function KindName(K: TRunKind): string;
 const
   N: array[TRunKind] of string =
     ('int', 'text', 'bool', 'money', 'float', 'time');
@@ -631,7 +631,7 @@ begin
 end;
 
 { « Mente du X?» bare når gjettet er verdt noe. }
-function IfThenTekst(const Gjett: string): string;
+function IfThenText(const Gjett: string): string;
 begin
   if Gjett = '' then
     Result := ''
@@ -639,49 +639,49 @@ begin
     Result := Format(' Did you mean "%s"?', [Gjett]);
 end;
 
-function TabellFor(const ModelName: string; Line: Integer): TDbTable;
+function TableFor(const ModelName: string; Line: Integer): TDbTable;
 var
   I, J: Integer;
   Name: TStringArray;
-  Tabell: string;
+  Table_: string;
 begin
   for I := 0 to High(GModels) do
     if GModels[I].Name = ModelName then
     begin
-      Tabell := GModels[I].Table;
-      Result := GSchema.Table(Tabell);
+      Table_ := GModels[I].Table;
+      Result := GSchema.Table(Table_);
       if Result = nil then
       begin
         SetLength(Name, GSchema.TableCount);
         for J := 0 to GSchema.TableCount - 1 do
           Name[J] := GSchema.TableAt(J).Name;
-        Feil(Line, Format('table "%s" does not exist in the database.%s',
-          [Tabell, IfThenTekst(Mente(Tabell, Name))]));
+        Err(Line, Format('table "%s" does not exist in the database.%s',
+          [Table_, IfThenText(Mente(Table_, Name))]));
       end;
       Exit;
     end;
-  Feil(Line, Format('unknown model "%s"', [ModelName]));
+  Err(Line, Format('unknown model "%s"', [ModelName]));
   Result := nil;
 end;
 
 { Pascal-navn for en kolonne: customer_id blir CustomerId. }
-function PascalNavn(const Col: string): string;
+function PascalName(const Col: string): string;
 var
   I: Integer;
-  Stor: Boolean;
+  Big: Boolean;
 begin
   Result := '';
-  Stor := True;
+  Big := True;
   for I := 1 to Length(Col) do
     if Col[I] = '_' then
-      Stor := True
+      Big := True
     else
     begin
-      if Stor then
+      if Big then
         Result := Result + UpCase(Col[I])
       else
         Result := Result + Col[I];
-      Stor := False;
+      Big := False;
     end;
 end;
 
@@ -705,7 +705,7 @@ end;
 
 { --------------------------------------------- comptime: typesjekk + emit -- }
 
-function KolonneKind(T: TDbTable; const Col: string; Line: Integer): TRunKind;
+function ColumnKind(T: TDbTable; const Col: string; Line: Integer): TRunKind;
 var
   Idx, I: Integer;
   C: TDbColumn;
@@ -717,11 +717,11 @@ begin
     SetLength(Name, T.ColumnCount);
     for I := 0 to T.ColumnCount - 1 do
       Name[I] := T.Column(I).Name;
-    Feil(Line, Format('table "%s" has no column "%s".%s',
-      [T.Name, Col, IfThenTekst(Mente(Col, Name))]));
+    Err(Line, Format('table "%s" has no column "%s".%s',
+      [T.Name, Col, IfThenText(Mente(Col, Name))]));
   end;
   C := T.Column(Idx);
-  Result := KindFraSql(C.SqlType, C.Scale);
+  Result := KindFromSql(C.SqlType, C.Scale);
 end;
 
 function ParamKind(const Q: TQueryDecl; const Name: string;
@@ -736,20 +736,20 @@ begin
   SetLength(Kandidater, Length(Q.Params));
   for I := 0 to High(Q.Params) do
     Kandidater[I] := Q.Params[I].Name;
-  Feil(Line, Format('"%s" is neither a parameter nor a value.%s',
-    [Name, IfThenTekst(Mente(Name, Kandidater))]));
+  Err(Line, Format('"%s" is neither a parameter nor a value.%s',
+    [Name, IfThenText(Mente(Name, Kandidater))]));
   Result := rkText;
 end;
 
 { Den avgjørende sjekken. Typen på venstresiden kommer fra databasen, typen
   på høyresiden fra kilden — og de må stemme. Det er dette Pascal ikke kan
   gjøre uten enten kodegenerering eller tjueen overlastinger. }
-procedure SjekkSammenlikning(T: TDbTable; const Q: TQueryDecl;
+procedure CheckComparison(T: TDbTable; const Q: TQueryDecl;
   const W: TCmp);
 var
   Venstre, Hoyre: TRunKind;
 begin
-  Venstre := KolonneKind(T, W.Col, W.Line);
+  Venstre := ColumnKind(T, W.Col, W.Line);
   if W.IsParam then
     Hoyre := ParamKind(Q, W.Operand, W.Line)
   else
@@ -762,10 +762,10 @@ begin
      (Hoyre in [rkInt, rkMoney, rkFloat]) then
     Exit;
 
-  Feil(W.Line, Format(
+  Err(W.Line, Format(
     '"%s" is %s in table %s, but is compared with %s. ' +
     'The schema was read from %s.',
-    [W.Col, KindNavn(Venstre), T.Name, KindNavn(Hoyre), GDsn]));
+    [W.Col, KindName(Venstre), T.Name, KindName(Hoyre), GDsn]));
 end;
 
 { Relasjoner utledes av fremmednøklene i databasen. Ingen erklæring i
@@ -798,32 +798,32 @@ begin
   end;
 end;
 
-function FinnRelasjon(T: TDbTable; const Name: string;
+function FindRelation(T: TDbTable; const Name: string;
   Line: Integer): TRelation;
 var
   Rels: TRelationArray;
   I: Integer;
-  Navn: TStringArray;
+  Name_: TStringArray;
 begin
   Rels := RelasjonerFor(T);
   for I := 0 to High(Rels) do
     if SameText(Rels[I].Name, Name) then
       Exit(Rels[I]);
-  SetLength(Navn, Length(Rels));
+  SetLength(Name_, Length(Rels));
   for I := 0 to High(Rels) do
-    Navn[I] := Rels[I].Name;
-  if Length(Navn) = 0 then
-    Feil(Line, Format('nothing points at %s, so it has no relations to ' +
+    Name_[I] := Rels[I].Name;
+  if Length(Name_) = 0 then
+    Err(Line, Format('nothing points at %s, so it has no relations to ' +
       'load with "with"', [T.Name]))
   else
-    Feil(Line, Format('%s has no relation "%s".%s',
-      [T.Name, Name, IfThenTekst(Mente(Name, Navn))]));
+    Err(Line, Format('%s has no relation "%s".%s',
+      [T.Name, Name, IfThenText(Mente(Name, Name_))]));
   Result.Name := '';
 end;
 
 { Modellnavnet for en tabell, slik at en relasjon kan peke på en radtype
   som faktisk blir skrevet ut. }
-function ModellForTabell(const Table: string): string;
+function ModelForTable(const Table: string): string;
 var
   I: Integer;
 begin
@@ -839,9 +839,9 @@ end;
   vei av fremmednøklene, så rekkefølgen følger av skjemaet — og en syklus
   mellom to tabeller er en ekte begrensning som må sies fra om, ikke skjules.
   Dybdeførst med de tre vanlige markørene. }
-procedure SorterModeller(out Rekkefolge: TStringArray);
+procedure SortModels(out Order_: TStringArray);
 var
-  Merke: array of Byte;   { 0 urørt, 1 under arbeid, 2 ferdig }
+  Mark: array of Byte;   { 0 urørt, 1 under arbeid, 2 ferdig }
   Ut: TStringArray;
 
   function IndeksFor(const Name: string): Integer;
@@ -861,21 +861,21 @@ var
     K, D: Integer;
     RelModel: string;
   begin
-    if Merke[Idx] = 2 then
+    if Mark[Idx] = 2 then
       Exit;
-    if Merke[Idx] = 1 then
-      Feil(GModels[Idx].Line, Format(
+    if Mark[Idx] = 1 then
+      Err(GModels[Idx].Line, Format(
         'the models form a relation cycle through "%s". Pascal records ' +
         'cannot reference each other, so one of the relations has to go.',
         [GModels[Idx].Name]));
-    Merke[Idx] := 1;
+    Mark[Idx] := 1;
     T := GSchema.Table(GModels[Idx].Table);
     if T <> nil then
     begin
       Rels := RelasjonerFor(T);
       for K := 0 to High(Rels) do
       begin
-        RelModel := ModellForTabell(Rels[K].Table);
+        RelModel := ModelForTable(Rels[K].Table);
         if RelModel = '' then
           Continue;
         D := IndeksFor(RelModel);
@@ -883,7 +883,7 @@ var
           Besok(D);
       end;
     end;
-    Merke[Idx] := 2;
+    Mark[Idx] := 2;
     SetLength(Ut, Length(Ut) + 1);
     Ut[High(Ut)] := GModels[Idx].Name;
   end;
@@ -891,11 +891,11 @@ var
 var
   I: Integer;
 begin
-  SetLength(Merke, Length(GModels));
+  SetLength(Mark, Length(GModels));
   Ut := nil;
   for I := 0 to High(GModels) do
     Besok(I);
-  Rekkefolge := Ut;
+  Order_ := Ut;
 end;
 
 { Monomorfisering. En generisk spørring blir én konkret per modell i
@@ -949,11 +949,11 @@ begin
     K := ParamKind(Q, W.Operand, W.Line);
     case K of
       rkFloat: Result := Format('DbParam(A, FloatToSql(%s))',
-        [PascalNavn(W.Operand)]);
+        [PascalName(W.Operand)]);
       rkTime: Result := Format('DbParamDateTime(A, %s)',
-        [PascalNavn(W.Operand)]);
+        [PascalName(W.Operand)]);
     else
-      Result := Format('DbParam(A, %s)', [PascalNavn(W.Operand)]);
+      Result := Format('DbParam(A, %s)', [PascalName(W.Operand)]);
     end;
     Exit;
   end;
@@ -966,7 +966,7 @@ begin
   end;
 end;
 
-function KolonneListe(T: TDbTable): string;
+function ColumnList(T: TDbTable): string;
 var
   I: Integer;
 begin
@@ -987,12 +987,12 @@ var
   Rel: TRelation;
   RelModel: string;
 begin
-  T := TabellFor(Q.ModelName, Q.Line);
+  T := TableFor(Q.ModelName, Q.Line);
   RowType := 'T' + Q.ModelName + 'Row';
 
   Args := '';
   for I := 0 to High(Q.Params) do
-    Args := Args + '; ' + PascalNavn(Q.Params[I].Name) + ': ' +
+    Args := Args + '; ' + PascalName(Q.Params[I].Name) + ': ' +
       PascalType(Q.Params[I].Kind);
   if Q.Single then
   begin
@@ -1010,7 +1010,7 @@ begin
     Exit;
   end;
 
-  Sql := 'SELECT ' + KolonneListe(T) + ' FROM ' + SiterIdent(T.Name);
+  Sql := 'SELECT ' + ColumnList(T) + ' FROM ' + SiterIdent(T.Name);
 
   PNo := 0;
   Bind := '';
@@ -1019,7 +1019,7 @@ begin
     Sql := Sql + ' WHERE ';
     for I := 0 to High(Q.Wheres) do
     begin
-      SjekkSammenlikning(T, Q, Q.Wheres[I]);
+      CheckComparison(T, Q, Q.Wheres[I]);
       if I > 0 then Sql := Sql + ' AND ';
       Sql := Sql + SiterIdent(Q.Wheres[I].Col) + ' ';
       if Q.Wheres[I].HasOperand then
@@ -1039,7 +1039,7 @@ begin
     Sql := Sql + ' ORDER BY ';
     for I := 0 to High(Q.Orders) do
     begin
-      KolonneKind(T, Q.Orders[I].Col, Q.Orders[I].Line);
+      ColumnKind(T, Q.Orders[I].Col, Q.Orders[I].Line);
       if I > 0 then Sql := Sql + ', ';
       Sql := Sql + SiterIdent(Q.Orders[I].Col);
       if Q.Orders[I].Desc then Sql := Sql + ' DESC';
@@ -1090,10 +1090,10 @@ begin
     eget nøkkelord. }
   for I := 0 to High(Q.Withs) do
   begin
-    Rel := FinnRelasjon(T, Q.Withs[I], Q.Line);
-    RelModel := ModellForTabell(Rel.Table);
+    Rel := FindRelation(T, Q.Withs[I], Q.Line);
+    RelModel := ModelForTable(Rel.Table);
     if RelModel = '' then
-      Feil(Q.Line, Format('the relation "%s" points at table %s, which has ' +
+      Err(Q.Line, Format('the relation "%s" points at table %s, which has ' +
         'no model. Add: model <Name> from %s',
         [Rel.Name, Rel.Table, Rel.Table]));
     RT := GSchema.Table(Rel.Table);
@@ -1108,22 +1108,22 @@ begin
     Ut.Add('    begin');
     Ut.Add('      if I > 0 then Ids.Append('','');');
     Ut.Add('      Ids.Append(IntToStr(Rows[I].' +
-           PascalNavn(Rel.LocalKey) + '));');
+           PascalName(Rel.LocalKey) + '));');
     Ut.Add('    end;');
     Ut.Add('    RR := C.Exec(A,');
-    Ut.Add('      ' + QuotedStr('SELECT ' + KolonneListe(RT) + ' FROM ' +
+    Ut.Add('      ' + QuotedStr('SELECT ' + ColumnList(RT) + ' FROM ' +
            SiterIdent(RT.Name) + ' WHERE ' + SiterIdent(Rel.ForeignKey) +
            ' IN (') + ' + Ids.ToString + '')'');');
     Ut.Add('    for I := 0 to High(Rows) do');
     Ut.Add('      for J := 0 to RR.RowCount - 1 do');
-    Ut.Add('        if Rows[I].' + PascalNavn(Rel.LocalKey) +
+    Ut.Add('        if Rows[I].' + PascalName(Rel.LocalKey) +
            ' = StrToInt64Def(RR.Value(J, ' +
            IntToStr(RT.IndexOfColumn(Rel.ForeignKey)) + ').ToString, -1) then');
     Ut.Add('        begin');
-    Ut.Add('          SetLength(Rows[I].' + PascalNavn(Rel.Name) + ',');
-    Ut.Add('            Length(Rows[I].' + PascalNavn(Rel.Name) + ') + 1);');
-    Ut.Add('          Rows[I].' + PascalNavn(Rel.Name) +
-           '[High(Rows[I].' + PascalNavn(Rel.Name) + ')] :=');
+    Ut.Add('          SetLength(Rows[I].' + PascalName(Rel.Name) + ',');
+    Ut.Add('            Length(Rows[I].' + PascalName(Rel.Name) + ') + 1);');
+    Ut.Add('          Rows[I].' + PascalName(Rel.Name) +
+           '[High(Rows[I].' + PascalName(Rel.Name) + ')] :=');
     Ut.Add('            Read' + RelModel + 'Row(RR, J);');
     Ut.Add('        end;');
     Ut.Add('  end;');
@@ -1155,16 +1155,16 @@ begin
     for I := 0 to T.ColumnCount - 1 do
     begin
       C := T.Column(I);
-      K := KindFraSql(C.SqlType, C.Scale);
+      K := KindFromSql(C.SqlType, C.Scale);
       Ut.Add(Format('    %s: %s;   { %s }',
-        [PascalNavn(C.Name), PascalType(K), C.SqlType]));
+        [PascalName(C.Name), PascalType(K), C.SqlType]));
     end;
     for I := 0 to High(Rels) do
     begin
-      RelModel := ModellForTabell(Rels[I].Table);
+      RelModel := ModelForTable(Rels[I].Table);
       if RelModel <> '' then
         Ut.Add(Format('    %s: T%sRowArray;   { %s.%s }',
-          [PascalNavn(Rels[I].Name), RelModel, Rels[I].Table,
+          [PascalName(Rels[I].Name), RelModel, Rels[I].Table,
            Rels[I].ForeignKey]));
     end;
     Ut.Add('  end;');
@@ -1181,21 +1181,21 @@ begin
   for I := 0 to T.ColumnCount - 1 do
   begin
     C := T.Column(I);
-    K := KindFraSql(C.SqlType, C.Scale);
+    K := KindFromSql(C.SqlType, C.Scale);
     case K of
       rkInt: Ut.Add(Format('  SqlToInt64(R.Value(Row, %d), Row_.%s);',
-        [I, PascalNavn(C.Name)]));
+        [I, PascalName(C.Name)]));
       rkBool: Ut.Add(Format('  SqlToBool(R.Value(Row, %d), Row_.%s);',
-        [I, PascalNavn(C.Name)]));
+        [I, PascalName(C.Name)]));
       rkMoney: Ut.Add(Format('  SqlToCurrency(R.Value(Row, %d), Row_.%s);',
-        [I, PascalNavn(C.Name)]));
+        [I, PascalName(C.Name)]));
       rkFloat: Ut.Add(Format('  SqlToFloat(R.Value(Row, %d), Row_.%s);',
-        [I, PascalNavn(C.Name)]));
+        [I, PascalName(C.Name)]));
       rkTime: Ut.Add(Format('  SqlToDateTime(R.Value(Row, %d), Row_.%s);',
-        [I, PascalNavn(C.Name)]));
+        [I, PascalName(C.Name)]));
     else
       Ut.Add(Format('  Row_.%s := R.Value(Row, %d).ToString;',
-        [PascalNavn(C.Name), I]));
+        [PascalName(C.Name), I]));
     end;
   end;
   Ut.Add('  Result := Row_;');
@@ -1215,9 +1215,9 @@ end;
 
 { Som engangsprogram spilte global tilstand ingen rolle — prosessen døde
   etter én oversettelse. Som unit kalles Transpile én gang per .run-fil, og
-  da må alt nullstilles først. Uten dette arver fil nummer to modellene fra
+  da må alt nullstilles først. Without dette arver fil nummer to modellene fra
   fil nummer én, og feilmeldingene blir meningsløse. }
-procedure Nullstill;
+procedure ResetState;
 begin
   GSrc := '';
   GPos := 1;
@@ -1238,32 +1238,32 @@ end;
 
 function Transpile(const InFile, OutFile, UnitName: string): TRunStats;
 var
-  Kilde: TStringList;
+  Source_: TStringList;
   Ut: TStringList;
   I: Integer;
-  T0, TLest, TSkjema, TEmit: Int64;
+  T0, TWasRead, TSkjema, TEmit: Int64;
   Orden: TStringArray;
 begin
-  Nullstill;
+  ResetState;
   T0 := MonotonicMs;
   GFile := InFile;
-  Kilde := TStringList.Create;
+  Source_ := TStringList.Create;
   Ut := TStringList.Create;
   try
-    Kilde.LoadFromFile(InFile);
-    Parse(Kilde.Text);
-    TLest := MonotonicMs - T0;
+    Source_.LoadFromFile(InFile);
+    Parse(Source_.Text);
+    TWasRead := MonotonicMs - T0;
 
     { **Comptime.** Databasen åpnes mens kilden oversettes, og skjemaet
       leses derfra. Ingenting av dette finnes på disk etterpå. }
     GConn := OpenDbConnection(GDsn);
     GDialect := GConn.Dialect;
     GSchema := IntrospectSchema(GConn);
-    TSkjema := MonotonicMs - T0 - TLest;
+    TSkjema := MonotonicMs - T0 - TWasRead;
 
     for I := 0 to High(GModels) do
       if GSchema.Table(GModels[I].Table) = nil then
-        TabellFor(GModels[I].Name, GModels[I].Line);
+        TableFor(GModels[I].Name, GModels[I].Line);
 
     Ut.Add('{ GENERATED BY askr build (Rún) — DO NOT EDIT.');
     Ut.Add('');
@@ -1280,7 +1280,7 @@ begin
     Ut.Add('  SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Urd.Driver;');
     Ut.Add('');
     Ut.Add('type');
-    SorterModeller(Orden);
+    SortModels(Orden);
     for I := 0 to High(Orden) do
       EmitRowType(Ut, GModels[ModellIndeks(Orden[I])], True);
     Monomorfiser;
@@ -1297,12 +1297,12 @@ begin
 
     ForceDirectories(ExtractFilePath(OutFile));
     Ut.SaveToFile(OutFile);
-    TEmit := MonotonicMs - T0 - TLest - TSkjema;
+    TEmit := MonotonicMs - T0 - TWasRead - TSkjema;
 
     Result.Models := Length(GModels);
     Result.Queries := Length(GConcrete);
     Result.Dialect := Copy(GDsn, 1, Pos(':', GDsn) - 1);
-    Result.ParseMs := TLest;
+    Result.ParseMs := TWasRead;
     Result.SchemaMs := TSkjema;
     Result.EmitMs := TEmit;
     Result.TotalMs := MonotonicMs - T0;
@@ -1310,7 +1310,7 @@ begin
     GSchema.Free;
     GConn.Free;
     Ut.Free;
-    Kilde.Free;
+    Source_.Free;
   end;
 end;
 

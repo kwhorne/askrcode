@@ -16,7 +16,7 @@
     * Verdien kalleren får, dør med requesten. Den kan ikke ved et uhell bli
       liggende og peke inn i cachen etter at låsen er sluppet.
 
-  Med en arena som bare er en konvensjon ville begge deler vært opp til den
+  With_ en arena som bare er en konvensjon ville begge deler vært opp til den
   som skriver kontrolleren. Her er de umulige å gjøre feil.
 
   Låsene er delt i shards. Én lås for hele cachen ville serialisert alle
@@ -158,7 +158,7 @@ var
   I, N, PerShard, Buckets: Integer;
 begin
   inherited Create;
-  { Antall shards rundes opp til en toerpotens, slik at valget blir en
+  { Count_ shards rundes opp til en toerpotens, slik at valget blir en
     maskering og ikke en divisjon. }
   N := 1;
   while N < AShards do

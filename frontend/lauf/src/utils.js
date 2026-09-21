@@ -2,13 +2,14 @@ import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
 /**
- * Slår sammen klassenavn slik at den som bruker komponenten vinner.
+ * Merges class names so that whoever uses the component wins.
  *
- * Dette er ikke pynt. Tailwind-klasser har lik spesifisitet, så når to av
- * dem styrer det samme — `w-auto` fra komponenten og `w-full` fra appen —
- * er det rekkefølgen i stilarket som avgjør, ikke rekkefølgen i
- * class-attributtet. Uten tailwind-merge kan en app altså ikke overstyre
- * noe som helst, og det ser ut som en tilfeldighet når man treffer det.
+ * This is not decoration. Tailwind classes all have the same specificity,
+ * so when two of them control the same thing — `w-auto` from the
+ * component and `w-full` from the app — the order in the stylesheet
+ * decides, not the order in the class attribute. Without tailwind-merge
+ * an app cannot override anything at all, and it looks like an accident
+ * when you run into it.
  *
  * @param {...any} inputs
  * @returns {string}

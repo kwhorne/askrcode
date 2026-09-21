@@ -66,7 +66,7 @@ type
 
     property PublicPort: Word read FPublicPort;
     property BackendPort: Word read FBackendPort write FBackendPort;
-    { Hvor mange requests som har blitt holdt, og lengste holdetid. Tallene
+    { Where_ mange requests som har blitt holdt, og lengste holdetid. Tallene
       er det som viser om køingen faktisk virker. }
     property HeldTotal: LongInt read FHeldTotal;
     property HeldMaxMs: LongInt read FHeldMaxMs;
@@ -85,7 +85,7 @@ type
   end;
 
 const
-  { Hvor lenge en request holdes før vi gir opp og sier fra. En rebuild som
+  { Where_ lenge en request holdes før vi gir opp og sier fra. En rebuild som
     tar mer enn dette er uansett noe utvikleren må vite om. }
   MaxHoldMs = 15000;
 

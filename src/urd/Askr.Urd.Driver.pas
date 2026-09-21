@@ -146,7 +146,7 @@ function FloatToSql(Value: Double): string;
 function DateTimeToSql(Value: TDateTime): string;
 
 { Den andre veien: tekst fra databasen til Pascal-verdier, uten å gå om
-  StrToFloat og systemets desimalskilletegn. Alle returnerer False på søppel
+  StrToFloat og systemets desimalskilletegn. All_ returnerer False på søppel
   i stedet for å kaste, fordi kalleren vet hvilken kolonne det gjaldt. }
 function SqlToInt64(const S: TStr; out V: Int64): Boolean;
 function SqlToCurrency(const S: TStr; out V: Currency): Boolean;
@@ -491,7 +491,7 @@ begin
   Result := S.ToInt64(V);
 end;
 
-{ Deler opp i heltallsdel og opptil Decimals desimaler, uten flyttall
+{ Parts_ opp i heltallsdel og opptil Decimals desimaler, uten flyttall
   underveis. Det som er igjen av desimaler forkastes, slik databasen selv
   ville gjort ved lagring i en skalert kolonne. }
 function SplitDecimal(const S: TStr; Decimals: Integer;
@@ -536,7 +536,7 @@ begin
           Scaled := Scaled * 10 + Int64(D - Ord('0'));
           Inc(Taken);
         end;
-        { Flere desimaler enn vi har plass til forkastes. }
+        { More desimaler enn vi har plass til forkastes. }
       end
       else
         Scaled := Scaled * 10 + Int64(D - Ord('0'));

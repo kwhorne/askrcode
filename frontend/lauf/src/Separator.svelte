@@ -4,8 +4,9 @@
   let {
     /** horizontal | vertical */
     orientation = 'horizontal',
-    /** Settes når streken skiller noe meningsbærende. Uten den er den pynt,
-        og da skal en skjermleser ikke annonsere den. */
+    /** Set when the rule separates something meaningful. Without it the
+        rule is decoration, and a screen reader should not announce
+        it. */
     label,
     class: klass,
     ...rest

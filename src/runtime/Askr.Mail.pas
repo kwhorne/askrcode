@@ -139,9 +139,9 @@ type
     tilfeller, og fordi et opplegg som stille faller tilbake til klartekst
     er verre enn et som sier fra. Vil man ha klartekst, sier man det. }
   TSmtpSecurity = (
-    { Ingen kryptering. Til en lokal relé på loopback, og ikke ellers. }
+    { Ingen kryptering. To_ en lokal relé på loopback, og ikke ellers. }
     smtpPlain,
-    { Krev STARTTLS. Tilbyr ikke serveren det, avbrytes sendingen. }
+    { Expect STARTTLS. Tilbyr ikke serveren det, avbrytes sendingen. }
     smtpStartTls,
     { TLS fra første byte, uten klartekstfase. Vanligvis port 465. }
     smtpTlsDirect);
@@ -214,7 +214,7 @@ type
 function Mail: TMailer;
 procedure SetMail(AMailer: TMailer);
 
-{ Adressen slik den skal stå i et hode: «Navn» <adresse>, eller bare
+{ Adressen slik den skal stå i et hode: «Name_» <adresse>, eller bare
   adressen. Eksportert fordi transporter utenfor uniten trenger nøyaktig
   den samme siteringen — et komma i et usitert navn deler adressefeltet i
   to, og da får feil person e-posten. }
@@ -406,7 +406,7 @@ function TMailMessage.Render: string;
 var
   A: TArena;
   B: TStrBuilder;
-  Grense: string;
+  Boundary: string;
   I: Integer;
 begin
   if FFrom.Address = '' then
@@ -436,18 +436,18 @@ begin
 
     if (FHtml <> '') and (FText <> '') then
     begin
-      Grense := Format('askr-%d-%d', [UnixNow, Random(1000000)]);
+      Boundary := Format('askr-%d-%d', [UnixNow, Random(1000000)]);
       B.Append('Content-Type: multipart/alternative; boundary="' +
-        Grense + '"'#13#10#13#10);
-      B.Append('--' + Grense + #13#10);
+        Boundary + '"'#13#10#13#10);
+      B.Append('--' + Boundary + #13#10);
       B.Append('Content-Type: text/plain; charset=utf-8'#13#10);
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
       B.Append(FText + #13#10#13#10);
-      B.Append('--' + Grense + #13#10);
+      B.Append('--' + Boundary + #13#10);
       B.Append('Content-Type: text/html; charset=utf-8'#13#10);
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
       B.Append(FHtml + #13#10#13#10);
-      B.Append('--' + Grense + '--'#13#10);
+      B.Append('--' + Boundary + '--'#13#10);
     end
     else if FHtml <> '' then
     begin
@@ -478,14 +478,14 @@ end;
 procedure TLogTransport.Send(M: TMailMessage);
 var
   L: TStringList;
-  Tekst: string;
+  Text_: string;
 begin
-  Tekst := '=== ' + FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) +
+  Text_ := '=== ' + FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) +
     ' ===' + LineEnding + M.Render + LineEnding;
   Inc(FCount);
   if FPath = '' then
   begin
-    Write(Tekst);
+    Write(Text_);
     Exit;
   end;
   { Katalogen lages. En loggtransport som feiler fordi storage/ ikke
@@ -496,7 +496,7 @@ begin
   try
     if FileExists(FPath) then
       L.LoadFromFile(FPath);
-    L.Add(Tekst);
+    L.Add(Text_);
     L.SaveToFile(FPath);
   finally
     L.Free;
@@ -547,26 +547,26 @@ end;
 
 function TSmtpTransport.Describe: string;
 const
-  Navn: array[TSmtpSecurity] of string =
+  Name_: array[TSmtpSecurity] of string =
     ('uten TLS', 'STARTTLS', 'TLS');
 begin
-  Result := Format('smtp %s:%d (%s)', [FHost, FPort, Navn[FSecurity]]);
+  Result := Format('smtp %s:%d (%s)', [FHost, FPort, Name_[FSecurity]]);
   if (FSecurity <> smtpPlain) and not FVerifyPeer then
     Result := Result + ', uverifisert';
 end;
 
 procedure TSmtpTransport.SendLine(const S: string);
 var
-  Linje: string;
+  Line_: string;
 begin
-  Linje := S + #13#10;
+  Line_ := S + #13#10;
   if FTls <> nil then
   begin
-    if not FTls.WriteAll(PChar(Linje), Length(Linje)) then
+    if not FTls.WriteAll(PChar(Line_), Length(Line_)) then
       raise EMailError.Create('SMTP: writing over TLS failed');
   end
   else
-    fpSend(FSock, PChar(Linje), Length(Linje), 0);
+    fpSend(FSock, PChar(Line_), Length(Line_), 0);
 end;
 
 function TSmtpTransport.ReadLine: string;
@@ -591,19 +591,19 @@ end;
 
 function TSmtpTransport.Expect(const Code: string): string;
 var
-  Alle: string;
+  All_: string;
 begin
   { Flerlinjes svar: «250-noe» fortsetter, «250 noe» avslutter. }
-  Alle := '';
+  All_ := '';
   repeat
     Result := ReadLine;
     if Copy(Result, 1, 3) <> Code then
       raise EMailError.CreateFmt('SMTP expected %s, got: %s', [Code, Result]);
-    Alle := Alle + Result + #10;
+    All_ := All_ + Result + #10;
   until (Length(Result) < 4) or (Result[4] <> '-');
   { Hele svaret tas vare på, ikke bare siste linje: det er i de foregående
     linjene serveren lister hva den kan, STARTTLS iberegnet. }
-  FEhlo := Alle;
+  FEhlo := All_;
 end;
 
 function TSmtpTransport.Offers(const Capability: string): Boolean;
@@ -623,7 +623,7 @@ end;
 
 function TSmtpTransport.OffersMechanism(const Mech: string): Boolean;
 var
-  Linjer: TStringList;
+  Lines: TStringList;
   I, P: Integer;
   L: string;
 begin
@@ -631,12 +631,12 @@ begin
     Et rått delstrengsøk ville sagt ja til LOGIN på grunn av XOAUTH2-LOGIN
     eller lignende, så vi leter etter hele ordet på nettopp den linja. }
   Result := False;
-  Linjer := TStringList.Create;
+  Lines := TStringList.Create;
   try
-    Linjer.Text := FEhlo;
-    for I := 0 to Linjer.Count - 1 do
+    Lines.Text := FEhlo;
+    for I := 0 to Lines.Count - 1 do
     begin
-      L := UpperCase(Linjer[I]);
+      L := UpperCase(Lines[I]);
       if (Copy(L, 1, 8) <> '250-AUTH') and (Copy(L, 1, 8) <> '250 AUTH') then
         Continue;
       { Mellomrom rundt, slik at ordet må stå alene. }
@@ -645,7 +645,7 @@ begin
         Exit(True);
     end;
   finally
-    Linjer.Free;
+    Lines.Free;
   end;
 end;
 
@@ -917,20 +917,20 @@ end;
 
 function MailFromConfig: TMailTransport;
 var
-  Navn: string;
+  Name_: string;
   I: Integer;
 begin
-  Navn := LowerCase(Cfg('mail.transport', 'log'));
+  Name_ := LowerCase(Cfg('mail.transport', 'log'));
 
-  if Navn = 'log' then
+  if Name_ = 'log' then
     Exit(TLogTransport.Create(Cfg('mail.log', 'storage/mail.log')));
-  if Navn = 'null' then
+  if Name_ = 'null' then
     Exit(TNullTransport.Create);
-  if Navn = 'smtp' then
+  if Name_ = 'smtp' then
     Exit(SmtpFromConfig);
 
   for I := 0 to High(GFactories) do
-    if GFactories[I].Name_ = Navn then
+    if GFactories[I].Name_ = Name_ then
       Exit(GFactories[I].Factory());
 
   { Ikke fall tilbake til log. En stavefeil i produksjon ville da sett ut
@@ -939,7 +939,7 @@ begin
   raise EMailError.CreateFmt(
     'Unknown mail transport %s. Available: %s. A transport from another ' +
     'unit has to be linked in before it can be named here.',
-    [Navn, KjenteTransporter]);
+    [Name_, KjenteTransporter]);
 end;
 
 initialization

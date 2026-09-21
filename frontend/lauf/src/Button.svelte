@@ -25,9 +25,9 @@
     iconTrailing,
     /** Tvinger kvadratisk form. Settes av seg selv for et ikon uten tekst. */
     square = false,
-    /** Overstyrer spinneren. Uten den følger knappen <Form>. */
+    /** Overrides the spinner. Without it the button follows <Form>. */
     loading,
-    /** Navn på ikonet når knappen er kvadratisk — da er det ingen tekst. */
+    /** Names the icon when the button is square — there is no text then. */
     label,
     type = 'button',
     href,

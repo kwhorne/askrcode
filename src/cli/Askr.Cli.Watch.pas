@@ -43,7 +43,7 @@ type
 
     { Leser inn nåtilstanden uten å rapportere endringer. }
     procedure Prime;
-    { Hva som har endret seg siden forrige kall. ChangedPath settes til den
+    { What som har endret seg siden forrige kall. ChangedPath settes til den
       første fila som utløste det. }
     function Poll(out ChangedPath: string): TWatchKind;
     function FileCount: Integer;

@@ -36,7 +36,7 @@ type
     { Lesbart navn. Utledes fra klassenavnet om den ikke overstyres. }
     class function Title: string; virtual;
     procedure Up(S: TSchemaBuilder); virtual; abstract;
-    { Uten Down er migrasjonen ikke reversibel, og Down vil nekte. }
+    { Without Down er migrasjonen ikke reversibel, og Down vil nekte. }
     procedure Down(S: TSchemaBuilder); virtual;
     class function Reversible: Boolean; virtual;
   end;
@@ -73,7 +73,7 @@ type
     constructor Create(AConn: TDbConnection);
     destructor Destroy; override;
 
-    { Alle registrerte og alle kjørte, slått sammen og sortert. En rad som er
+    { All_ registrerte og alle kjørte, slått sammen og sortert. En rad som er
       kjørt men ikke registrert betyr at en migrasjonsfil er borte. }
     function Status: TMigrationInfoArray;
     function PendingCount: Integer;

@@ -31,31 +31,31 @@ begin
   WriteLn('— ', Name);
 end;
 
-procedure Ok(const Hva: string; Verdi: Boolean);
+procedure Ok(const What: string; Value_: Boolean);
 begin
-  if Verdi then
+  if Value_ then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
   end;
 end;
 
-procedure Like(const Hva, Forventet, Fikk: string);
+procedure Like(const What, Forventet, Fikk: string);
 begin
   if Forventet = Fikk then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Forventet);
     WriteLn('        fikk:      ', Fikk);
   end;
@@ -63,7 +63,7 @@ end;
 
 { ---- en enkel TCP-klient ---- }
 
-function KobleTil(Port: Word): TSocket;
+function ConnectTo(Port: Word): TSocket;
 var
   Addr: TInetSockAddr;
 begin
@@ -80,7 +80,7 @@ begin
 end;
 
 { Sender en HTTP-request over TLS og returnerer hele svaret. }
-function HttpsGet(Port: Word; const Sti: string; Verify: Boolean;
+function HttpsGet(Port: Word; const Path_: string; Verify: Boolean;
   const ServerName: string = 'localhost'): string;
 var
   Ctx: TTlsContext;
@@ -91,7 +91,7 @@ var
   N: Integer;
 begin
   Result := '';
-  Sock := KobleTil(Port);
+  Sock := ConnectTo(Port);
   if Sock < 0 then
     raise Exception.Create('fikk ikke koblet til');
   Ctx := TTlsContext.Create(trClient);
@@ -99,7 +99,7 @@ begin
   try
     Ctx.SetVerifyPeer(Verify);
     C := TTlsConn.Create(Ctx, Sock, ServerName);
-    Req := 'GET ' + Sti + ' HTTP/1.1'#13#10 +
+    Req := 'GET ' + Path_ + ' HTTP/1.1'#13#10 +
            'Host: localhost'#13#10'Connection: close'#13#10#13#10;
     C.WriteAll(PChar(Req), Length(Req));
     repeat
@@ -135,33 +135,33 @@ type
     FCtx: TTlsContext;
     FTls: TTlsConn;
     FSock: TSocket;
-    FTilbyStartTls: Boolean;
+    FOffersStartTls: Boolean;
     FMottatt: string;
     FKrypterteData: Boolean;
-    FFeil: string;
+    FErr: string;
     procedure Si(const S: string);
     { False betyr lukket forbindelse. En tom linje er ikke det samme — i
       DATA er den skillet mellom hode og kropp. }
-    function Les(out Linje: string): Boolean;
+    function Les(out Line_: string): Boolean;
   protected
     procedure Execute; override;
   public
-    constructor Create(ATilbyStartTls: Boolean);
+    constructor Create(AOffersStartTls: Boolean);
     destructor Destroy; override;
     property Port: Word read FPort;
     property Mottatt: string read FMottatt;
     { True hvis DATA-innholdet kom inn over TLS og ikke i klartekst. }
     property KrypterteData: Boolean read FKrypterteData;
-    property Feil: string read FFeil;
+    property Err: string read FErr;
   end;
 
-constructor TFakeSmtp.Create(ATilbyStartTls: Boolean);
+constructor TFakeSmtp.Create(AOffersStartTls: Boolean);
 var
   Addr: TInetSockAddr;
   Len: TSockLen;
   Ja: Integer;
 begin
-  FTilbyStartTls := ATilbyStartTls;
+  FOffersStartTls := AOffersStartTls;
   FSock := -1;
   FListen := fpSocket(AF_INET, SOCK_STREAM, 0);
   Ja := 1;
@@ -198,12 +198,12 @@ begin
     fpSend(FSock, PChar(L), Length(L), 0);
 end;
 
-function TFakeSmtp.Les(out Linje: string): Boolean;
+function TFakeSmtp.Les(out Line_: string): Boolean;
 var
   C: Char;
   N: Integer;
 begin
-  Linje := '';
+  Line_ := '';
   repeat
     if FTls <> nil then
       N := FTls.Read(@C, 1)
@@ -214,7 +214,7 @@ begin
     if C = #10 then
       Break;
     if C <> #13 then
-      Linje := Linje + C;
+      Line_ := Line_ + C;
   until False;
   Result := True;
 end;
@@ -223,7 +223,7 @@ procedure TFakeSmtp.Execute;
 var
   Addr: TInetSockAddr;
   Len: TSockLen;
-  Linje: string;
+  Line_: string;
   IData: Boolean;
 begin
   Len := SizeOf(Addr);
@@ -235,44 +235,44 @@ begin
     Si('220 fake ESMTP');
     IData := False;
     repeat
-      if not Les(Linje) then
+      if not Les(Line_) then
         Break;
       if IData then
       begin
-        if Linje = '.' then
+        if Line_ = '.' then
         begin
           IData := False;
           Si('250 OK');
         end
         else
-          FMottatt := FMottatt + Linje + #10;
+          FMottatt := FMottatt + Line_ + #10;
         Continue;
       end;
-      if Copy(Linje, 1, 4) = 'EHLO' then
+      if Copy(Line_, 1, 4) = 'EHLO' then
       begin
         Si('250-fake');
-        if FTilbyStartTls and (FTls = nil) then
+        if FOffersStartTls and (FTls = nil) then
           Si('250-STARTTLS');
         Si('250 SIZE 10240000');
       end
-      else if Linje = 'STARTTLS' then
+      else if Line_ = 'STARTTLS' then
       begin
         Si('220 klar');
         FCtx := TTlsContext.Create(trServer);
         FCtx.UseCertificate(CertDir + 'cert.pem', CertDir + 'key.pem');
         FTls := TTlsConn.Create(FCtx, FSock);
       end
-      else if Copy(Linje, 1, 4) = 'MAIL' then
+      else if Copy(Line_, 1, 4) = 'MAIL' then
         Si('250 OK')
-      else if Copy(Linje, 1, 4) = 'RCPT' then
+      else if Copy(Line_, 1, 4) = 'RCPT' then
         Si('250 OK')
-      else if Linje = 'DATA' then
+      else if Line_ = 'DATA' then
       begin
         Si('354 kom igjen');
         IData := True;
         FKrypterteData := FTls <> nil;
       end
-      else if Linje = 'QUIT' then
+      else if Line_ = 'QUIT' then
       begin
         Si('221 farvel');
         Break;
@@ -281,7 +281,7 @@ begin
         Si('250 OK');
     until Terminated;
    except
-     on E: Exception do FFeil := E.ClassName + ': ' + E.Message;
+     on E: Exception do FErr := E.ClassName + ': ' + E.Message;
    end;
   finally
     CloseSocket(FSock);
@@ -303,34 +303,34 @@ end;
 procedure TestSertifikatfeil;
 var
   Ctx: TTlsContext;
-  Melding: string;
+  Message_: string;
 begin
   Start('sertifikatfeil');
 
   Ctx := TTlsContext.Create(trServer);
   try
-    Melding := '';
+    Message_ := '';
     try
       Ctx.UseCertificate(CertDir + 'finnesikke.pem', CertDir + 'key.pem');
     except
-      on E: Exception do Melding := E.Message;
+      on E: Exception do Message_ := E.Message;
     end;
-    Ok('manglende fil nevner stien', Pos('finnesikke.pem', Melding) > 0);
+    Ok('manglende fil nevner stien', Pos('finnesikke.pem', Message_) > 0);
   finally
     Ctx.Free;
   end;
 
   Ctx := TTlsContext.Create(trServer);
   try
-    Melding := '';
+    Message_ := '';
     try
       { Sertifikat og nøkkel fra hvert sitt par. OpenSSL oppdager det,
         men bare hvis noen spør — derfor check_private_key i UseCertificate. }
       Ctx.UseCertificate(CertDir + 'cert.pem', CertDir + 'other-key.pem');
     except
-      on E: Exception do Melding := E.Message;
+      on E: Exception do Message_ := E.Message;
     end;
-    Ok('nøkkel som ikke passer avvises ved oppstart', Melding <> '');
+    Ok('nøkkel som ikke passer avvises ved oppstart', Message_ <> '');
   finally
     Ctx.Free;
   end;
@@ -340,8 +340,8 @@ procedure TestHttps;
 var
   Srv: TAskrServer;
   Opts: TServerOptions;
-  Svar: string;
-  Feil: string;
+  Reply: string;
+  Err: string;
   Sock: TSocket;
   Req: string;
   Buf: array[0..255] of Byte;
@@ -362,40 +362,40 @@ begin
     Srv.Start;
     Ok('serveren melder at den bruker TLS', Srv.UsesTls);
 
-    Svar := HttpsGet(Srv.BoundPort, '/hei', False);
-    Ok('svaret er 200', Pos('200 OK', Svar) > 0);
-    Ok('kroppen kom fram', Pos('hallo over tls', Svar) > 0);
+    Reply := HttpsGet(Srv.BoundPort, '/hei', False);
+    Ok('svaret er 200', Pos('200 OK', Reply) > 0);
+    Ok('kroppen kom fram', Pos('hallo over tls', Reply) > 0);
 
-    Svar := HttpsGet(Srv.BoundPort, '/borte', False);
-    Ok('404 virker også', Pos('404', Svar) > 0);
+    Reply := HttpsGet(Srv.BoundPort, '/borte', False);
+    Ok('404 virker også', Pos('404', Reply) > 0);
 
     { Verifisering påslått mot et selvsignert sertifikat skal feile.
-      Uten denne testen kunne SetVerifyPeer vært en tom prosedyre. }
-    Feil := '';
+      Without denne testen kunne SetVerifyPeer vært en tom prosedyre. }
+    Err := '';
     try
       HttpsGet(Srv.BoundPort, '/hei', True);
     except
-      on E: Exception do Feil := E.Message;
+      on E: Exception do Err := E.Message;
     end;
-    Ok('selvsignert avvises når verifisering er på', Feil <> '');
+    Ok('selvsignert avvises når verifisering er på', Err <> '');
 
     { Klartekst mot en TLS-port skal ikke gi et HTTP-svar. Poenget er at
       det ikke finnes en stille nedgradering. }
-    Sock := KobleTil(Srv.BoundPort);
+    Sock := ConnectTo(Srv.BoundPort);
     Req := 'GET /hei HTTP/1.1'#13#10'Host: x'#13#10#13#10;
     fpSend(Sock, PChar(Req), Length(Req), 0);
     N := fpRecv(Sock, @Buf[0], SizeOf(Buf), 0);
-    Svar := '';
+    Reply := '';
     if N > 0 then
-      Svar := Copy(PChar(@Buf[0]), 1, N);
+      Reply := Copy(PChar(@Buf[0]), 1, N);
     CloseSocket(Sock);
-    Ok('klartekst mot TLS-port gir ikke HTTP', Pos('HTTP/1.1 200', Svar) = 0);
+    Ok('klartekst mot TLS-port gir ikke HTTP', Pos('HTTP/1.1 200', Reply) = 0);
 
     { Og serveren skal fortsatt leve etterpå. En mislykket klient er ikke
       en grunn til å ta ned en worker. }
-    Svar := HttpsGet(Srv.BoundPort, '/hei', False);
+    Reply := HttpsGet(Srv.BoundPort, '/hei', False);
     Ok('serveren svarer fortsatt etter et mislykket håndtrykk',
-      Pos('hallo over tls', Svar) > 0);
+      Pos('hallo over tls', Reply) > 0);
   finally
     Srv.Stop;
     Srv.Free;
@@ -415,7 +415,7 @@ var
   Opts: TServerOptions;
   K: THttpClient;
   R: THttpResponse;
-  Base, Feil: string;
+  Base, Err: string;
 begin
   Start('http-klienten over tls');
 
@@ -433,16 +433,16 @@ begin
     Srv.Start;
     Base := Format('https://127.0.0.1:%d', [Srv.BoundPort]);
 
-    { Med verifisering på skal et selvsignert sertifikat avvises. }
-    Feil := '';
+    { With_ verifisering på skal et selvsignert sertifikat avvises. }
+    Err := '';
     try
       K.Get(Base + '/hei');
     except
-      on E: Exception do Feil := E.Message;
+      on E: Exception do Err := E.Message;
     end;
-    Ok('et selvsignert sertifikat avvises som standard', Feil <> '');
+    Ok('et selvsignert sertifikat avvises som standard', Err <> '');
     Ok('og meldingen nevner håndtrykket',
-      Pos('handshake', LowerCase(Feil)) > 0);
+      Pos('handshake', LowerCase(Err)) > 0);
 
     { Insecure slår det av — og logger en advarsel hver gang. }
     SetLogLevel(llNone);
@@ -466,7 +466,7 @@ procedure TestServerKrevererBegge;
 var
   Srv: TAskrServer;
   Opts: TServerOptions;
-  Melding: string;
+  Message_: string;
 begin
   Start('halvt oppsett');
   Opts := DefaultServerOptions;
@@ -476,14 +476,14 @@ begin
   Opts.TlsKeyFile := '';
   Srv := TAskrServer.Create(Opts);
   try
-    Melding := '';
+    Message_ := '';
     try
       Srv.Start;
     except
-      on E: Exception do Melding := E.Message;
+      on E: Exception do Message_ := E.Message;
     end;
     Ok('bare sertifikat uten nøkkel stoppes ved oppstart',
-      Pos('only one is set', Melding) > 0);
+      Pos('only one is set', Message_) > 0);
   finally
     Srv.Stop;
     Srv.Free;
@@ -495,7 +495,7 @@ var
   Fake: TFakeSmtp;
   T: TSmtpTransport;
   M: TMailMessage;
-  Melding: string;
+  Message_: string;
 begin
   Start('smtp starttls');
 
@@ -510,21 +510,21 @@ begin
       M := TMailMessage.Create;
       M.From('avsender@example.com').AddTo('mottaker@example.com')
        .Subject('kryptert').Text('hemmelig innhold');
-      Melding := '';
+      Message_ := '';
       try
         T.Send(M);
       except
-        on E: Exception do Melding := E.ClassName + ': ' + E.Message;
+        on E: Exception do Message_ := E.ClassName + ': ' + E.Message;
       end;
       M.Free;
-      if Melding <> '' then
-        WriteLn('        klientfeil: ', Melding);
+      if Message_ <> '' then
+        WriteLn('        klientfeil: ', Message_);
     finally
       T.Free;
     end;
     Fake.WaitFor;
-    if Fake.Feil <> '' then
-      WriteLn('        serverfeil: ', Fake.Feil);
+    if Fake.Err <> '' then
+      WriteLn('        serverfeil: ', Fake.Err);
     Ok('meldingen kom fram', Pos('hemmelig innhold', Fake.Mottatt) > 0);
     Ok('DATA gikk over TLS, ikke klartekst', Fake.KrypterteData);
     Ok('emnet kom med', Pos('Subject: kryptert', Fake.Mottatt) > 0);
@@ -537,17 +537,17 @@ begin
   try
     T := TSmtpTransport.Create('127.0.0.1', Fake.Port, smtpStartTls);
     try
-      Melding := '';
+      Message_ := '';
       M := TMailMessage.Create;
       M.From('a@example.com').AddTo('b@example.com').Subject('x').Text('y');
       try
         T.Send(M);
       except
-        on E: Exception do Melding := E.Message;
+        on E: Exception do Message_ := E.Message;
       end;
       M.Free;
-      Ok('server uten STARTTLS gir feil', Pos('does not offer STARTTLS', Melding) > 0);
-      Ok('feilen sier hva man gjør i stedet', Pos('smtpPlain', Melding) > 0);
+      Ok('server uten STARTTLS gir feil', Pos('does not offer STARTTLS', Message_) > 0);
+      Ok('feilen sier hva man gjør i stedet', Pos('smtpPlain', Message_) > 0);
       Ok('ingenting ble sendt i klartekst', Pos('y', Fake.Mottatt) = 0);
     finally
       T.Free;
@@ -589,7 +589,7 @@ procedure TestNavneoppslag;
 var
   T: TSmtpTransport;
   M: TMailMessage;
-  Melding: string;
+  Message_: string;
 begin
   Start('navneoppslag');
   { localhost står i /etc/hosts overalt. Den skal nå fram til connect og
@@ -597,19 +597,19 @@ begin
   T := TSmtpTransport.Create('localhost', 1, smtpPlain);
   try
     T.TimeoutMs := 2000;
-    Melding := '';
+    Message_ := '';
     M := TMailMessage.Create;
     M.From('a@example.com').AddTo('b@example.com').Subject('x').Text('y');
     try
       T.Send(M);
     except
-      on E: Exception do Melding := E.Message;
+      on E: Exception do Message_ := E.Message;
     end;
     M.Free;
-    if Pos('Could not connect', Melding) = 0 then
-      WriteLn('        fikk: ', Melding);
+    if Pos('Could not connect', Message_) = 0 then
+      WriteLn('        fikk: ', Message_);
     Ok('localhost slås opp, feiler først på connect',
-      Pos('Could not connect', Melding) > 0);
+      Pos('Could not connect', Message_) > 0);
   finally
     T.Free;
   end;
@@ -617,17 +617,17 @@ begin
   T := TSmtpTransport.Create('ikke.en.vert.som.finnes.invalid', 25, smtpPlain);
   try
     T.TimeoutMs := 3000;
-    Melding := '';
+    Message_ := '';
     M := TMailMessage.Create;
     M.From('a@example.com').AddTo('b@example.com').Subject('x').Text('y');
     try
       T.Send(M);
     except
-      on E: Exception do Melding := E.Message;
+      on E: Exception do Message_ := E.Message;
     end;
     M.Free;
     Ok('ukjent vert gir en feil som nevner verten',
-      Pos('ikke.en.vert.som.finnes.invalid', Melding) > 0);
+      Pos('ikke.en.vert.som.finnes.invalid', Message_) > 0);
   finally
     T.Free;
   end;

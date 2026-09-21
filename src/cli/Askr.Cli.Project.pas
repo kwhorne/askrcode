@@ -45,7 +45,7 @@ type
     { Versjonen prosjektet ber om, fra [askr] version. Kan være en
       npm-formet spesifikasjon: 0.6.0, ^0.6.0, ~0.6.0. }
     function AskrWantedVersion: string;
-    { Hvor versjoner hentes fra. Standard er det offentlige repoet; en
+    { Where_ versjoner hentes fra. Standard er det offentlige repoet; en
       gaffel eller et speil settes med [askr] source. }
     function AskrSource: string;
     function UnitPaths: TStringArray;

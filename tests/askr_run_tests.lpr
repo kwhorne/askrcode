@@ -22,37 +22,37 @@ var
   Feilet: Integer = 0;
   Db: string;
 
-procedure Start(const Navn: string);
+procedure Start(const Name_: string);
 begin
   WriteLn;
-  WriteLn('— ', Navn);
+  WriteLn('— ', Name_);
 end;
 
-procedure Ok(const Hva: string; Verdi: Boolean);
+procedure Ok(const What: string; Value_: Boolean);
 begin
-  if Verdi then
+  if Value_ then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
   end;
 end;
 
-procedure Like(const Hva, Forventet, Fikk: string);
+procedure Like(const What, Forventet, Fikk: string);
 begin
   if Forventet = Fikk then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Forventet);
     WriteLn('        fikk:      ', Fikk);
   end;
@@ -96,7 +96,7 @@ end;
 
 { Skriver en .run-fil og oversetter den. Returnerer feilmeldingen, eller
   tom streng hvis det gikk. }
-function Oversett(const Kilde, UtFil: string; out Stats: TRunStats): string;
+function Oversett(const Source_, UtFil: string; out Stats: TRunStats): string;
 var
   L: TStringList;
   Inn: string;
@@ -104,7 +104,7 @@ begin
   Inn := '.build/run/case.run';
   L := TStringList.Create;
   try
-    L.Text := StringReplace(Kilde, '@DB@', Db, [rfReplaceAll]);
+    L.Text := StringReplace(Source_, '@DB@', Db, [rfReplaceAll]);
     L.SaveToFile(Inn);
   finally
     L.Free;
@@ -118,7 +118,7 @@ begin
   end;
 end;
 
-function LesUt(const Fil: string): string;
+function ReadOut(const Fil: string): string;
 var
   L: TStringList;
 begin
@@ -134,36 +134,36 @@ end;
 function Feilmelding(const Fixture: string): string;
 var
   L: TStringList;
-  Kilde: string;
+  Source_: string;
   S: TRunStats;
 begin
   L := TStringList.Create;
   try
     L.LoadFromFile('tests/run/' + Fixture + '.run');
-    Kilde := L.Text;
+    Source_ := L.Text;
   finally
     L.Free;
   end;
-  Result := Oversett(Kilde, '.build/run/out.pas', S);
+  Result := Oversett(Source_, '.build/run/out.pas', S);
 end;
 
 var
   Ut: string;
   S: TRunStats;
-  Melding: string;
+  Message_: string;
 begin
   WriteLn('askr — Rún');
   LagDatabase;
 
   Start('generics');
-  Melding := Oversett(
+  Message_ := Oversett(
     'db "sqlite:@DB@"'#10 +
     'model Customer from customers'#10 +
     'model Order from orders'#10 +
     'query<M> ById(id: int) -> M for Customer, Order'#10,
     '.build/run/out.pas', S);
-  Like('oversetter uten feil', '', Melding);
-  Ut := LesUt('.build/run/out.pas');
+  Like('oversetter uten feil', '', Message_);
+  Ut := ReadOut('.build/run/out.pas');
   Like('to modeller', '2', IntToStr(S.Models));
   Like('to spørringer ut av én erklæring', '2', IntToStr(S.Queries));
   Ok('CustomerById ble skrevet ut', Pos('function CustomerById', Ut) > 0);
@@ -173,16 +173,16 @@ begin
   Ok('enkeltrad gir out Found', Pos('out Found: Boolean', Ut) > 0);
 
   Start('relasjoner fra skjemaet');
-  Melding := Oversett(
+  Message_ := Oversett(
     'db "sqlite:@DB@"'#10 +
     'model Customer from customers'#10 +
     'model Order from orders'#10 +
-    'query Alle() -> [Customer]:'#10 +
+    'query All_() -> [Customer]:'#10 +
     '  from Customer'#10 +
     '  with orders'#10,
     '.build/run/out.pas', S);
-  Like('oversetter uten feil', '', Melding);
-  Ut := LesUt('.build/run/out.pas');
+  Like('oversetter uten feil', '', Message_);
+  Ut := ReadOut('.build/run/out.pas');
   Ok('radtypen fikk et relasjonsfelt',
     Pos('Orders: TOrderRowArray', Ut) > 0);
   Ok('og det står hvor det kom fra',
@@ -202,35 +202,35 @@ begin
     Pos('CustomerId: Int64', Ut) > 0);
 
   Start('comptime fanger feilene');
-  Melding := Feilmelding('bad-unknown-table');
-  Ok('ukjent tabell', Pos('does not exist', Melding) > 0);
-  Ok('med forslag', Pos('Did you mean "customers"', Melding) > 0);
+  Message_ := Feilmelding('bad-unknown-table');
+  Ok('ukjent tabell', Pos('does not exist', Message_) > 0);
+  Ok('med forslag', Pos('Did you mean "customers"', Message_) > 0);
 
-  Melding := Feilmelding('bad-unknown-column');
-  Ok('ukjent kolonne', Pos('has no column', Melding) > 0);
-  Ok('med forslag', Pos('Did you mean "email"', Melding) > 0);
+  Message_ := Feilmelding('bad-unknown-column');
+  Ok('ukjent kolonne', Pos('has no column', Message_) > 0);
+  Ok('med forslag', Pos('Did you mean "email"', Message_) > 0);
 
-  Melding := Feilmelding('bad-type-mismatch');
-  Ok('typekonflikt mot skjemaet', Pos('is money', Melding) > 0);
-  Ok('og sier hvor skjemaet ble lest', Pos('The schema was read', Melding) > 0);
+  Message_ := Feilmelding('bad-type-mismatch');
+  Ok('typekonflikt mot skjemaet', Pos('is money', Message_) > 0);
+  Ok('og sier hvor skjemaet ble lest', Pos('The schema was read', Message_) > 0);
 
-  Melding := Feilmelding('bad-unknown-relation');
-  Ok('ukjent relasjon', Pos('has no relation', Melding) > 0);
-  Ok('med forslag', Pos('Did you mean "orders"', Melding) > 0);
+  Message_ := Feilmelding('bad-unknown-relation');
+  Ok('ukjent relasjon', Pos('has no relation', Message_) > 0);
+  Ok('med forslag', Pos('Did you mean "orders"', Message_) > 0);
 
-  Melding := Feilmelding('bad-generic-without-for');
-  Ok('generisk uten for', Pos('is missing "for"', Melding) > 0);
+  Message_ := Feilmelding('bad-generic-without-for');
+  Ok('generisk uten for', Pos('is missing "for"', Message_) > 0);
 
-  Melding := Feilmelding('bad-relation-without-model');
-  Ok('relasjon uten modell', Pos('has no model', Melding) > 0);
+  Message_ := Feilmelding('bad-relation-without-model');
+  Ok('relasjon uten modell', Pos('has no model', Message_) > 0);
 
   Start('feil nevner fil og linje');
-  Melding := Feilmelding('bad-unknown-column');
-  Ok('linjenummer er med', Pos('.run:', Melding) > 0);
-  Ok('og ingen verdi lekker ut', Pos('@example.com', Melding) = 0);
+  Message_ := Feilmelding('bad-unknown-column');
+  Ok('linjenummer er med', Pos('.run:', Message_) > 0);
+  Ok('og ingen verdi lekker ut', Pos('@example.com', Message_) = 0);
 
   Start('kostnad');
-  Melding := Oversett(
+  Message_ := Oversett(
     'db "sqlite:@DB@"'#10 +
     'model Customer from customers'#10 +
     'model Order from orders'#10 +

@@ -118,7 +118,7 @@ function JsonIsNull(V: PJsonValue): Boolean;
 
   Finnes fordi en del av et svar noen ganger skal videre som den er — et
   verktøykalls argumenter, for eksempel, der bare verktøyet vet hvilke
-  felter det har. Tall skrives med teksten de kom inn som, slik at
+  felter det har. Number skrives med teksten de kom inn som, slik at
   presisjon ikke går tapt i en omvei om Double. }
 procedure JsonWriteValue(var W: TJsonWriter; V: PJsonValue);
 function JsonToString(A: TArena; V: PJsonValue): string;
@@ -128,7 +128,7 @@ function HtmlAttrEscape(A: TArena; const S: TStr): TStr;
 
 { Gjør ferdig JSON trygt inni et <script type="application/json">-element.
 
-  Uten dette kan en streng som inneholder </script> avslutte elementet midt i
+  Without dette kan en streng som inneholder </script> avslutte elementet midt i
   payloaden, og resten av dokumentet blir tolket som HTML. Samme escaping som
   Inertia selv bruker: < blir \u003c og / blir \/. Begge er lovlig JSON og
   gir nøyaktig samme verdi etter parsing. }

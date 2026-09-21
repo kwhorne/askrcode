@@ -35,25 +35,25 @@ procedure TestLaufFoelgerRammeverket;
 var
   F: TStringList;
   I, A, B: Integer;
-  Linje, Fant, Sti: string;
+  Line_, Fant, Path_: string;
 begin
   Fant := '';
   { Kjøres fra repo-rota av ./askr test. Finner vi ikke fila, er det
     ikke en grunn til å påstå at versjonene stemmer. }
-  Sti := 'frontend/lauf/package.json';
-  AssertTrue(FileExists(Sti), 'package.json finnes (kjør fra repo-rota)');
+  Path_ := 'frontend/lauf/package.json';
+  AssertTrue(FileExists(Path_), 'package.json finnes (kjør fra repo-rota)');
   F := TStringList.Create;
   try
-    F.LoadFromFile(Sti);
+    F.LoadFromFile(Path_);
     for I := 0 to F.Count - 1 do
     begin
-      Linje := Trim(F[I]);
-      if Pos('"version"', Linje) <> 1 then
+      Line_ := Trim(F[I]);
+      if Pos('"version"', Line_) <> 1 then
         Continue;
-      A := Pos(':', Linje);
-      A := Pos('"', Linje, A);
-      B := Pos('"', Linje, A + 1);
-      Fant := Copy(Linje, A + 1, B - A - 1);
+      A := Pos(':', Line_);
+      A := Pos('"', Line_, A);
+      B := Pos('"', Line_, A + 1);
+      Fant := Copy(Line_, A + 1, B - A - 1);
       Break;
     end;
   finally
@@ -89,15 +89,15 @@ var
   Q: TQueue;
   S: TScheduler;
 
-procedure IngenJobb(const Ctx: TJobContext);
+procedure NoJob(const Ctx: TJobContext);
 begin
 end;
 
-procedure SchedulerOppsett;
+procedure SchedulerSetup;
 begin
   Q := TQueue.Create(1, 1);
-  Q.Handle('a', @IngenJobb);
-  Q.Handle('b', @IngenJobb);
+  Q.Handle('a', @NoJob);
+  Q.Handle('b', @NoJob);
   S := TScheduler.Create(Q);
 end;
 
@@ -109,7 +109,7 @@ end;
 
 procedure TestIntervall;
 begin
-  SchedulerOppsett;
+  SchedulerSetup;
   try
     S.EverySeconds(10, 'a');
     AssertEqual(S.Count, 1, 'én oppføring');
@@ -126,18 +126,18 @@ end;
 
 procedure TestDaglig;
 var
-  Naa: Int64;
-  Kjort, I: Integer;
+  Now_: Int64;
+  Ran, I: Integer;
 begin
-  SchedulerOppsett;
+  SchedulerSetup;
   try
     S.DailyAt(3, 30, 'a');
-    Naa := UnixNow;
-    Kjort := 0;
+    Now_ := UnixNow;
+    Ran := 0;
     { Ett døgn, time for time: nøyaktig én kjøring. }
     for I := 0 to 24 do
-      Kjort := Kjort + S.Tick(Naa + Int64(I) * 3600);
-    AssertEqual(Kjort, 1, 'daglig jobb kjørte én gang på et døgn');
+      Ran := Ran + S.Tick(Now_ + Int64(I) * 3600);
+    AssertEqual(Ran, 1, 'daglig jobb kjørte én gang på et døgn');
   finally
     SchedulerRydd;
   end;
@@ -145,17 +145,17 @@ end;
 
 procedure TestUkentlig;
 var
-  Naa: Int64;
-  Kjort, I: Integer;
+  Now_: Int64;
+  Ran, I: Integer;
 begin
-  SchedulerOppsett;
+  SchedulerSetup;
   try
     S.WeeklyAt(dowMonday, 8, 0, 'a');
-    Naa := UnixNow;
-    Kjort := 0;
+    Now_ := UnixNow;
+    Ran := 0;
     for I := 0 to 7 * 24 do
-      Kjort := Kjort + S.Tick(Naa + Int64(I) * 3600);
-    AssertEqual(Kjort, 1, 'ukentlig jobb kjørte én gang på en uke');
+      Ran := Ran + S.Tick(Now_ + Int64(I) * 3600);
+    AssertEqual(Ran, 1, 'ukentlig jobb kjørte én gang på en uke');
   finally
     SchedulerRydd;
   end;
@@ -163,17 +163,17 @@ end;
 
 procedure TestHoppOverNaarKoenVenter;
 var
-  Naa: Int64;
+  Now_: Int64;
 begin
-  SchedulerOppsett;
+  SchedulerSetup;
   try
     S.EverySeconds(1, 'a');
     S.SkipWhenPending;
-    Naa := UnixNow;
-    S.Tick(Naa + 1);
+    Now_ := UnixNow;
+    S.Tick(Now_ + 1);
     AssertEqual(Q.Pending, 1, 'første kjøring havnet på køen');
     { Jobben ligger fortsatt der, så neste skal hoppes over. }
-    S.Tick(Naa + 2);
+    S.Tick(Now_ + 2);
     AssertEqual(Q.Pending, 1, 'stabler seg ikke oppå en jobb som venter');
   finally
     SchedulerRydd;
@@ -184,7 +184,7 @@ procedure TestBeskrivelse;
 var
   L: TStringList;
 begin
-  SchedulerOppsett;
+  SchedulerSetup;
   L := TStringList.Create;
   try
     S.EveryMinutes(5, 'rydd-opp');
@@ -203,16 +203,16 @@ end;
 
 var
   Store: TSessionStore;
-  KlientKake: string;
+  ClientCookie: string;
 
-function LagReq(A: TArena; const Kake: string): TRequest;
+function LagReq(A: TArena; const Cookie_: string): TRequest;
 var
   Prev: TArena;
   Head: string;
 begin
   Head := 'GET / HTTP/1.1'#13#10'Host: t';
-  if Kake <> '' then
-    Head := Head + #13#10'Cookie: askr_session=' + Kake;
+  if Cookie_ <> '' then
+    Head := Head + #13#10'Cookie: askr_session=' + Cookie_;
   Prev := UseArena(A);
   try
     Result := TRequest.Create;
@@ -222,7 +222,7 @@ begin
   end;
 end;
 
-function KakeFra(R: TResponse; A: TArena): string;
+function CookieFrom(R: TResponse; A: TArena): string;
 var
   B: TStrBuilder;
   Raw: string;
@@ -261,12 +261,12 @@ begin
     Sess.Put('bruker', 'knut');
     R := Respond(200);
     Store.Commit(Sess, R);
-    KlientKake := KakeFra(R, A);
-    AssertEqual(Length(KlientKake), 32, 'kaka ble satt');
+    ClientCookie := CookieFrom(R, A);
+    AssertEqual(Length(ClientCookie), 32, 'kaka ble satt');
 
     { Andre request: samme kake, samme data. }
     A.Reset;
-    Req := LagReq(A, KlientKake);
+    Req := LagReq(A, ClientCookie);
     Sess := Store.Start(Req);
     AssertFalse(Sess.IsNew, 'sesjonen ble gjenopptatt');
     AssertEqual(Sess.Get('bruker'), 'knut', 'verdien overlevde');
@@ -291,7 +291,7 @@ var
   Req: TRequest;
   Sess: TSession;
   R: TResponse;
-  Kake: string;
+  Cookie_: string;
 begin
   Store := TSessionStore.Create(3600);
   A := TArena.Create(16 * 1024);
@@ -299,25 +299,25 @@ begin
   try
     Req := LagReq(A, '');
     Sess := Store.Start(Req);
-    Sess.Flash('suksess', 'Lagret');
+    Sess.Flash('suksess', 'Stored');
     AssertFalse(Sess.HasFlash('suksess'),
       'det man skriver er ikke lesbart i samme request');
     R := Respond(200);
     Store.Commit(Sess, R);
-    Kake := KakeFra(R, A);
+    Cookie_ := CookieFrom(R, A);
 
     { Neste request: nå er den lesbar. }
     A.Reset;
-    Req := LagReq(A, Kake);
+    Req := LagReq(A, Cookie_);
     Sess := Store.Start(Req);
     AssertTrue(Sess.HasFlash('suksess'), 'lesbar i neste request');
-    AssertEqual(Sess.GetFlash('suksess'), 'Lagret', 'riktig verdi');
+    AssertEqual(Sess.GetFlash('suksess'), 'Stored', 'riktig verdi');
     R := Respond(200);
     Store.Commit(Sess, R);
 
     { Og borte i den etter. }
     A.Reset;
-    Req := LagReq(A, Kake);
+    Req := LagReq(A, Cookie_);
     Sess := Store.Start(Req);
     AssertFalse(Sess.HasFlash('suksess'), 'borte i tredje request');
   finally
@@ -343,9 +343,9 @@ var
   Req: TRequest;
   Sess: TSession;
   R: TResponse;
-  Kake, Body: string;
+  Cookie_, Body: string;
 
-  function InertiaReq(const MedKake: string): TRequest;
+  function InertiaReq(const WithCookie_: string): TRequest;
   var
     P: TArena;
   begin
@@ -354,7 +354,7 @@ var
       Result := TRequest.Create;
       Result.ParseHead(StrDup(A, 'GET / HTTP/1.1'#13#10'Host: t'#13#10 +
         'X-Inertia: true' +
-        IfThen(MedKake <> '', #13#10'Cookie: askr_session=' + MedKake, '')),
+        IfThen(WithCookie_ <> '', #13#10'Cookie: askr_session=' + WithCookie_, '')),
         DefaultMaxBodyBytes);
     finally
       UseArena(P);
@@ -370,17 +370,17 @@ begin
   try
     TInertia.SetVersion('t');
 
-    { Skriv en flash under en annen nøkkel enn 'suksess'. }
+    { Emit en flash under en annen nøkkel enn 'suksess'. }
     Req := LagReq(A, '');
     Sess := Store.Start(Req);
     Sess.Flash('error', 'That link is no longer valid.');
     R := Respond(200);
     Store.Commit(Sess, R);
-    Kake := KakeFra(R, A);
+    Cookie_ := CookieFrom(R, A);
 
     { Neste request: den skal være med i payloaden. }
     A.Reset;
-    Req := InertiaReq(Kake);
+    Req := InertiaReq(Cookie_);
     UseRequest(Req);
     Sess := Store.Start(Req);
     UseSession(Sess);
@@ -410,10 +410,10 @@ begin
     Sess.FlashErrorsJson(Str('{"name":"is required"}'));
     R := Respond(302);
     Store.Commit(Sess, R);
-    Kake := KakeFra(R, A);
+    Cookie_ := CookieFrom(R, A);
 
     A.Reset;
-    Req := InertiaReq(Kake);
+    Req := InertiaReq(Cookie_);
     UseRequest(Req);
     Sess := Store.Start(Req);
     UseSession(Sess);
@@ -492,7 +492,7 @@ begin
     R.Get('/', SkrivOgSvar);
     Res := R.Handle(Req);
     AssertNil(CurrentSession, 'også når den ble lagret');
-    AssertTrue(KakeFra(Res, A) <> '', 'og den fikk en kake');
+    AssertTrue(CookieFrom(Res, A) <> '', 'og den fikk en kake');
   finally
     R.Free;
     UseSession(PrevS);
@@ -509,7 +509,7 @@ var
   Req: TRequest;
   Sess: TSession;
   R: TResponse;
-  Kake: string;
+  Cookie_: string;
 begin
   Store := TSessionStore.Create(3600);
   A := TArena.Create(16 * 1024);
@@ -520,11 +520,11 @@ begin
     Sess.FlashErrorsJson(Str('{"name":"is required"}'));
     R := Respond(302);
     Store.Commit(Sess, R);
-    Kake := KakeFra(R, A);
+    Cookie_ := CookieFrom(R, A);
 
     { Dette er avviket fra steg 5, lukket: feilene overlever omdirigeringen. }
     A.Reset;
-    Req := LagReq(A, Kake);
+    Req := LagReq(A, Cookie_);
     Sess := Store.Start(Req);
     AssertTrue(Sess.HasErrors, 'feilene overlevde omdirigeringen');
     AssertContains(Sess.ErrorsJson, 'is required', 'med innholdet i behold');
@@ -642,7 +642,7 @@ end;
 { Transporten får aldri lov til å sende noe ekte her. Alt går gjennom
   TFakeResendHttp, som tar vare på JSON-en og svarer med det testen la i
   kø — samme grep som TFakeAiTransport. }
-function NyResend(out H: TFakeResendHttp): TResendTransport;
+function NewResend(out H: TFakeResendHttp): TResendTransport;
 begin
   H := TFakeResendHttp.Create;
   Result := TResendTransport.Create('re_test_nokkel');
@@ -655,7 +655,7 @@ var
   H: TFakeResendHttp;
   J: string;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"id":"49a3999c-0ce1-4ea6-ab68-afcd6dc2e794"}', 200);
     T.Send(TMailMessage.Create
@@ -694,7 +694,7 @@ var
   H: TFakeResendHttp;
   J: string;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"id":"x"}', 200);
     T.Send(TMailMessage.Create
@@ -724,7 +724,7 @@ var
   T: TResendTransport;
   H: TFakeResendHttp;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"id":"x"}', 200);
     T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
@@ -746,7 +746,7 @@ var
   H: TFakeResendHttp;
   Foerste: string;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"id":"x"}', 200);
     T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
@@ -775,7 +775,7 @@ var
 begin
   { Det som gjør et gjenforsøk trygt: samme melding må gi samme nøkkel.
     Gjør den ikke det, får mottakeren to eposter av én jobb. }
-  T := NyResend(H);
+  T := NewResend(H);
   M := TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
     .Subject('s').Text('t');
   try
@@ -797,17 +797,17 @@ var
   T: TResendTransport;
   H: TFakeResendHttp;
   Status: Integer;
-  Navn: string;
-  KanProeves, Kastet: Boolean;
+  Name_: string;
+  CanRetry, Kastet: Boolean;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"statusCode":422,"message":"Invalid `to` field.",' +
       '"name":"validation_error"}', 422);
     Kastet := False;
     Status := 0;
-    Navn := '';
-    KanProeves := True;
+    Name_ := '';
+    CanRetry := True;
     try
       T.Send(TMailMessage.Create.From('a@example.com')
         .AddTo('b@example.com').Subject('s').Text('t'));
@@ -816,8 +816,8 @@ begin
       begin
         Kastet := True;
         Status := E.Status;
-        Navn := E.Name_;
-        KanProeves := E.Retryable;
+        Name_ := E.Name_;
+        CanRetry := E.Retryable;
         AssertContains(E.Message, 'Invalid `to` field.',
           'providerens egen tekst kommer med');
         AssertContains(E.Message, 'validation_error', 'og typen');
@@ -825,8 +825,8 @@ begin
     end;
     AssertTrue(Kastet, '422 kaster');
     AssertEqual(Status, 422, 'status');
-    AssertEqual(Navn, 'validation_error', 'typen slik API-et skriver den');
-    AssertTrue(not KanProeves, 'en valideringsfeil prøves ikke om igjen');
+    AssertEqual(Name_, 'validation_error', 'typen slik API-et skriver den');
+    AssertTrue(not CanRetry, 'en valideringsfeil prøves ikke om igjen');
     AssertEqual(T.Count, 0, 'og telles ikke som sendt');
   finally
     T.Free;
@@ -837,47 +837,47 @@ procedure TestResendRateLimit;
 var
   T: TResendTransport;
   H: TFakeResendHttp;
-  KanProeves: Boolean;
+  CanRetry: Boolean;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"message":"Too many requests.",' +
       '"name":"rate_limit_exceeded"}', 429);
-    KanProeves := False;
+    CanRetry := False;
     try
       T.Send(TMailMessage.Create.From('a@example.com')
         .AddTo('b@example.com').Subject('s').Text('t'));
     except
       on E: EResendError do
-        KanProeves := E.Retryable;
+        CanRetry := E.Retryable;
     end;
-    AssertTrue(KanProeves, 'rate limit kan prøves om igjen');
+    AssertTrue(CanRetry, 'rate limit kan prøves om igjen');
 
     { Kvote er ikke det samme. Den går ikke over innenfor noen backoff en
       kø har, og skal til feiltabellen der noen ser den. }
     H.Queue('{"message":"Daily quota reached.",' +
       '"name":"daily_quota_exceeded"}', 429);
-    KanProeves := True;
+    CanRetry := True;
     try
       T.Send(TMailMessage.Create.From('a@example.com')
         .AddTo('b@example.com').Subject('s').Text('t'));
     except
       on E: EResendError do
-        KanProeves := E.Retryable;
+        CanRetry := E.Retryable;
     end;
-    AssertTrue(not KanProeves, 'kvote prøves ikke om igjen');
+    AssertTrue(not CanRetry, 'kvote prøves ikke om igjen');
 
     H.Queue('{"message":"Something went wrong.",' +
       '"name":"application_error"}', 500);
-    KanProeves := False;
+    CanRetry := False;
     try
       T.Send(TMailMessage.Create.From('a@example.com')
         .AddTo('b@example.com').Subject('s').Text('t'));
     except
       on E: EResendError do
-        KanProeves := E.Retryable;
+        CanRetry := E.Retryable;
     end;
-    AssertTrue(KanProeves, '5xx kan prøves om igjen');
+    AssertTrue(CanRetry, '5xx kan prøves om igjen');
   finally
     T.Free;
   end;
@@ -891,7 +891,7 @@ var
 begin
   { Feltet har hatt flere navn over tid, og en feilside kan være HTML.
     Ingen av delene skal gi en tom feilmelding. }
-  T := NyResend(H);
+  T := NewResend(H);
   try
     H.Queue('{"message":"nope","error_type":"invalid_parameter"}', 422);
     Msg := '';
@@ -926,7 +926,7 @@ var
   H: TFakeResendHttp;
   Kastet: Boolean;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     Kastet := False;
     try
@@ -948,7 +948,7 @@ var
   T: TResendTransport;
   H: TFakeResendHttp;
 begin
-  T := NyResend(H);
+  T := NewResend(H);
   try
     AssertNotContains(T.Describe, 're_test_nokkel',
       'Describe viser ikke nøkkelen');
@@ -960,14 +960,14 @@ end;
 
 procedure TestMailFraConfig;
 const
-  Katalog = 'askr-mailcfg-test.tmp';
+  Directory = 'askr-mailcfg-test.tmp';
 var
   T: TMailTransport;
   L: TStringList;
   Kastet: Boolean;
   Msg: string;
 begin
-  { Standarden er loggfila. Uten den ville et prosjekt uten oppsett
+  { Standarden er loggfila. Without den ville et prosjekt uten oppsett
     forsøkt å sende ekte post i utvikling. }
   T := MailFromConfig;
   try
@@ -976,12 +976,12 @@ begin
     T.Free;
   end;
 
-  ForceDirectories(Katalog);
+  ForceDirectories(Directory);
   L := TStringList.Create;
   try
     L.Add('[mail]');
     L.Add('transport = "sendgrid"');
-    L.SaveToFile(Katalog + PathDelim + 'askr.toml');
+    L.SaveToFile(Directory + PathDelim + 'askr.toml');
   finally
     L.Free;
   end;
@@ -990,7 +990,7 @@ begin
   Msg := '';
   ClearConfig;
   try
-    LoadConfig(Katalog);
+    LoadConfig(Directory);
     try
       T := MailFromConfig;
       T.Free;
@@ -1003,8 +1003,8 @@ begin
     end;
   finally
     ClearConfig;
-    DeleteFile(Katalog + PathDelim + 'askr.toml');
-    RemoveDir(Katalog);
+    DeleteFile(Directory + PathDelim + 'askr.toml');
+    RemoveDir(Directory);
   end;
 
   { Ikke et stille fall tilbake til log. En stavefeil i produksjon ville
@@ -1060,7 +1060,7 @@ end;
 procedure TResendEkkoServer.Execute;
 var
   S: TSocket;
-  Svar: string;
+  Reply: string;
   N: ssize_t;
   Buf: array[0..8191] of Byte;
 begin
@@ -1073,12 +1073,12 @@ begin
       SetLength(FRequest, N);
       Move(Buf[0], FRequest[1], N);
     end;
-    Svar := '{"id":"ekko-1"}';
-    Svar := 'HTTP/1.1 200 OK'#13#10 +
+    Reply := '{"id":"ekko-1"}';
+    Reply := 'HTTP/1.1 200 OK'#13#10 +
       'Content-Type: application/json'#13#10 +
-      'Content-Length: ' + IntToStr(Length(Svar)) + #13#10 +
-      'Connection: close'#13#10#13#10 + Svar;
-    fpSend(S, PChar(Svar), Length(Svar), 0);
+      'Content-Length: ' + IntToStr(Length(Reply)) + #13#10 +
+      'Connection: close'#13#10#13#10 + Reply;
+    fpSend(S, PChar(Reply), Length(Reply), 0);
     CloseSocket(S);
   end;
   CloseSocket(FLytt);
@@ -1129,22 +1129,22 @@ type
     FLytt: TSocket;
     FPort: Word;
     FSamtale: string;
-    FAuthLinje: string;
+    FAuthLine: string;
   protected
     procedure Execute; override;
   public
-    constructor Create(const AAuthLinje: string);
+    constructor Create(const AAuthLine: string);
     property Port: Word read FPort;
     property Samtale: string read FSamtale;
   end;
 
-constructor TSmtpEkkoServer.Create(const AAuthLinje: string);
+constructor TSmtpEkkoServer.Create(const AAuthLine: string);
 var
   Addr: TInetSockAddr;
   Len: TSockLen;
   Ja: Integer;
 begin
-  FAuthLinje := AAuthLinje;
+  FAuthLine := AAuthLine;
   FLytt := fpSocket(AF_INET, SOCK_STREAM, 0);
   Ja := 1;
   fpSetSockOpt(FLytt, SOL_SOCKET, SO_REUSEADDR, @Ja, SizeOf(Ja));
@@ -1164,7 +1164,7 @@ end;
 procedure TSmtpEkkoServer.Execute;
 var
   S: TSocket;
-  Linje: string;
+  Line_: string;
   C: Char;
   N: ssize_t;
   IData: Boolean;
@@ -1188,7 +1188,7 @@ begin
   Si('220 ekko.example ESMTP');
   IData := False;
   AuthSteg := 0;
-  Linje := '';
+  Line_ := '';
   repeat
     N := fpRecv(S, @C, 1, 0);
     if N <= 0 then
@@ -1197,30 +1197,30 @@ begin
       Continue;
     if C <> #10 then
     begin
-      Linje := Linje + C;
+      Line_ := Line_ + C;
       Continue;
     end;
 
-    FSamtale := FSamtale + Linje + #10;
+    FSamtale := FSamtale + Line_ + #10;
 
     if IData then
     begin
-      if Linje = '.' then
+      if Line_ = '.' then
       begin
         IData := False;
         Si('250 2.0.0 Ok: queued');
       end;
     end
-    else if Copy(UpperCase(Linje), 1, 4) = 'EHLO' then
+    else if Copy(UpperCase(Line_), 1, 4) = 'EHLO' then
     begin
       Si('250-ekko.example');
-      if FAuthLinje <> '' then
-        Si('250-' + FAuthLinje);
+      if FAuthLine <> '' then
+        Si('250-' + FAuthLine);
       Si('250 SIZE 35651584');
     end
-    else if Copy(UpperCase(Linje), 1, 4) = 'AUTH' then
+    else if Copy(UpperCase(Line_), 1, 4) = 'AUTH' then
     begin
-      if Copy(UpperCase(Linje), 1, 10) = 'AUTH LOGIN' then
+      if Copy(UpperCase(Line_), 1, 10) = 'AUTH LOGIN' then
       begin
         AuthSteg := 1;
         Si('334 VXNlcm5hbWU6');
@@ -1238,25 +1238,25 @@ begin
       AuthSteg := 0;
       Si('235 2.7.0 Authentication successful');
     end
-    else if Copy(UpperCase(Linje), 1, 4) = 'QUIT' then
+    else if Copy(UpperCase(Line_), 1, 4) = 'QUIT' then
     begin
       Si('221 Bye');
       Break;
     end
-    else if Copy(UpperCase(Linje), 1, 4) = 'DATA' then
+    else if Copy(UpperCase(Line_), 1, 4) = 'DATA' then
     begin
       IData := True;
       Si('354 End data with <CR><LF>.<CR><LF>');
     end
     else
       Si('250 2.1.0 Ok');
-    Linje := '';
+    Line_ := '';
   until False;
   CloseSocket(S);
   CloseSocket(FLytt);
 end;
 
-procedure SendMedAuth(Srv: TSmtpEkkoServer; const Bruker, Passord: string;
+procedure SendWithAuth(Srv: TSmtpEkkoServer; const Bruker, Passord: string;
   Tillat: Boolean);
 var
   T: TSmtpTransport;
@@ -1281,7 +1281,7 @@ var
 begin
   Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
   try
-    SendMedAuth(Srv, 'resend', 're_hemmelig', True);
+    SendWithAuth(Srv, 'resend', 're_hemmelig', True);
     Srv.WaitFor;
     { SASL PLAIN er #0bruker#0passord i base64. Regnet ut for hånd her,
       slik at testen sjekker kodingen og ikke bare gjentar koden. }
@@ -1298,11 +1298,11 @@ procedure TestSmtpAuthLogin;
 var
   Srv: TSmtpEkkoServer;
 begin
-  { Bare LOGIN tilbudt. Uten denne grenen ville et eldre relé fått AUTH
+  { Bare LOGIN tilbudt. Without denne grenen ville et eldre relé fått AUTH
     PLAIN det ikke forstår. }
   Srv := TSmtpEkkoServer.Create('AUTH LOGIN');
   try
-    SendMedAuth(Srv, 'bruker', 'passord', True);
+    SendWithAuth(Srv, 'bruker', 'passord', True);
     Srv.WaitFor;
     AssertContains(Srv.Samtale, 'AUTH LOGIN', 'faller til LOGIN');
     AssertNotContains(Srv.Samtale, 'AUTH PLAIN',
@@ -1327,7 +1327,7 @@ begin
   Msg := '';
   try
     try
-      SendMedAuth(Srv, 'bruker', 'passord', False);
+      SendWithAuth(Srv, 'bruker', 'passord', False);
     except
       on E: EMailError do
       begin
@@ -1355,7 +1355,7 @@ begin
   Kastet := False;
   try
     try
-      SendMedAuth(Srv, 'bruker', 'passord', True);
+      SendWithAuth(Srv, 'bruker', 'passord', True);
     except
       on E: EMailError do
         Kastet := True;
@@ -1376,7 +1376,7 @@ begin
     vil ofte ikke ha noen. }
   Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
   try
-    SendMedAuth(Srv, '', '', False);
+    SendWithAuth(Srv, '', '', False);
     Srv.WaitFor;
     AssertNotContains(Srv.Samtale, 'AUTH', 'ingen AUTH uten brukernavn');
     AssertContains(Srv.Samtale, 'MAIL FROM:', 'men posten går');
@@ -1392,7 +1392,7 @@ type
   public
     function Index(Req: TRequest): TResponse;
     function Vis(Req: TRequest): TResponse;
-    function Lagre(Req: TRequest): TResponse;
+    function Save(Req: TRequest): TResponse;
   end;
 
 function TDemoCtrl.Index(Req: TRequest): TResponse;
@@ -1405,7 +1405,7 @@ begin
   Result := RespondText('id=' + Req.Param('id').ToString);
 end;
 
-function TDemoCtrl.Lagre(Req: TRequest): TResponse;
+function TDemoCtrl.Save(Req: TRequest): TResponse;
 begin
   Result := RespondText('fikk ' + IntToStr(Req.Body.Len) + ' bytes', 201);
 end;
@@ -1443,7 +1443,7 @@ var
 procedure TestVelkomstside;
 var
   R: TResponse;
-  Kropp: string;
+  Body_: string;
 begin
   VelkomstC := TVelkomstCtrl.Create;
   VelkomstR := TRouter.Create;
@@ -1453,36 +1453,36 @@ begin
   try
     R := Get('/');
     AssertStatus(R, 200, 'velkomstsiden svarer');
-    Kropp := R.Body.ToString;
-    AssertTrue(Pos('<!doctype html>', Kropp) = 1, 'er et HTML-dokument');
-    AssertTrue(Pos('shop', Kropp) > 0, 'prosjektnavnet står i den');
+    Body_ := R.Body.ToString;
+    AssertTrue(Pos('<!doctype html>', Body_) = 1, 'er et HTML-dokument');
+    AssertTrue(Pos('shop', Body_) > 0, 'prosjektnavnet står i den');
 
     { Avlesningen skal være ekte tall fra arenaen, ikke plassholdere. }
-    AssertTrue(Pos('This request', Kropp) > 0, 'arena-avlesningen er med');
-    AssertTrue(Pos('this worker reserved once', Kropp) > 0,
+    AssertTrue(Pos('This request', Body_) > 0, 'arena-avlesningen er med');
+    AssertTrue(Pos('this worker reserved once', Body_) > 0,
       'målebjelken er forklart');
     { Bjelkebreddene må være gyldig CSS uansett locale — et komma her ville
       gjort dem ugyldige på en maskin med norske innstillinger. }
-    AssertTrue(Pos('--w:', Kropp) > 0, 'bjelken har en bredde');
-    AssertTrue(Pos(',%', Kropp) = 0, 'bredden bruker punktum, ikke komma');
+    AssertTrue(Pos('--w:', Body_) > 0, 'bjelken har en bredde');
+    AssertTrue(Pos(',%', Body_) = 0, 'bredden bruker punktum, ikke komma');
     { Siden er det første et internasjonalt publikum ser, og skal være
       på engelsk. }
-    AssertTrue(Pos('lang="en"', Kropp) > 0, 'siden er merket engelsk');
+    AssertTrue(Pos('lang="en"', Body_) > 0, 'siden er merket engelsk');
 
     { Ingenting hentes utenfra. En maskin uten nett skal se det samme. }
-    AssertTrue(Pos('http://', Kropp) = 0, 'ingen eksterne ressurser');
-    AssertTrue(Pos('https://', Kropp) = 0, 'heller ikke over https');
-    AssertTrue(Pos('<script', Kropp) = 0, 'ingen skript');
+    AssertTrue(Pos('http://', Body_) = 0, 'ingen eksterne ressurser');
+    AssertTrue(Pos('https://', Body_) = 0, 'heller ikke over https');
+    AssertTrue(Pos('<script', Body_) = 0, 'ingen skript');
 
     { Både lyst og mørkt tema, og den skal kunne leses på en telefon. }
-    AssertTrue(Pos('prefers-color-scheme', Kropp) > 0, 'begge temaer');
-    AssertTrue(Pos('name="viewport"', Kropp) > 0, 'viewport-meta');
+    AssertTrue(Pos('prefers-color-scheme', Body_) > 0, 'begge temaer');
+    AssertTrue(Pos('name="viewport"', Body_) > 0, 'viewport-meta');
 
     { Navnet er brukerkontrollert og må escapes. }
     R := Get('/fiendtlig');
-    Kropp := R.Body.ToString;
-    AssertTrue(Pos('&lt;script&gt;', Kropp) > 0, 'prosjektnavnet escapes');
-    AssertTrue(Pos('<script', Kropp) = 0, 'og slipper ikke gjennom rått');
+    Body_ := R.Body.ToString;
+    AssertTrue(Pos('&lt;script&gt;', Body_) > 0, 'prosjektnavnet escapes');
+    AssertTrue(Pos('<script', Body_) = 0, 'og slipper ikke gjennom rått');
   finally
     Free;
     VelkomstR.Free;
@@ -1498,7 +1498,7 @@ const
   Fil = 'askr-env-test.tmp';
 var
   L: TStringList;
-  Feil, Navn: string;
+  Err, Name_: string;
   I: Integer;
 begin
   L := TStringList.Create;
@@ -1556,26 +1556,26 @@ begin
     AssertEqual(Env('SIMPLE'), 'hello', 'fila brukes når miljøet er tomt');
 
     { EnvOrFail skal være trygg å la stå i et stakkspor. }
-    Feil := '';
+    Err := '';
     try
       EnvOrFail('NOT_THERE');
     except
-      on E: EEnvError do Feil := E.Message;
+      on E: EEnvError do Err := E.Message;
     end;
-    AssertTrue(Pos('NOT_THERE', Feil) > 0, 'feilen nevner nøkkelen');
-    AssertTrue(Pos('hello', Feil) = 0, 'og lekker ingen verdier');
-    AssertTrue(Pos('pa#ssword', Feil) = 0, 'heller ikke passordet');
-    AssertTrue(Pos(Fil, Feil) > 0, 'men sier hvor det ble lett');
+    AssertTrue(Pos('NOT_THERE', Err) > 0, 'feilen nevner nøkkelen');
+    AssertTrue(Pos('hello', Err) = 0, 'og lekker ingen verdier');
+    AssertTrue(Pos('pa#ssword', Err) = 0, 'heller ikke passordet');
+    AssertTrue(Pos(Fil, Err) > 0, 'men sier hvor det ble lett');
 
     AssertEqual(EnvOrFail('SIMPLE'), 'hello', 'EnvOrFail gir verdien når den finnes');
     { EnvKeys gir navn, ikke verdier — den er til diagnostikk og skal kunne
       skrives ut uten å lekke noe. }
-    Navn := '';
+    Name_ := '';
     for I := 0 to High(EnvKeys) do
-      Navn := Navn + EnvKeys[I] + ' ';
-    AssertTrue(Pos('SIMPLE', Navn) > 0, 'EnvKeys nevner SIMPLE');
-    AssertTrue(Pos('HASHPASS', Navn) > 0, 'EnvKeys nevner HASHPASS');
-    AssertTrue(Pos('pa#ssword', Navn) = 0, 'men ingen verdier');
+      Name_ := Name_ + EnvKeys[I] + ' ';
+    AssertTrue(Pos('SIMPLE', Name_) > 0, 'EnvKeys nevner SIMPLE');
+    AssertTrue(Pos('HASHPASS', Name_) > 0, 'EnvKeys nevner HASHPASS');
+    AssertTrue(Pos('pa#ssword', Name_) = 0, 'men ingen verdier');
   finally
     ClearEnv;
     DeleteFile(Fil);
@@ -1590,7 +1590,7 @@ begin
   DemoR := TRouter.Create;
   DemoR.Get('/ting', DemoC.Index);
   DemoR.Get('/ting/:id', DemoC.Vis);
-  DemoR.Post('/ting', DemoC.Lagre);
+  DemoR.Post('/ting', DemoC.Save);
   Klient := TTestClient.Create(DemoR);
   try
     R := Klient.Get('/ting');
@@ -1647,7 +1647,7 @@ type
     tokenet lages først når noe spør etter det. }
   TCsrfCtl = class
     function Vis(Req: TRequest): TResponse;
-    function Lagre(Req: TRequest): TResponse;
+    function Save(Req: TRequest): TResponse;
     function Webhook(Req: TRequest): TResponse;
   end;
 
@@ -1656,7 +1656,7 @@ begin
   Result := RespondText(CsrfToken, 200);
 end;
 
-function TCsrfCtl.Lagre(Req: TRequest): TResponse;
+function TCsrfCtl.Save(Req: TRequest): TResponse;
 begin
   Result := RespondText('lagret', 200);
 end;
@@ -1668,7 +1668,7 @@ end;
 
 { Plukker én navngitt Set-Cookie ut av svaret. Returnerer hele direktivet,
   ikke bare verdien, slik at HttpOnly kan sjekkes. }
-function SetCookieLinje(R: TResponse; A: TArena; const Navn: string): string;
+function SetCookieLine(R: TResponse; A: TArena; const Name_: string): string;
 var
   B: TStrBuilder;
   Raw: string;
@@ -1677,7 +1677,7 @@ begin
   B.Init(A, 8192);
   R.WriteTo(B, False, False);
   Raw := B.ToString;
-  P := Pos('Set-Cookie: ' + Navn + '=', Raw);
+  P := Pos('Set-Cookie: ' + Name_ + '=', Raw);
   if P = 0 then
     Exit('');
   Inc(P, Length('Set-Cookie: '));
@@ -1687,21 +1687,21 @@ begin
   Result := Copy(Raw, P, Slutt - P);
 end;
 
-function KakeVerdi(const Linje: string): string;
+function CookieValue(const Line_: string): string;
 var
   P, Q3: Integer;
 begin
-  P := Pos('=', Linje);
+  P := Pos('=', Line_);
   if P = 0 then
     Exit('');
   Inc(P);
   Q3 := P;
-  while (Q3 <= Length(Linje)) and (Linje[Q3] <> ';') do
+  while (Q3 <= Length(Line_)) and (Line_[Q3] <> ';') do
     Inc(Q3);
-  Result := Copy(Linje, P, Q3 - P);
+  Result := Copy(Line_, P, Q3 - P);
 end;
 
-function AntallSetCookie(R: TResponse; A: TArena): Integer;
+function SetCookieCount(R: TResponse; A: TArena): Integer;
 var
   B: TStrBuilder;
   Raw: string;
@@ -1723,25 +1723,25 @@ var
   CsrfR: TRouter;
   CsrfC: TCsrfCtl;
   CsrfK: TTestClient;
-  CsrfUnntakSatt: Boolean = False;
+  CsrfExemptSet: Boolean = False;
 
 { Bygger en app med sesjoner og CSRF koblet på, slik en ekte app gjør det:
   SetSessions, UseSessions, UseCsrf. }
-procedure CsrfOppsett;
+procedure CsrfSetup;
 begin
   { Unntakslista er global og skal bare skrives én gang. Å registrere den
     på nytt for hver test ville ikke gjort skade, men en liste som vokser
     for hver oppsett er ikke det noen vil lese i en feilsøking. }
-  if not CsrfUnntakSatt then
+  if not CsrfExemptSet then
   begin
     CsrfExempt('/webhooks/*');
-    CsrfUnntakSatt := True;
+    CsrfExemptSet := True;
   end;
   SetSessions(TSessionStore.Create(3600));
   CsrfC := TCsrfCtl.Create;
   CsrfR := TRouter.Create;
   CsrfR.Get('/form', CsrfC.Vis);
-  CsrfR.Post('/form', CsrfC.Lagre);
+  CsrfR.Post('/form', CsrfC.Save);
   CsrfR.Post('/webhooks/stripe', CsrfC.Webhook);
   UseSessions(CsrfR);
   UseCsrf(CsrfR);
@@ -1762,37 +1762,37 @@ end;
 
 { Henter en sesjon med et token i, og gir tilbake både kaka og tokenet.
   Det er nøyaktig det en nettleser gjør når den laster siden med skjemaet. }
-procedure HentTokenOgKake(out Kake, Token: string);
+procedure FetchTokenAndCookie(out Cookie_, Token: string);
 var
   Res: TResponse;
 begin
   Res := CsrfK.Get('/form');
   Token := Res.Body.ToString;
-  Kake := KakeVerdi(SetCookieLinje(Res, CsrfK.Arena, 'askr_session'));
+  Cookie_ := CookieValue(SetCookieLine(Res, CsrfK.Arena, 'askr_session'));
 end;
 
 procedure TestCsrfAvviserUtenToken;
 var
   Res: TResponse;
-  Kake, Token: string;
+  Cookie_, Token: string;
 begin
-  CsrfOppsett;
+  CsrfSetup;
   try
-    HentTokenOgKake(Kake, Token);
+    FetchTokenAndCookie(Cookie_, Token);
 
     { GET sjekkes aldri: den skal per definisjon ikke endre noe. }
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake).Get('/form');
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/form');
     AssertEqual(Res.StatusCode, 200, 'GET slipper gjennom uten token');
 
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/form', '{}');
     AssertEqual(Res.StatusCode, 419, 'POST uten token avvises');
 
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-CSRF-Token', 'helt feil').Post('/form', '{}');
     AssertEqual(Res.StatusCode, 419, 'POST med feil token avvises');
 
-    { Uten sesjon finnes det ingenting å sammenligne med. Da er svaret nei —
+    { Without sesjon finnes det ingenting å sammenligne med. Da er svaret nei —
       ikke «ja, for det er ingen forventning». }
     Res := CsrfK.WithHeader('X-CSRF-Token', Token).Post('/form', '{}');
     AssertEqual(Res.StatusCode, 419, 'riktig token uten sesjon avvises');
@@ -1804,27 +1804,27 @@ end;
 procedure TestCsrfGodtarAlleTreKilder;
 var
   Res: TResponse;
-  Kake, Token: string;
+  Cookie_, Token: string;
 begin
-  CsrfOppsett;
+  CsrfSetup;
   try
-    HentTokenOgKake(Kake, Token);
+    FetchTokenAndCookie(Cookie_, Token);
     AssertTrue(Token <> '', 'tokenet ble laget');
-    AssertTrue(Kake <> '', 'sesjonskaka ble satt');
+    AssertTrue(Cookie_ <> '', 'sesjonskaka ble satt');
 
     { 1. Skjemafeltet, som et vanlig HTML-skjema sender det. }
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/form', '_token=' + Token,
         'application/x-www-form-urlencoded');
     AssertEqual(Res.StatusCode, 200, 'skjemafeltet _token godtas');
 
     { 2. X-CSRF-Token, som fetch og XHR legger på selv. }
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-CSRF-Token', Token).Post('/form', '{}');
     AssertEqual(Res.StatusCode, 200, 'headeren X-CSRF-Token godtas');
 
     { 3. X-XSRF-Token, som axios og Inertia speiler fra XSRF-TOKEN-kaka. }
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-XSRF-Token', Token).Post('/form', '{}');
     AssertEqual(Res.StatusCode, 200, 'headeren X-XSRF-Token godtas');
   finally
@@ -1837,9 +1837,9 @@ var
   Res: TResponse;
   Kake1, Token1, Kake2, Token2: string;
 begin
-  CsrfOppsett;
+  CsrfSetup;
   try
-    HentTokenOgKake(Kake1, Token1);
+    FetchTokenAndCookie(Kake1, Token1);
 
     { Samme sesjon, nytt kall: samme token. Et token som byttet for hver
       request ville gjort hver åpen fane ugyldig. }
@@ -1847,7 +1847,7 @@ begin
     AssertEqual(Res.Body.ToString, Token1, 'samme sesjon gir samme token');
 
     { Ny sesjon: nytt token — og det gamle skal ikke virke der. }
-    HentTokenOgKake(Kake2, Token2);
+    FetchTokenAndCookie(Kake2, Token2);
     AssertTrue(Kake1 <> Kake2, 'to sesjoner');
     AssertTrue(Token1 <> Token2, 'og to ulike tokens');
 
@@ -1864,7 +1864,7 @@ procedure TestCsrfUnntakForWebhooks;
 var
   Res: TResponse;
 begin
-  CsrfOppsett;
+  CsrfSetup;
   try
     { Et webhook kommer fra en tredjepart som umulig kan ha tokenet. Unntaket
       er et hull man lager med vilje, og derfor testes det at det finnes —
@@ -1883,21 +1883,21 @@ procedure TestCsrfKakeneLeverSideOmSide;
 var
   Res: TResponse;
   Sesjon, Xsrf: string;
-  Kake, Token: string;
+  Cookie_, Token: string;
 begin
-  CsrfOppsett;
+  CsrfSetup;
   try
-    HentTokenOgKake(Kake, Token);
-    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Kake).Get('/form');
+    FetchTokenAndCookie(Cookie_, Token);
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/form');
 
     { Før AddHeader lot responsen siste verdi vinne per headernavn, og den
       andre kaka ville skrevet over den første. To kaker i ett svar er hele
       grunnen til at CSRF trengte den endringen. }
-    AssertEqual(AntallSetCookie(Res, CsrfK.Arena), 2,
+    AssertEqual(SetCookieCount(Res, CsrfK.Arena), 2,
       'begge kakene står i svaret');
 
-    Sesjon := SetCookieLinje(Res, CsrfK.Arena, 'askr_session');
-    Xsrf := SetCookieLinje(Res, CsrfK.Arena, 'XSRF-TOKEN');
+    Sesjon := SetCookieLine(Res, CsrfK.Arena, 'askr_session');
+    Xsrf := SetCookieLine(Res, CsrfK.Arena, 'XSRF-TOKEN');
     AssertTrue(Sesjon <> '', 'sesjonskaka er der');
     AssertTrue(Xsrf <> '', 'XSRF-kaka er der');
 
@@ -1906,7 +1906,7 @@ begin
       må kunne leses for at axios skal kunne speile den tilbake. }
     AssertTrue(Pos('HttpOnly', Sesjon) > 0, 'sesjonskaka er HttpOnly');
     AssertEqual(Pos('HttpOnly', Xsrf), 0, 'XSRF-kaka er lesbar for JS');
-    AssertEqual(KakeVerdi(Xsrf), Token, 'XSRF-kaka bærer tokenet');
+    AssertEqual(CookieValue(Xsrf), Token, 'XSRF-kaka bærer tokenet');
   finally
     CsrfRydd;
   end;
@@ -1918,8 +1918,8 @@ end;
 type
   { Appens brukermodell. Poenget er nettopp at rammeverket ikke kjenner
     den: det lagrer en id som tekst, og appen slår opp resten. }
-  TBruker = class
-    Navn: string;
+  TUser = class
+    Name_: string;
     ErAdmin: Boolean;
   end;
 
@@ -1929,15 +1929,15 @@ type
     function LoggInnHusk(Req: TRequest): TResponse;
     function LoggUt(Req: TRequest): TResponse;
     function Port(Req: TRequest): TResponse;
-    function Skjult(Req: TRequest): TResponse;
+    function Hidden(Req: TRequest): TResponse;
     function Ta(Req: TRequest): TResponse;
   end;
 
 var
-  Brukere: array[0..1] of TBruker;
+  Brukere: array[0..1] of TUser;
   LastOppKalt: Integer = 0;
 
-function FinnBruker(const AId: string): TObject;
+function FindUser(const AId: string): TObject;
 begin
   Inc(LastOppKalt);
   if AId = '1' then
@@ -1957,19 +1957,19 @@ function ErAdminGate(const UserId: string; Resource: TObject): Boolean;
 var
   B: TObject;
 begin
-  B := FinnBruker(UserId);
-  Result := (B <> nil) and TBruker(B).ErAdmin;
+  B := FindUser(UserId);
+  Result := (B <> nil) and TUser(B).ErAdmin;
 end;
 
 function TAuthCtl.HvemErJeg(Req: TRequest): TResponse;
 var
-  Svar: string;
+  Reply: string;
 begin
   if Askr.Auth.Check then
-    Svar := 'inne:' + Askr.Auth.Id
+    Reply := 'inne:' + Askr.Auth.Id
   else
-    Svar := 'ute';
-  Result := RespondText(Svar, 200);
+    Reply := 'ute';
+  Result := RespondText(Reply, 200);
 end;
 
 function TAuthCtl.LoggInn(Req: TRequest): TResponse;
@@ -1992,17 +1992,17 @@ end;
 
 function TAuthCtl.Port(Req: TRequest): TResponse;
 var
-  Svar: string;
+  Reply: string;
 begin
-  Svar := '';
-  if Allows('edit') then Svar := Svar + 'edit ';
-  if Allows('admin') then Svar := Svar + 'admin ';
-  if Allows('finnes-ikke') then Svar := Svar + 'ukjent ';
-  if User <> nil then Svar := Svar + 'user:' + TBruker(User).Navn;
-  Result := RespondText(Trim(Svar), 200);
+  Reply := '';
+  if Allows('edit') then Reply := Reply + 'edit ';
+  if Allows('admin') then Reply := Reply + 'admin ';
+  if Allows('finnes-ikke') then Reply := Reply + 'ukjent ';
+  if User <> nil then Reply := Reply + 'user:' + TUser(User).Name_;
+  Result := RespondText(Trim(Reply), 200);
 end;
 
-function TAuthCtl.Skjult(Req: TRequest): TResponse;
+function TAuthCtl.Hidden(Req: TRequest): TResponse;
 begin
   Result := RespondText('hemmelig', 200);
 end;
@@ -2021,11 +2021,11 @@ var
   AuthC: TAuthCtl;
   AuthK: TTestClient;
 
-procedure AuthOppsett(MedKrav: Boolean);
+procedure AuthSetup(MedKrav: Boolean);
 begin
   SetAppKey('Zm9vYmFyYmF6cXV1eGZvb2JhcmJhenF1dXhhYmM9');
   SetSessions(TSessionStore.Create(3600));
-  SetUserLoader(FinnBruker);
+  SetUserLoader(FindUser);
   DefineGate('edit', KanRedigere);
   DefineGate('admin', ErAdminGate);
 
@@ -2036,7 +2036,7 @@ begin
   AuthR.Post('/login-husk', AuthC.LoggInnHusk);
   AuthR.Post('/logout', AuthC.LoggUt);
   AuthR.Get('/gate', AuthC.Port);
-  AuthR.Get('/skjult', AuthC.Skjult);
+  AuthR.Get('/skjult', AuthC.Hidden);
   AuthR.Get('/touch', AuthC.Ta);
   UseSessions(AuthR);
   UseAuth(AuthR);
@@ -2060,7 +2060,7 @@ end;
 
 function Sesjonskake(R: TResponse): string;
 begin
-  Result := KakeVerdi(SetCookieLinje(R, AuthK.Arena, 'askr_session'));
+  Result := CookieValue(SetCookieLine(R, AuthK.Arena, 'askr_session'));
 end;
 
 procedure TestAuthInnOgUt;
@@ -2068,7 +2068,7 @@ var
   Res: TResponse;
   Kake1, Kake2: string;
 begin
-  AuthOppsett(False);
+  AuthSetup(False);
   try
     Res := AuthK.Get('/me');
     AssertEqual(Res.Body.ToString, 'ute', 'ingen er logget inn');
@@ -2084,7 +2084,7 @@ begin
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
     Kake2 := Sesjonskake(Res);
 
-    { Session fixation: id-en MÅ være en annen etter innlogging. Uten dette
+    { Session fixation: id-en MÅ være en annen etter innlogging. Without dette
       ville en angriper som fikk satt kaka di på forhånd vært innlogget
       som deg. }
     AssertTrue(Kake2 <> Kake1, 'sesjons-id-en ble byttet ved innlogging');
@@ -2110,19 +2110,19 @@ end;
 procedure TestAuthHuskMeg;
 var
   Res: TResponse;
-  Kake, Husk, Tuklet: string;
+  Cookie_, Husk, Tuklet: string;
 begin
-  AuthOppsett(False);
+  AuthSetup(False);
   try
     Res := AuthK.Get('/touch');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/login-husk', 'id=2', 'application/x-www-form-urlencoded');
-    Husk := KakeVerdi(SetCookieLinje(Res, AuthK.Arena, 'askr_remember'));
+    Husk := CookieValue(SetCookieLine(Res, AuthK.Arena, 'askr_remember'));
     AssertTrue(Husk <> '', 'husk-kaka ble satt');
     AssertTrue(Pos('.', Husk) > 0, 'den er signert');
 
-    { Uten sesjonskake — som etter at nettleseren er lukket — men med
+    { Without sesjonskake — som etter at nettleseren er lukket — men med
       husk-kaka: brukeren skal komme inn igjen. }
     Res := AuthK.WithHeader('Cookie', 'askr_remember=' + Husk).Get('/me');
     AssertEqual(Res.Body.ToString, 'inne:2', 'husk-kaka logget inn igjen');
@@ -2146,7 +2146,7 @@ begin
     Res := AuthK.WithHeader('Cookie', 'askr_remember=' + Husk)
       .Post('/logout', '');
     AssertTrue(Pos('Max-Age=0',
-      SetCookieLinje(Res, AuthK.Arena, 'askr_remember')) > 0,
+      SetCookieLine(Res, AuthK.Arena, 'askr_remember')) > 0,
       'utlogging sletter husk-kaka');
   finally
     AuthRydd;
@@ -2156,21 +2156,21 @@ end;
 procedure TestAuthGates;
 var
   Res: TResponse;
-  Kake: string;
+  Cookie_: string;
 begin
-  AuthOppsett(False);
+  AuthSetup(False);
   try
     { Ingen innlogget: alt er nei. }
     Res := AuthK.Get('/gate');
     AssertEqual(Res.Body.ToString, '', 'uten innlogging gir gatene nei');
 
     Res := AuthK.Get('/touch');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
-    Kake := Sesjonskake(Res);
+    Cookie_ := Sesjonskake(Res);
 
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake).Get('/gate');
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
     { Bruker 1 kan redigere og er admin. «finnes-ikke» er ikke definert, og
       en udefinert gate skal svare nei — en stavefeil skal stenge døra. }
     AssertEqual(Res.Body.ToString, 'edit admin user:Ada',
@@ -2180,11 +2180,11 @@ begin
 
     { Bruker 2 er ikke admin og kan ikke redigere. }
     Res := AuthK.Get('/touch');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/login', 'id=2', 'application/x-www-form-urlencoded');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake).Get('/gate');
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
     AssertEqual(Res.Body.ToString, 'user:Grace',
       'en annen bruker får nei på begge');
   finally
@@ -2195,9 +2195,9 @@ end;
 procedure TestAuthRequire;
 var
   Res: TResponse;
-  Kake: string;
+  Cookie_: string;
 begin
-  AuthOppsett(True);
+  AuthSetup(True);
   try
     { En vanlig nettleser skal til innloggingssiden. }
     Res := AuthK.Get('/skjult');
@@ -2217,13 +2217,13 @@ begin
       POST, og RequireAuth stenger også den. Derfor logges det inn med
       en klient uten kravet. }
     AuthRydd;
-    AuthOppsett(False);
+    AuthSetup(False);
     Res := AuthK.Get('/touch');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake).Get('/skjult');
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/skjult');
     AssertEqual(Res.Body.ToString, 'hemmelig', 'innlogget slipper gjennom');
   finally
     AuthRydd;
@@ -2233,24 +2233,24 @@ end;
 procedure TestAuthBrukeroppslagCaches;
 var
   Res: TResponse;
-  Kake: string;
-  Foer: Integer;
+  Cookie_: string;
+  Before: Integer;
 begin
-  AuthOppsett(False);
+  AuthSetup(False);
   try
     Res := AuthK.Get('/touch');
-    Kake := Sesjonskake(Res);
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake)
+    Cookie_ := Sesjonskake(Res);
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .Post('/login', 'id=1', 'application/x-www-form-urlencoded');
-    Kake := Sesjonskake(Res);
+    Cookie_ := Sesjonskake(Res);
 
     { /gate kaller User og admin-gaten, som begge slår opp brukeren.
       Loaderen skal kalles én gang for User — admin-gaten gjør sitt eget
       oppslag med vilje, for å vise at en gate kan det. }
-    Foer := LastOppKalt;
-    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Kake).Get('/gate');
+    Before := LastOppKalt;
+    Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
     AssertEqual(Res.StatusCode, 200, 'siden svarte');
-    AssertTrue(LastOppKalt - Foer <= 2,
+    AssertTrue(LastOppKalt - Before <= 2,
       'brukeren slås ikke opp på nytt for hvert kall');
   finally
     AuthRydd;
@@ -2265,16 +2265,16 @@ end;
   på Linux, der RTL-en leser envp fra oppstart. Derfor testes «miljøet
   vinner» mot en variabel som allerede står der — HOME — i stedet for mot
   en testen setter selv. }
-function LagFil(const Sti: string; const Linjer: array of string): Boolean;
+function LagFil(const Path_: string; const Lines: array of string): Boolean;
 var
   L: TStringList;
   I: Integer;
 begin
   L := TStringList.Create;
   try
-    for I := 0 to High(Linjer) do
-      L.Add(Linjer[I]);
-    L.SaveToFile(Sti);
+    for I := 0 to High(Lines) do
+      L.Add(Lines[I]);
+    L.SaveToFile(Path_);
     Result := True;
   finally
     L.Free;
@@ -2282,19 +2282,19 @@ begin
 end;
 
 var
-  LoggLinjer: TStringList;
+  LogLines: TStringList;
 
 { Egen destinasjon, slik at testen kan lese linjene i stedet for å måtte
   fange stderr. Det er også demonstrasjonen av at SetLogSink virker. }
-procedure SamleLinje(const Line: string);
+procedure CollectLine(const Line: string);
 begin
-  LoggLinjer.Add(Line);
+  LogLines.Add(Line);
 end;
 
-procedure LoggOppsett;
+procedure LogSetup;
 begin
-  LoggLinjer := TStringList.Create;
-  SetLogSink(SamleLinje);
+  LogLines := TStringList.Create;
+  SetLogSink(CollectLine);
   SetLogLevel(llDebug);
   SetLogFormat(lfText);
 end;
@@ -2304,30 +2304,30 @@ begin
   SetLogSink(nil);
   SetLogLevel(llInfo);
   SetLogFormat(lfText);
-  LoggLinjer.Free;
+  LogLines.Free;
 end;
 
 procedure TestLoggNivaa;
 begin
-  LoggOppsett;
+  LogSetup;
   try
     SetLogLevel(llWarn);
     LogDebug('d');
     LogInfo('i');
     LogWarn('w');
     LogError('e');
-    AssertEqual(LoggLinjer.Count, 2, 'bare warn og error slapp gjennom');
-    AssertTrue(Pos('WARN', LoggLinjer[0]) > 0, 'nivået står i linja');
-    AssertTrue(Pos('ERROR', LoggLinjer[1]) > 0, 'og for error også');
+    AssertEqual(LogLines.Count, 2, 'bare warn og error slapp gjennom');
+    AssertTrue(Pos('WARN', LogLines[0]) > 0, 'nivået står i linja');
+    AssertTrue(Pos('ERROR', LogLines[1]) > 0, 'og for error også');
 
     AssertFalse(LogEnabled(llInfo), 'LogEnabled sier nei under terskelen');
     AssertTrue(LogEnabled(llError), 'og ja over');
 
     { llNone er ikke et nivå å logge på, det er et tak. }
-    LoggLinjer.Clear;
+    LogLines.Clear;
     SetLogLevel(llNone);
     LogError('selv ikke denne');
-    AssertEqual(LoggLinjer.Count, 0, 'llNone slår loggen helt av');
+    AssertEqual(LogLines.Count, 0, 'llNone slår loggen helt av');
   finally
     LoggRydd;
   end;
@@ -2337,11 +2337,11 @@ procedure TestLoggTekstformat;
 var
   L: string;
 begin
-  LoggOppsett;
+  LogSetup;
   try
     LogInfo('request', ['method', 'GET', 'path', '/a b', 'status', 200]);
-    AssertEqual(LoggLinjer.Count, 1, 'én linje');
-    L := LoggLinjer[0];
+    AssertEqual(LogLines.Count, 1, 'én linje');
+    L := LogLines[0];
     AssertTrue(Pos('INFO', L) > 0, 'nivå');
     AssertTrue(Pos('request', L) > 0, 'melding');
     AssertTrue(Pos('method=GET', L) > 0, 'felt uten mellomrom står usitert');
@@ -2354,9 +2354,9 @@ begin
     AssertTrue(Pos('Z ', L) > 0, 'og Z for UTC');
 
     { Et felt uten verdi skal ikke velte noe. }
-    LoggLinjer.Clear;
+    LogLines.Clear;
     LogInfo('rar', ['alene']);
-    AssertEqual(LoggLinjer.Count, 1, 'nøkkel uten verdi logges likevel');
+    AssertEqual(LogLines.Count, 1, 'nøkkel uten verdi logges likevel');
   finally
     LoggRydd;
   end;
@@ -2366,16 +2366,16 @@ procedure TestLoggJson;
 var
   L: string;
 begin
-  LoggOppsett;
+  LogSetup;
   try
     SetLogFormat(lfJson);
     LogInfo('request', ['method', 'GET', 'status', 200, 'ok', True,
       'ms', Int64(17)]);
-    L := LoggLinjer[0];
+    L := LogLines[0];
     AssertTrue(Pos('"level":"info"', L) > 0, 'nivå som felt');
     AssertTrue(Pos('"msg":"request"', L) > 0, 'melding som felt');
     AssertTrue(Pos('"method":"GET"', L) > 0, 'streng siteres');
-    { Tall og boolske skal stå usitert, ellers kan ingen regne på dem. }
+    { Number og boolske skal stå usitert, ellers kan ingen regne på dem. }
     AssertTrue(Pos('"status":200', L) > 0, 'tall står usitert');
     AssertTrue(Pos('"ms":17', L) > 0, 'og int64 også');
     AssertTrue(Pos('"ok":true', L) > 0, 'boolsk står usitert');
@@ -2384,9 +2384,9 @@ begin
 
     { Anførselstegn og linjeskift i en verdi må escapes, ellers er linja
       ikke lenger JSON — og en logginnsamler forkaster hele filen. }
-    LoggLinjer.Clear;
+    LogLines.Clear;
     LogWarn('rar', ['tekst', 'han sa "hei"' + #10 + 'og gikk']);
-    L := LoggLinjer[0];
+    L := LogLines[0];
     AssertTrue(Pos('\"hei\"', L) > 0, 'anførselstegn escapes');
     AssertTrue(Pos('\n', L) > 0, 'linjeskift escapes');
     AssertEqual(Pos(#10, L), 0, 'og det er ingen ekte linjeskift igjen');
@@ -2399,7 +2399,7 @@ procedure TestLoggException;
 var
   L: string;
 begin
-  LoggOppsett;
+  LogSetup;
   try
     SetLogFormat(lfJson);
     try
@@ -2408,8 +2408,8 @@ begin
       on E: Exception do
         LogException(E, 'while saving', ['id', 7]);
     end;
-    AssertEqual(LoggLinjer.Count, 1, 'én linje');
-    L := LoggLinjer[0];
+    AssertEqual(LogLines.Count, 1, 'én linje');
+    L := LogLines[0];
     { Klassen og meldingen er egne felter, ikke fritekst. Det er
       forskjellen på å kunne gruppere på feiltype og å måtte grep-e. }
     AssertTrue(Pos('"class":"EConfigError"', L) > 0, 'klassen er et felt');
@@ -2423,15 +2423,15 @@ end;
 
 procedure TestLoggTilFil;
 var
-  Sti: string;
+  Path_: string;
   L: TStringList;
 begin
-  Sti := '.build/logg-test.log';
-  DeleteFile(Sti);
+  Path_ := '.build/logg-test.log';
+  DeleteFile(Path_);
   try
     SetLogLevel(llInfo);
     SetLogFormat(lfText);
-    SetLogFile(Sti);
+    SetLogFile(Path_);
     LogInfo('til fil', ['n', 1]);
     LogInfo('og en til', ['n', 2]);
     { Filen lukkes når destinasjonen byttes, og da er alt skrevet. }
@@ -2439,7 +2439,7 @@ begin
 
     L := TStringList.Create;
     try
-      L.LoadFromFile(Sti);
+      L.LoadFromFile(Path_);
       AssertEqual(L.Count, 2, 'begge linjene havnet i fila');
       AssertTrue(Pos('n=1', L[0]) > 0, 'første linje');
       AssertTrue(Pos('n=2', L[1]) > 0, 'andre linje');
@@ -2449,29 +2449,29 @@ begin
 
     { Å åpne på nytt skal legge til, ikke slette. En omstart skal ikke
       viske ut forrige kjørings logg. }
-    SetLogFile(Sti);
+    SetLogFile(Path_);
     LogInfo('etter omstart');
     SetLogFile('');
     L := TStringList.Create;
     try
-      L.LoadFromFile(Sti);
+      L.LoadFromFile(Path_);
       AssertEqual(L.Count, 3, 'den tredje ble lagt til');
     finally
       L.Free;
     end;
   finally
     SetLogFile('');
-    DeleteFile(Sti);
+    DeleteFile(Path_);
   end;
 end;
 
 procedure TestConfigLag;
 var
   L: TStringList;
-  Mappe: string;
+  Folder: string;
 begin
-  Mappe := '.build/cfg-test';
-  ForceDirectories(Mappe);
+  Folder := '.build/cfg-test';
+  ForceDirectories(Folder);
   L := TStringList.Create;
   try
     L.Add('name = "demo"');
@@ -2479,21 +2479,21 @@ begin
     L.Add('[app]');
     L.Add('port = 8080');
     L.Add('tom =');
-    L.SaveToFile(Mappe + '/askr.toml');
+    L.SaveToFile(Folder + '/askr.toml');
     L.Clear;
     L.Add('APP_PORT=9000');
     L.Add('DATABASE_URL=sqlite:demo.db');
     { HOME står allerede i miljøet. Ved å sette den til noe annet her, blir
       fila og miljøet uenige — og da kan det testes hvem som vinner. }
     L.Add('HOME=/helt/feil');
-    L.SaveToFile(Mappe + '/.env');
+    L.SaveToFile(Folder + '/.env');
   finally
     L.Free;
   end;
 
   try
     ClearConfig;
-    LoadConfig(Mappe);
+    LoadConfig(Folder);
 
     AssertEqual(Cfg('name'), 'demo', 'toppnivå fra askr.toml');
     { .env slår askr.toml: app.port slås opp som APP_PORT, og den står i
@@ -2538,40 +2538,40 @@ begin
     end;
   finally
     ClearConfig;
-    DeleteFile(Mappe + '/askr.toml');
-    DeleteFile(Mappe + '/.env');
-    RemoveDir(Mappe);
+    DeleteFile(Folder + '/askr.toml');
+    DeleteFile(Folder + '/.env');
+    RemoveDir(Folder);
   end;
 end;
 
 procedure TestConfigRapport;
 var
   L: TStringList;
-  Mappe, Rapport: string;
+  Folder, Rapport: string;
 begin
-  Mappe := '.build/cfg-rapport';
-  ForceDirectories(Mappe);
+  Folder := '.build/cfg-rapport';
+  ForceDirectories(Folder);
   L := TStringList.Create;
   try
     L.Add('DATABASE_URL=postgresql://bruker:hemmelig@host/db');
     L.Add('APP_ENV=local');
     L.Add('MAIL_FROM=post@example.com');
-    L.SaveToFile(Mappe + '/.env');
+    L.SaveToFile(Folder + '/.env');
   finally
     L.Free;
   end;
 
   try
     ClearConfig;
-    LoadConfig(Mappe);
+    LoadConfig(Folder);
 
-    { Uten --values skal rapporten være trygg å lime inn hvor som helst. }
+    { Without --values skal rapporten være trygg å lime inn hvor som helst. }
     Rapport := ConfigReport(False);
     AssertTrue(Pos('DATABASE_URL', Rapport) > 0, 'nøkkelen står der');
     AssertEqual(Pos('hemmelig', Rapport), 0, 'men ingen verdi');
     AssertEqual(Pos('post@example.com', Rapport), 0, 'heller ikke denne');
 
-    { Med --values vises verdier, men ikke de som ser ut som hemmeligheter. }
+    { With_ --values vises verdier, men ikke de som ser ut som hemmeligheter. }
     Rapport := ConfigReport(True);
     AssertTrue(Pos('post@example.com', Rapport) > 0,
       'en ufarlig verdi vises');
@@ -2585,8 +2585,8 @@ begin
     AssertFalse(LooksSecret('APP_ENV'), 'men ikke APP_ENV');
   finally
     ClearConfig;
-    DeleteFile(Mappe + '/.env');
-    RemoveDir(Mappe);
+    DeleteFile(Folder + '/.env');
+    RemoveDir(Folder);
   end;
 end;
 
@@ -2594,10 +2594,10 @@ procedure TestMiljoe;
 const
   Fil = '.build/miljoe-test/.env';
 var
-  Mappe: string;
+  Folder: string;
 begin
-  Mappe := '.build/miljoe-test';
-  ForceDirectories(Mappe);
+  Folder := '.build/miljoe-test';
+  ForceDirectories(Folder);
   try
     { APP_ENV settes i .env og ikke i prosessens miljø, fordi det siste
       ikke lar seg gjøre bærbart. Env() leser begge, så laget som testes
@@ -2648,7 +2648,7 @@ begin
   finally
     ClearEnv;
     DeleteFile(Fil);
-    RemoveDir(Mappe);
+    RemoveDir(Folder);
   end;
 end;
 
@@ -2656,21 +2656,21 @@ end;
 { -------------------------------------------------------- varig kø -- }
 
 var
-  VarigLaas: TRTLCriticalSection;
-  VarigKjort: Integer;
-  VarigSiste: string;
-  VarigSkalFeile: Boolean;
+  DurableLock: TRTLCriticalSection;
+  DurableRan: Integer;
+  DurableLast: string;
+  DurableShouldFail: Boolean;
 
-procedure VarigJobb(const Ctx: TJobContext);
+procedure DurableJob(const Ctx: TJobContext);
 begin
-  EnterCriticalSection(VarigLaas);
+  EnterCriticalSection(DurableLock);
   try
-    Inc(VarigKjort);
-    VarigSiste := Ctx.Payload.ToString;
+    Inc(DurableRan);
+    DurableLast := Ctx.Payload.ToString;
   finally
-    LeaveCriticalSection(VarigLaas);
+    LeaveCriticalSection(DurableLock);
   end;
-  if VarigSkalFeile then
+  if DurableShouldFail then
     raise Exception.Create('med vilje');
 end;
 
@@ -2679,7 +2679,7 @@ begin
   Result := 'sqlite:.build/queue-test.db';
 end;
 
-function NyttLager: TDbJobStore;
+function NewStore: TDbJobStore;
 begin
   Result := TDbJobStore.Create(VarigDsn, 4);
   { Rask poll, ellers venter testen et kvart sekund per jobb. En ekte app
@@ -2689,15 +2689,15 @@ begin
   Result.EnsureSchema;
 end;
 
-procedure VarigOppsett;
+procedure DurableSetup;
 begin
   DeleteFile('.build/queue-test.db');
   DeleteFile('.build/queue-test.db-wal');
   DeleteFile('.build/queue-test.db-shm');
   ForceDirectories('.build');
-  VarigKjort := 0;
-  VarigSiste := '';
-  VarigSkalFeile := False;
+  DurableRan := 0;
+  DurableLast := '';
+  DurableShouldFail := False;
 end;
 
 procedure VarigRydd;
@@ -2711,14 +2711,14 @@ end;
   som la den inn er borte. }
 procedure TestVarigOverleverOmstart;
 var
-  Lager: TDbJobStore;
+  Storage: TDbJobStore;
   Q: TQueue;
 begin
-  VarigOppsett;
+  DurableSetup;
   try
     { «Første kjøring»: legg inn tre jobber, og avslutt uten å kjøre dem. }
-    Lager := NyttLager;
-    Q := TQueue.Create(Lager, 2, 3, True);
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 2, 3, True);
     try
       AssertTrue(Q.Durable, 'køen sier fra at den er varig');
       Q.Push('varig', 'en');
@@ -2731,19 +2731,19 @@ begin
     end;
 
     { «Andre kjøring»: en ny prosess, nytt lager, samme fil. }
-    Lager := NyttLager;
-    Q := TQueue.Create(Lager, 2, 3, True);
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 2, 3, True);
     try
       AssertEqual(Q.Pending, 3, 'jobbene overlevde at køen ble borte');
-      Q.Handle('varig', @VarigJobb);
+      Q.Handle('varig', @DurableJob);
       Q.Start;
       AssertTrue(Q.WaitUntilEmpty(10000), 'og de kjørte nå');
       Sleep(100);
-      EnterCriticalSection(VarigLaas);
+      EnterCriticalSection(DurableLock);
       try
-        AssertEqual(VarigKjort, 3, 'alle tre, én gang hver');
+        AssertEqual(DurableRan, 3, 'alle tre, én gang hver');
       finally
-        LeaveCriticalSection(VarigLaas);
+        LeaveCriticalSection(DurableLock);
       end;
       Q.Stop(True);
     finally
@@ -2756,16 +2756,16 @@ end;
 
 procedure TestVarigFeilerOgGirOpp;
 var
-  Lager: TDbJobStore;
+  Storage: TDbJobStore;
   Q: TQueue;
 begin
-  VarigOppsett;
+  DurableSetup;
   try
-    Lager := NyttLager;
-    Q := TQueue.Create(Lager, 1, 2, False);
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 1, 2, False);
     try
-      VarigSkalFeile := True;
-      Q.Handle('varig', @VarigJobb);
+      DurableShouldFail := True;
+      Q.Handle('varig', @DurableJob);
       Q.Start;
       Q.Push('varig', 'dette går galt');
       AssertTrue(Q.WaitUntilEmpty(10000), 'jobben ga seg til slutt');
@@ -2775,38 +2775,38 @@ begin
       AssertEqual(Q.Failed, 1, 'talt som feilet');
       { Forsøkstelleren ligger i raden, ikke i minnet — den skal overleve
         at prosessen dør midt i. }
-      EnterCriticalSection(VarigLaas);
+      EnterCriticalSection(DurableLock);
       try
-        AssertEqual(VarigKjort, 2, 'to forsøk, som MaxAttempts sier');
+        AssertEqual(DurableRan, 2, 'to forsøk, som MaxAttempts sier');
       finally
-        LeaveCriticalSection(VarigLaas);
+        LeaveCriticalSection(DurableLock);
       end;
 
       { En jobb som har gitt opp flyttes, den slettes ikke. Den er det
         eneste sporet av at noe skulle ha skjedd og ikke gjorde det. }
-      AssertEqual(Lager.FailedCount, 1, 'den ligger i feiltabellen');
+      AssertEqual(Storage.FailedCount, 1, 'den ligger i feiltabellen');
 
       { Og den kan legges tilbake når det som var galt er rettet. }
-      VarigSkalFeile := False;
-      VarigKjort := 0;
-      AssertEqual(Lager.RetryFailed, 1, 'RetryFailed flyttet den tilbake');
-      AssertEqual(Lager.FailedCount, 0, 'feiltabellen er tom');
+      DurableShouldFail := False;
+      DurableRan := 0;
+      AssertEqual(Storage.RetryFailed, 1, 'RetryFailed flyttet den tilbake');
+      AssertEqual(Storage.FailedCount, 0, 'feiltabellen er tom');
       AssertEqual(Q.Pending, 1, 'og jobben står i køen igjen');
 
       Q.Start;
       AssertTrue(Q.WaitUntilEmpty(10000), 'den kjørte');
       Sleep(100);
-      EnterCriticalSection(VarigLaas);
+      EnterCriticalSection(DurableLock);
       try
-        AssertEqual(VarigSiste, 'dette går galt',
+        AssertEqual(DurableLast, 'dette går galt',
           'med payloaden i behold');
       finally
-        LeaveCriticalSection(VarigLaas);
+        LeaveCriticalSection(DurableLock);
       end;
       Q.Stop(True);
     finally
       Q.Free;
-      Lager.Free;
+      Storage.Free;
     end;
   finally
     VarigRydd;
@@ -2815,13 +2815,13 @@ end;
 
 procedure TestVarigUkjentJobb;
 var
-  Lager: TDbJobStore;
+  Storage: TDbJobStore;
   Q: TQueue;
 begin
-  VarigOppsett;
+  DurableSetup;
   try
-    Lager := NyttLager;
-    Q := TQueue.Create(Lager, 1, 3, False);
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 1, 3, False);
     try
       Q.Start;
       Q.Push('finnes-ikke', 'data');
@@ -2831,11 +2831,11 @@ begin
       AssertEqual(Q.Dropped, 1, 'talt som forkastet');
       { En app som har mistet en Handle-linje skal kunne se hva som lå der.
         I minnekøen forsvinner den; her ligger den igjen. }
-      AssertEqual(Lager.FailedCount, 1,
+      AssertEqual(Storage.FailedCount, 1,
         'en jobb uten handler havner i feiltabellen, ikke i intet');
     finally
       Q.Free;
-      Lager.Free;
+      Storage.Free;
     end;
   finally
     VarigRydd;
@@ -2844,68 +2844,68 @@ end;
 
 procedure TestVarigForsinkelseOgBinaert;
 var
-  Lager: TDbJobStore;
+  Storage: TDbJobStore;
   Q: TQueue;
-  Feil: string;
+  Err: string;
 begin
-  VarigOppsett;
+  DurableSetup;
   try
-    Lager := NyttLager;
-    Q := TQueue.Create(Lager, 1, 3, False);
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 1, 3, False);
     try
-      Q.Handle('varig', @VarigJobb);
+      Q.Handle('varig', @DurableJob);
       Q.Start;
       Q.Push('varig', 'senere', 2);
       Sleep(300);
-      EnterCriticalSection(VarigLaas);
+      EnterCriticalSection(DurableLock);
       try
-        AssertEqual(VarigKjort, 0, 'forsinket jobb kjører ikke med en gang');
+        AssertEqual(DurableRan, 0, 'forsinket jobb kjører ikke med en gang');
       finally
-        LeaveCriticalSection(VarigLaas);
+        LeaveCriticalSection(DurableLock);
       end;
       AssertEqual(Q.Pending, 1, 'den ligger fortsatt i tabellen');
       Q.Stop(False);
 
       { Rå bytes avvises med en gang. Å la dem gå videre gir enten en
         ødelagt jobb eller en driverfeil langt unna den som skrev den. }
-      Feil := '';
+      Err := '';
       try
         Q.Push('varig', 'a'#0'b');
       except
-        on E: Exception do Feil := E.Message;
+        on E: Exception do Err := E.Message;
       end;
-      AssertTrue(Pos('NUL byte', Feil) > 0,
+      AssertTrue(Pos('NUL byte', Err) > 0,
         'nullbyte i payloaden avvises, og meldingen sier hvorfor');
-      AssertTrue(Pos('varig', Feil) > 0, 'og hvilken jobb det gjaldt');
+      AssertTrue(Pos('varig', Err) > 0, 'og hvilken jobb det gjaldt');
     finally
       Q.Free;
-      Lager.Free;
+      Storage.Free;
     end;
   finally
     VarigRydd;
   end;
 end;
 
-{ En worker som dør midt i en jobb etterlater raden reservert. Uten at noen
+{ En worker som dør midt i en jobb etterlater raden reservert. Without at noen
   slipper den igjen, ville jobben blitt liggende for alltid. }
 procedure TestVarigForlattReservasjon;
 var
-  Lager: TDbJobStore;
+  Storage: TDbJobStore;
   C: TDbConnection;
   A: TArena;
   J: TReservedJob;
 begin
-  VarigOppsett;
+  DurableSetup;
   A := TArena.Create(8 * 1024);
   try
-    Lager := NyttLager;
+    Storage := NewStore;
     try
-      Lager.Push('varig', PByte(PChar('data')), 4, 0);
+      Storage.Push('varig', PByte(PChar('data')), 4, 0);
 
       { Reserver, og gjør den aldri opp — som om prosessen døde her. }
-      AssertTrue(Lager.Reserve(J), 'jobben ble reservert');
+      AssertTrue(Storage.Reserve(J), 'jobben ble reservert');
       AssertEqual(J.Name, 'varig', 'riktig jobb');
-      AssertFalse(Lager.Reserve(J), 'ingen andre får den mens den er tatt');
+      AssertFalse(Storage.Reserve(J), 'ingen andre får den mens den er tatt');
 
       { Sett reservasjonen langt tilbake i tid, slik tiden ville gjort. }
       C := OpenDbConnection(VarigDsn);
@@ -2915,12 +2915,12 @@ begin
         C.Free;
       end;
 
-      AssertTrue(Lager.Reserve(J),
+      AssertTrue(Storage.Reserve(J),
         'en forlatt reservasjon slippes og jobben kan tas igjen');
-      Lager.Complete(J);
-      AssertEqual(Lager.Pending, 0, 'og da er den borte');
+      Storage.Complete(J);
+      AssertEqual(Storage.Pending, 0, 'og da er den borte');
     finally
-      Lager.Free;
+      Storage.Free;
     end;
   finally
     A.Free;
@@ -2942,7 +2942,7 @@ type
 var
   KlientPort: Word;
   StroemBiter: Integer;
-  StroemTekst: string;
+  StreamText: string;
   EkkoH: TEkkoServer;
   EkkoSrv: TAskrServer;
   EkkoOpts: TServerOptions;
@@ -2950,7 +2950,7 @@ var
 function TEkkoServer.Handle(Req: TRequest): TResponse;
 var
   I: Integer;
-  Stor: string;
+  Big: string;
 begin
   if Req.Path.EqualsStr('/hei') then
     Exit(RespondText('hei'));
@@ -2977,10 +2977,10 @@ begin
   if Req.Path.EqualsStr('/stor') then
   begin
     { 300 kB, nok til at svaret kommer i flere lesninger. }
-    Stor := '';
+    Big := '';
     for I := 1 to 3000 do
-      Stor := Stor + StringOfChar('x', 99) + #10;
-    Exit(RespondText(Stor));
+      Big := Big + StringOfChar('x', 99) + #10;
+    Exit(RespondText(Big));
   end;
 
   if Req.Path.EqualsStr('/borte') then
@@ -3030,7 +3030,7 @@ end;
 procedure TChunkedServer.Execute;
 var
   S: TSocket;
-  Svar, Bit: string;
+  Reply, Bit: string;
   I: Integer;
   Buf: array[0..1023] of Byte;
 begin
@@ -3042,7 +3042,7 @@ begin
     { Les requesten og kast den — hva som spørres om er ikke poenget. }
     fpRecv(S, @Buf[0], SizeOf(Buf), 0);
 
-    Svar := 'HTTP/1.1 200 OK'#13#10 +
+    Reply := 'HTTP/1.1 200 OK'#13#10 +
       'Content-Type: text/plain'#13#10 +
       'Transfer-Encoding: chunked'#13#10 +
       'Connection: close'#13#10#13#10;
@@ -3057,12 +3057,12 @@ begin
       { Størrelsen er heksadesimal. En bit med utvidelse etter semikolon
         er lovlig, og den fjerde har en for å vise at den hoppes over. }
       if I = 4 then
-        Svar := Svar + Format('%x;noe=her'#13#10'%s'#13#10, [Length(Bit), Bit])
+        Reply := Reply + Format('%x;noe=her'#13#10'%s'#13#10, [Length(Bit), Bit])
       else
-        Svar := Svar + Format('%x'#13#10'%s'#13#10, [Length(Bit), Bit]);
+        Reply := Reply + Format('%x'#13#10'%s'#13#10, [Length(Bit), Bit]);
     end;
-    Svar := Svar + '0'#13#10#13#10;
-    fpSend(S, PChar(Svar), Length(Svar), 0);
+    Reply := Reply + '0'#13#10#13#10;
+    fpSend(S, PChar(Reply), Length(Reply), 0);
     CloseSocket(S);
   end;
   CloseSocket(FLytt);
@@ -3131,48 +3131,48 @@ end;
 function SamleBit(const Chunk: string): Boolean;
 begin
   Inc(StroemBiter);
-  StroemTekst := StroemTekst + Chunk;
+  StreamText := StreamText + Chunk;
   Result := True;
 end;
 
 function StoppEtterFoerste(const Chunk: string): Boolean;
 begin
   Inc(StroemBiter);
-  StroemTekst := StroemTekst + Chunk;
+  StreamText := StreamText + Chunk;
   { False betyr «slutt å lese». Det er slik en SSE-lytter melder seg av. }
   Result := False;
 end;
 
 procedure TestKlientUrl;
 var
-  Sch, Host, Sti: string;
+  Sch, Host, Path_: string;
   Port: Word;
 begin
   AssertTrue(ParseUrl('https://api.example.com/v1/messages', Sch, Host,
-    Port, Sti), 'en vanlig https-adresse');
+    Port, Path_), 'en vanlig https-adresse');
   AssertEqual(Sch, 'https', 'skjema');
   AssertEqual(Host, 'api.example.com', 'vert');
   AssertEqual(Port, 443, 'https gir 443 uten at porten står der');
-  AssertEqual(Sti, '/v1/messages', 'sti');
+  AssertEqual(Path_, '/v1/messages', 'sti');
 
-  ParseUrl('http://localhost:8080', Sch, Host, Port, Sti);
+  ParseUrl('http://localhost:8080', Sch, Host, Port, Path_);
   AssertEqual(Port, 8080, 'porten leses');
-  AssertEqual(Sti, '/', 'tom sti blir /');
+  AssertEqual(Path_, '/', 'tom sti blir /');
 
-  ParseUrl('http://x.no?a=1', Sch, Host, Port, Sti);
-  AssertEqual(Sti, '/?a=1', 'query uten sti får / foran');
+  ParseUrl('http://x.no?a=1', Sch, Host, Port, Path_);
+  AssertEqual(Path_, '/?a=1', 'query uten sti får / foran');
 
   { Fragmentet er nettleserens, ikke serverens, og skal aldri sendes. }
-  ParseUrl('http://x.no/side#del', Sch, Host, Port, Sti);
-  AssertEqual(Sti, '/side', 'fragmentet sendes ikke');
+  ParseUrl('http://x.no/side#del', Sch, Host, Port, Path_);
+  AssertEqual(Path_, '/side', 'fragmentet sendes ikke');
 
   { Brukerinfo i adressen ignoreres i stedet for å bli sendt videre. }
-  ParseUrl('https://bruker:pass@x.no/a', Sch, Host, Port, Sti);
+  ParseUrl('https://bruker:pass@x.no/a', Sch, Host, Port, Path_);
   AssertEqual(Host, 'x.no', 'brukerinfo hører ikke til verten');
 
-  AssertFalse(ParseUrl('ftp://x.no/a', Sch, Host, Port, Sti),
+  AssertFalse(ParseUrl('ftp://x.no/a', Sch, Host, Port, Path_),
     'ftp er ikke http');
-  AssertFalse(ParseUrl('bare en tekst', Sch, Host, Port, Sti),
+  AssertFalse(ParseUrl('bare en tekst', Sch, Host, Port, Path_),
     'og en tekst uten skjema er ingen adresse');
 
   AssertEqual(UrlEncodeValue('a b&c=d'), 'a%20b%26c%3Dd',
@@ -3236,7 +3236,7 @@ procedure TestKlientOmdirigering;
 var
   K: THttpClient;
   R: THttpResponse;
-  Base, Feil: string;
+  Base, Err: string;
 begin
   K := THttpClient.Create;
   Base := Format('http://127.0.0.1:%d', [KlientPort]);
@@ -3253,16 +3253,16 @@ begin
     AssertEqual(R.Body, 'kroppen', 'og kroppen');
 
     { En kjede som ikke tar slutt skal stoppe, ikke henge. }
-    Feil := '';
+    Err := '';
     try
       K.Get(Base + '/evig');
     except
-      on E: EHttpClientError do Feil := E.Message;
+      on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('Too many redirects', Feil) > 0,
+    AssertTrue(Pos('Too many redirects', Err) > 0,
       'en evig omdirigering stoppes');
 
-    { Med MaxRedirects = 0 returneres 302-svaret som det er. }
+    { With_ MaxRedirects = 0 returneres 302-svaret som det er. }
     K.MaxRedirects := 0;
     R := K.Get(Base + '/flytt');
     AssertEqual(R.Status, 302, 'uten å følge ser man selve omdirigeringen');
@@ -3282,19 +3282,19 @@ begin
   Base := Format('http://127.0.0.1:%d', [KlientPort]);
   try
     StroemBiter := 0;
-    StroemTekst := '';
+    StreamText := '';
     R := K.Stream('GET', Base + '/stor', '', '', @SamleBit);
     AssertEqual(R.Status, 200, 'strømmet svar har fortsatt status');
     AssertEqual(R.Body, '', 'kroppen samles ikke opp når den strømmes');
-    AssertEqual(Length(StroemTekst), 300000, 'men callbacken fikk alt');
+    AssertEqual(Length(StreamText), 300000, 'men callbacken fikk alt');
     AssertTrue(StroemBiter > 1, 'og den fikk det i flere biter');
 
     { False fra callbacken skal stoppe lesingen. }
     StroemBiter := 0;
-    StroemTekst := '';
+    StreamText := '';
     R := K.Stream('GET', Base + '/stor', '', '', @StoppEtterFoerste);
     AssertEqual(StroemBiter, 1, 'callbacken kan si stopp');
-    AssertTrue(Length(StroemTekst) < 300000, 'og da leses ikke resten');
+    AssertTrue(Length(StreamText) < 300000, 'og da leses ikke resten');
   finally
     K.Free;
   end;
@@ -3303,47 +3303,47 @@ end;
 procedure TestKlientFeil;
 var
   K: THttpClient;
-  Feil: string;
+  Err: string;
 begin
   K := THttpClient.Create;
   try
-    Feil := '';
+    Err := '';
     try
       K.Get('ftp://example.com/x');
     except
-      on E: EHttpClientError do Feil := E.Message;
+      on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('not an http', Feil) > 0,
+    AssertTrue(Pos('not an http', Err) > 0,
       'en adresse som ikke er http avvises med en gang');
 
     { En port ingen lytter på. Meldingen skal si hvor. }
-    Feil := '';
+    Err := '';
     K.ConnectTimeoutMs := 2000;
     try
       K.Get('http://127.0.0.1:9/finnes-ikke');
     except
-      on E: EHttpClientError do Feil := E.Message;
+      on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('127.0.0.1', Feil) > 0,
+    AssertTrue(Pos('127.0.0.1', Err) > 0,
       'en forbindelse som ikke går opp nevner verten');
 
-    Feil := '';
+    Err := '';
     try
       K.Get('http://ingen-slik-vert.invalid/x');
     except
-      on E: EHttpClientError do Feil := E.Message;
+      on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('resolve', Feil) > 0, 'og et navn som ikke finnes');
+    AssertTrue(Pos('resolve', Err) > 0, 'og et navn som ikke finnes');
 
     { Taket på svarstørrelse er en sperre, ikke en optimalisering. }
     K.MaxResponseBytes := 1000;
-    Feil := '';
+    Err := '';
     try
       K.Get(Format('http://127.0.0.1:%d/stor', [KlientPort]));
     except
-      on E: EHttpClientError do Feil := E.Message;
+      on E: EHttpClientError do Err := E.Message;
     end;
-    AssertTrue(Pos('exceeded', Feil) > 0, 'et for stort svar avvises');
+    AssertTrue(Pos('exceeded', Err) > 0, 'et for stort svar avvises');
   finally
     K.Free;
   end;
@@ -3355,7 +3355,7 @@ end;
 var
   AiBiter: TStringList;
   AiVerktoeyKall: Integer;
-  AiSisteArg: string;
+  AiLastArg: string;
 
 function AiSamle(const Delta: string): Boolean;
 begin
@@ -3372,7 +3372,7 @@ end;
 function VaerVerktoey(const InputJson: string): string;
 begin
   Inc(AiVerktoeyKall);
-  AiSisteArg := InputJson;
+  AiLastArg := InputJson;
   Result := '{"temp_c": 7, "sky": "regn"}';
 end;
 
@@ -3382,7 +3382,7 @@ begin
   raise Exception.Create('verktøyet feilet');
 end;
 
-function NyKlient(out F: TFakeAiTransport): TAiClient;
+function NewClient(out F: TFakeAiTransport): TAiClient;
 begin
   Result := TAiClient.Create('test-nokkel');
   F := TFakeAiTransport.Create;
@@ -3390,11 +3390,11 @@ begin
 end;
 
 { Et svar slik API-et sender det. }
-function AiSvar(const Tekst: string): string;
+function AiReply(const Text_: string): string;
 begin
   Result := '{"id":"msg_1","type":"message","role":"assistant",' +
     '"model":"claude-opus-5","content":[{"type":"text","text":"' +
-    Tekst + '"}],"stop_reason":"end_turn",' +
+    Text_ + '"}],"stop_reason":"end_turn",' +
     '"usage":{"input_tokens":12,"output_tokens":34}}';
 end;
 
@@ -3404,9 +3404,9 @@ var
   F: TFakeAiTransport;
   Sendt: string;
 begin
-  K := NyKlient(F);
+  K := NewClient(F);
   try
-    F.Enqueue(AiSvar('hei'));
+    F.Enqueue(AiReply('hei'));
     AssertEqual(K.Ask('si hei'), 'hei', 'det enkleste kallet virker');
 
     Sendt := F.Sent[0];
@@ -3417,7 +3417,7 @@ begin
     AssertTrue(Pos('"max_tokens":4096', Sendt) > 0, 'max_tokens er med');
     AssertTrue(Pos('"role":"user"', Sendt) > 0, 'meldingen har rolle');
     AssertTrue(Pos('"content":"si hei"', Sendt) > 0, 'og innhold');
-    { Uten stream skal feltet ikke være der i det hele tatt. }
+    { Without stream skal feltet ikke være der i det hele tatt. }
     AssertEqual(Pos('"stream"', Sendt), 0, 'ingen stream på et vanlig kall');
     AssertEqual(Pos('"thinking"', Sendt), 0, 'og ingen thinking når den er av');
     AssertEqual(Pos('"temperature"', Sendt), 0,
@@ -3428,7 +3428,7 @@ begin
     K.Model := 'claude-haiku-4-5';
     K.SetTemperature(0.2);
     K.MaxTokens := 100;
-    F.Enqueue(AiSvar('ok'));
+    F.Enqueue(AiReply('ok'));
     K.Ask('noe');
     Sendt := F.Sent[1];
     AssertTrue(Pos('"system":"Du er kort."', Sendt) > 0, 'system er med');
@@ -3440,7 +3440,7 @@ begin
     { Dette er fella som er verdt en egen test: den gamle formen med
       budget_tokens avvises med 400 av modellene her. }
     K.Thinking := atAdaptive;
-    F.Enqueue(AiSvar('ok'));
+    F.Enqueue(AiReply('ok'));
     K.Ask('noe');
     Sendt := F.Sent[2];
     AssertTrue(Pos('"thinking":{"type":"adaptive"}', Sendt) > 0,
@@ -3457,12 +3457,12 @@ var
   K: TAiClient;
   F: TFakeAiTransport;
   R: TAiResponse;
-  Feil: string;
+  Err: string;
   E: EAiError;
 begin
-  K := NyKlient(F);
+  K := NewClient(F);
   try
-    F.Enqueue(AiSvar('svaret'));
+    F.Enqueue(AiReply('svaret'));
     R := K.Send([UserMsg('spørsmål')]);
     AssertEqual(R.Text, 'svaret', 'teksten plukkes ut');
     AssertEqual(R.StopReason, 'end_turn', 'stop_reason');
@@ -3471,7 +3471,7 @@ begin
     AssertEqual(R.Usage.OutputTokens, 34, 'output-tokens også');
     AssertFalse(R.WantsTool, 'ingen verktøykall');
 
-    { Flere tekstblokker settes sammen. }
+    { More tekstblokker settes sammen. }
     F.Enqueue('{"content":[{"type":"text","text":"en "},' +
       '{"type":"text","text":"to"}],"stop_reason":"end_turn"}');
     R := K.Send([UserMsg('x')]);
@@ -3488,14 +3488,14 @@ begin
       tom streng kalleren må gjette om. }
     F.Enqueue('{"type":"error","error":{"type":"rate_limit_error",' +
       '"message":"Number of requests has exceeded your rate limit"}}', 429);
-    Feil := '';
+    Err := '';
     E := nil;
     try
       K.Ask('x');
     except
       on Ex: EAiError do
       begin
-        Feil := Ex.Message;
+        Err := Ex.Message;
         AssertEqual(Ex.Status, 429, 'statusen er med');
         { Kind er typen slik API-et skriver den, uten pynt: kallende kode
           skal kunne sammenligne på den for å avgjøre om den skal prøve
@@ -3503,17 +3503,17 @@ begin
         AssertEqual(Ex.Kind, 'rate_limit_error', 'og Anthropics feiltype');
       end;
     end;
-    AssertTrue(Pos('rate limit', Feil) > 0, 'meldingen er API-ets egen');
+    AssertTrue(Pos('rate limit', Err) > 0, 'meldingen er API-ets egen');
 
     { Et svar som ikke er JSON skal si det, ikke krasje et sted lenger inne. }
     F.Enqueue('<html>503 fra en proxy</html>', 503);
-    Feil := '';
+    Err := '';
     try
       K.Ask('x');
     except
-      on Ex: EAiError do Feil := Ex.Message;
+      on Ex: EAiError do Err := Ex.Message;
     end;
-    AssertTrue(Pos('503', Feil) > 0, 'en HTML-feilside gir en lesbar feil');
+    AssertTrue(Pos('503', Err) > 0, 'en HTML-feilside gir en lesbar feil');
   finally
     K.Free;
   end;
@@ -3526,7 +3526,7 @@ var
   R: TAiResponse;
   Sse: string;
 begin
-  K := NyKlient(F);
+  K := NewClient(F);
   AiBiter := TStringList.Create;
   try
     Sse :=
@@ -3570,12 +3570,12 @@ var
   K: TAiClient;
   F: TFakeAiTransport;
   R: TAiResponse;
-  Sendt, Feil: string;
+  Sendt, Err: string;
 begin
-  K := NyKlient(F);
+  K := NewClient(F);
   try
     AiVerktoeyKall := 0;
-    AiSisteArg := '';
+    AiLastArg := '';
     K.AddTool('vaer', 'Slår opp været på et sted',
       '{"type":"object","properties":{"sted":{"type":"string"}},' +
       '"required":["sted"]}', @VaerVerktoey);
@@ -3585,13 +3585,13 @@ begin
     F.Enqueue('{"content":[{"type":"text","text":"Jeg sjekker."},' +
       '{"type":"tool_use","id":"tu_1","name":"vaer",' +
       '"input":{"sted":"Oslo"}}],"stop_reason":"tool_use"}');
-    F.Enqueue(AiSvar('Det regner i Oslo.'));
+    F.Enqueue(AiReply('Det regner i Oslo.'));
 
     R := K.RunTools('hvordan er været i Oslo');
     AssertEqual(AiVerktoeyKall, 1, 'verktøyet ble kalt én gang');
     { Argumentene kommer som JSON-tekst — bare verktøyet vet hvilke felter
       det har, så rammeverket gir dem videre som de er. }
-    AssertTrue(Pos('"sted":"Oslo"', AiSisteArg) > 0,
+    AssertTrue(Pos('"sted":"Oslo"', AiLastArg) > 0,
       'og fikk argumentene fra modellen');
     AssertTrue(Pos('Det regner', R.Text) > 0, 'og løkka kom til et svar');
 
@@ -3616,7 +3616,7 @@ begin
       @SprekkVerktoey);
     F.Enqueue('{"content":[{"type":"tool_use","id":"tu_2",' +
       '"name":"sprekk","input":{}}],"stop_reason":"tool_use"}');
-    F.Enqueue(AiSvar('Jeg fikk en feil.'));
+    F.Enqueue(AiReply('Jeg fikk en feil.'));
     R := K.RunTools('prøv');
     AssertTrue(Pos('Jeg fikk en feil', R.Text) > 0,
       'et verktøy som kaster stopper ikke løkka');
@@ -3626,7 +3626,7 @@ begin
     { Et verktøy modellen finner på skal heller ikke velte noe. }
     F.Enqueue('{"content":[{"type":"tool_use","id":"tu_3",' +
       '"name":"finnes-ikke","input":{}}],"stop_reason":"tool_use"}');
-    F.Enqueue(AiSvar('Beklager.'));
+    F.Enqueue(AiReply('Beklager.'));
     R := K.RunTools('prøv');
     AssertTrue(Pos('no such tool', F.Sent[5]) > 0,
       'et ukjent verktøy blir en beskjed til modellen');
@@ -3639,13 +3639,13 @@ begin
       '"input":{}}],"stop_reason":"tool_use"}');
     F.Enqueue('{"content":[{"type":"tool_use","id":"b","name":"vaer",' +
       '"input":{}}],"stop_reason":"tool_use"}');
-    Feil := '';
+    Err := '';
     try
       K.RunTools('gå i ring');
     except
-      on E: EAiError do Feil := E.Message;
+      on E: EAiError do Err := E.Message;
     end;
-    AssertTrue(Pos('did not finish within 2 turns', Feil) > 0,
+    AssertTrue(Pos('did not finish within 2 turns', Err) > 0,
       'en løkke som ikke tar slutt stoppes');
   finally
     K.Free;
@@ -3656,21 +3656,21 @@ procedure TestAiStrukturert;
 var
   K: TAiClient;
   F: TFakeAiTransport;
-  Svar, Sendt, Feil: string;
+  Reply, Sendt, Err: string;
 begin
-  K := NyKlient(F);
+  K := NewClient(F);
   try
     F.Enqueue('{"content":[{"type":"tool_use","id":"t","name":"respond",' +
       '"input":{"navn":"Ada","alder":36,"aktiv":true}}],' +
       '"stop_reason":"tool_use"}');
-    Svar := K.Structured('hvem er hun',
+    Reply := K.Structured('hvem er hun',
       '{"type":"object","properties":{"navn":{"type":"string"},' +
       '"alder":{"type":"integer"}},"required":["navn"]}');
 
     { Resultatet er JSON, ikke prosa. }
-    AssertTrue(Pos('"navn":"Ada"', Svar) > 0, 'feltene kom tilbake');
-    AssertTrue(Pos('"alder":36', Svar) > 0, 'også tallene');
-    AssertTrue(Pos('"aktiv":true', Svar) > 0, 'og boolske');
+    AssertTrue(Pos('"navn":"Ada"', Reply) > 0, 'feltene kom tilbake');
+    AssertTrue(Pos('"alder":36', Reply) > 0, 'også tallene');
+    AssertTrue(Pos('"aktiv":true', Reply) > 0, 'og boolske');
 
     Sendt := F.Sent[0];
     { Det er tool_choice som gjør at svaret blir strukturert og ikke prosa
@@ -3683,14 +3683,14 @@ begin
 
     { Svarer modellen med tekst likevel, skal det være en feil og ikke en
       tom streng kalleren må gjette om. }
-    F.Enqueue(AiSvar('Hun heter Ada.'));
-    Feil := '';
+    F.Enqueue(AiReply('Hun heter Ada.'));
+    Err := '';
     try
       K.Structured('hvem', '{"type":"object"}');
     except
-      on E: EAiError do Feil := E.Message;
+      on E: EAiError do Err := E.Message;
     end;
-    AssertTrue(Pos('instead of the requested structure', Feil) > 0,
+    AssertTrue(Pos('instead of the requested structure', Err) > 0,
       'prosa i stedet for struktur er en feil');
   finally
     K.Free;
@@ -3701,18 +3701,18 @@ end;
 
 { ------------------------------------------------------------- bilder -- }
 
-function BildeFil(const Navn: string): TBytes;
+function ImageFile(const Name_: string): TBytes;
 var
   F: TFileStream;
-  Sti: string;
+  Path_: string;
   B: TBytes;
 begin
   B := nil;
   Result := B;
-  Sti := 'tests/vectors/images/' + Navn;
-  if not FileExists(Sti) then
+  Path_ := 'tests/vectors/images/' + Name_;
+  if not FileExists(Path_) then
     Exit;
-  F := TFileStream.Create(Sti, fmOpenRead);
+  F := TFileStream.Create(Path_, fmOpenRead);
   try
     SetLength(B, F.Size);
     if F.Size > 0 then
@@ -3723,7 +3723,7 @@ begin
   end;
 end;
 
-function FmtNavn(F: TImageFormat): string;
+function FmtName(F: TImageFormat): string;
 begin
   case F of
     ifJpeg: Result := 'jpeg';
@@ -3743,7 +3743,7 @@ procedure TestBildeHoder;
 var
   L: TStringList;
   I, K, W, H, A, Gale: Integer;
-  S, Navn, Fmt: string;
+  S, Name_, Fmt: string;
   Inf: TImageInfo;
 begin
   Gale := 0;
@@ -3760,7 +3760,7 @@ begin
       S := Trim(L[I]);
       if (S = '') or (S[1] = '#') then
         Continue;
-      K := Pos(' ', S); Navn := Copy(S, 1, K - 1);
+      K := Pos(' ', S); Name_ := Copy(S, 1, K - 1);
       S := Trim(Copy(S, K + 1, Length(S)));
       K := Pos(' ', S); Fmt := Copy(S, 1, K - 1);
       S := Trim(Copy(S, K + 1, Length(S)));
@@ -3769,8 +3769,8 @@ begin
       K := Pos(' ', S); H := StrToIntDef(Copy(S, 1, K - 1), -1);
       A := StrToIntDef(Trim(Copy(S, K + 1, Length(S))), 0);
 
-      Inf := ReadImageInfo('tests/vectors/images/' + Navn);
-      if FmtNavn(Inf.Format) <> Fmt then Inc(Gale);
+      Inf := ReadImageInfo('tests/vectors/images/' + Name_);
+      if FmtName(Inf.Format) <> Fmt then Inc(Gale);
       if (W > 0) and ((Inf.Width <> W) or (Inf.Height <> H)) then Inc(Gale);
       if (A = 1) <> Inf.Animated then Inc(Gale);
     end;
@@ -3786,15 +3786,15 @@ var
 begin
   { Den viktigste enkeltsjekken i uniten: en fil som heter .jpg og er
     HTML er en lagret XSS-vektor hvis den serveres tilbake. }
-  D := BildeFil('nope.jpg');
+  D := ImageFile('nope.jpg');
   AssertTrue(SniffFormat(D) = ifUnknown, 'HTML forkledd som .jpg er ikke et bilde');
   AssertTrue(not ExtensionMatches('nope.jpg', D), 'og endelsen avsløres');
 
-  D := BildeFil('jpeg_320x240.jpg');
+  D := ImageFile('jpeg_320x240.jpg');
   AssertTrue(ExtensionMatches('a.jpg', D), 'ekte jpeg matcher .jpg');
   AssertTrue(ExtensionMatches('a.jpeg', D), '.jpeg regnes som det samme');
   AssertTrue(not ExtensionMatches('a.png', D), 'men ikke .png');
-  AssertTrue(not ExtensionMatches('a.jpg', BildeFil('tom.png')),
+  AssertTrue(not ExtensionMatches('a.jpg', ImageFile('tom.png')),
     'en tom fil er ingenting');
 end;
 
@@ -3803,7 +3803,7 @@ var
   D, Ut: TBytes;
   Inf: TImageInfo;
 begin
-  D := BildeFil('jpeg_exif_gps.jpg');
+  D := ImageFile('jpeg_exif_gps.jpg');
   AssertEqual(JpegOrientation(D), 6, 'orienteringen leses fra EXIF');
   AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(D)) > 0,
     'EXIF står i fila før stripping');
@@ -3816,11 +3816,11 @@ begin
   Inf := ReadImageInfo(Ut);
   AssertTrue((Inf.Width = 800) and (Inf.Height = 600), 'med dimensjonene i behold');
 
-  AssertEqual(JpegOrientation(BildeFil('jpeg_orient3.jpg')), 3,
+  AssertEqual(JpegOrientation(ImageFile('jpeg_orient3.jpg')), 3,
     'orientering 3 leses også');
-  AssertEqual(JpegOrientation(BildeFil('jpeg_320x240.jpg')), 0,
+  AssertEqual(JpegOrientation(ImageFile('jpeg_320x240.jpg')), 0,
     'uten EXIF er orienteringen 0');
-  AssertTrue(not StripJpegMetadata(BildeFil('png_320x240.png'), Ut),
+  AssertTrue(not StripJpegMetadata(ImageFile('png_320x240.png'), Ut),
     'en png kan ikke strippes som jpeg');
 end;
 
@@ -3838,7 +3838,7 @@ begin
     Exit;
   end;
 
-  Inn := BildeFil('jpeg_1920x1080.jpg');
+  Inn := ImageFile('jpeg_1920x1080.jpg');
   Ut := ResizeImage(Inn, 320, 0, ifJpeg, 80);
   Inf := ReadImageInfo(Ut);
   AssertEqual(Inf.Width, 320, 'skalert til oppgitt bredde');
@@ -3864,15 +3864,15 @@ begin
     'lavere kvalitet gir mindre fil');
 
   { Oppskalering er aldri det noen ba om. }
-  AssertEqual(ReadImageInfo(ResizeImage(BildeFil('jpeg_320x240.jpg'),
+  AssertEqual(ReadImageInfo(ResizeImage(ImageFile('jpeg_320x240.jpg'),
     2000, 0, ifJpeg, 80)).Width, 320, 'skalerer aldri opp');
 
   { libvips strippes også, gjennom strip=true i formatstrengen. }
-  Ut := ResizeImage(BildeFil('jpeg_exif_gps.jpg'), 200, 0, ifJpeg, 80);
+  Ut := ResizeImage(ImageFile('jpeg_exif_gps.jpg'), 200, 0, ifJpeg, 80);
   AssertTrue(Pos('Askr Test', TEncoding.ASCII.GetString(Ut)) = 0,
     'EXIF overlever ikke en skalering');
 
-  Inf := ReadImageInfo(ConvertImage(BildeFil('png_320x240.png'), ifWebp, 80));
+  Inf := ReadImageInfo(ConvertImage(ImageFile('png_320x240.png'), ifWebp, 80));
   AssertTrue((Inf.Width = 320) and (Inf.Height = 240) and (Inf.Format = ifWebp),
     'konvertering beholder størrelsen');
 end;
@@ -3993,7 +3993,7 @@ begin
   Test('velkomstsiden svarer uten byggesteg', @TestVelkomstside);
   Test('.env leses, og miljøet vinner over den', @TestEnv);
 
-  InitCriticalSection(VarigLaas);
+  InitCriticalSection(DurableLock);
 
   { Serveren klienttestene ringer. Port 0 lar kjernen velge, slik at
     suitene kan kjøre parallelt uten å krangle om porter — samme grep som
@@ -4007,11 +4007,11 @@ begin
   EkkoSrv.Start;
   KlientPort := EkkoSrv.BoundPort;
 
-  Brukere[0] := TBruker.Create;
-  Brukere[0].Navn := 'Ada';
+  Brukere[0] := TUser.Create;
+  Brukere[0].Name_ := 'Ada';
   Brukere[0].ErAdmin := True;
-  Brukere[1] := TBruker.Create;
-  Brukere[1].Navn := 'Grace';
+  Brukere[1] := TUser.Create;
+  Brukere[1].Name_ := 'Grace';
   Brukere[1].ErAdmin := False;
 
   WriteLn('Askr — kjøretidstester (skrevet med Askr.Testing)');

@@ -91,26 +91,26 @@ var
   Orders: TOrdersColumns;
 
 var
-  Feil: Integer = 0;
+  Err: Integer = 0;
 
-procedure Si(const Etikett, Verdi: string);
+procedure Si(const Etikett, Value_: string);
 var
   Pad: string;
 begin
   Pad := Etikett;
   while Length(Pad) < 32 do
     Pad := Pad + ' ';
-  WriteLn('  ', Pad, Verdi);
+  WriteLn('  ', Pad, Value_);
 end;
 
-procedure Krev(Betingelse: Boolean; const Hva: string);
+procedure Expect(Betingelse: Boolean; const What: string);
 begin
   if Betingelse then
-    WriteLn('  ok   ', Hva)
+    WriteLn('  ok   ', What)
   else
   begin
-    Inc(Feil);
-    WriteLn('  FEIL ', Hva);
+    Inc(Err);
+    WriteLn('  FEIL ', What);
   end;
 end;
 
@@ -171,12 +171,12 @@ begin
       Si('tabell', Meta.Table);
       Si('primærnøkkel', Meta.PrimaryKey);
       Si('kolonner', IntToStr(Meta.ColumnCount));
-      Krev(Meta.Table = 'customers', 'tabellnavn');
-      Krev(Meta.ColumnCount = 5, 'fem kolonner fra published properties');
-      Krev(Meta.IndexOfColumn('balance') >= 0, 'Balance ble til balance');
-      Krev(TOrder.Meta.IndexOfColumn('customer_id') >= 0,
+      Expect(Meta.Table = 'customers', 'tabellnavn');
+      Expect(Meta.ColumnCount = 5, 'fem kolonner fra published properties');
+      Expect(Meta.IndexOfColumn('balance') >= 0, 'Balance ble til balance');
+      Expect(TOrder.Meta.IndexOfColumn('customer_id') >= 0,
         'CustomerId ble til customer_id');
-      Krev(not Meta.Columns[Meta.PrimaryKeyIndex].Insertable,
+      Expect(not Meta.Columns[Meta.PrimaryKeyIndex].Insertable,
         'autonøkkelen skrives ikke ved INSERT');
       WriteLn;
 
@@ -189,15 +189,15 @@ begin
       K.Balance := 1234.50;
       K.Active := True;
       K.Save;
-      Krev(K.Id > 0, 'INSERT satte primærnøkkelen fra RETURNING');
+      Expect(K.Id > 0, 'INSERT satte primærnøkkelen fra RETURNING');
       Si('ny id', IntToStr(K.Id));
-      Krev(K.Persisted, 'modellen vet at den er lagret');
+      Expect(K.Persisted, 'modellen vet at den er lagret');
 
       K.Balance := 99.95;
       K.Save;
-      Krev(TQuery<TCustomer>.New.Find(K.Id).Balance = 99.95,
+      Expect(TQuery<TCustomer>.New.Find(K.Id).Balance = 99.95,
         'andre Save ble en UPDATE, ikke en ny rad');
-      Krev(TQuery<TCustomer>.New.Count = 1, 'fortsatt bare én rad');
+      Expect(TQuery<TCustomer>.New.Count = 1, 'fortsatt bare én rad');
       WriteLn;
 
       WriteLn('Typede spørringer');
@@ -232,18 +232,18 @@ begin
         .OrderBy(Customers.Balance, Desc)
         .Limit(3)
         .Get;
-      Krev(Liste.Count = 3, 'Limit virker');
-      Krev(Liste[0].Balance > Liste[1].Balance, 'OrderBy Desc virker');
-      Krev(Liste[0].Balance = 600, 'høyeste balance først');
-      Krev(Liste[0].Name = 'Customer 6', 'riktig rad hydrert');
+      Expect(Liste.Count = 3, 'Limit virker');
+      Expect(Liste[0].Balance > Liste[1].Balance, 'OrderBy Desc virker');
+      Expect(Liste[0].Balance = 600, 'høyeste balance først');
+      Expect(Liste[0].Name = 'Customer 6', 'riktig rad hydrert');
 
-      Krev(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 4,
+      Expect(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 4,
         'boolean-filter');
-      Krev(TQuery<TCustomer>.New.WhereIn(Customers.Id, [1, 2, 3]).Count = 3,
+      Expect(TQuery<TCustomer>.New.WhereIn(Customers.Id, [1, 2, 3]).Count = 3,
         'WhereIn');
-      Krev(TQuery<TCustomer>.New.WhereNull(Customers.Email).Count = 0,
+      Expect(TQuery<TCustomer>.New.WhereNull(Customers.Email).Count = 0,
         'WhereNull');
-      Krev(TQuery<TCustomer>.New.Paginate(2, 2).Count = 2, 'Paginate');
+      Expect(TQuery<TCustomer>.New.Paginate(2, 2).Count = 2, 'Paginate');
       WriteLn;
 
       WriteLn('Eager loading');
@@ -251,38 +251,38 @@ begin
         .Preload(['Orders'])
         .OrderBy(Customers.Id)
         .Get;
-      Krev(Liste.Count = 6, 'alle customer');
+      Expect(Liste.Count = 6, 'alle customer');
       OrderCount := 0;
       for I := 0 to Liste.Count - 1 do
         if Liste[I].Orders <> nil then
           Inc(OrderCount, Liste[I].Orders.Count);
       Si('order lastet', IntToStr(OrderCount));
-      Krev(OrderCount = 1 + 2 + 3 + 4 + 5, 'alle orders ble fordelt riktig');
-      Krev(Liste[0].Orders.Count = 0, 'første customer har ingen order');
-      Krev(Liste[5].Orders.Count = 5, 'siste customer har fem');
-      Krev(Liste[5].Orders[0].Total > 0, 'barna er hydrert');
+      Expect(OrderCount = 1 + 2 + 3 + 4 + 5, 'alle orders ble fordelt riktig');
+      Expect(Liste[0].Orders.Count = 0, 'første customer har ingen order');
+      Expect(Liste[5].Orders.Count = 5, 'siste customer har fem');
+      Expect(Liste[5].Orders[0].Total > 0, 'barna er hydrert');
       WriteLn;
 
       WriteLn('Delete');
       K := TQuery<TCustomer>.New.Find(Liste[5].Id);
       K.Delete;
-      Krev(TQuery<TCustomer>.New.Count = 5, 'raden er borte');
-      Krev(TQuery<TOrder>.New.Where(Orders.CustomerId, Eq, Liste[5].Id).Count = 0,
+      Expect(TQuery<TCustomer>.New.Count = 5, 'raden er borte');
+      Expect(TQuery<TOrder>.New.Where(Orders.CustomerId, Eq, Liste[5].Id).Count = 0,
         'ON DELETE CASCADE tok orders');
-      Krev(TQuery<TCustomer>.New.Where(Customers.Balance, LT, 250).DeleteAll = 2,
+      Expect(TQuery<TCustomer>.New.Where(Customers.Balance, LT, 250).DeleteAll = 2,
         'DeleteAll returnerer antall rader');
       WriteLn;
 
-      WriteLn('Feil blir SQLSTATE, ikke 500');
+      WriteLn('Err blir SQLSTATE, ikke 500');
       try
         K := A.New<TCustomer>;
         K.Name := 'Duplikat';
         K.Email := 'customer3@gets.no';
         K.Save;
-        Krev(False, 'unik-brudd skulle kastet');
+        Expect(False, 'unik-brudd skulle kastet');
       except
         on E: EDbError do
-          Krev(E.IsUniqueViolation, 'unik-brudd gjenkjennes som 23505');
+          Expect(E.IsUniqueViolation, 'unik-brudd gjenkjennes som 23505');
       end;
       WriteLn;
     finally
@@ -292,11 +292,11 @@ begin
     WriteLn('Pool og arena');
     Si('åpne forbindelser', IntToStr(Pool.LiveCount));
     Si('lånt totalt', IntToStr(Pool.AcquiredTotal));
-    Krev(Pool.IdleCount = 0, 'forbindelsen er fortsatt utlånt');
+    Expect(Pool.IdleCount = 0, 'forbindelsen er fortsatt utlånt');
 
     A.Reset;
-    Krev(Pool.IdleCount = 1, 'Arena.Reset shipped forbindelsen tilbake');
-    Krev(A.BytesLive = 0, 'og ryddet alt annet');
+    Expect(Pool.IdleCount = 1, 'Arena.Reset shipped forbindelsen tilbake');
+    Expect(A.BytesLive = 0, 'og ryddet alt annet');
 
     { Tusen requests: arenaen og poolen skal flate ut. }
     C := Pool.Lease(A);
@@ -317,14 +317,14 @@ begin
       C := Pool.Lease(A);
       UseDb(C);
     end;
-    Krev(A.BytesReserved = Reservert,
+    Expect(A.BytesReserved = Reservert,
       'arenaen vokste ikke over 1000 spørringer med eager loading');
     Si('arena reservert', IntToStr(A.BytesReserved));
     { HighWaterMark gjelder hele kjøringen, og oppsettet over kjørte uten
       Reset. Dette er kostnaden for én request alene. }
     TQuery<TCustomer>.New.Preload(['Orders']).OrderBy(Customers.Id).Get;
     Si('én request med eager loading', IntToStr(A.BytesLive));
-    Krev(Pool.CreatedTotal = 1, 'poolen åpnet bare én forbindelse');
+    Expect(Pool.CreatedTotal = 1, 'poolen åpnet bare én forbindelse');
 
     UseDb(nil);
     A.Reset;
@@ -335,11 +335,11 @@ begin
   end;
 
   WriteLn;
-  if Feil = 0 then
+  if Err = 0 then
     WriteLn('Steg 2 holder: modeller, pool, typede spørringer og eager loading.')
   else
   begin
-    WriteLn(Feil, ' feil.');
+    WriteLn(Err, ' feil.');
     Halt(1);
   end;
 end.

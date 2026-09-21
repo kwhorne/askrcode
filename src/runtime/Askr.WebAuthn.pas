@@ -53,7 +53,7 @@ type
     { Hele origin slik nettleseren oppgir den: 'https://example.com'.
       Sammenlignes eksakt. }
     Origin: string;
-    { Krev at autentikatoren faktisk verifiserte brukeren — PIN,
+    { Expect at autentikatoren faktisk verifiserte brukeren — PIN,
       fingeravtrykk, ansikt — og ikke bare at noen rørte den. }
     RequireUserVerification: Boolean;
   end;
@@ -80,7 +80,7 @@ type
     CloneWarning: Boolean;
   end;
 
-{ Lager en utfordring. 32 byte er det WebAuthn anbefaler, og den må
+{ Storage en utfordring. 32 byte er det WebAuthn anbefaler, og den må
   lagres i sesjonen til svaret kommer. }
 function NewChallenge: TBytes;
 
@@ -158,7 +158,7 @@ end;
   Begge deler må håndteres: å kopiere rått inn i et 32-bytes felt er
   nettopp feilen som gjør at noen signaturer verifiserer og andre ikke,
   tilsynelatende tilfeldig. }
-function LesDerInt(const Der: TBytes; var P: Integer; out Ut: TBytes): Boolean;
+function ReadDerInt(const Der: TBytes; var P: Integer; out Ut: TBytes): Boolean;
 var
   Len, I, Start: Integer;
   T: TBytes;
@@ -177,7 +177,7 @@ begin
     Exit(False);
 
   Start := P;
-  { Hopp over den ledende nullen DER legger på for å holde tallet
+  { Skip over den ledende nullen DER legger på for å holde tallet
     positivt. Mer enn én er ikke minimal koding. }
   if (Len > 1) and (Der[Start] = 0) then
   begin
@@ -218,8 +218,8 @@ begin
       signatur vi har sett hele av. }
     Exit(False);
 
-  if not LesDerInt(Der, P, R) then Exit(False);
-  if not LesDerInt(Der, P, S) then Exit(False);
+  if not ReadDerInt(Der, P, R) then Exit(False);
+  if not ReadDerInt(Der, P, S) then Exit(False);
   Result := P = Length(Der);
 end;
 
@@ -237,59 +237,59 @@ end;
   Alt annet enn nøyaktig denne kombinasjonen avvises. Askr verifiserer
   bare P-256; en RSA- eller Ed25519-nøkkel er ikke noe vi kan sjekke,
   og å lagre den og late som er verre enn å si nei ved registrering. }
-function LesCoseKey(var R: TCborReader; const Buf: TBytes;
-  out X, Y: TBytes; out Feil: string): Boolean;
+function ReadCoseKey(var R: TCborReader; const Buf: TBytes;
+  out X, Y: TBytes; out Err: string): Boolean;
 var
   N, I: Integer;
-  Nokkel, Verdi: Int64;
+  Key_, Value_: Int64;
   Start, Len: Integer;
   Kty, Alg, Crv: Int64;
   HarX, HarY: Boolean;
   M: Byte;
 begin
   X := nil; Y := nil;
-  Feil := '';
+  Err := '';
   Kty := 0; Alg := 0; Crv := 0;
   HarX := False; HarY := False;
 
-  if not R.LesMapLen(N) then
+  if not R.ReadMapLen(N) then
   begin
-    Feil := 'the credential public key is not a CBOR map';
+    Err := 'the credential public key is not a CBOR map';
     Exit(False);
   end;
 
   for I := 1 to N do
   begin
-    if not R.LesInt(Nokkel) then
+    if not R.ReadInt(Key_) then
     begin
-      Feil := 'the credential public key has a non-integer label';
+      Err := 'the credential public key has a non-integer label';
       Exit(False);
     end;
-    case Nokkel of
+    case Key_ of
       1, 3, -1:
         begin
-          if not R.LesInt(Verdi) then
+          if not R.ReadInt(Value_) then
           begin
-            Feil := 'the credential public key is malformed';
+            Err := 'the credential public key is malformed';
             Exit(False);
           end;
-          if Nokkel = 1 then Kty := Verdi
-          else if Nokkel = 3 then Alg := Verdi
-          else Crv := Verdi;
+          if Key_ = 1 then Kty := Value_
+          else if Key_ = 3 then Alg := Value_
+          else Crv := Value_;
         end;
       -2, -3:
         begin
-          if not R.NesteType(M) or (M <> CborBytes) then
+          if not R.NextType(M) or (M <> CborBytes) then
           begin
-            Feil := 'the credential public key coordinates are malformed';
+            Err := 'the credential public key coordinates are malformed';
             Exit(False);
           end;
-          if not R.LesBytes(Start, Len) or (Len <> 32) then
+          if not R.ReadBytes(Start, Len) or (Len <> 32) then
           begin
-            Feil := 'the credential public key is not 32 bytes per coordinate';
+            Err := 'the credential public key is not 32 bytes per coordinate';
             Exit(False);
           end;
-          if Nokkel = -2 then
+          if Key_ = -2 then
           begin
             X := Skive(Buf, Start, Len);
             HarX := True;
@@ -304,9 +304,9 @@ begin
       { Ukjente felter hoppes over. COSE tillater dem, og en ny
         nøkkeltype skal ikke gjøre parsingen til en feil her — det er
         sjekkene under som avgjør. }
-      if not R.Hopp then
+      if not R.Skip then
       begin
-        Feil := 'the credential public key is malformed';
+        Err := 'the credential public key is malformed';
         Exit(False);
       end;
     end;
@@ -314,12 +314,12 @@ begin
 
   if (Kty <> 2) or (Alg <> -7) or (Crv <> 1) then
   begin
-    Feil := 'only ES256 on P-256 is supported';
+    Err := 'only ES256 on P-256 is supported';
     Exit(False);
   end;
   if not (HarX and HarY) then
   begin
-    Feil := 'the credential public key has no coordinates';
+    Err := 'the credential public key has no coordinates';
     Exit(False);
   end;
   Result := True;
@@ -332,33 +332,33 @@ type
     RpIdHash: TBytes;
     Flags: Byte;
     SignCount: UInt32;
-    HarNokkel: Boolean;
+    HasKey: Boolean;
     CredentialId: TBytes;
     KeyX, KeyY: TBytes;
   end;
 
 { TU256 fra 32 byte, for kurvesjekken. }
-function BytesTilU256(const B: TBytes): TU256;
+function BytesToU256(const B: TBytes): TU256;
 begin
   if not U256FromBytes(B, Result) then
     U256SetZero(Result);
 end;
 
-function LesAuthData(const B: TBytes; out A: TAuthData;
-  out Feil: string): Boolean;
+function ReadAuthData(const B: TBytes; out A: TAuthData;
+  out Err: string): Boolean;
 var
   P, CredLen: Integer;
   R: TCborReader;
   Rest: TBytes;
 begin
-  Feil := '';
+  Err := '';
   A.RpIdHash := nil; A.CredentialId := nil; A.KeyX := nil; A.KeyY := nil;
-  A.Flags := 0; A.SignCount := 0; A.HarNokkel := False;
+  A.Flags := 0; A.SignCount := 0; A.HasKey := False;
 
   { 32 byte hash, ett flaggbyte, fire byte teller. }
   if Length(B) < 37 then
   begin
-    Feil := 'authenticator data is too short';
+    Err := 'authenticator data is too short';
     Exit(False);
   end;
   A.RpIdHash := Skive(B, 0, 32);
@@ -372,7 +372,7 @@ begin
     { 16 byte aaguid, to byte lengde, så id-en. }
     if P + 18 > Length(B) then
     begin
-      Feil := 'attested credential data is truncated';
+      Err := 'attested credential data is truncated';
       Exit(False);
     end;
     Inc(P, 16);
@@ -382,7 +382,7 @@ begin
       eller noen som prøver seg. }
     if (CredLen = 0) or (CredLen > 1023) or (P + CredLen > Length(B)) then
     begin
-      Feil := 'the credential id length is not usable';
+      Err := 'the credential id length is not usable';
       Exit(False);
     end;
     A.CredentialId := Skive(B, P, CredLen);
@@ -394,21 +394,21 @@ begin
     Rest := Skive(B, P, Length(B) - P);
     if Length(Rest) = 0 then
     begin
-      Feil := 'the credential public key is missing';
+      Err := 'the credential public key is missing';
       Exit(False);
     end;
     R.Init(@Rest[0], Length(Rest));
-    if not LesCoseKey(R, Rest, A.KeyX, A.KeyY, Feil) then
+    if not ReadCoseKey(R, Rest, A.KeyX, A.KeyY, Err) then
       Exit(False);
 
     { Et punkt som ikke ligger på kurven skal aldri havne i databasen.
       Her er det billig å si nei; senere er det bare rart. }
-    if not EcOnCurve(BytesTilU256(A.KeyX), BytesTilU256(A.KeyY)) then
+    if not EcOnCurve(BytesToU256(A.KeyX), BytesToU256(A.KeyY)) then
     begin
-      Feil := 'the credential public key is not on the curve';
+      Err := 'the credential public key is not on the curve';
       Exit(False);
     end;
-    A.HarNokkel := True;
+    A.HasKey := True;
   end;
 
   Result := True;
@@ -416,44 +416,44 @@ end;
 
 { ----------------------------------------------------------- clientData -- }
 
-function SjekkClientData(const Json: TBytes; const ForventetType: string;
+function CheckClientData(const Json: TBytes; const ForventetType: string;
   const Opts: TWebAuthnOptions; const Challenge: TBytes;
-  out Feil: string): Boolean;
+  out Err: string): Boolean;
 var
   A: TArena;
   Rot, V: PJsonValue;
-  FeilPos: SizeInt;
+  ErrPos: SizeInt;
   S: string;
   Fikk: TBytes;
   I: Integer;
-  Tekst: string;
+  Text_: string;
 begin
-  Feil := '';
+  Err := '';
   Result := False;
   if Length(Json) = 0 then
   begin
-    Feil := 'the client data is empty';
+    Err := 'the client data is empty';
     Exit;
   end;
 
-  SetLength(Tekst, Length(Json));
+  SetLength(Text_, Length(Json));
   for I := 0 to High(Json) do
-    Tekst[I + 1] := Chr(Json[I]);
+    Text_[I + 1] := Chr(Json[I]);
 
   { Egen arena: denne kan kalles utenfor en request, og clientData er
     noen hundre byte. }
   A := TArena.Create(64 * 1024);
   try
-    if not JsonParse(A, StrDup(A, Tekst), Rot, FeilPos) then
+    if not JsonParse(A, StrDup(A, Text_), Rot, ErrPos) then
     begin
-      Feil := 'the client data is not valid JSON';
+      Err := 'the client data is not valid JSON';
       Exit;
     end;
 
     V := JsonMember(Rot, 'type');
     if (V = nil) or (JsonAsString(V) <> ForventetType) then
     begin
-      Feil := 'the client data is for a different ceremony';
+      Err := 'the client data is for a different ceremony';
       Exit;
     end;
 
@@ -463,26 +463,26 @@ begin
     V := JsonMember(Rot, 'origin');
     if (V = nil) or (JsonAsString(V) <> Opts.Origin) then
     begin
-      Feil := 'the origin does not match';
+      Err := 'the origin does not match';
       Exit;
     end;
 
     V := JsonMember(Rot, 'challenge');
     if V = nil then
     begin
-      Feil := 'the client data has no challenge';
+      Err := 'the client data has no challenge';
       Exit;
     end;
     S := JsonAsString(V);
     Fikk := Base64UrlDecode(S);
     if (Length(Fikk) <> Length(Challenge)) or (Length(Challenge) = 0) then
     begin
-      Feil := 'the challenge does not match';
+      Err := 'the challenge does not match';
       Exit;
     end;
     if not ConstantTimeEquals(Fikk, Challenge) then
     begin
-      Feil := 'the challenge does not match';
+      Err := 'the challenge does not match';
       Exit;
     end;
 
@@ -494,33 +494,33 @@ end;
 
 { --------------------------------------------------------- seremoniene -- }
 
-function SjekkFlagg(Flags: Byte; const Opts: TWebAuthnOptions;
-  out Feil: string): Boolean;
+function CheckFlags(Flags: Byte; const Opts: TWebAuthnOptions;
+  out Err: string): Boolean;
 begin
-  Feil := '';
+  Err := '';
   if (Flags and FlagUserPresent) = 0 then
   begin
-    Feil := 'the user was not present';
+    Err := 'the user was not present';
     Exit(False);
   end;
   if Opts.RequireUserVerification and ((Flags and FlagUserVerified) = 0) then
   begin
-    Feil := 'the user was not verified';
+    Err := 'the user was not verified';
     Exit(False);
   end;
   Result := True;
 end;
 
-function SjekkRpIdHash(const Hash: TBytes; const RpId: string;
-  out Feil: string): Boolean;
+function CheckRpIdHash(const Hash: TBytes; const RpId: string;
+  out Err: string): Boolean;
 var
-  Vent: TBytes;
+  Wait: TBytes;
 begin
-  Feil := '';
-  Vent := DigestBytes(Sha256(RpId));
-  if (Length(Hash) <> 32) or not ConstantTimeEquals(Hash, Vent) then
+  Err := '';
+  Wait := DigestBytes(Sha256(RpId));
+  if (Length(Hash) <> 32) or not ConstantTimeEquals(Hash, Wait) then
   begin
-    Feil := 'the credential belongs to a different site';
+    Err := 'the credential belongs to a different site';
     Exit(False);
   end;
   Result := True;
@@ -531,10 +531,10 @@ function VerifyRegistration(const Opts: TWebAuthnOptions;
 var
   R: TCborReader;
   N, I, Start, Len: Integer;
-  Nokkel: string;
+  Key_: string;
   AuthData: TBytes;
   A: TAuthData;
-  Feil: string;
+  Err: string;
 begin
   Result.Ok := False;
   Result.Error := '';
@@ -544,10 +544,10 @@ begin
   Result.SignCount := 0;
   Result.UserVerified := False;
 
-  if not SjekkClientData(ClientDataJson, 'webauthn.create', Opts,
-                         Challenge, Feil) then
+  if not CheckClientData(ClientDataJson, 'webauthn.create', Opts,
+                         Challenge, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
 
@@ -561,7 +561,7 @@ begin
     leter bare etter authData; attStmt hoppes over uten å bli sett på,
     og det står i overskriften hvorfor. }
   R.Init(@AttestationObject[0], Length(AttestationObject));
-  if not R.LesMapLen(N) then
+  if not R.ReadMapLen(N) then
   begin
     Result.Error := 'the attestation object is not a CBOR map';
     Exit;
@@ -569,21 +569,21 @@ begin
   AuthData := nil;
   for I := 1 to N do
   begin
-    if not R.LesTextStr(Nokkel) then
+    if not R.ReadTextStr(Key_) then
     begin
       Result.Error := 'the attestation object is malformed';
       Exit;
     end;
-    if Nokkel = 'authData' then
+    if Key_ = 'authData' then
     begin
-      if not R.LesBytes(Start, Len) then
+      if not R.ReadBytes(Start, Len) then
       begin
         Result.Error := 'the attestation object has no usable authData';
         Exit;
       end;
       AuthData := Skive(AttestationObject, Start, Len);
     end
-    else if not R.Hopp then
+    else if not R.Skip then
     begin
       Result.Error := 'the attestation object is malformed';
       Exit;
@@ -596,24 +596,24 @@ begin
     Exit;
   end;
 
-  if not LesAuthData(AuthData, A, Feil) then
+  if not ReadAuthData(AuthData, A, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
-  if not A.HarNokkel then
+  if not A.HasKey then
   begin
     Result.Error := 'the authenticator returned no credential';
     Exit;
   end;
-  if not SjekkRpIdHash(A.RpIdHash, Opts.RpId, Feil) then
+  if not CheckRpIdHash(A.RpIdHash, Opts.RpId, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
-  if not SjekkFlagg(A.Flags, Opts, Feil) then
+  if not CheckFlags(A.Flags, Opts, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
 
@@ -632,7 +632,7 @@ function VerifyAssertion(const Opts: TWebAuthnOptions;
         PubX, PubY: TBytes; StoredSignCount: UInt32): TAssertion;
 var
   A: TAuthData;
-  Feil: string;
+  Err: string;
   ClientHash, Signert, R, S: TBytes;
 begin
   Result.Ok := False;
@@ -641,26 +641,26 @@ begin
   Result.UserVerified := False;
   Result.CloneWarning := False;
 
-  if not SjekkClientData(ClientDataJson, 'webauthn.get', Opts,
-                         Challenge, Feil) then
+  if not CheckClientData(ClientDataJson, 'webauthn.get', Opts,
+                         Challenge, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
 
-  if not LesAuthData(AuthenticatorData, A, Feil) then
+  if not ReadAuthData(AuthenticatorData, A, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
-  if not SjekkRpIdHash(A.RpIdHash, Opts.RpId, Feil) then
+  if not CheckRpIdHash(A.RpIdHash, Opts.RpId, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
-  if not SjekkFlagg(A.Flags, Opts, Feil) then
+  if not CheckFlags(A.Flags, Opts, Err) then
   begin
-    Result.Error := Feil;
+    Result.Error := Err;
     Exit;
   end;
 

@@ -5,7 +5,7 @@
       Exit(Back.WithErrors(C.Errors));
       Redirect('/customers').With('flash', 'Kunde opprettet');
 
-  og begge forutsetter at noe overlever en omdirigering. Uten sesjoner gjorde
+  og begge forutsetter at noe overlever en omdirigering. Without sesjoner gjorde
   det ikke det, og valideringen måtte rendre siden på nytt i stedet.
 
   Lageret ligger i prosessen, som køen og cachen. Det er en bevisst
@@ -105,7 +105,7 @@ type
     constructor Create(ALifetimeSeconds: Integer = 7200);
     destructor Destroy; override;
 
-    { Leser sesjonskaka, henter tilstanden inn i arenaen. Lager en ny
+    { Leser sesjonskaka, henter tilstanden inn i arenaen. Storage en ny
       sesjon hvis kaka mangler eller er utløpt. }
     function Start(Req: TRequest): TSession;
     { Skriver tilstanden tilbake og setter kaka på responsen. Roterer
@@ -398,14 +398,14 @@ end;
 procedure TSessionStore.Sweep;
 var
   I, Slot: Integer;
-  Naa: Int64;
+  Now_: Int64;
 begin
-  Naa := UnixNow;
+  Now_ := UnixNow;
   I := 0;
   while I < FKeys.Count do
   begin
     Slot := PtrInt(FKeys.Objects[I]);
-    if FSlots[Slot].ExpiresAt <= Naa then
+    if FSlots[Slot].ExpiresAt <= Now_ then
     begin
       FSlots[Slot].InUse := False;
       SetLength(FSlots[Slot].Data, 0);
@@ -522,18 +522,18 @@ end;
 
 procedure TSessionStore.Regenerate(S: TSession);
 var
-  Gammel: string;
+  Old: string;
 begin
   if S = nil then
     Exit;
-  Gammel := S.FId;
+  Old := S.FId;
   S.FId := NewSessionId;
   S.FNew := True;
   S.FDirty := True;
   { Den gamle slotten slettes, ikke bare forlates. En id som fortsatt
     virker etter at den er byttet ut er nøyaktig det angrepet vi stopper. }
-  if Gammel <> '' then
-    Destroy_(Gammel);
+  if Old <> '' then
+    Destroy_(Old);
 end;
 
 procedure TSessionStore.Destroy_(const Id: string);
@@ -607,7 +607,7 @@ begin
 
   if S = nil then
     Exit;
-  { En ny sesjon ingen skrev til, lagres ikke og får ingen kake. Uten dette
+  { En ny sesjon ingen skrev til, lagres ikke og får ingen kake. Without dette
     ville hver anonyme besøkende — hver robot, hvert helsesjekk-kall — fått
     en plass i lageret og en kake å sende tilbake. Lageret ligger i
     prosessen, så det er hukommelse som vokser med trafikk og ikke med

@@ -1,9 +1,10 @@
-// Felles klasser for alt som svever over siden: meny, popover, tooltip,
-// modal. Ett sted, slik at de ser ut som samme familie og ikke som fire
-// komponenter skrevet på fire dager.
+// Shared classes for everything that floats above the page: menu,
+// popover, tooltip, modal. One place, so they look like one family rather
+// than four components written on four different days.
 //
-// `data-state` settes av Bits UI (open/closed), og animasjonen henger på
-// den i stedet for på en egen tilstand vi ville måttet holde selv.
+// `data-state` is set by Bits UI (open/closed), and the animation hangs
+// off that rather than off a separate piece of state we would have to
+// keep ourselves.
 
 export const surface =
   'z-50 rounded-surface border border-line bg-raised shadow-lg ' +

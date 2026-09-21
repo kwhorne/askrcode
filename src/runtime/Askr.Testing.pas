@@ -63,7 +63,7 @@ type
 procedure Group(const Name: string);
 procedure Test(const Name: string; P: TTestProc);
 
-{ Påstander. Alle kaster ETestFailure, som løperen fanger. }
+{ Påstander. All_ kaster ETestFailure, som løperen fanger. }
 procedure AssertTrue(Cond: Boolean; const What: string);
 procedure AssertFalse(Cond: Boolean; const What: string);
 procedure AssertEqual(const Actual, Expected, What: string); overload;
@@ -219,7 +219,7 @@ procedure AssertArenaStable(A: TArena; P: TTestProc; Iterations: Integer;
   const What: string);
 var
   I: Integer;
-  Etter: PtrUInt;
+  After_: PtrUInt;
   Oppvarming: Integer;
 begin
   Inc(GAsserts);
@@ -231,16 +231,16 @@ begin
     A.Reset;
     P;
   end;
-  Etter := A.BytesReserved;
+  After_ := A.BytesReserved;
   for I := 1 to Iterations do
   begin
     A.Reset;
     P;
   end;
-  if A.BytesReserved <> Etter then
+  if A.BytesReserved <> After_ then
     raise ETestFailure.CreateFmt(
       '%s — the arena grew from %d to %d bytes over %d rounds',
-      [What, Etter, A.BytesReserved, Iterations]);
+      [What, After_, A.BytesReserved, Iterations]);
 end;
 
 function UseTestDatabase: TDbConnection;
@@ -358,11 +358,11 @@ var
   I: Integer;
   Forrige: string;
   T0: Int64;
-  Kjort: Integer;
+  Ran: Integer;
 begin
   GFailures := 0;
   GAsserts := 0;
-  Kjort := 0;
+  Ran := 0;
   Forrige := #0;
   T0 := MonotonicMs;
 
@@ -396,14 +396,14 @@ begin
     end;
     if not GCurrentFailed then
       WriteLn('    ok   ', GTests[I].Name_);
-    Inc(Kjort);
+    Inc(Ran);
   end;
 
   CloseTestDatabase;
 
   WriteLn;
   WriteLn(Format('%d tests, %d assertions, %d failures  (%d ms)',
-    [Kjort, GAsserts, GFailures, MonotonicMs - T0]));
+    [Ran, GAsserts, GFailures, MonotonicMs - T0]));
   Result := GFailures;
 end;
 

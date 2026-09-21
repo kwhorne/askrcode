@@ -126,7 +126,7 @@ type
   Tobjc_getClass = function(Name_: PAnsiChar): TObjcClass; cdecl;
   Tsel_registerName = function(Name_: PAnsiChar): TObjcSel; cdecl;
 
-  { objc_msgSend er variadisk i C. Fra Pascal deklareres den flere ganger med
+  { objc_msgSend er variadisk i C. From_ Pascal deklareres den flere ganger med
     hver sin signatur, mot det samme symbolet — det er slik ABI-en faktisk
     virker, og det eneste som er trygt på arm64. }
   TMsgSend = function(Obj: TObjcId; Sel: TObjcSel): TObjcId; cdecl;
@@ -226,7 +226,7 @@ begin
     raise EDesktopError.Create(GLoadError);
 
   { Free Pascal slår på flyttallsunntak; Cocoa og CoreGraphics regner rutinemessig
-    med NaN og uendelig og utløser dem. Uten denne masken dør prosessen med
+    med NaN og uendelig og utløser dem. Without denne masken dør prosessen med
     EInvalidOp i det første vinduet opprettes. Dette er ikke valgfritt. }
   SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide,
     exOverflow, exUnderflow, exPrecision]);
@@ -342,33 +342,33 @@ var
   GLoadError: string = '';
   GBackend: string = '';
 
-function TryLoad(const Names: array of string; out Valgt: string): TLibHandle;
+function TryLoad(const Names: array of string; out Chosen: string): TLibHandle;
 var
   I: Integer;
 begin
-  Valgt := '';
+  Chosen := '';
   for I := 0 to High(Names) do
   begin
     Result := LoadLibrary(Names[I]);
     if Result <> NilHandle then
     begin
-      Valgt := Names[I];
+      Chosen := Names[I];
       Exit;
     end;
   end;
   Result := NilHandle;
 end;
 
-function Need(Lib: TLibHandle; const LibNavn, Symbol: string): Pointer;
+function Need(Lib: TLibHandle; const LibName, Symbol: string): Pointer;
 begin
   Result := GetProcedureAddress(Lib, Symbol);
   if Result = nil then
-    raise EDesktopError.CreateFmt('%s is missing %s', [LibNavn, Symbol]);
+    raise EDesktopError.CreateFmt('%s is missing %s', [LibName, Symbol]);
 end;
 
 function LoadGtk: Boolean;
 var
-  GtkNavn, WkNavn, GoNavn, GlNavn: string;
+  GtkName, WkName, GoName, GlName: string;
 begin
   if GLoaded then
     Exit(True);
@@ -376,11 +376,11 @@ begin
     Exit(False);
   GTried := True;
 
-  GGtk := TryLoad(['libgtk-3.so.0', 'libgtk-3.so'], GtkNavn);
+  GGtk := TryLoad(['libgtk-3.so.0', 'libgtk-3.so'], GtkName);
   GWebkit := TryLoad(['libwebkit2gtk-4.1.so.0', 'libwebkit2gtk-4.0.so.37',
-    'libwebkit2gtk-4.1.so', 'libwebkit2gtk-4.0.so'], WkNavn);
-  GGobject := TryLoad(['libgobject-2.0.so.0', 'libgobject-2.0.so'], GoNavn);
-  GGlib := TryLoad(['libglib-2.0.so.0', 'libglib-2.0.so'], GlNavn);
+    'libwebkit2gtk-4.1.so', 'libwebkit2gtk-4.0.so'], WkName);
+  GGobject := TryLoad(['libgobject-2.0.so.0', 'libgobject-2.0.so'], GoName);
+  GGlib := TryLoad(['libglib-2.0.so.0', 'libglib-2.0.so'], GlName);
 
   if (GGtk = NilHandle) or (GWebkit = NilHandle) or (GGobject = NilHandle) or
      (GGlib = NilHandle) then
@@ -392,22 +392,22 @@ begin
   end;
 
   try
-    gtk_init_check := Need(GGtk, GtkNavn, 'gtk_init_check');
-    gtk_window_new := Need(GGtk, GtkNavn, 'gtk_window_new');
-    gtk_window_set_title := Need(GGtk, GtkNavn, 'gtk_window_set_title');
+    gtk_init_check := Need(GGtk, GtkName, 'gtk_init_check');
+    gtk_window_new := Need(GGtk, GtkName, 'gtk_window_new');
+    gtk_window_set_title := Need(GGtk, GtkName, 'gtk_window_set_title');
     gtk_window_set_default_size :=
-      Need(GGtk, GtkNavn, 'gtk_window_set_default_size');
-    gtk_window_set_position := Need(GGtk, GtkNavn, 'gtk_window_set_position');
-    gtk_container_add := Need(GGtk, GtkNavn, 'gtk_container_add');
-    gtk_widget_show_all := Need(GGtk, GtkNavn, 'gtk_widget_show_all');
-    gtk_main := Need(GGtk, GtkNavn, 'gtk_main');
-    gtk_main_quit := Need(GGtk, GtkNavn, 'gtk_main_quit');
-    webkit_web_view_new := Need(GWebkit, WkNavn, 'webkit_web_view_new');
+      Need(GGtk, GtkName, 'gtk_window_set_default_size');
+    gtk_window_set_position := Need(GGtk, GtkName, 'gtk_window_set_position');
+    gtk_container_add := Need(GGtk, GtkName, 'gtk_container_add');
+    gtk_widget_show_all := Need(GGtk, GtkName, 'gtk_widget_show_all');
+    gtk_main := Need(GGtk, GtkName, 'gtk_main');
+    gtk_main_quit := Need(GGtk, GtkName, 'gtk_main_quit');
+    webkit_web_view_new := Need(GWebkit, WkName, 'webkit_web_view_new');
     webkit_web_view_load_uri :=
-      Need(GWebkit, WkNavn, 'webkit_web_view_load_uri');
+      Need(GWebkit, WkName, 'webkit_web_view_load_uri');
     g_signal_connect_data :=
-      Need(GGobject, GoNavn, 'g_signal_connect_data');
-    g_timeout_add := Need(GGlib, GlNavn, 'g_timeout_add');
+      Need(GGobject, GoName, 'g_signal_connect_data');
+    g_timeout_add := Need(GGlib, GlName, 'g_timeout_add');
   except
     on E: Exception do
     begin
@@ -416,19 +416,19 @@ begin
     end;
   end;
 
-  GBackend := 'WebKitGTK (' + WkNavn + ')';
+  GBackend := 'WebKitGTK (' + WkName + ')';
   GLoaded := True;
   Result := True;
 end;
 
-{ GTK kaller denne når vinduet lukkes. Uten den kjører gtk_main videre etter
+{ GTK kaller denne når vinduet lukkes. Without den kjører gtk_main videre etter
   at vinduet er borte, og prosessen henger. }
 procedure OnDestroy(Widget, Data: Pointer); cdecl;
 begin
   gtk_main_quit();
 end;
 
-{ Til AutoCloseMs. Returnerer FALSE slik at timeren ikke gjentas. }
+{ To_ AutoCloseMs. Returnerer FALSE slik at timeren ikke gjentas. }
 function OnTimeout(Data: Pointer): LongInt; cdecl;
 begin
   gtk_main_quit();
@@ -444,7 +444,7 @@ begin
 
   { Samme grunn som i Cocoa-grenen, og like lite valgfri: Free Pascal slår på
     flyttallsunntak, og Cairo, GLib og WebKit regner rutinemessig med NaN og
-    uendelig. Uten masken dør prosessen med EInvalidOp inne i WebKit, og
+    uendelig. Without masken dør prosessen med EInvalidOp inne i WebKit, og
     stakksporet peker på biblioteker man ikke har skrevet — det ser ut som en
     feil i nettmotoren, ikke som et valg i vår egen runtime. }
   SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide,
@@ -609,7 +609,7 @@ var
   GHwnd: HWND = 0;
   GController: ICoreWebView2Controller = nil;
   GUrl: WideString = '';
-  GStartFeil: string = '';
+  GStartError: string = '';
   { Callbackene holdes i live her. WebView2 tar sin egen COM-referanse, så i
     teorien holder det å sende dem som parameter — men da hviler levetiden
     på at en midlertidig Pascal-referanse og en C++-AddRef går opp i opp.
@@ -688,7 +688,7 @@ begin
   Result := S_OK;
   if (errorCode <> S_OK) or (createdController = nil) then
   begin
-    GStartFeil := Format('The WebView2 controller failed (0x%.8x)', [errorCode]);
+    GStartError := Format('The WebView2 controller failed (0x%.8x)', [errorCode]);
     PostQuitMessage(0);
     Exit;
   end;
@@ -699,7 +699,7 @@ begin
 
   if GController.get_CoreWebView2(View) <> S_OK then
   begin
-    GStartFeil := 'Could not obtain ICoreWebView2';
+    GStartError := 'Could not obtain ICoreWebView2';
     PostQuitMessage(0);
     Exit;
   end;
@@ -712,7 +712,7 @@ begin
   Result := S_OK;
   if (errorCode <> S_OK) or (createdEnvironment = nil) then
   begin
-    GStartFeil := Format('The WebView2 environment failed (0x%.8x). ' +
+    GStartError := Format('The WebView2 environment failed (0x%.8x). ' +
       'Is the runtime installed?', [errorCode]);
     PostQuitMessage(0);
     Exit;
@@ -729,7 +729,7 @@ begin
   case Msg of
     WM_SIZE:
       begin
-        { Uten dette blir nettmotoren stående i sin opprinnelige størrelse
+        { Without dette blir nettmotoren stående i sin opprinnelige størrelse
           mens vinduet endrer seg. }
         if GController <> nil then
         begin
@@ -756,7 +756,7 @@ end;
 
 procedure OpenWindowTimed(const Title, Url: string; W, H, CloseMs: Integer);
 const
-  KlasseNavn: WideString = 'AskrDesktopWindow';
+  ClassName_: WideString = 'AskrDesktopWindow';
 var
   Wc: TWndClassExW;
   Msg: TMsg;
@@ -778,7 +778,7 @@ begin
     raise EDesktopError.CreateFmt('CoInitializeEx failed (0x%.8x)', [Hr]);
 
   GUrl := WideString(Url);
-  GStartFeil := '';
+  GStartError := '';
 
   FillChar(Wc, SizeOf(Wc), 0);
   Wc.cbSize := SizeOf(Wc);
@@ -787,12 +787,12 @@ begin
   Wc.hInstance := HInstance;
   Wc.hCursor := LoadCursor(0, IDC_ARROW);
   Wc.hbrBackground := HBRUSH(COLOR_WINDOW + 1);
-  Wc.lpszClassName := PWideChar(KlasseNavn);
+  Wc.lpszClassName := PWideChar(ClassName_);
   if RegisterClassExW(Wc) = 0 then
     raise EDesktopError.Create('RegisterClassExW failed');
 
   WTitle := WideString(Title);
-  GHwnd := CreateWindowExW(0, PWideChar(KlasseNavn), PWideChar(WTitle),
+  GHwnd := CreateWindowExW(0, PWideChar(ClassName_), PWideChar(WTitle),
     WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, W, H,
     0, 0, HInstance, nil);
   if GHwnd = 0 then
@@ -826,8 +826,8 @@ begin
   GEnvHandler := nil;
   CoUninitialize;
 
-  if GStartFeil <> '' then
-    raise EDesktopError.Create(GStartFeil);
+  if GStartError <> '' then
+    raise EDesktopError.Create(GStartError);
 end;
 
 procedure OpenWindow(const Title, Url: string; W, H: Integer);

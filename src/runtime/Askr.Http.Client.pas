@@ -2,7 +2,7 @@
 
   Askr har hatt en server siden steg 1 og ingen klient. Det har vært greit
   helt til noe skal ut: et webhook, en fil til S3, et varsel til Slack, et
-  kall til Anthropics API. Alle fire står og venter på denne fila.
+  kall til Anthropics API. All_ fire står og venter på denne fila.
 
   **TLS er på, og sertifikatet sjekkes.** En klient som ikke verifiserer er
   verre enn ingen klient — den ser ut til å virke, og den gjør det helt til
@@ -20,7 +20,7 @@
   det er en avhengighet til, og Askr skal starte på en maskin uten den.
 
   Det som **ikke** er her: HTTP/2, proxy-støtte, cookie-jar, automatisk
-  retry. Alle fire er reelle behov for noen; ingen av dem er det for det
+  retry. All_ fire er reelle behov for noen; ingen av dem er det for det
   som står i kø bak denne fila. }
 unit Askr.Http.Client;
 
@@ -128,13 +128,13 @@ type
     property MaxRedirects: Integer read FMaxRedirects write FMaxRedirects;
     property MaxResponseBytes: Int64 read FMaxResponseBytes
       write FMaxResponseBytes;
-    { Slår av sertifikatsjekken. Til et selvsignert sertifikat i utvikling,
+    { Slår av sertifikatsjekken. To_ et selvsignert sertifikat i utvikling,
       og ingenting annet. Hver request logger en advarsel. }
     property Insecure: Boolean read FInsecure write FInsecure;
     property UserAgent: string read FUserAgent write FUserAgent;
   end;
 
-{ Deler en URL. Returnerer False på noe som ikke er en http- eller
+{ Parts_ en URL. Returnerer False på noe som ikke er en http- eller
   https-adresse. Port settes til 80 eller 443 når den ikke står der. }
 function ParseUrl(const Url: string; out Scheme, Host: string;
   out Port: Word; out PathAndQuery: string): Boolean;
@@ -543,7 +543,7 @@ end;
 
 { Leser en linje som slutter på CRLF ut av bufferet. False når linja ikke
   er hel ennå. }
-function TaLinje(var Buf: string; out Line: string): Boolean;
+function TakeLine(var Buf: string; out Line: string): Boolean;
 var
   P: Integer;
 begin
@@ -559,13 +559,13 @@ end;
 function THttpClient.Send(const Method, Url, Body, ContentType: string;
   Depth: Integer): THttpResponse;
 var
-  Scheme, Host, Sti, Linje, Navn, Verdi, Ny: string;
+  Scheme, Host, Path_, Line_, Name_, Value_, Ny: string;
   Port: Word;
   C: TConn;
   Req, Buf, Bit: string;
   I, P, ContentLength, Chunk: Integer;
-  HodeFerdig, Chunked, LukkVedSlutt, Avbrutt: Boolean;
-  Lest: Int64;
+  HeaderDone, Chunked, LukkVedSlutt, Avbrutt: Boolean;
+  WasRead: Int64;
   T0: Int64;
 begin
   { Ikke FillChar: THttpResponse har både strenger og et dynamisk array,
@@ -583,7 +583,7 @@ begin
     raise EHttpClientError.CreateFmt(
       'Too many redirects (%d) starting at %s', [FMaxRedirects, FLastUrl]);
 
-  if not ParseUrl(Url, Scheme, Host, Port, Sti) then
+  if not ParseUrl(Url, Scheme, Host, Port, Path_) then
     raise EHttpClientError.CreateFmt(
       '"%s" is not an http or https URL', [Url]);
 
@@ -596,7 +596,7 @@ begin
 
   { Requesten. Host er påkrevd i HTTP/1.1. Connection: close fordi
     klienten ikke gjenbruker forbindelser — én request, én socket. }
-  Req := Method + ' ' + Sti + ' HTTP/1.1'#13#10;
+  Req := Method + ' ' + Path_ + ' HTTP/1.1'#13#10;
   if ((Scheme = 'https') and (Port <> 443)) or
      ((Scheme = 'http') and (Port <> 80)) then
     Req := Req + 'Host: ' + Host + ':' + IntToStr(Port) + #13#10
@@ -623,14 +623,14 @@ begin
     C.SendAll(Req);
 
     Buf := '';
-    HodeFerdig := False;
+    HeaderDone := False;
     Chunked := False;
     ContentLength := -1;
     LukkVedSlutt := False;
-    Lest := 0;
+    WasRead := 0;
 
     { --- statuslinje og headere --- }
-    while not HodeFerdig do
+    while not HeaderDone do
     begin
       Bit := C.Read(16 * 1024);
       if Bit = '' then
@@ -643,38 +643,38 @@ begin
         Continue;
 
       { Statuslinja. }
-      if not TaLinje(Buf, Linje) then
+      if not TakeLine(Buf, Line_) then
         raise EHttpClientError.Create('Malformed response');
-      if Copy(Linje, 1, 5) <> 'HTTP/' then
+      if Copy(Line_, 1, 5) <> 'HTTP/' then
         raise EHttpClientError.CreateFmt(
           'The response did not start with a status line (%s)', [Url]);
-      P := Pos(' ', Linje);
-      Result.Status := StrToIntDef(Copy(Linje, P + 1, 3), 0);
-      Result.Reason := Trim(Copy(Linje, P + 5, MaxInt));
+      P := Pos(' ', Line_);
+      Result.Status := StrToIntDef(Copy(Line_, P + 1, 3), 0);
+      Result.Reason := Trim(Copy(Line_, P + 5, MaxInt));
       if Result.Status = 0 then
         raise EHttpClientError.CreateFmt(
           'The response had no status code (%s)', [Url]);
 
-      while TaLinje(Buf, Linje) do
+      while TakeLine(Buf, Line_) do
       begin
-        if Linje = '' then
+        if Line_ = '' then
         begin
-          HodeFerdig := True;
+          HeaderDone := True;
           Break;
         end;
-        P := Pos(':', Linje);
+        P := Pos(':', Line_);
         if P = 0 then
           Continue;
-        Navn := Trim(Copy(Linje, 1, P - 1));
-        Verdi := Trim(Copy(Linje, P + 1, MaxInt));
+        Name_ := Trim(Copy(Line_, 1, P - 1));
+        Value_ := Trim(Copy(Line_, P + 1, MaxInt));
         I := Length(Result.Headers);
         SetLength(Result.Headers, I + 1);
-        Result.Headers[I].Name := Navn;
-        Result.Headers[I].Value := Verdi;
-        if SameText(Navn, 'Content-Length') then
-          ContentLength := StrToIntDef(Verdi, -1)
-        else if SameText(Navn, 'Transfer-Encoding') and
-                (Pos('chunked', LowerCase(Verdi)) > 0) then
+        Result.Headers[I].Name := Name_;
+        Result.Headers[I].Value := Value_;
+        if SameText(Name_, 'Content-Length') then
+          ContentLength := StrToIntDef(Value_, -1)
+        else if SameText(Name_, 'Transfer-Encoding') and
+                (Pos('chunked', LowerCase(Value_)) > 0) then
           Chunked := True;
       end;
     end;
@@ -719,7 +719,7 @@ begin
       repeat
         { Størrelseslinja er heksadesimal, og kan ha en semikolon med
           utvidelser etter seg. }
-        while not TaLinje(Buf, Linje) do
+        while not TakeLine(Buf, Line_) do
         begin
           Bit := C.Read(16 * 1024);
           if Bit = '' then
@@ -727,13 +727,13 @@ begin
               'The connection closed inside a chunked body');
           Buf := Buf + Bit;
         end;
-        P := Pos(';', Linje);
+        P := Pos(';', Line_);
         if P > 0 then
-          Linje := Copy(Linje, 1, P - 1);
-        Chunk := StrToIntDef('$' + Trim(Linje), -1);
+          Line_ := Copy(Line_, 1, P - 1);
+        Chunk := StrToIntDef('$' + Trim(Line_), -1);
         if Chunk < 0 then
           raise EHttpClientError.CreateFmt(
-            'Malformed chunk size "%s"', [Linje]);
+            'Malformed chunk size "%s"', [Line_]);
         if Chunk = 0 then
           Break;
 
@@ -746,8 +746,8 @@ begin
               'The connection closed inside a chunked body');
           Buf := Buf + Bit;
         end;
-        Inc(Lest, Chunk);
-        if Lest > FMaxResponseBytes then
+        Inc(WasRead, Chunk);
+        if WasRead > FMaxResponseBytes then
           raise EHttpClientError.CreateFmt(
             'The response exceeded %d bytes', [FMaxResponseBytes]);
         Bit := Copy(Buf, 1, Chunk);
@@ -767,7 +767,7 @@ begin
       Avbrutt := False;
       if Buf <> '' then
       begin
-        Inc(Lest, Length(Buf));
+        Inc(WasRead, Length(Buf));
         if Assigned(FStream) or Assigned(FStreamProc) then
           { Svaret fra den første biten teller like mye som fra de andre.
             Ble det ignorert her, leste klienten videre etter at
@@ -778,13 +778,13 @@ begin
           Result.Body := Buf;
         Buf := '';
       end;
-      while (not Avbrutt) and (LukkVedSlutt or (Lest < ContentLength)) do
+      while (not Avbrutt) and (LukkVedSlutt or (WasRead < ContentLength)) do
       begin
         Bit := C.Read(64 * 1024);
         if Bit = '' then
           Break;
-        Inc(Lest, Length(Bit));
-        if Lest > FMaxResponseBytes then
+        Inc(WasRead, Length(Bit));
+        if WasRead > FMaxResponseBytes then
           raise EHttpClientError.CreateFmt(
             'The response exceeded %d bytes', [FMaxResponseBytes]);
         if Assigned(FStream) or Assigned(FStreamProc) then

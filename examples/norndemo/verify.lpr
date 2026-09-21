@@ -58,27 +58,27 @@ begin
 end;
 
 var
-  Feil: Integer = 0;
+  Err: Integer = 0;
 
-procedure Krev(Betingelse: Boolean; const Hva: string);
+procedure Expect(Betingelse: Boolean; const What: string);
 begin
   if Betingelse then
-    WriteLn('  ok   ', Hva)
+    WriteLn('  ok   ', What)
   else
   begin
-    Inc(Feil);
-    WriteLn('  FEIL ', Hva);
+    Inc(Err);
+    WriteLn('  FEIL ', What);
   end;
 end;
 
-procedure Si(const Etikett, Verdi: string);
+procedure Si(const Etikett, Value_: string);
 var
   Pad: string;
 begin
   Pad := Etikett;
   while Length(Pad) < 30 do
     Pad := Pad + ' ';
-  WriteLn('  ', Pad, Verdi);
+  WriteLn('  ', Pad, Value_);
 end;
 
 function Dsn: string;
@@ -110,25 +110,25 @@ begin
     Si('avtrykk i manifestet', SchemaAvtrykk);
     Si('kolonne fra generert unit',
       string(Customers.Balance.Table) + '.' + string(Customers.Balance.Name));
-    Krev(string(Customers.Balance.Name) = 'balance',
+    Expect(string(Customers.Balance.Name) = 'balance',
       'kolonnenavnet kom fra databasen');
-    Krev(string(Orders.CustomerId.Name) = 'customer_id',
+    Expect(string(Orders.CustomerId.Name) = 'customer_id',
       'snake_case ble beholdt i SQL, PascalCase i Pascal');
     WriteLn;
 
     WriteLn('Manifestet');
-    Krev(ColumnExists('customers', 'email'), 'ColumnExists finner email');
+    Expect(ColumnExists('customers', 'email'), 'ColumnExists finner email');
     { Manifestet skal si nei til noe som ikke finnes, ikke bare ja til det
       som gjør det. Før domenet ble engelsk het denne kolonnen «epost», og
       denne linja fanget at manifestet ikke bare svarte ja på alt. }
-    Krev(not ColumnExists('customers', 'e_mail'),
+    Expect(not ColumnExists('customers', 'e_mail'),
       'og ikke en kolonne som ikke finnes');
-    Krev(IsIndexed('customers', 'created_at'), 'created_at er indeksert');
-    Krev(not IsIndexed('customers', 'balance'), 'balance er ikke det');
+    Expect(IsIndexed('customers', 'created_at'), 'created_at er indeksert');
+    Expect(not IsIndexed('customers', 'balance'), 'balance er ikke det');
     Si('PascalType for balance', PascalTypeOf('customers', 'balance'));
-    Krev(PascalTypeOf('customers', 'balance') = 'Currency',
+    Expect(PascalTypeOf('customers', 'balance') = 'Currency',
       'NUMERIC(12,2) ble til Currency');
-    Krev(PascalTypeOf('customers', 'created_at') = 'TDateTime',
+    Expect(PascalTypeOf('customers', 'created_at') = 'TDateTime',
       'TIMESTAMPTZ ble til TDateTime');
     WriteLn;
 
@@ -165,18 +165,18 @@ begin
       .OrderBy(Customers.Balance, Desc)
       .Preload(['Orders'])
       .Get;
-    Krev(Liste.Count = 4, 'fire customers over 150');
-    Krev(Liste[0].Balance = 500, 'sortert synkende');
+    Expect(Liste.Count = 4, 'fire customers over 150');
+    Expect(Liste[0].Balance = 500, 'sortert synkende');
     Order := 0;
     for I := 0 to Liste.Count - 1 do
       Order := Order + Liste[I].Orders.Count;
-    Krev(Order = 2 + 3 + 4 + 5, 'eager loading mot generert skjema');
+    Expect(Order = 2 + 3 + 4 + 5, 'eager loading mot generert skjema');
 
-    Krev(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 3,
+    Expect(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 3,
       'boolean-kolonne generert riktig');
-    Krev(TQuery<TOrder>.New.Where(Orders.Status, Eq, 'new').Count = 15,
+    Expect(TQuery<TOrder>.New.Where(Orders.Status, Eq, 'new').Count = 15,
       'tekstkolonne i den andre tabellen');
-    Krev(TQuery<TOrder>.New.Where(Orders.Total, GTE, 30).Count = 6,
+    Expect(TQuery<TOrder>.New.Where(Orders.Total, GTE, 30).Count = 6,
       'NUMERIC sammenliknes som Currency');
   finally
     UseDb(PrevDb);
@@ -186,11 +186,11 @@ begin
   end;
 
   WriteLn;
-  if Feil = 0 then
+  if Err = 0 then
     WriteLn('Generert kode kompilerer og virker mot databasen den kom fra.')
   else
   begin
-    WriteLn(Feil, ' feil.');
+    WriteLn(Err, ' feil.');
     Halt(1);
   end;
 end.

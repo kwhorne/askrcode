@@ -8,7 +8,7 @@
 
   REDUKSJON MODULO p ER IKKE LANGDIVISJON
 
-  En verifisering gjør i størrelsesorden 8000 feltmultiplikasjoner. Med
+  En verifisering gjør i størrelsesorden 8000 feltmultiplikasjoner. With_
   den generiske reduksjonen i Askr.Core.BigInt ville hver av dem kostet
   512 runder med skift og subtraksjon, altså over hundre millioner
   operasjoner for én innlogging. P-256 er valgt med et Solinas-primtall
@@ -126,10 +126,10 @@ end;
 
 { Bygger et 256-bits tall av åtte ord, oppgitt mest signifikante først,
   slik FIPS skriver dem. Et ord nummer over 15 betyr null. }
-procedure Ledd(const C: TU512; W7, W6, W5, W4, W3, W2, W1, W0: Integer;
+procedure Clause(const C: TU512; W7, W6, W5, W4, W3, W2, W1, W0: Integer;
   out R: TU256);
 
-  function Ord_(I: Integer): UInt32;
+  function Word_(I: Integer): UInt32;
   begin
     if (I < 0) or (I > 15) then
       Result := 0
@@ -138,10 +138,10 @@ procedure Ledd(const C: TU512; W7, W6, W5, W4, W3, W2, W1, W0: Integer;
   end;
 
 begin
-  R.L[7] := Ord_(W7); R.L[6] := Ord_(W6);
-  R.L[5] := Ord_(W5); R.L[4] := Ord_(W4);
-  R.L[3] := Ord_(W3); R.L[2] := Ord_(W2);
-  R.L[1] := Ord_(W1); R.L[0] := Ord_(W0);
+  R.L[7] := Word_(W7); R.L[6] := Word_(W6);
+  R.L[5] := Word_(W5); R.L[4] := Word_(W4);
+  R.L[3] := Word_(W3); R.L[2] := Word_(W2);
+  R.L[1] := Word_(W1); R.L[0] := Word_(W0);
   Normaliser(R);
 end;
 
@@ -151,15 +151,15 @@ var
 begin
   { FIPS 186-4, D.2.3. Ordene telles som i standarden: c0 er minst
     signifikant. -1 står for et ord som er null i det leddet. }
-  Ledd(C,  7,  6,  5,  4,  3,  2,  1,  0, S1);
-  Ledd(C, 15, 14, 13, 12, 11, -1, -1, -1, S2);
-  Ledd(C, -1, 15, 14, 13, 12, -1, -1, -1, S3);
-  Ledd(C, 15, 14, -1, -1, -1, 10,  9,  8, S4);
-  Ledd(C,  8, 13, 15, 14, 13, 11, 10,  9, S5);
-  Ledd(C, 10,  8, -1, -1, -1, 13, 12, 11, S6);
-  Ledd(C, 11,  9, -1, -1, 15, 14, 13, 12, S7);
-  Ledd(C, 12, -1, 10,  9,  8, 15, 14, 13, S8);
-  Ledd(C, 13, -1, 11, 10,  9, -1, 15, 14, S9);
+  Clause(C,  7,  6,  5,  4,  3,  2,  1,  0, S1);
+  Clause(C, 15, 14, 13, 12, 11, -1, -1, -1, S2);
+  Clause(C, -1, 15, 14, 13, 12, -1, -1, -1, S3);
+  Clause(C, 15, 14, -1, -1, -1, 10,  9,  8, S4);
+  Clause(C,  8, 13, 15, 14, 13, 11, 10,  9, S5);
+  Clause(C, 10,  8, -1, -1, -1, 13, 12, 11, S6);
+  Clause(C, 11,  9, -1, -1, 15, 14, 13, 12, S7);
+  Clause(C, 12, -1, 10,  9,  8, 15, 14, 13, S8);
+  Clause(C, 13, -1, 11, 10,  9, -1, 15, 14, S9);
 
   { r = s1 + 2*s2 + 2*s3 + s4 + s5 - s6 - s7 - s8 - s9 }
   R := S1;
@@ -405,7 +405,7 @@ begin
   if U256IsZero(R_) or (U256Cmp(R_, GN) >= 0) then Exit;
   if U256IsZero(S_) or (U256Cmp(S_, GN) >= 0) then Exit;
 
-  { Nøkkelen må være et punkt på kurven. Uten denne sjekken tar
+  { Nøkkelen må være et punkt på kurven. Without denne sjekken tar
     verifiseringen imot et punkt fra en annen kurve. }
   if not EcOnCurve(X, Y) then Exit;
 

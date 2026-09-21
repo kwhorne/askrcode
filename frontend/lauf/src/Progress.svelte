@@ -1,7 +1,7 @@
-<!-- En fremdriftsindikator må ha et navn og en verdi som kan leses.
-     `value = null` betyr ubestemt: noe skjer, men ingen vet hvor lenge.
-     Da skal aria-valuenow *ikke* settes — et tall som ikke betyr noe er
-     verre enn ingen tall. -->
+<!-- A progress indicator has to have a name and a value that can be
+     read. `value = null` means indeterminate: something is happening, but
+     nobody knows for how long. Then aria-valuenow must *not* be set — a
+     number that means nothing is worse than no number. -->
 <script>
   import { Progress as B } from 'bits-ui'
   import { cn } from './utils.js'
@@ -10,7 +10,7 @@
     /** 0–max, eller null for ubestemt. */
     value = 0,
     max = 100,
-    /** Navnet på det som pågår. Påkrevd. */
+    /** The name of what is going on. Required. */
     label,
     /** Viser prosenten ved siden av. */
     showValue = false,

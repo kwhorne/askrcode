@@ -1,7 +1,7 @@
-<!-- En melding som hører til siden, ikke til et felt.
-     Fargen er ikke den eneste informasjonen: hver variant har sitt eget
-     ikon, og en variant som melder noe galt får role="alert" slik at den
-     leses opp når den dukker opp. -->
+<!-- A message that belongs to the page rather than to a field.
+     Colour is not the only information: each variant has its own icon,
+     and a variant that reports something wrong gets role="alert" so it is
+     read out when it appears. -->
 <script>
   import { cn } from './utils.js'
   import Icon from './Icon.svelte'

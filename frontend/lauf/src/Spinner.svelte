@@ -1,5 +1,6 @@
-<!-- Brukes av Button når en submit er underveis. Egen fil fordi den også
-     skal kunne stå alene senere (Skeleton, Table i lasting). -->
+<!-- Used by Button while a submit is in flight. Its own file because it
+     should also be able to stand alone later (Skeleton, Table while
+     loading). -->
 <script>
   import { cn } from './utils.js'
   let { class: klass, ...rest } = $props()

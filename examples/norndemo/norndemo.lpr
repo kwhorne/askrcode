@@ -22,26 +22,26 @@ uses
   App.Migrations;
 
 var
-  Feil: Integer = 0;
+  Err: Integer = 0;
 
-procedure Si(const Etikett, Verdi: string);
+procedure Si(const Etikett, Value_: string);
 var
   Pad: string;
 begin
   Pad := Etikett;
   while Length(Pad) < 30 do
     Pad := Pad + ' ';
-  WriteLn('  ', Pad, Verdi);
+  WriteLn('  ', Pad, Value_);
 end;
 
-procedure Krev(Betingelse: Boolean; const Hva: string);
+procedure Expect(Betingelse: Boolean; const What: string);
 begin
   if Betingelse then
-    WriteLn('  ok   ', Hva)
+    WriteLn('  ok   ', What)
   else
   begin
-    Inc(Feil);
-    WriteLn('  FEIL ', Hva);
+    Inc(Err);
+    WriteLn('  FEIL ', What);
   end;
 end;
 
@@ -83,7 +83,7 @@ begin
   end;
 end;
 
-procedure SkrivUtFil(const Path: string; MaksLinjer: Integer);
+procedure WriteOutFile(const Path: string; MaxLines: Integer);
 var
   L: TStringList;
   I: Integer;
@@ -98,9 +98,9 @@ begin
     L.LoadFromFile(Path);
     for I := 0 to L.Count - 1 do
     begin
-      if I >= MaksLinjer then
+      if I >= MaxLines then
       begin
-        WriteLn('  | ... (', L.Count - MaksLinjer, ' linjer til)');
+        WriteLn('  | ... (', L.Count - MaxLines, ' linjer til)');
         Break;
       end;
       WriteLn('  | ', L[I]);
@@ -120,7 +120,7 @@ var
   Endret, Drift: TStringArray;
   T: TDbTable;
   A: TArena;
-  I, Kjort: Integer;
+  I, Ran: Integer;
   Avtrykk1, Avtrykk2: string;
 begin
   WriteLn('Askr — Norn ende-til-ende');
@@ -135,39 +135,39 @@ begin
     M := TMigrator.Create(C);
     try
       M.OnLog := @Stille;
-      Krev(M.PendingCount = 3, 'tre migrasjoner venter');
-      Kjort := M.Up;
-      Krev(Kjort = 3, 'alle tre kjørte');
-      Krev(M.PendingCount = 0, 'ingenting venter etterpå');
+      Expect(M.PendingCount = 3, 'tre migrasjoner venter');
+      Ran := M.Up;
+      Expect(Ran = 3, 'alle tre kjørte');
+      Expect(M.PendingCount = 0, 'ingenting venter etterpå');
 
       St := M.Status;
-      Krev(Length(St) = 3, 'status viser tre');
+      Expect(Length(St) = 3, 'status viser tre');
       for I := 0 to High(St) do
         Si(St[I].Version, St[I].Title);
-      Krev(St[0].Title = 'Create customers',
+      Expect(St[0].Title = 'Create customers',
         'tittel utledes fra klassenavnet');
       WriteLn;
 
       WriteLn('Introspeksjon');
       Schema := IntrospectSchema(C);
       try
-        Krev(Schema.Table('customers') <> nil, 'customers finnes');
-        Krev(Schema.Table('orders') <> nil, 'orders finnes');
+        Expect(Schema.Table('customers') <> nil, 'customers finnes');
+        Expect(Schema.Table('orders') <> nil, 'orders finnes');
         T := Schema.Table('customers');
         Si('kolonner i customers', IntToStr(T.ColumnCount));
-        Krev(T.ColumnCount = 7,
+        Expect(T.ColumnCount = 7,
           'id, name, email, balance, created_at, updated_at, active');
-        Krev(T.PrimaryKey = 'id', 'primærnøkkelen ble lest tilbake');
-        Krev(T.HasColumn('active'),
+        Expect(T.PrimaryKey = 'id', 'primærnøkkelen ble lest tilbake');
+        Expect(T.HasColumn('active'),
           'kolonnen fra ALTER-migrasjonen er med');
-        Krev(T.IsIndexed('created_at'),
+        Expect(T.IsIndexed('created_at'),
           'indeksen fra migrasjonen ble funnet');
-        Krev(T.IsIndexed('email'), 'UNIQUE gir også en indeks');
-        Krev(not T.IsIndexed('balance'), 'balance har ingen indeks');
+        Expect(T.IsIndexed('email'), 'UNIQUE gir også en indeks');
+        Expect(not T.IsIndexed('balance'), 'balance har ingen indeks');
 
         T := Schema.Table('orders');
-        Krev(T.ForeignKeyCount = 1, 'fremmednøkkelen ble lest tilbake');
-        Krev(T.ForeignKey(0).RefTable = 'customers', 'den peker på customers');
+        Expect(T.ForeignKeyCount = 1, 'fremmednøkkelen ble lest tilbake');
+        Expect(T.ForeignKey(0).RefTable = 'customers', 'den peker på customers');
         Si('skjemaavtrykk', SchemaFingerprint(Schema));
         Avtrykk1 := SchemaFingerprint(Schema);
         WriteLn;
@@ -176,22 +176,22 @@ begin
         Opts := DefaultCodegenOptions;
         Opts.OutputDir := OutDir;
         Files := GenerateSources(Schema, Opts);
-        Krev(Length(Files) = 3,
+        Expect(Length(Files) = 3,
           'to tabell-units og ett manifest (migrasjonstabellen hoppes over)');
         Endret := WriteSources(Files, Opts);
         Si('filer skrevet', IntToStr(Length(Endret)));
 
         Drift := CheckDrift(Files, Opts);
-        Krev(Length(Drift) = 0, 'ingen drift rett etter generering');
+        Expect(Length(Drift) = 0, 'ingen drift rett etter generering');
 
         { Skriver man igjen uten endringer, skal ingenting røres. }
         Endret := WriteSources(Files, Opts);
-        Krev(Length(Endret) = 0,
+        Expect(Length(Endret) = 0,
           'uendrede filer skrives ikke på nytt');
         WriteLn;
 
         WriteLn('Generert kode');
-        SkrivUtFil(IncludeTrailingPathDelimiter(OutDir) +
+        WriteOutFile(IncludeTrailingPathDelimiter(OutDir) +
           'App.Schema.Customers.pas', 26);
         WriteLn;
       finally
@@ -205,10 +205,10 @@ begin
       Schema := IntrospectSchema(C);
       try
         Avtrykk2 := SchemaFingerprint(Schema);
-        Krev(Avtrykk1 <> Avtrykk2, 'skjemaavtrykket endret seg');
+        Expect(Avtrykk1 <> Avtrykk2, 'skjemaavtrykket endret seg');
         Files := GenerateSources(Schema, Opts);
         Drift := CheckDrift(Files, Opts);
-        Krev(Length(Drift) > 0, 'driftsjekken oppdager det');
+        Expect(Length(Drift) > 0, 'driftsjekken oppdager det');
         for I := 0 to High(Drift) do
           Si('avviker', Drift[I]);
       finally
@@ -218,26 +218,26 @@ begin
 
       WriteLn('Rulle tilbake');
       C.Exec(A, 'ALTER TABLE customers DROP COLUMN rabatt');
-      Kjort := M.Down(1);
-      Krev(Kjort = 1, 'én migrasjon rullet tilbake');
+      Ran := M.Down(1);
+      Expect(Ran = 1, 'én migrasjon rullet tilbake');
       Schema := IntrospectSchema(C);
       try
-        Krev(not Schema.Table('customers').HasColumn('active'),
+        Expect(not Schema.Table('customers').HasColumn('active'),
           'kolonnen er borte igjen');
-        Krev(SchemaFingerprint(Schema) <> Avtrykk1,
+        Expect(SchemaFingerprint(Schema) <> Avtrykk1,
           'avtrykket er et annet enn før');
       finally
         Schema.Free;
       end;
-      Krev(M.PendingCount = 1, 'den venter nå igjen');
-      Kjort := M.Up;
-      Krev(Kjort = 1, 'og kan kjøres på nytt');
+      Expect(M.PendingCount = 1, 'den venter nå igjen');
+      Ran := M.Up;
+      Expect(Ran = 1, 'og kan kjøres på nytt');
       Schema := IntrospectSchema(C);
       try
-        Krev(SchemaFingerprint(Schema) = Avtrykk1,
+        Expect(SchemaFingerprint(Schema) = Avtrykk1,
           'avtrykket er tilbake der det var');
         Files := GenerateSources(Schema, Opts);
-        Krev(Length(CheckDrift(Files, Opts)) = 0, 'og driften er borte');
+        Expect(Length(CheckDrift(Files, Opts)) = 0, 'og driften er borte');
       finally
         Schema.Free;
       end;
@@ -250,11 +250,11 @@ begin
   end;
 
   WriteLn;
-  if Feil = 0 then
+  if Err = 0 then
     WriteLn('Norn holder: migrasjoner, introspeksjon, codegen og driftsjekk.')
   else
   begin
-    WriteLn(Feil, ' feil.');
+    WriteLn(Err, ' feil.');
     Halt(1);
   end;
 end.

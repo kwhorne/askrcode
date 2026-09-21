@@ -38,37 +38,37 @@ var
   Bestatt: Integer = 0;
   Feilet: Integer = 0;
 
-procedure Start(const Navn: string);
+procedure Start(const Name_: string);
 begin
   WriteLn;
-  WriteLn('— ', Navn);
+  WriteLn('— ', Name_);
 end;
 
-procedure Ok(const Hva: string; Betingelse: Boolean);
+procedure Ok(const What: string; Betingelse: Boolean);
 begin
   if Betingelse then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
   end;
 end;
 
-procedure Like(const Hva, Forventet, Fikk: string);
+procedure Like(const What, Forventet, Fikk: string);
 begin
   if Forventet = Fikk then
   begin
     Inc(Bestatt);
-    WriteLn('  ok    ', Hva);
+    WriteLn('  ok    ', What);
   end
   else
   begin
     Inc(Feilet);
-    WriteLn('  FEIL  ', Hva);
+    WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Forventet);
     WriteLn('        fikk:      ', Fikk);
   end;
@@ -82,7 +82,7 @@ begin
     Move(S[1], Result[0], Length(S));
 end;
 
-function Gjenta(const S: string; N: Integer): string;
+function Again(const S: string; N: Integer): string;
 var
   I: Integer;
 begin
@@ -104,7 +104,7 @@ var
   I, J, Unike: Integer;
   Duplikat: Boolean;
   Sett: array[0..130] of string;
-  Sett_: array[0..255] of Boolean;
+  Apply_: array[0..255] of Boolean;
   S, H1, H2: string;
   A, B: TBytes;
   D: TSha256Digest;
@@ -128,9 +128,9 @@ procedure EcdsaTester;
 var
   L: TStringList;
   I, K, Godt, Avvist, Gale: Integer;
-  S, Felt: string;
+  S, Field_: string;
   F: array[0..5] of string;
-  Vent: Boolean;
+  Wait: Boolean;
   P1, P2: TEcPoint;
   X, Y, Kk: TU256;
 begin
@@ -152,7 +152,7 @@ begin
   Ok('n*G er uendelig', EcIsInfinity(P2));
 
   { Doblingsgrenen i EcAdd naas aldri av tilfeldige signaturer: to
-    uavhengige punkter har praktisk talt aldri samme x. Uten disse to er
+    uavhengige punkter har praktisk talt aldri samme x. Without disse to er
     den udekket, og en feil der ville dukket opp sjelden og uforklarlig.
     Mutasjonssjekket: fjernes grenen, feiler begge. }
   EcSetAffine(EcGx, EcGy, P1);
@@ -197,18 +197,18 @@ begin
       begin
         if Pos(' ', S) > 0 then
         begin
-          Felt := Copy(S, 1, Pos(' ', S) - 1);
+          Field_ := Copy(S, 1, Pos(' ', S) - 1);
           S := Trim(Copy(S, Pos(' ', S) + 1, Length(S)));
         end
         else
-          Felt := S;
-        F[K] := Felt;
+          Field_ := S;
+        F[K] := Field_;
       end;
-      Vent := F[5] = '1';
+      Wait := F[5] = '1';
       if EcdsaVerifyP256(HexBytes(F[0]), HexBytes(F[1]), HexBytes(F[2]),
-                         HexBytes(F[3]), HexBytes(F[4])) <> Vent then
+                         HexBytes(F[3]), HexBytes(F[4])) <> Wait then
         Inc(Gale)
-      else if Vent then
+      else if Wait then
         Inc(Godt)
       else
         Inc(Avvist);
@@ -234,7 +234,7 @@ var
   O: TWebAuthnOptions;
   Rg: TRegistration;
   Asr: TAssertion;
-  Vent, Fikk: Boolean;
+  Wait, Fikk: Boolean;
 begin
   Start('WebAuthn: hele seremonien, mot data bygget fra speken');
   RegOk := 0; RegNei := 0; AsrOk := 0; AsrNei := 0; Gale := 0;
@@ -268,7 +268,7 @@ begin
         Inc(K);
       end;
 
-      Vent := F[1] = '1';
+      Wait := F[1] = '1';
       O.RpId := F[2];
       O.Origin := F[3];
       O.RequireUserVerification := False;
@@ -290,15 +290,15 @@ begin
         Fikk := Asr.Ok;
       end;
 
-      if Fikk <> Vent then
+      if Fikk <> Wait then
         Inc(Gale)
       else if F[0] = 'REG' then
       begin
-        if Vent then Inc(RegOk) else Inc(RegNei);
+        if Wait then Inc(RegOk) else Inc(RegNei);
       end
       else
       begin
-        if Vent then Inc(AsrOk) else Inc(AsrNei);
+        if Wait then Inc(AsrOk) else Inc(AsrNei);
       end;
     end;
 
@@ -329,7 +329,7 @@ begin
     Sha256Hex('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq'));
   Like('en million a-er',
     'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0',
-    Sha256Hex(Gjenta('a', 1000000)));
+    Sha256Hex(Again('a', 1000000)));
 
   Start('SHA-256 på alle lengder rundt blokkgrensa');
   { Utfyllingen har tre tilfeller: den får plass i blokka, den får akkurat
@@ -340,7 +340,7 @@ begin
   Unike := 0;
   for I := 0 to 130 do
   begin
-    Sett[I] := Sha256Hex(Gjenta('x', I));
+    Sett[I] := Sha256Hex(Again('x', I));
     Duplikat := False;
     for J := 0 to I - 1 do
       if Sett[J] = Sett[I] then
@@ -458,7 +458,7 @@ begin
     'c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a',
     HexEncode(Pbkdf2Sha256('password', Bytes('salt'), 4096, 32)));
   { dkLen 40 tvinger to blokker, altså at blokktelleren faktisk brukes.
-    Med en teller som alltid er 1 gir begge blokkene samme bytes, og den
+    With_ en teller som alltid er 1 gir begge blokkene samme bytes, og den
     feilen er usynlig så lenge man bare ber om 32. }
   Like('c=4096, dkLen=40, to blokker',
     '348c89dbcbd32b2f32d814b8116e84cf2b17347ebc1800181c4e2a1fb8dd53e1' +
@@ -481,7 +481,7 @@ begin
   B := RandomBytes(32);
   Ok('riktig lengde', (Length(A) = 32) and (Length(B) = 32));
   Ok('to kall gir ikke samme bytes', not ConstantTimeEquals(A, B));
-  Ok('ikke bare nuller', not ConstantTimeEquals(A, Bytes(Gjenta(#0, 32))));
+  Ok('ikke bare nuller', not ConstantTimeEquals(A, Bytes(Again(#0, 32))));
   Ok('RandomHex gir dobbelt så mange tegn', Length(RandomHex(16)) = 32);
   Ok('RandomToken er url-trygg',
     (Pos('+', RandomToken) = 0) and (Pos('/', RandomToken) = 0) and
@@ -492,16 +492,16 @@ begin
     statistisk test, bare en sperre mot at generatoren leverer noe
     åpenbart degenerert — som en buffer den aldri fylte helt, eller en
     løkke som bare skrev de lave bitene. }
-  FillChar(Sett_, SizeOf(Sett_), 0);
+  FillChar(Apply_, SizeOf(Apply_), 0);
   for I := 1 to 64 do
   begin
     B := RandomBytes(256);
     for J := 0 to 255 do
-      Sett_[B[J]] := True;
+      Apply_[B[J]] := True;
   end;
   Unike := 0;
   for I := 0 to 255 do
-    if Sett_[I] then
+    if Apply_[I] then
       Inc(Unike);
   Ok('16 kB fra generatoren dekker alle 256 byteverdiene', Unike = 256);
 
@@ -533,7 +533,7 @@ begin
     not VerifyPassword('riktig hestebatteri stif', H1));
   Ok('tomt passord avvises', not VerifyPassword('', H1));
 
-  { Saltet er det som gjør at to like passord ikke får lik hash. Uten det
+  { Saltet er det som gjør at to like passord ikke får lik hash. Without det
     avslører én lekket database hvem som deler passord. }
   H2 := HashPassword('riktig hestebatteri stift', 1000);
   Ok('samme passord gir ulik hash (saltet virker)', H1 <> H2);

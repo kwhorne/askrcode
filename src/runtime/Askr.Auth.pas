@@ -62,7 +62,7 @@ const
 { Logger inn. Id-en er appens egen — en primærnøkkel som tekst, en uuid,
   hva som helst, så lenge loaderen forstår den.
 
-  Sesjons-id-en byttes ut her. Uten det ville en angriper som fikk satt
+  Sesjons-id-en byttes ut her. Without det ville en angriper som fikk satt
   kaka di på forhånd vært innlogget som deg etterpå. }
 procedure Login(const UserId: string; Remember: Boolean = False);
 { Logger ut: tømmer sesjonen helt og sletter «husk meg»-kaka. Hele sesjonen,
@@ -76,7 +76,7 @@ function Id: string;
   request. }
 function User: TObject;
 
-{ Appens oppslag. Settes én gang ved oppstart. Uten den virker Login, Check
+{ Appens oppslag. Settes én gang ved oppstart. Without den virker Login, Check
   og Id fortsatt — bare ikke User. }
 procedure SetUserLoader(L: TUserLoader);
 
@@ -90,14 +90,14 @@ procedure DefineGate(const Name: string; F: TGateFunc);
   døra, ikke åpne den. }
 function Allows(const Name: string; Resource: TObject = nil): Boolean;
 function Denies(const Name: string; Resource: TObject = nil): Boolean;
-{ Samme, men kaster EForbidden. Til kode som ikke skal fortsette. }
+{ Samme, men kaster EForbidden. To_ kode som ikke skal fortsette. }
 procedure Authorize(const Name: string; Resource: TObject = nil);
 function GateExists(const Name: string): Boolean;
 
 { ---------------------------------------------------------- middleware -- }
 
 { Gjenoppretter innlogging fra «husk meg»-kaka når sesjonen er tom. Må stå
-  etter UseSessions. Uten den virker «husk meg» ikke — kaka blir liggende
+  etter UseSessions. Without den virker «husk meg» ikke — kaka blir liggende
   og bli ignorert. }
 procedure UseAuth(R: TRouter);
 
@@ -128,7 +128,7 @@ begin
   GLoader := L;
 end;
 
-function KreverSesjon: TSession;
+function RequiresSession: TSession;
 begin
   Result := CurrentSession;
   if Result = nil then
@@ -146,21 +146,21 @@ end;
   lagres per bruker i databasen, og det krever en kolonne rammeverket ikke
   kan vite om. Det er en reell begrensning, og den står her i stedet for å
   bli oppdaget. }
-function RememberVerdi(const UserId: string): string;
+function RememberValue(const UserId: string): string;
 begin
   Result := Sign(UserId + '|' + IntToStr(UnixNow + RememberLifetime));
 end;
 
-function LesRemember(const Kake: string; out UserId: string): Boolean;
+function ReadRemember(const Cookie_: string; out UserId: string): Boolean;
 var
   Payload, UtloepStr: string;
   P: Integer;
   Utloep: Int64;
 begin
   UserId := '';
-  if Kake = '' then
+  if Cookie_ = '' then
     Exit(False);
-  if not Unsign(Kake, Payload) then
+  if not Unsign(Cookie_, Payload) then
     Exit(False);
   P := Pos('|', Payload);
   if P <= 1 then
@@ -189,7 +189,7 @@ var
 begin
   if UserId = '' then
     raise EAuthError.Create('Login needs a user id.');
-  S := KreverSesjon;
+  S := RequiresSession;
   { Ny sesjons-id i det privilegiene endrer seg. Dette er hele forsvaret
     mot session fixation, og det er én linje. }
   Sessions.Regenerate(S);
@@ -197,7 +197,7 @@ begin
   GUser := nil;
   GUserFor := '';
   if Remember then
-    GSetRemember := RememberVerdi(UserId);
+    GSetRemember := RememberValue(UserId);
 end;
 
 procedure Logout;
@@ -352,7 +352,7 @@ begin
 
   if not HasAppKey then
     Exit;
-  if not LesRemember(CookieValue(Req, RememberCookieName), Uid) then
+  if not ReadRemember(CookieValue(Req, RememberCookieName), Uid) then
     Exit;
 
   { Ny sesjons-id også her: dette er en innlogging, bare uten skjema. }
@@ -360,7 +360,7 @@ begin
   S.Put(AuthSessionKey, Uid);
   { Kaka fornyes, slik at en bruker som er innom ikke plutselig blir kastet
     ut på dag 30. }
-  GSetRemember := RememberVerdi(Uid);
+  GSetRemember := RememberValue(Uid);
 end;
 
 class function TAuthHook.WriteCookies(Req: TRequest; Res: TResponse): TResponse;

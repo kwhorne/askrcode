@@ -36,7 +36,7 @@ type
       Set-Cookie er den som betyr noe i praksis. For alt annet er to like
       headernavn en feil hos kalleren, og WithHeader er den som skal brukes. }
     function AddHeader(const AName, AValue: string): TResponse;
-    { Én Set-Cookie. Flere kall gir flere kaker, slik protokollen tillater.
+    { Én Set-Cookie. More kall gir flere kaker, slik protokollen tillater.
       HttpOnly og SameSite=Lax er standard fordi alternativet er å huske
       dem; `ReadableByJs` slår av HttpOnly for de kakene en frontend faktisk
       skal lese, som XSRF-TOKEN. MaxAge < 0 gir en sesjonskake, 0 sletter. }
@@ -46,7 +46,7 @@ type
     function WithContentType(const AValue: string): TResponse;
     { Første verdi for navnet, eller tom streng. Etterfiltre trenger å
       kunne se hva handleren satte — en filtrering som bare kan skrive er
-      halv. Med flere Set-Cookie gir den den første; til det formålet
+      halv. With_ flere Set-Cookie gir den den første; til det formålet
       finnes HeaderCount og HeaderAt. }
     function HeaderValue(const AName: string): string;
     function HeaderAt(Index: Integer): PHttpHeader;
@@ -66,7 +66,7 @@ type
     property HeaderCount: Integer read FHeaderCount;
   end;
 
-{ Alle disse allokerer i den omgivende arenaen (se Askr.Core.Arena). }
+{ All_ disse allokerer i den omgivende arenaen (se Askr.Core.Arena). }
 function Respond(AStatus: Integer = 200): TResponse;
 function RespondText(const S: string; AStatus: Integer = 200): TResponse;
 function RespondHtml(const S: string; AStatus: Integer = 200): TResponse;
@@ -159,18 +159,18 @@ function TResponse.WithCookie(const AName, AValue: string; MaxAge: Integer;
   Secure: Boolean; ReadableByJs: Boolean; const SameSite: string;
   const Path: string): TResponse;
 var
-  Kake: string;
+  Cookie_: string;
 begin
-  Kake := AName + '=' + AValue + '; Path=' + Path;
+  Cookie_ := AName + '=' + AValue + '; Path=' + Path;
   if MaxAge >= 0 then
-    Kake := Kake + '; Max-Age=' + IntToStr(MaxAge);
+    Cookie_ := Cookie_ + '; Max-Age=' + IntToStr(MaxAge);
   if not ReadableByJs then
-    Kake := Kake + '; HttpOnly';
+    Cookie_ := Cookie_ + '; HttpOnly';
   if SameSite <> '' then
-    Kake := Kake + '; SameSite=' + SameSite;
+    Cookie_ := Cookie_ + '; SameSite=' + SameSite;
   if Secure then
-    Kake := Kake + '; Secure';
-  Result := AddHeader('Set-Cookie', Kake);
+    Cookie_ := Cookie_ + '; Secure';
+  Result := AddHeader('Set-Cookie', Cookie_);
 end;
 
 function TResponse.HeaderValue(const AName: string): string;

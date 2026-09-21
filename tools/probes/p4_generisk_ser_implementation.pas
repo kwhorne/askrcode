@@ -6,14 +6,14 @@ interface
 type
   TQ<M: class> = class
   public
-    function Navn: string;
+    function Name_: string;
   end;
 implementation
 function BareHer: string;
 begin
   Result := 'skjult';
 end;
-function TQ<M>.Navn: string;
+function TQ<M>.Name_: string;
 begin
   Result := BareHer;
 end;

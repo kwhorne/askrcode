@@ -5,15 +5,15 @@ unit p2_generisk_funksjon_i_unit;
 {$mode Delphi}{$H+}
 interface
 type
-  TBoks<M: class> = class
+  TBox<M: class> = class
   public
     Klasse: TClass;
   end;
-function Boks<M: class>: TBoks<M>;
+function Box<M: class>: TBox<M>;
 implementation
-function Boks<M: class>: TBoks<M>;
+function Box<M: class>: TBox<M>;
 begin
-  Result := TBoks<M>.Create;
+  Result := TBox<M>.Create;
   Result.Klasse := M;
 end;
 end.

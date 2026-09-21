@@ -18,9 +18,9 @@
   Protokollen har fire deler som må stemme, ellers oppfører frontend seg rart
   på måter som er vonde å feilsøke:
 
-    * Uten X-Inertia i requesten svares det med hele HTML-skallet, med
+    * Without X-Inertia i requesten svares det med hele HTML-skallet, med
       payloaden i et <script data-page type="application/json">-element.
-    * Med X-Inertia svares det med ren JSON, og X-Inertia: true tilbake.
+    * With_ X-Inertia svares det med ren JSON, og X-Inertia: true tilbake.
       Vary: X-Inertia må med, ellers cacher mellomledd feil svar.
     * Er X-Inertia-Version ulik serverens, svares 409 med X-Inertia-Location.
       Klienten laster da siden på nytt, i stedet for å bytte til en versjon
@@ -83,7 +83,7 @@ type
     class function Title: string; static;
 
     (* Taggene som settes inn der malen har plassholderen {{head}} — typisk
-       script- og link-taggene fra Vite. Uten dette blir plassholderen
+       script- og link-taggene fra Vite. Without dette blir plassholderen
        stående i HTML-en, og frontend laster aldri. *)
     class procedure SetHead(const AHtml: string); static;
     class function Head: string; static;
@@ -107,12 +107,12 @@ function Inertia(const Component: string; const Props: array of const;
 { Omdirigering innenfor appen. Bruker 303 etter PUT, PATCH og DELETE. }
 function InertiaRedirect(const Url: string): TResponse;
 
-{ Tilbake dit klienten kom fra, etter Referer. Uten Referer: til Fallback. }
+{ Tilbake dit klienten kom fra, etter Referer. Without Referer: til Fallback. }
 function Back(const Fallback: string = '/'): TResponse;
 
 { Formen PRD-en skriver: Exit(Back.WithErrors(C.Errors)).
 
-  Feilene legges i sesjonens flash og er props.errors i neste request. Uten
+  Feilene legges i sesjonens flash og er props.errors i neste request. Without
   en omgivende sesjon kastes det, fordi alternativet — å miste feilene i
   stillhet — er verre enn en tydelig feilmelding. }
 function BackWithErrors(E: TErrors;
@@ -146,7 +146,7 @@ const
     hardkodet norsk språk får en skjermleser til å uttale engelsk tekst med
     norske fonemer. Appen setter sitt eget språk med SetRootTemplate.
 
-    <title> må stå her. Uten den mangler hver eneste Inertia-side en
+    <title> må stå her. Without den mangler hver eneste Inertia-side en
     tittel til klienten har rukket å sette en — og gjør den det aldri, har
     siden ingen. axe kaller det document-title og regnerdet som alvorlig;
     det ble oppdaget ved å kjøre axe mot et nettsted bygget med Askr. }
@@ -571,7 +571,7 @@ var
 begin
   Req := CurrentRequest;
   Code := 302;
-  { 303 tvinger nettleseren over på GET. Uten dette gjentas PUT eller DELETE
+  { 303 tvinger nettleseren over på GET. Without dette gjentas PUT eller DELETE
     mot den nye adressen. }
   if (Req <> nil) and
      ((Req.Method = hmPut) or (Req.Method = hmPatch) or (Req.Method = hmDelete)) then

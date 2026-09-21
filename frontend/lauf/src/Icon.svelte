@@ -25,7 +25,7 @@
     icon: Glyph,
     /** sm | base | lg */
     size = 'base',
-    /** Settes når ikonet står alene og må ha et navn. */
+    /** Set when the icon stands alone and needs a name. */
     label,
     class: klass,
     ...rest

@@ -180,7 +180,7 @@ type
     { Nødutgang for det byggeren ikke dekker. }
     procedure Execute(const Sql: string);
 
-    { Alle setningene i rekkefølge. }
+    { All_ setningene i rekkefølge. }
     function ToSql: TStringArray;
     property Dialect: TSqlDialect read FDialect;
   end;
@@ -313,7 +313,7 @@ end;
 
 function TNornColumn.Default(const Value: string): TNornColumn;
 begin
-  { Tekst siteres. DefaultRaw finnes for det som ikke skal det. }
+  { Text_ siteres. DefaultRaw finnes for det som ikke skal det. }
   FDefault := '''' + StringReplace(Value, '''', '''''', [rfReplaceAll]) + '''';
   FHasDefault := True;
   Result := Self;

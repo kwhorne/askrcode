@@ -18,7 +18,7 @@ var
   Pool: TDbPool;
   R: TRouter;
 
-procedure Stopp(Sig: cint); cdecl;
+procedure Stop_(Sig: cint); cdecl;
 begin
   if Server <> nil then
     Server.Stop;
@@ -71,8 +71,8 @@ begin
   Server := TAskrServer.Create(Opts);
   try
     Server.SetHandler(@Handle);
-    fpSignal(SIGINT, @Stopp);
-    fpSignal(SIGTERM, @Stopp);
+    fpSignal(SIGINT, @Stop_);
+    fpSignal(SIGTERM, @Stop_);
     Server.Start;
     WriteLn(Format('Notes som webtjeneste på http://%s:%d  (%s)',
       [Opts.Host, Server.BoundPort, Dsn]));

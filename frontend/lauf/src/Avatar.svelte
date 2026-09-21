@@ -1,12 +1,13 @@
-<!-- Bildet kan mangle eller feile, og da er initialene svaret — ikke et
-     ødelagt bildeikon. Bits holder tilstanden for lasting og feil. -->
+<!-- The image may be missing or fail to load, and then the initials are
+     the answer — not a broken-image icon. Bits holds the loading and
+     error state. -->
 <script>
   import { Avatar as B } from 'bits-ui'
   import { cn } from './utils.js'
 
   let {
     src,
-    /** Navnet på personen. Brukes som alt-tekst og til initialene. */
+    /** The person's name. Used as alt text and for the initials. */
     name = '',
     /** sm | base | lg */
     size = 'base',
@@ -35,8 +36,9 @@
   {...rest}
 >
   <B.Image {src} alt={name} class="size-full object-cover" />
-  <!-- Fallbacken bærer navnet, slik at avataren har et navn også uten
-       bildet. Uten det er den en tom sirkel for den som ikke ser den. -->
+  <!-- The fallback carries the name, so the avatar has a name even
+       without the image. Without that it is an empty circle to anyone who
+       cannot see it. -->
   <B.Fallback
     class="flex size-full items-center justify-center font-medium text-muted"
     aria-label={name || undefined}

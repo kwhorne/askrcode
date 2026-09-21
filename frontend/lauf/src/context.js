@@ -1,20 +1,22 @@
-// Kontekstnøklene. Symboler, ikke strenger, slik at en app ikke kan treffe
-// dem ved et uhell.
+// The context keys. Symbols rather than strings, so an app cannot hit
+// them by accident.
 //
-// FORM settes av <Form> og leses av Field (feil), Input og slekten (verdi)
-// og Button (spinner). FIELD settes av <Field> og leses av kontrollen inni
-// den, som er stedet id, aria-invalid og aria-describedby blir koblet.
+// FORM is set by <Form> and read by Field (errors), Input and its
+// relatives (the value) and Button (the spinner). FIELD is set by <Field>
+// and read by the control inside it, which is where id, aria-invalid and
+// aria-describedby get wired together.
 //
-// Begge er valgfrie. En kontroll utenfor et Field virker, og et Field
-// utenfor et Form virker — da tar man `error` som prop og binder verdien
-// selv. Det er den veien en app som vil bruke Inertias useForm direkte går.
+// Both are optional. A control outside a Field works, and a Field outside
+// a Form works — then you pass `error` as a prop and bind the value
+// yourself. That is the route for an app using Inertia's useForm
+// directly.
 
 export const FORM = Symbol('lauf.form')
 export const FIELD = Symbol('lauf.field')
 
 let n = 0
 
-/** Stabil id per komponentinstans. */
+/** A stable id per component instance. */
 export function uid(prefix) {
   n += 1
   return `${prefix}-${n}`

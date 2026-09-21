@@ -112,7 +112,7 @@ begin
   end;
 end;
 
-function Har(const D: TBytes; Pos_: Integer; const Magisk: array of Byte): Boolean;
+function Has_(const D: TBytes; Pos_: Integer; const Magisk: array of Byte): Boolean;
 var
   I: Integer;
 begin
@@ -183,22 +183,22 @@ begin
   if Length(Data) < 12 then
     Exit;
 
-  if Har(Data, 0, [$FF, $D8, $FF]) then
+  if Has_(Data, 0, [$FF, $D8, $FF]) then
     Exit(ifJpeg);
-  if Har(Data, 0, [$89, $50, $4E, $47, $0D, $0A, $1A, $0A]) then
+  if Has_(Data, 0, [$89, $50, $4E, $47, $0D, $0A, $1A, $0A]) then
     Exit(ifPng);
-  if Har(Data, 0, [$47, $49, $46, $38]) then   { GIF8 }
+  if Has_(Data, 0, [$47, $49, $46, $38]) then   { GIF8 }
     Exit(ifGif);
   { RIFF....WEBP }
-  if Har(Data, 0, [$52, $49, $46, $46]) and Har(Data, 8, [$57, $45, $42, $50]) then
+  if Has_(Data, 0, [$52, $49, $46, $46]) and Has_(Data, 8, [$57, $45, $42, $50]) then
     Exit(ifWebp);
-  if Har(Data, 0, [$42, $4D]) then             { BM }
+  if Has_(Data, 0, [$42, $4D]) then             { BM }
     Exit(ifBmp);
   { ....ftypavif / ftypavis }
-  if Har(Data, 4, [$66, $74, $79, $70]) and
-     (Har(Data, 8, [$61, $76, $69, $66]) or Har(Data, 8, [$61, $76, $69, $73])) then
+  if Has_(Data, 4, [$66, $74, $79, $70]) and
+     (Has_(Data, 8, [$61, $76, $69, $66]) or Has_(Data, 8, [$61, $76, $69, $73])) then
     Exit(ifAvif);
-  if Har(Data, 0, [$49, $49, $2A, $00]) or Har(Data, 0, [$4D, $4D, $00, $2A]) then
+  if Has_(Data, 0, [$49, $49, $2A, $00]) or Has_(Data, 0, [$4D, $4D, $00, $2A]) then
     Exit(ifTiff);
 
   { SVG er tekst, og derfor et spesialtilfelle: det finnes ingen magisk
@@ -210,10 +210,10 @@ begin
     if I + 4 > Length(Data) then
       Break;
     if (Data[I] = $3C) and                     { < }
-       ((Har(Data, I, [$3C, $73, $76, $67]) ) or
-        (Har(Data, I, [$3C, $3F, $78, $6D]) )) then
+       ((Has_(Data, I, [$3C, $73, $76, $67]) ) or
+        (Has_(Data, I, [$3C, $3F, $78, $6D]) )) then
     begin
-      if Har(Data, I, [$3C, $73, $76, $67]) then
+      if Has_(Data, I, [$3C, $73, $76, $67]) then
         Exit(ifSvg);
     end;
   end;
@@ -265,7 +265,7 @@ end;
 
 { JPEG: gå gjennom segmentene til en SOF, som bærer høyde og bredde.
 
-  Alle SOF-markørene teller — SOF0 er baseline, SOF2 progressiv, og det
+  All_ SOF-markørene teller — SOF0 er baseline, SOF2 progressiv, og det
   finnes et dusin til. DHT, DAC og RSTn er IKKE SOF, og å ta dem med er
   den vanlige feilen: da leses lengdefeltet som dimensjoner. }
 function JpegSize(const D: TBytes; out W, H: Integer): Boolean;
@@ -334,7 +334,7 @@ begin
       begin
         { IHDR står alltid først, rett etter den åtte byte lange
           signaturen, og har bredde og høyde som big-endian. }
-        if (Length(Data) >= 24) and Har(Data, 12, [$49, $48, $44, $52]) then
+        if (Length(Data) >= 24) and Has_(Data, 12, [$49, $48, $44, $52]) then
         begin
           Result.Width := Integer(Be32(Data, 16));
           Result.Height := Integer(Be32(Data, 20));
@@ -345,12 +345,12 @@ begin
         while P + 8 <= Length(Data) do
         begin
           Blokk := Be32(Data, P);
-          if Har(Data, P + 4, [$61, $63, $54, $4C]) then
+          if Has_(Data, P + 4, [$61, $63, $54, $4C]) then
           begin
             Result.Animated := True;
             Break;
           end;
-          if Har(Data, P + 4, [$49, $44, $41, $54]) then
+          if Has_(Data, P + 4, [$49, $44, $41, $54]) then
             Break;
           if (Blokk < 0) or (Blokk > Length(Data)) then
             Break;
@@ -370,7 +370,7 @@ begin
           krever å gå gjennom blokkene; her holder det å se etter
           NETSCAPE-utvidelsen, som alle animerte har. }
         for P := 0 to Length(Data) - 11 do
-          if Har(Data, P, [$4E, $45, $54, $53, $43, $41, $50, $45]) then
+          if Has_(Data, P, [$4E, $45, $54, $53, $43, $41, $50, $45]) then
           begin
             Result.Animated := True;
             Break;
@@ -380,13 +380,13 @@ begin
     ifWebp:
       begin
         { Tre varianter: VP8 (lossy), VP8L (lossless), VP8X (utvidet). }
-        if Har(Data, 12, [$56, $50, $38, $20]) and (Length(Data) >= 30) then
+        if Has_(Data, 12, [$56, $50, $38, $20]) and (Length(Data) >= 30) then
         begin
           Result.Width := Le16(Data, 26) and $3FFF;
           Result.Height := Le16(Data, 28) and $3FFF;
           Result.Ok := (Result.Width > 0) and (Result.Height > 0);
         end
-        else if Har(Data, 12, [$56, $50, $38, $4C]) and (Length(Data) >= 25) then
+        else if Has_(Data, 12, [$56, $50, $38, $4C]) and (Length(Data) >= 25) then
         begin
           { 14 bit bredde og 14 bit høyde, pakket over fire byte. }
           Len := Integer(Le32(Data, 21));
@@ -394,7 +394,7 @@ begin
           Result.Height := ((Len shr 14) and $3FFF) + 1;
           Result.Ok := True;
         end
-        else if Har(Data, 12, [$56, $50, $38, $58]) and (Length(Data) >= 30) then
+        else if Has_(Data, 12, [$56, $50, $38, $58]) and (Length(Data) >= 30) then
         begin
           { 24 bit, minus én, little-endian. }
           Result.Width := (Integer(Data[24]) or (Integer(Data[25]) shl 8) or
@@ -461,7 +461,7 @@ end;
 
 function JpegOrientation(const Data: TBytes): Integer;
 var
-  P, Len, Tiff, Antall, I, Felt: Integer;
+  P, Len, Tiff, Count_, I, Field_: Integer;
   LilleEndian: Boolean;
 
   function Les16(Pos_: Integer): Integer;
@@ -499,21 +499,21 @@ begin
     if Len < 2 then
       Exit;
     { APP1 med Exif\0\0. }
-    if (Data[P + 1] = $E1) and Har(Data, P + 4, [$45, $78, $69, $66, $00, $00]) then
+    if (Data[P + 1] = $E1) and Has_(Data, P + 4, [$45, $78, $69, $66, $00, $00]) then
     begin
       Tiff := P + 10;
       if Tiff + 8 > Length(Data) then
         Exit;
-      LilleEndian := Har(Data, Tiff, [$49, $49]);
-      if not (LilleEndian or Har(Data, Tiff, [$4D, $4D])) then
+      LilleEndian := Has_(Data, Tiff, [$49, $49]);
+      if not (LilleEndian or Has_(Data, Tiff, [$4D, $4D])) then
         Exit;
       I := Tiff + Integer(Les32(Tiff + 4));
       if (I + 2 > Length(Data)) or (I < Tiff) then
         Exit;
-      Antall := Les16(I);
+      Count_ := Les16(I);
       Inc(I, 2);
       { Hvert felt er tolv byte: tag, type, antall, verdi. }
-      for Felt := 0 to Antall - 1 do
+      for Field_ := 0 to Count_ - 1 do
       begin
         if I + 12 > Length(Data) then
           Exit;
@@ -592,7 +592,7 @@ begin
       forstand. }
     Behold := True;
     if (M >= $E1) and (M <= $EF) then
-      Behold := (M = $E2) and Har(Data, P + 4, [$49, $43, $43, $5F]);
+      Behold := (M = $E2) and Has_(Data, P + 4, [$49, $43, $43, $5F]);
     if M = $FE then
       Behold := False;
 

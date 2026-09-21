@@ -42,7 +42,7 @@ uses
 const
   DefaultJobsTable = 'askr_jobs';
   DefaultFailedTable = 'askr_failed_jobs';
-  { Hvor lenge en jobb får være reservert før noen andre kan ta den. Dette
+  { Where_ lenge en jobb får være reservert før noen andre kan ta den. Dette
     er ikke en tidsfrist for jobben — det er hvor lenge vi venter før vi
     antar at workeren som tok den er borte. }
   DefaultVisibilityMs = 5 * 60 * 1000;
@@ -60,7 +60,7 @@ type
     FVisibilityMs: Int64;
     FPollMs: Integer;
     FLock: TCriticalSection;
-    { Navn på denne prosessens workere i reserved_by. Til diagnostikk: en
+    { Name_ på denne prosessens workere i reserved_by. To_ diagnostikk: en
       rad som har stått reservert i en time sier hvem som tok den. }
     FOwner: string;
     function SkipLocked: Boolean;
@@ -68,20 +68,20 @@ type
   public
     { Åpner sin egen pool mot DSN-en. }
     constructor Create(const Dsn: string; AMaxConnections: Integer = 4); overload;
-    { Deler pool med appen. Poolen må tåle minst én forbindelse per
+    { Parts_ pool med appen. Poolen må tåle minst én forbindelse per
       køworker — ellers står workerne og venter på hverandre. }
     constructor Create(APool: TDbPool; AOwnsPool: Boolean = False); overload;
     destructor Destroy; override;
 
-    { Lager tabellene hvis de ikke finnes. Trygg å kalle ved hver oppstart.
+    { Storage tabellene hvis de ikke finnes. Trygg å kalle ved hver oppstart.
       Kalles ikke av seg selv: en app som kjører migrasjoner vil ha
       kontroll på når skjemaet endres. }
     procedure EnsureSchema;
-    { Antall jobber som har gitt opp. Til et statusendepunkt. }
+    { Count_ jobber som har gitt opp. To_ et statusendepunkt. }
     function FailedCount: Int64;
     { Tømmer feiltabellen. }
     procedure ClearFailed;
-    { Legger de feilede tilbake i køen. Etter at det som var galt er rettet. }
+    { Legger de feilede tilbake i køen. After_ at det som var galt er rettet. }
     function RetryFailed: Integer;
 
     procedure Push(const JobName: string; Data: PByte; Len: SizeInt;
@@ -184,7 +184,7 @@ var
   Skjema: TDbSchema;
   Finnes: Boolean;
 begin
-  { Sjekk først, i stedet for å la DDL-en være idempotent. `CREATE TABLE IF
+  { Check først, i stedet for å la DDL-en være idempotent. `CREATE TABLE IF
     NOT EXISTS` finnes i alle tre, men `CREATE INDEX IF NOT EXISTS` finnes
     ikke i MySQL — og uten sjekken feilet andre oppstart på indeksen. Å
     svelge «already exists» i stedet ville skjult ekte feil. }
@@ -213,7 +213,7 @@ begin
     T.Text('name', 128);
     T.Text('payload');
     T.Int('attempts').Default(0);
-    { Tidspunktene er unix-millisekunder, ikke TIMESTAMP. Flere prosesser
+    { Tidspunktene er unix-millisekunder, ikke TIMESTAMP. More prosesser
       deler tabellen, og et heltall betyr det samme uansett hvilken
       tidssone den enkelte serveren tror den står i. }
     T.BigInt('available_at');
@@ -221,7 +221,7 @@ begin
     T.Text('reserved_by', 128).Nullable;
     T.BigInt('created_at');
     { Uttaket sorterer på available_at innenfor det som ikke er reservert.
-      Uten indeksen blir hver poll en full skanning. }
+      Without indeksen blir hver poll en full skanning. }
     T.Index(['available_at']);
 
     T := S.Create(FFailedTable);
@@ -264,25 +264,25 @@ begin
 end;
 
 { Bygger «$1, $2, …» eller «?, ?, …» etter dialekt. }
-function Phs(C: TDbConnection; A: TArena; Fra, Til: Integer): string;
+function Phs(C: TDbConnection; A: TArena; From_, To_: Integer): string;
 var
   I: Integer;
 begin
   Result := '';
-  for I := Fra to Til do
+  for I := From_ to To_ do
   begin
-    if I > Fra then
+    if I > From_ then
       Result := Result + ', ';
     Result := Result + Ph(C, A, I);
   end;
 end;
 
-function Sitert(C: TDbConnection; A: TArena; const Navn: string): string;
+function Sitert(C: TDbConnection; A: TArena; const Name_: string): string;
 var
   B: TStrBuilder;
 begin
-  B.Init(A, Length(Navn) + 4);
-  C.AppendIdentStr(B, Navn);
+  B.Init(A, Length(Name_) + 4);
+  C.AppendIdentStr(B, Name_);
   Result := B.ToString;
 end;
 
@@ -295,7 +295,7 @@ var
   C: TDbConnection;
   Sql, Payload: string;
   I: SizeInt;
-  Naa: Int64;
+  Now_: Int64;
 begin
   SetLength(Payload, Len);
   if Len > 0 then
@@ -311,7 +311,7 @@ begin
         'stores payloads as text; use JSON or base64 for binary data.',
         [JobName]);
 
-  Naa := UnixNowMs;
+  Now_ := UnixNowMs;
   A := TArena.Create(8 * 1024);
   try
     C := FPool.Acquire;
@@ -323,8 +323,8 @@ begin
         DbParam(A, JobName),
         DbParam(A, Payload),
         DbParam(A, Int64(0)),
-        DbParam(A, Naa + DelayMs),
-        DbParam(A, Naa)]);
+        DbParam(A, Now_ + DelayMs),
+        DbParam(A, Now_)]);
     finally
       FPool.Release(C);
     end;
@@ -333,8 +333,8 @@ begin
   end;
 end;
 
-{ Jobber som ble reservert og aldri gjort opp. Prosessen som tok dem er
-  borte — den ble drept, eller maskinen forsvant. Uten dette ville de blitt
+{ Jobs_ som ble reservert og aldri gjort opp. Prosessen som tok dem er
+  borte — den ble drept, eller maskinen forsvant. Without dette ville de blitt
   liggende for alltid. }
 procedure TDbJobStore.FrigiForlatte(C: TDbConnection; A: TArena);
 var
@@ -357,7 +357,7 @@ var
   R: TDbResult;
   Sql, Payload: string;
   Id: Int64;
-  Naa: Int64;
+  Now_: Int64;
 begin
   FillChar(J, SizeOf(J), 0);
   J.Name := '';
@@ -368,7 +368,7 @@ begin
     C := FPool.Acquire;
     try
       FrigiForlatte(C, A);
-      Naa := UnixNowMs;
+      Now_ := UnixNowMs;
 
       { Én transaksjon rundt «finn og ta». To workere som ser den samme
         raden skal ikke begge få den. }
@@ -380,7 +380,7 @@ begin
           ' ORDER BY available_at, id LIMIT 1';
         if SkipLocked then
           Sql := Sql + ' FOR UPDATE SKIP LOCKED';
-        R := C.ExecParams(A, Sql, [DbParam(A, Naa)]);
+        R := C.ExecParams(A, Sql, [DbParam(A, Now_)]);
         if (R = nil) or R.IsEmpty then
         begin
           C.Commit;
@@ -397,8 +397,8 @@ begin
           ', reserved_by = ' + Ph(C, A, 2) +
           ' WHERE id = ' + Ph(C, A, 3) + ' AND reserved_at IS NULL';
         R := C.ExecParams(A, Sql,
-          [DbParam(A, Naa), DbParam(A, FOwner), DbParam(A, Id)]);
-        { Uten SKIP LOCKED kan en annen ha rukket å ta den mellom SELECT
+          [DbParam(A, Now_), DbParam(A, FOwner), DbParam(A, Id)]);
+        { Without SKIP LOCKED kan en annen ha rukket å ta den mellom SELECT
           og UPDATE. Da er AffectedRows null, og vi lar den være. }
         if (R = nil) or (R.AffectedRows = 0) then
         begin
@@ -604,10 +604,10 @@ var
   C: TDbConnection;
   R: TDbResult;
   I: Integer;
-  Naa: Int64;
+  Now_: Int64;
 begin
   Result := 0;
-  Naa := UnixNowMs;
+  Now_ := UnixNowMs;
   A := TArena.Create(64 * 1024);
   try
     C := FPool.Acquire;
@@ -624,7 +624,7 @@ begin
             ' (name, payload, attempts, available_at, created_at) VALUES (' +
             Phs(C, A, 1, 5) + ')',
             [DbParam(R.Value(I, 1)), DbParam(R.Value(I, 2)),
-             DbParam(A, Int64(0)), DbParam(A, Naa), DbParam(A, Naa)]);
+             DbParam(A, Int64(0)), DbParam(A, Now_), DbParam(A, Now_)]);
           C.ExecParams(A, 'DELETE FROM ' + Sitert(C, A, FFailedTable) +
             ' WHERE id = ' + Ph(C, A, 1), [DbParam(A, R.AsInt64(I, 0))]);
           Inc(Result);

@@ -21,7 +21,7 @@
   ikke her — de hører til etter disse fire, og de krever `pgvector`, som
   SQLite ikke har.
 
-  ## Hva som IKKE er prøvd
+  ## What som IKKE er prøvd
 
   **Ingen kall til det ekte API-et er gjort fra dette repoet.** Det finnes
   ingen API-nøkkel her. Formen på requesten er bygget etter dokumentasjonen
@@ -148,13 +148,13 @@ type
       Cb: TStreamCallback; out Status: Integer): string; override;
   end;
 
-  { Til tester. Svarene legges inn på forhånd; requestene tas vare på slik
+  { To_ tester. Svarene legges inn på forhånd; requestene tas vare på slik
     at en test kan hevde om hva som faktisk ble sendt. }
   TFakeAiTransport = class(TAiTransport)
   private
-    FSvar: array of string;
+    FReplies: array of string;
     FStatuser: array of Integer;
-    FNeste: Integer;
+    FNext: Integer;
     FSendt: TStringList;
   public
     constructor Create;
@@ -380,10 +380,10 @@ procedure TFakeAiTransport.Enqueue(const Body: string; Status: Integer);
 var
   N: Integer;
 begin
-  N := Length(FSvar);
-  SetLength(FSvar, N + 1);
+  N := Length(FReplies);
+  SetLength(FReplies, N + 1);
   SetLength(FStatuser, N + 1);
-  FSvar[N] := Body;
+  FReplies[N] := Body;
   FStatuser[N] := Status;
 end;
 
@@ -396,12 +396,12 @@ function TFakeAiTransport.Post(const Url, ApiKey, Body: string;
   out Status: Integer): string;
 begin
   FSendt.Add(Body);
-  if FNeste > High(FSvar) then
+  if FNext > High(FReplies) then
     raise EAiError.Create(0, 'fake',
       'The fake transport has no more queued responses.');
-  Status := FStatuser[FNeste];
-  Result := FSvar[FNeste];
-  Inc(FNeste);
+  Status := FStatuser[FNext];
+  Result := FReplies[FNext];
+  Inc(FNext);
 end;
 
 function TFakeAiTransport.PostStream(const Url, ApiKey, Body: string;
@@ -410,12 +410,12 @@ var
   S: string;
 begin
   FSendt.Add(Body);
-  if FNeste > High(FSvar) then
+  if FNext > High(FReplies) then
     raise EAiError.Create(0, 'fake',
       'The fake transport has no more queued responses.');
-  Status := FStatuser[FNeste];
-  S := FSvar[FNeste];
-  Inc(FNeste);
+  Status := FStatuser[FNext];
+  S := FReplies[FNext];
+  Inc(FNext);
   { Hele strømmen i én bit. Det holder til å teste SSE-parseren, og
     oppdelingen på tvers av biter testes for seg i HTTP-klienten. }
   if Assigned(Cb) then
@@ -618,14 +618,14 @@ procedure TAiClient.RaiseFor(Status: Integer; const Body: string);
 var
   A: TArena;
   Root, Err: PJsonValue;
-  Feil: SizeInt;
-  Kind, Msg, Pynt: string;
+  ErrAt: SizeInt;
+  Kind, Msg, Suffix: string;
 begin
   Kind := '';
   Msg := '';
   A := TArena.Create(16 * 1024);
   try
-    if JsonParse(A, Str(Body), Root, Feil) then
+    if JsonParse(A, Str(Body), Root, ErrAt) then
     begin
       Err := JsonMember(Root, 'error');
       if Err <> nil then
@@ -648,18 +648,18 @@ begin
     `overloaded_error` for å prøve igjen, `invalid_request_error` for å
     la være. }
   if Kind <> '' then
-    Pynt := ' (' + Kind + ')'
+    Suffix := ' (' + Kind + ')'
   else
-    Pynt := '';
+    Suffix := '';
   raise EAiError.Create(Status, Kind,
-    Format('Anthropic API error %d%s: %s', [Status, Pynt, Msg]));
+    Format('Anthropic API error %d%s: %s', [Status, Suffix, Msg]));
 end;
 
 function TAiClient.ParseResponse(const Json: string): TAiResponse;
 var
   A: TArena;
   Root, Content, Blokk, U, Inp: PJsonValue;
-  Feil: SizeInt;
+  Err: SizeInt;
   T: string;
   N: Integer;
 begin
@@ -674,9 +674,9 @@ begin
 
   A := TArena.Create(256 * 1024);
   try
-    if not JsonParse(A, Str(Json), Root, Feil) then
+    if not JsonParse(A, Str(Json), Root, Err) then
       raise EAiError.Create(0, 'parse',
-        Format('The response was not valid JSON (at byte %d)', [Feil]));
+        Format('The response was not valid JSON (at byte %d)', [Err]));
 
     Result.StopReason := JsonAsString(JsonMember(Root, 'stop_reason'));
     Result.Model := JsonAsString(JsonMember(Root, 'model'));
@@ -729,14 +729,14 @@ end;
 function TAiClient.SendForcing(const Messages: array of TAiMessage;
   const ForceTool: string): TAiResponse;
 var
-  Body, Svar: string;
+  Body, Reply: string;
   Status: Integer;
 begin
   Body := BuildBody(Messages, False, ForceTool);
-  Svar := FTransport.Post(FBaseUrl + '/v1/messages', FApiKey, Body, Status);
+  Reply := FTransport.Post(FBaseUrl + '/v1/messages', FApiKey, Body, Status);
   if (Status < 200) or (Status > 299) then
-    RaiseFor(Status, Svar);
-  Result := ParseResponse(Svar);
+    RaiseFor(Status, Reply);
+  Result := ParseResponse(Reply);
 end;
 
 function TAiClient.Send(const Messages: array of TAiMessage): TAiResponse;
@@ -792,7 +792,7 @@ var
   Data: string;
   A: TArena;
   Root, D, U: PJsonValue;
-  Feil: SizeInt;
+  Err: SizeInt;
   T, Bit: string;
   Fortsett: Boolean;
 begin
@@ -806,7 +806,7 @@ begin
 
   A := TArena.Create(32 * 1024);
   try
-    if not JsonParse(A, Str(Data), Root, Feil) then
+    if not JsonParse(A, Str(Data), Root, Err) then
       Exit;
     T := JsonAsString(JsonMember(Root, 'type'));
 
@@ -865,7 +865,7 @@ end;
 function TAiClient.StreamMessages(const Messages: array of TAiMessage;
   Cb: TAiDeltaCallbackProc): TAiResponse;
 var
-  Body, Svar: string;
+  Body, Reply: string;
   Status: Integer;
 begin
   FDeltaProc := Cb;
@@ -876,12 +876,12 @@ begin
   FStreamUsage.OutputTokens := 0;
   try
     Body := BuildBody(Messages, True, '');
-    Svar := FTransport.PostStream(FBaseUrl + '/v1/messages', FApiKey, Body,
+    Reply := FTransport.PostStream(FBaseUrl + '/v1/messages', FApiKey, Body,
       OnChunk, Status);
     if (Status < 200) or (Status > 299) then
       { Ved feil er kroppen ikke en strøm. Den har callbacken fått, men den
         er ikke tekst modellen har skrevet — den er en feil. }
-      RaiseFor(Status, FStreamText + Svar);
+      RaiseFor(Status, FStreamText + Reply);
   finally
     FDeltaProc := nil;
     FDelta := nil;
@@ -905,7 +905,7 @@ end;
 function TAiClient.Stream(const Prompt: string;
   Cb: TAiDeltaCallback): TAiResponse;
 var
-  Body, Svar: string;
+  Body, Reply: string;
   Status: Integer;
 begin
   FDelta := Cb;
@@ -916,10 +916,10 @@ begin
   FStreamUsage.OutputTokens := 0;
   try
     Body := BuildBody([UserMsg(Prompt)], True, '');
-    Svar := FTransport.PostStream(FBaseUrl + '/v1/messages', FApiKey, Body,
+    Reply := FTransport.PostStream(FBaseUrl + '/v1/messages', FApiKey, Body,
       OnChunk, Status);
     if (Status < 200) or (Status > 299) then
-      RaiseFor(Status, FStreamText + Svar);
+      RaiseFor(Status, FStreamText + Reply);
   finally
     FDelta := nil;
   end;
@@ -955,7 +955,7 @@ end;
 function TAiClient.RunTools(const Prompt: string): TAiResponse;
 var
   Msgs: array of TAiMessage;
-  Svar: TAiResponse;
+  Reply: TAiResponse;
   I, Runde, N: Integer;
   Resultat: string;
 begin
@@ -964,26 +964,26 @@ begin
 
   for Runde := 1 to FMaxTurns do
   begin
-    Svar := Send(Msgs);
-    if not Svar.WantsTool then
-      Exit(Svar);
+    Reply := Send(Msgs);
+    if not Reply.WantsTool then
+      Exit(Reply);
 
     { Modellens egen tur må med i historikken, ellers vet den ikke hva den
       selv ba om. Teksten holder: verktøykallene gjentas ikke, og
       tool_result-blokkene peker tilbake med id. }
     N := Length(Msgs);
-    SetLength(Msgs, N + 1 + Length(Svar.ToolCalls));
-    Msgs[N] := AssistantMsg(Svar.Text);
-    for I := 0 to High(Svar.ToolCalls) do
+    SetLength(Msgs, N + 1 + Length(Reply.ToolCalls));
+    Msgs[N] := AssistantMsg(Reply.Text);
+    for I := 0 to High(Reply.ToolCalls) do
     begin
       try
-        Resultat := RunTool(Svar.ToolCalls[I]);
-        Msgs[N + 1 + I] := ToolResultMsg(Svar.ToolCalls[I].Id, Resultat);
+        Resultat := RunTool(Reply.ToolCalls[I]);
+        Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id, Resultat);
       except
         on E: Exception do
           { Et verktøy som kaster er ikke en grunn til å ta ned løkka.
             Modellen får feilen og kan prøve noe annet. }
-          Msgs[N + 1 + I] := ToolResultMsg(Svar.ToolCalls[I].Id,
+          Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id,
             E.ClassName + ': ' + E.Message, True);
       end;
     end;
@@ -999,26 +999,26 @@ function TAiClient.Structured(const Prompt, SchemaJson: string): string;
 const
   Verktoey = 'respond';
 var
-  Lagret: array of TAiTool;
-  Svar: TAiResponse;
+  Stored: array of TAiTool;
+  Reply: TAiResponse;
 begin
   { Verktøyene legges til side og settes tilbake. Structured skal ikke
     endre klienten den ble kalt på. }
-  Lagret := Copy(FTools, 0, Length(FTools));
+  Stored := Copy(FTools, 0, Length(FTools));
   try
     SetLength(FTools, 0);
     AddTool(Verktoey,
       'Respond with the requested structured data. Use this tool and ' +
       'nothing else.', SchemaJson, TAiToolHandlerProc(nil));
-    { Send bygger uten tool_choice. Uten det kan modellen svare med prosa
+    { Send bygger uten tool_choice. Without det kan modellen svare med prosa
       i stedet, og da er «strukturert» bare et håp. }
-    Svar := SendForcing([UserMsg(Prompt)], Verktoey);
-    if not Svar.WantsTool then
+    Reply := SendForcing([UserMsg(Prompt)], Verktoey);
+    if not Reply.WantsTool then
       raise EAiError.Create(0, 'no_structured_output',
         'The model answered with text instead of the requested structure.');
-    Result := Svar.ToolCalls[0].InputJson;
+    Result := Reply.ToolCalls[0].InputJson;
   finally
-    FTools := Lagret;
+    FTools := Stored;
   end;
 end;
 
