@@ -1,20 +1,22 @@
-{ Askr.Core.Text — strenger som lever i arenaen.
+{ Askr.Core.Text — strings that live in the arena.
 
-  PRD-en peker på dette som et åpent punkt: Pascals string er refcountet av
-  kompilatoren og ligger på heapen, så den er trygg, men den frigjøres ikke av
-  Arena.Reset. En request som bygger store payloads av vanlige string-verdier
-  lekker ikke, men den går til heap-manageren hele tiden og gjør RSS ujevn.
+  The PRD marks this as an open point: a Pascal string is refcounted by the
+  compiler and lives on the heap, so it is safe, but it is not freed by
+  Arena.Reset. A request that builds large payloads out of ordinary string
+  values does not leak, but it goes to the heap manager constantly and makes
+  RSS uneven.
 
-  TStr er svaret: et utsnitt (peker + lengde) uten eierskap og uten refcount.
-  Bytene ligger enten i arenaen, i request-bufferet, eller i en vanlig string
-  som kalleren holder i live. TStr kopierer aldri av seg selv — det gjør bare
-  StrDup og TStrBuilder, og de tar arenaen som argument.
+  TStr is the answer: a slice (pointer + length) with no ownership and no
+  refcount. The bytes live either in the arena, in the request buffer, or in
+  an ordinary string the caller keeps alive. TStr never copies of its own
+  accord — only StrDup and TStrBuilder do, and they take the arena as an
+  argument.
 
-  Alt her er byte-orientert og UTF-8-gjennomsiktig. Sammenlikning uten
-  hensyn til store og små bokstaver gjelder kun ASCII, som er det HTTP-header-
-  navn og metoder faktisk består av. Ekte Unicode-folding hører hjemme i
-  applikasjonslaget, ikke i parseren.
-}
+  Everything here is byte-oriented and UTF-8 transparent. Case-insensitive
+  comparison covers ASCII only, which is what HTTP header names and methods
+  actually consist of. Real Unicode folding belongs in the application
+  layer, not in the parser.
+  }
 unit Askr.Core.Text;
 
 {$mode Delphi}{$H+}
@@ -33,36 +35,37 @@ type
     Len: SizeInt;
 
     function IsEmpty: Boolean; inline;
-    { Kopierer ut til en vanlig heap-string. Bruk bare i ytterkanten. }
+    { Copies out into an ordinary heap string. Use only at the edges. }
     function ToString: string;
     function Equals(const Other: TStr): Boolean;
     function EqualsStr(const S: string): Boolean;
-    { ASCII case-insensitiv — for headernavn og metoder. }
+    { ASCII case-insensitive — for header names and methods. }
     function SameText(const Other: TStr): Boolean;
     function SameTextStr(const S: string): Boolean;
     function StartsWithStr(const S: string): Boolean;
     function IndexOfByte(B: Byte; StartAt: SizeInt = 0): SizeInt;
-    { Første forekomst av en hel sekvens, eller -1. En tom nål gir -1, ikke
-      0: «finnes overalt» er aldri svaret noen er ute etter, og en løkke
-      som tror den fant noe på plass 0 går ikke videre. }
+    { The first occurrence of a whole sequence, or -1. An empty needle gives
+      -1, not 0: "found everywhere" is never the answer anyone is after, and a
+      loop that thinks it found something at position 0 makes no progress. }
     function IndexOfStr(const Needle: TStr; StartAt: SizeInt = 0): SizeInt; overload;
     function IndexOfStr(const Needle: string; StartAt: SizeInt = 0): SizeInt; overload;
     function Slice(Start: SizeInt; Count: SizeInt = -1): TStr;
     function TrimSpace: TStr;
-    { Parts_ på første forekomst av B. Left/Right peker inn i samme buffer.
-      Without treff blir Left hele strengen og Right tom, og False returneres.
-      Trygt når Left eller Right er den samme variabelen som Self. }
+    { Splits at the first occurrence of B. Left/Right point into the same
+      buffer. With no match Left becomes the whole string, Right becomes empty
+      and False is returned. Safe when Left or Right is the same variable as
+      Self. }
     function SplitAt(B: Byte; out Left, Right: TStr): Boolean;
     function ToInt64(out V: Int64): Boolean;
     function ToIntDef(Default: Int64): Int64;
   end;
 
-  { Voksende buffer som allokerer i en arena. Brukes til å bygge responser og
-    til å samle innkommende bytes.
+  { A growing buffer that allocates in an arena. Used to build responses and
+    to collect incoming bytes.
 
-    Vekst kaster den forrige blokken (den frigjøres først ved Reset), så
-    startkapasiteten bør være i riktig størrelsesorden. To_ gjengjeld er
-    append gratis når kapasiteten holder. }
+    Growth abandons the previous block (it is freed at Reset), so the initial
+    capacity should be in the right order of magnitude. In return, append is
+    free while the capacity holds. }
   TStrBuilder = record
   private
     FArena: TArena;
@@ -73,7 +76,7 @@ type
   public
     procedure Init(AArena: TArena; InitialCap: SizeInt = 512);
     procedure Clear; inline;
-    { Sikrer plass til minst Extra bytes til, uten å endre Len. }
+    { Makes room for at least Extra more bytes, without changing Len. }
     procedure Reserve(Extra: SizeInt);
     procedure AppendBytes(P: PByte; L: SizeInt);
     procedure Append(const S: string); overload;
@@ -89,11 +92,11 @@ type
     property Arena: TArena read FArena;
   end;
 
-{ Peker inn i S uten å kopiere. Gyldig så lenge S lever. }
+{ Points into S without copying. Valid as long as S lives. }
 function Str(const S: string): TStr;
 function StrRef(P: PByte; L: SizeInt): TStr; inline;
 function StrEmpty: TStr; inline;
-{ Kopierer bytene inn i arenaen. }
+{ Copies the bytes into the arena. }
 function StrDup(A: TArena; const S: TStr): TStr; overload;
 function StrDup(A: TArena; const S: string): TStr; overload;
 function StrCat(A: TArena; const L, R: TStr): TStr;
@@ -234,9 +237,9 @@ begin
   I := StartAt;
   while I <= Len - Needle.Len do
   begin
-    { Let etter første byte først. Multipart-parsing søker gjennom hele
-      kroppen etter en grense på 40–70 byte; en naiv dobbeltløkke gjør det
-      merkbart på en opplasting på noen megabyte. }
+    { Look for the first byte first. Multipart parsing scans the whole body
+      for a boundary of 40-70 bytes; a naive double loop is noticeable on an
+      upload of a few megabytes. }
     I := IndexOfByte(Foerste, I);
     if (I < 0) or (I > Len - Needle.Len) then
       Exit(-1);
@@ -287,14 +290,14 @@ var
   P: SizeInt;
   L, R: TStr;
 begin
-  { Begge halvdelene beregnes ferdig før noe skrives ut. Det vanligste
-    kallmønsteret er Rest.SplitAt(B, Item, Rest), der ut-parameteret er Self;
-    skrev vi rett ut ville andre halvdel blitt beregnet fra et Self som
-    allerede var overskrevet. }
+  { Both halves are worked out before anything is written. The common call
+    pattern is Rest.SplitAt(B, Item, Rest), where the out parameter is Self;
+    writing straight out would compute the second half from a Self that had
+    already been overwritten. }
   P := IndexOfByte(B);
   if P < 0 then
   begin
-    { Ikke funnet: hele strengen er venstre side, og det er meningen. }
+    { Not found: the whole string is the left side, and that is intended. }
     L := Self;
     R := StrEmpty;
     Result := False;
@@ -332,7 +335,7 @@ begin
     D := (Data + I)^;
     if (D < Ord('0')) or (D > Ord('9')) then
       Exit(False);
-    { Stopper før overflow i stedet for å pakke rundt. }
+    { Stops before overflow rather than wrapping around. }
     if V > (High(Int64) - Int64(D - Ord('0'))) div 10 then
       Exit(False);
     V := V * 10 + Int64(D - Ord('0'));
@@ -429,7 +432,8 @@ begin
   if V < 0 then
   begin
     AppendByte(Ord('-'));
-    { Tas som QWord for at Low(Int64) ikke skal overflowe under negering. }
+    { Taken as a QWord so that Low(Int64) does not overflow while being
+      negated. }
     U := QWord(-(V + 1)) + 1;
   end
   else

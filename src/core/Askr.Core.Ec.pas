@@ -1,27 +1,27 @@
-{ Askr.Core.Ec — P-256 og ECDSA-verifisering.
+{ Askr.Core.Ec — P-256 and ECDSA verification.
 
-  Finnes for WebAuthn. Askr verifiserer signaturer; den signerer ikke, og
-  det er en vesentlig forenkling: verifisering regner utelukkende på
-  offentlige verdier — signaturen og den offentlige nøkkelen — så den
-  trenger ikke være konstant-tid. Signering ville krevd det, og da ville
-  punktmultiplikasjonen sett helt annerledes ut.
+  It exists for WebAuthn. Askr verifies signatures; it does not sign, and
+  that is a substantial simplification: verification works exclusively on
+  public values — the signature and the public key — so it does not have
+  to be constant time. Signing would, and then the point multiplication
+  would look entirely different.
 
-  REDUKSJON MODULO p ER IKKE LANGDIVISJON
+  REDUCTION MODULO p IS NOT LONG DIVISION
 
-  En verifisering gjør i størrelsesorden 8000 feltmultiplikasjoner. With_
-  den generiske reduksjonen i Askr.Core.BigInt ville hver av dem kostet
-  512 runder med skift og subtraksjon, altså over hundre millioner
-  operasjoner for én innlogging. P-256 er valgt med et Solinas-primtall
-  nettopp for å slippe det:
+  A verification does on the order of 8000 field multiplications. With the
+  generic reduction in Askr.Core.BigInt each of them would cost 512 rounds
+  of shifting and subtracting, that is over a hundred million operations
+  for one sign-in. P-256 was chosen with a Solinas prime precisely to
+  avoid that:
 
-    p = 2^256 - 2^224 + 2^192 + 2^96 - 1
+  p = 2^256 - 2^224 + 2^192 + 2^96 - 1
 
-  Da blir reduksjonen ni omstokkinger av 32-bits ord, lagt sammen og
-  trukket fra. Formlene står i FIPS 186-4, tillegg D.2.3, og er skrevet
-  av derfra — ikke utledet her.
+  The reduction then becomes nine rearrangements of 32-bit words, added
+  and subtracted. The formulas are in FIPS 186-4, appendix D.2.3, and are
+  copied from there — not derived here.
 
-  Modulo n er en annen sak: n er ikke spesiell, men brukes bare et par
-  ganger per verifisering, så den generiske veien holder. }
+  Modulo n is a different matter: n is not special, but it is used only a
+  couple of times per verification, so the generic route is fine. }
 unit Askr.Core.Ec;
 
 {$mode Delphi}{$H+}
@@ -32,9 +32,9 @@ uses
   SysUtils, Askr.Core.BigInt;
 
 type
-  { Punkt i jacobiske koordinater: x = X/Z^2, y = Y/Z^3. Z = 0 er
-    uendelig. Koordinatene holdes jacobiske gjennom hele
-    multiplikasjonen, slik at det bare trengs én invers til slutt. }
+  { A point in Jacobian coordinates: x = X/Z^2, y = Y/Z^3. Z = 0 is
+    infinity. The coordinates stay Jacobian through the whole
+    multiplication, so only one inverse is needed at the end. }
   TEcPoint = record
     X, Y, Z: TU256;
   end;
@@ -60,7 +60,7 @@ function FpInv(const A: TU256; out R: TU256): Boolean;
 
 procedure EcSetInfinity(out P: TEcPoint);
 function EcIsInfinity(const P: TEcPoint): Boolean;
-{ Setter et affint punkt, altså Z = 1. }
+{ Sets an affine point, that is Z = 1. }
 procedure EcSetAffine(const X, Y: TU256; out P: TEcPoint);
 { Henter ut affine koordinater. False for uendelig. }
 function EcToAffine(const P: TEcPoint; out X, Y: TU256): Boolean;
@@ -69,22 +69,22 @@ procedure EcDouble(const P: TEcPoint; out R: TEcPoint);
 procedure EcAdd(const P, Q: TEcPoint; out R: TEcPoint);
 procedure EcMul(const K: TU256; const P: TEcPoint; out R: TEcPoint);
 
-{ Ligger punktet på kurven, og er det ikke uendelig? Må sjekkes for
-  enhver nøkkel som kommer utenfra: et punkt på en annen kurve kan lekke
-  hemmeligheter i andre sammenhenger, og her ville det uansett gitt et
-  meningsløst svar. }
+{ Is the point on the curve, and is it not infinity? Has to be checked
+  for any key arriving from outside: a point on another curve can leak
+  secrets in other settings, and here it would give a meaningless answer
+  anyway. }
 function EcOnCurve(const X, Y: TU256): Boolean;
 
 { ---------------------------------------------------------------- ecdsa -- }
 
-{ Verifiserer en P-256-signatur.
+{ Verifies a P-256 signature.
 
-  Hash er meldingssammendraget som 32 byte — for WebAuthn alltid
-  SHA-256, så ingen avkorting trengs. R og S er signaturen, Qx og Qy den
-  offentlige nøkkelen, alle 32 byte big-endian.
+  Hash is the message digest as 32 bytes — for WebAuthn always SHA-256, so
+  no truncation is needed. R and S are the signature, Qx and Qy the public
+  key, all 32 bytes big-endian.
 
-  False betyr ugyldig, uansett grunn. Kallstedet skal ikke få vite
-  hvilken av sjekkene som slo til. }
+  False means invalid, whatever the reason. The call site is not told
+  which of the checks fired. }
 function EcdsaVerifyP256(const Qx, Qy, SigR, SigS, Hash: array of Byte): Boolean;
 
 implementation
@@ -110,9 +110,9 @@ begin
   ModSub(A, B, GP, R);
 end;
 
-{ Trekker fra p til verdien er mindre enn p. Hvert s-ledd under er under
-  2^256, og p er over 2^255, så én gang holder — men løkka er skrevet
-  generelt, fordi summene lenger nede kan være større. }
+{ Subtracts p until the value is smaller than p. Each s term below is
+  under 2^256 and p is over 2^255, so once is enough — but the loop is
+  written generally, because the sums further down can be larger. }
 procedure Normaliser(var A: TU256);
 var
   T: TU256;
@@ -124,8 +124,8 @@ begin
   end;
 end;
 
-{ Bygger et 256-bits tall av åtte ord, oppgitt mest signifikante først,
-  slik FIPS skriver dem. Et ord nummer over 15 betyr null. }
+{ Builds a 256-bit number from eight words, given most significant
+  first, the way FIPS writes them. A word number above 15 means zero. }
 procedure Clause(const C: TU512; W7, W6, W5, W4, W3, W2, W1, W0: Integer;
   out R: TU256);
 
@@ -149,8 +149,8 @@ procedure FpReduce(const C: TU512; out R: TU256);
 var
   S1, S2, S3, S4, S5, S6, S7, S8, S9, T: TU256;
 begin
-  { FIPS 186-4, D.2.3. Ordene telles som i standarden: c0 er minst
-    signifikant. -1 står for et ord som er null i det leddet. }
+  { FIPS 186-4, D.2.3. The words are numbered as in the standard: c0 is
+    least significant. -1 stands for a word that is zero in that term. }
   Clause(C,  7,  6,  5,  4,  3,  2,  1,  0, S1);
   Clause(C, 15, 14, 13, 12, 11, -1, -1, -1, S2);
   Clause(C, -1, 15, 14, 13, 12, -1, -1, -1, S3);
@@ -231,8 +231,9 @@ begin
   Result := True;
 end;
 
-{ Dobling med a = -3, som lar alpha regnes uten en egen multiplikasjon
-  med a. Formlene er de vanlige for jacobiske koordinater. }
+{ Doubling with a = -3, which lets alpha be computed without a separate
+  multiplication by a. The formulas are the usual ones for Jacobian
+  coordinates. }
 procedure EcDouble(const P: TEcPoint; out R: TEcPoint);
 var
   Delta, Gamma, Beta, Alpha, T1, T2, T3: TU256;
@@ -274,7 +275,7 @@ begin
   FpAdd(T3, T3, T3);
   FpAdd(T3, T3, T3);              { 8*gamma^2 }
   FpSub(T1, T3, U.Y);             { Y' = alpha*(4beta - X') - 8gamma^2 }
-  { Tilordnes til slutt: R kan være samme variabel som P. }
+  { Assigned at the end: R may be the same variable as P. }
   R := U;
 end;
 
@@ -297,10 +298,10 @@ begin
 
   if U256Cmp(U1, U2) = 0 then
   begin
-    { Samme x. Enten samme punkt — da er det en dobling — eller to
-      punkter som er hverandres negasjon, og da er summen uendelig.
-      Bommer man på dette, gir addisjonen null i nevneren og et svar som
-      ser ut som et gyldig punkt. }
+    { The same x. Either the same point — then it is a doubling — or two
+      points that are each other's negation, and then the sum is infinity.
+      Get this wrong and the addition divides by zero and returns
+      something that looks like a valid point. }
     if U256Cmp(S1, S2) = 0 then
       EcDouble(P, R)
     else
@@ -332,7 +333,7 @@ begin
   FpSub(T2, Z1z1, T1);
   FpSub(T1, Z2z2, T2);
   FpMul(T2, H, W.Z);              { Z3 = ((Z1+Z2)^2 - Z1z1 - Z2z2)*H }
-  { Samme grunn som i EcDouble: R kan aliasere P eller Q. }
+  { The same reason as in EcDouble: R may alias P or Q. }
   R := W;
 end;
 
@@ -341,14 +342,14 @@ var
   I, Hoy: Integer;
   Akk, Base: TEcPoint;
 begin
-  { Vanlig dobbel-og-legg-til, fra toppen. Ikke konstant-tid: hoppet
-    avhenger av bitene i K, som her alltid er offentlige.
+  { Ordinary double-and-add, from the top. Not constant time: the branch
+    depends on the bits of K, which here are always public.
 
-    EcMul(K, P, P) virker fordi akkumulatoren er lokal og R skrives
-    først til slutt. Den forrige utgaven kalte EcSetInfinity(R) med én
-    gang, og da var P borte før første runde leste den — testen «20G + G
-    = 21G» fanget nettopp det. Base-kopien er belte og seler oppå; den
-    alene er ikke det som gjør det trygt. }
+    EcMul(K, P, P) works because the accumulator is local and R is written
+    only at the end. The previous version called EcSetInfinity(R)
+    immediately, and then P was gone before the first round read it — the
+    test "20G + G = 21G" caught exactly that. The copy of the base is belt
+    and braces on top; it alone is not what makes this safe. }
   Base := P;
   EcSetInfinity(Akk);
   Hoy := U256HighBit(K);
@@ -367,11 +368,11 @@ var
   Y2, X3, T: TU256;
   Tre: TU256;
 begin
-  { Utenfor feltet er det ikke et punkt i det hele tatt. }
+  { Outside the field it is not a point at all. }
   if (U256Cmp(X, GP) >= 0) or (U256Cmp(Y, GP) >= 0) then
     Exit(False);
-  { (0,0) er ikke på kurven, og ville ellers sluppet gjennom som
-    uendelig forkledd som et affint punkt. }
+  { (0,0) is not on the curve, and would otherwise slip through as
+    infinity disguised as an affine point. }
   if U256IsZero(X) and U256IsZero(Y) then
     Exit(False);
 
@@ -400,18 +401,18 @@ begin
   if not U256FromBytes(SigS, S_) then Exit;
   if not U256FromBytes(Hash, E) then Exit;
 
-  { r og s må ligge i [1, n-1]. Null slipper ellers gjennom som en
-    signatur som verifiserer mot hva som helst. }
+  { r and s have to lie in [1, n-1]. Zero otherwise passes as a signature
+    that verifies against anything. }
   if U256IsZero(R_) or (U256Cmp(R_, GN) >= 0) then Exit;
   if U256IsZero(S_) or (U256Cmp(S_, GN) >= 0) then Exit;
 
-  { Nøkkelen må være et punkt på kurven. Without denne sjekken tar
-    verifiseringen imot et punkt fra en annen kurve. }
+  { The key has to be a point on the curve. Without this check the
+    verification accepts a point from another curve. }
   if not EcOnCurve(X, Y) then Exit;
 
-  { Sammendraget tolkes som et heltall og snevres inn modulo n. For
-    SHA-256 og P-256 er begge 256 bit, så det er sjelden en reell
-    reduksjon — men e kan være større enn n. }
+  { The digest is read as an integer and narrowed modulo n. For SHA-256
+    and P-256 both are 256 bits, so it is rarely a real reduction — but e
+    can be larger than n. }
   if U256Cmp(E, GN) >= 0 then
   begin
     U256Sub(E, GN, En);

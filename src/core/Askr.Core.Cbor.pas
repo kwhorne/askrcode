@@ -1,21 +1,20 @@
-{ Askr.Core.Cbor — så mye CBOR som WebAuthn trenger, og ikke mer.
+{ Askr.Core.Cbor — as much CBOR as WebAuthn needs, and no more.
 
-  Attestasjonsobjektet og COSE-nøkkelen er CBOR, så uten en dekoder
-  kommer man ikke til den offentlige nøkkelen. Dette er ikke en generell
-  CBOR-pakke: den leser de seks hovedtypene RFC 8949 kaller 0 til 5, og
-  avviser resten.
+  The attestation object and the COSE key are CBOR, so without a decoder
+  you never reach the public key. This is not a general CBOR package: it
+  reads the six major types RFC 8949 calls 0 to 5, and refuses the rest.
 
-  DEN ER STRENG MED VILJE
+  IT IS STRICT ON PURPOSE
 
-  Ubestemt lengde — «start en liste, si fra når den er slutt» — avvises.
-  CTAP2s kanoniske form forbyr det, så ingen ekte autentikator sender
-  det, og å godta det ville lagt til en tilstandsmaskin i kode som
-  behandler data fra en angriper. Det samme gjelder tagger og
-  flyttall: de forekommer ikke her, og et parseren ikke kjenner er et
-  parseren skal si nei til.
+  Indefinite lengths — "start a list, say when it ends" — are refused.
+  CTAP2's canonical form forbids them, so no real authenticator sends
+  them, and accepting them would add a state machine to code that handles
+  data from an attacker. The same goes for tags and floats: they do not
+  occur here, and something the parser does not know is something the
+  parser should say no to.
 
-  Leseren allokerer ingenting. Bytestrenger og tekst kommer ut som
-  utsnitt inn i bufferet kalleren alt har. }
+  The reader allocates nothing. Byte strings and text come out as slices
+  into the buffer the caller already has. }
 unit Askr.Core.Cbor;
 
 {$mode Delphi}{$H+}
@@ -42,8 +41,8 @@ type
     FBuf: PByte;
     FSize: Integer;
     FPos: Integer;
-    { Leser hodet og flytter markøren. Major er hovedtypen, Arg det
-      tilhørende tallet. }
+    { Reads the head and moves the cursor. Major is the major type, Arg the
+      number that goes with it. }
     function ReadHeader(out Major: Byte; out Arg: UInt64): Boolean;
   public
     procedure Init(ABuf: PByte; ASize: Integer);
@@ -51,12 +50,12 @@ type
     function Pos_: Integer;
     function Size: Integer;
     function AtEnd: Boolean;
-    { Alt lest, og ingenting igjen. WebAuthn-objekter skal være
-      fullstendig konsumert — er det data igjen, er det ikke det vi
-      trodde vi leste. }
+    { Everything read and nothing left over. WebAuthn objects are meant to
+      be consumed completely — if data remains, this is not what we thought
+      we were reading. }
     function Ferdig: Boolean;
 
-    { Hovedtypen til neste verdi, uten å flytte markøren. }
+    { The major type of the next value, without moving the cursor. }
     function NextType(out Major: Byte): Boolean;
 
     function ReadUInt(out V: UInt64): Boolean;
@@ -65,14 +64,14 @@ type
     { Utsnitt inn i bufferet. Start er absolutt indeks. }
     function ReadBytes(out Start, Len: Integer): Boolean;
     function ReadText(out Start, Len: Integer): Boolean;
-    { Teksten som Pascal-streng. Bare for korte nøkler. }
+    { The text as a Pascal string. For short keys only. }
     function ReadTextStr(out S: string): Boolean;
     function ReadArrayLen(out N: Integer): Boolean;
     function ReadMapLen(out N: Integer): Boolean;
 
-    { Hopper over neste verdi, uansett type, inkludert nøstede. Brukes
-      til å gå forbi felter vi ikke bryr oss om. Has_ et dybdetak, slik
-      at en dypt nøstet konstruksjon ikke blir en stakkoverflyt. }
+    { Skips the next value, whatever its type, nested ones included. Used to
+      step past fields we do not care about. Has a depth limit, so a deeply
+      nested construction does not become a stack overflow. }
     function Skip: Boolean;
   end;
 
@@ -130,8 +129,8 @@ begin
     Exit(True);
   end;
 
-  { 28, 29 og 30 er reservert. 31 er ubestemt lengde, som vi ikke tar
-    imot. Begge deler er en feil, ikke noe å tolke. }
+  { 28, 29 and 30 are reserved. 31 is an indefinite length, which we do
+    not accept. Both are an error, not something to interpret. }
   case Ekstra of
     24: Ekstra := 1;
     25: Ekstra := 2;
@@ -176,8 +175,8 @@ begin
     Exit(False);
   if M = CborUInt then
   begin
-    { Over Int64 er ikke et tall vi kan representere. Her finnes ingen
-      slike, så det er en feil. }
+    { Above Int64 is not a number we can represent. None occur here, so it
+      is an error. }
     if Arg > UInt64(High(Int64)) then
       Exit(False);
     V := Int64(Arg);
@@ -201,8 +200,8 @@ begin
   Start := 0; Len := 0;
   if not ReadHeader(M, Arg) then Exit(False);
   if M <> CborBytes then Exit(False);
-  { Lengden kommer fra data en angriper skriver. En lengde som ikke får
-    plass i bufferet er en feil, ikke noe å klippe til. }
+  { The length comes from data an attacker writes. A length that does not
+    fit in the buffer is an error, not something to clamp. }
   if Arg > UInt64(FSize - FPos) then Exit(False);
   Start := FPos;
   Len := Integer(Arg);
@@ -232,8 +231,8 @@ begin
   S := '';
   if not ReadText(Start, Len) then
     Exit(False);
-  { Taket er der for at en nøkkel på en megabyte ikke skal bli en
-    streng. Nøklene vi leter etter er noen få tegn. }
+  { The limit is there so a one-megabyte key does not become a string. The
+    keys we are looking for are a few characters. }
   if Len > 256 then
     Exit(False);
   SetLength(S, Len);
@@ -250,9 +249,9 @@ begin
   N := 0;
   if not ReadHeader(M, Arg) then Exit(False);
   if M <> CborArray then Exit(False);
-  { En lengde større enn det som er igjen av bufferet kan ikke stemme:
-    hvert element er minst én byte. Without denne kan en liten melding be
-    om milliarder av runder. }
+  { A length larger than what is left of the buffer cannot be right: every
+    element is at least one byte. Without this a small message can ask for
+    billions of rounds. }
   if Arg > UInt64(FSize - FPos) then Exit(False);
   N := Integer(Arg);
   Result := True;
@@ -321,8 +320,8 @@ begin
         Result := True;
       end;
   else
-    { Tagger, flyttall og simple values forekommer ikke i det vi leser.
-      Å hoppe over dem ville betydd å forstå dem. }
+    { Tags, floats and simple values do not occur in what we read. Skipping
+      them would mean understanding them. }
     Result := False;
   end;
 end;

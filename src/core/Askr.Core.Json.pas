@@ -1,14 +1,16 @@
-{ Askr.Core.Json — JSON inn og ut, i arenaen.
+{ Askr.Core.Json — JSON in and out, in the arena.
 
-  Skriveren er strømmende: den bygger rett inn i en TStrBuilder og holder
-  ingen mellomliggende trestruktur. Det er det som gjør at en Inertia-respons
-  med hundre rader koster noen kilobyte og ikke et objekttre.
+  The writer streams: it builds straight into a TStrBuilder and keeps no
+  intermediate tree. That is what makes an Inertia response with a hundred
+  rows cost a few kilobytes rather than a tree of objects.
 
-  Leseren bygger derimot et tre, fordi en request-kropp skal slås opp i, ikke
-  strømmes gjennom. Nodene ligger i arenaen og forsvinner med requesten.
+  The reader does build a tree, because a request body is something you
+  look things up in rather than stream through. The nodes live in the
+  arena and go away with the request.
 
-  Tallformatering går ikke om FloatToStr eller CurrToStr. Begge følger
-  systemets desimalskilletegn, og et komma i JSON er ugyldig. }
+  Number formatting does not go through FloatToStr or CurrToStr. Both
+  follow the system's decimal separator, and a comma in JSON is
+  invalid. }
 unit Askr.Core.Json;
 
 {$mode Delphi}{$H+}
@@ -29,7 +31,7 @@ type
     FB: TStrBuilder;
     FNeedComma: Boolean;
     FDepth: Integer;
-    { True på nivået når vi er inne i et objekt, False i en array. }
+    { True at this level when we are inside an object, False in an array. }
     FInObject: array[0..63] of Boolean;
     procedure Separator;
     procedure Push(IsObject: Boolean);
@@ -42,7 +44,7 @@ type
     procedure BeginArray;
     procedure EndArray;
 
-    { Nøkkel i et objekt. Neste skriving blir verdien. }
+    { A key in an object. The next write becomes the value. }
     procedure Key(const AName: string); overload;
     procedure Key(const AName: TStr); overload;
 
@@ -53,10 +55,10 @@ type
     procedure Money(V: Currency);
     procedure Bool(V: Boolean);
     procedure Null;
-    { Allerede kodet JSON, satt inn som det er. }
+    { Already-encoded JSON, inserted as it stands. }
     procedure Raw(const Json: TStr);
 
-    { Nøkkel og verdi i ett, som er det man nesten alltid vil. }
+    { Key and value in one, which is what you almost always want. }
     procedure Field(const AName, V: string); overload;
     procedure Field(const AName: string; const V: TStr); overload;
     procedure Field(const AName: string; V: Int64); overload;
@@ -70,15 +72,15 @@ type
     property Depth: Integer read FDepth;
   end;
 
-  { Et objekt som kan skrive seg selv inn i en payload.
+  { An object that can write itself into a payload.
 
-    Festet finnes for at en app skal kunne sende sine egne objekter som
-    Inertia-props uten at Inertia må lære dem å kjenne. Før dette var lista
-    lukket — TModel, TModelList, TErrors — og alt annet ble en feilmelding.
-    TGrid er den første som bruker det, men ingenting ved det er spesielt
-    for griden.
+    The hook exists so an app can send its own objects as Inertia props
+    without Inertia having to know them. Before this the list was closed —
+    TModel, TModelList, TErrors — and anything else became an error. TGrid
+    is the first to use it, but nothing about it is specific to the grid.
 
-    Arver TArenaObject, fordi en prop lever ut requesten og ikke lenger. }
+    Inherits TArenaObject, because a prop lives for the request and no
+    longer. }
   TJsonWritable = class(TArenaObject)
   public
     procedure WriteJson(var W: TJsonWriter); virtual; abstract;
@@ -91,7 +93,7 @@ type
   PJsonValue = ^TJsonValue;
   TJsonValue = record
     Kind: TJsonKind;
-    { For tall: teksten slik den sto. For strenger: avkodet innhold. }
+    { For numbers: the text as it stood. For strings: the decoded content. }
     Text: TStr;
     BoolValue: Boolean;
     Key: TStr;
@@ -101,8 +103,8 @@ type
     Count: Integer;
   end;
 
-{ Parser hele Src. Returnerer False ved syntaksfeil, og setter da ErrorAt til
-  posisjonen der det gikk galt. }
+{ Parses all of Src. Returns False on a syntax error, and then sets ErrorAt
+  to the position where it went wrong. }
 function JsonParse(A: TArena; const Src: TStr; out Root: PJsonValue;
   out ErrorAt: SizeInt): Boolean;
 
@@ -114,24 +116,26 @@ function JsonAsInt(V: PJsonValue; Default: Int64 = 0): Int64;
 function JsonAsBool(V: PJsonValue; Default: Boolean = False): Boolean;
 function JsonIsNull(V: PJsonValue): Boolean;
 
-{ Skriver en parset verdi ut igjen som JSON-tekst.
+{ Writes a parsed value back out as JSON text.
 
-  Finnes fordi en del av et svar noen ganger skal videre som den er — et
-  verktøykalls argumenter, for eksempel, der bare verktøyet vet hvilke
-  felter det har. Number skrives med teksten de kom inn som, slik at
-  presisjon ikke går tapt i en omvei om Double. }
+  It exists because part of a response sometimes has to travel on as it is
+  — a tool call's arguments, for instance, where only the tool knows which
+  fields it has. Numbers are written with the text they came in as, so
+  precision is not lost on a detour through Double. }
 procedure JsonWriteValue(var W: TJsonWriter; V: PJsonValue);
 function JsonToString(A: TArena; V: PJsonValue): string;
 
 { Escaper tekst til bruk i et HTML-attributt. }
 function HtmlAttrEscape(A: TArena; const S: TStr): TStr;
 
-{ Gjør ferdig JSON trygt inni et <script type="application/json">-element.
+{ Makes finished JSON safe inside a <script type="application/json">
+  element.
 
-  Without dette kan en streng som inneholder </script> avslutte elementet midt i
-  payloaden, og resten av dokumentet blir tolket som HTML. Samme escaping som
-  Inertia selv bruker: < blir \u003c og / blir \/. Begge er lovlig JSON og
-  gir nøyaktig samme verdi etter parsing. }
+  Without this a string containing </script> can end the element in the
+  middle of the payload, and the rest of the document is parsed as HTML.
+  The same escaping Inertia itself uses: < becomes \u003c and / becomes
+  \/. Both are legal JSON and give exactly the same value after
+  parsing. }
 function JsonScriptEscape(A: TArena; const S: TStr): TStr;
 
 implementation
@@ -223,8 +227,8 @@ begin
         B.AppendByte(Ord(HexDigits[C and $0F]));
       end
       else
-        { UTF-8 slipper gjennom uendret. JSON er definert over Unicode, og
-          bytene er allerede gyldig UTF-8 fra databasen og HTTP-laget. }
+        { UTF-8 passes through unchanged. JSON is defined over Unicode, and the
+          bytes are already valid UTF-8 from the database and the HTTP layer. }
         B.AppendByte(C);
     end;
   end;
@@ -236,7 +240,7 @@ begin
   Separator;
   WriteEscaped(FB, AName);
   FB.AppendByte(Ord(':'));
-  { Verdien som følger skal ikke ha komma foran seg. }
+  { The value that follows must not have a comma in front of it. }
   FNeedComma := False;
 end;
 
@@ -269,7 +273,7 @@ begin
   Separator;
   if IsNan(V) or IsInfinite(V) then
   begin
-    { JSON har ingen representasjon for disse. Null er det ærligste. }
+    { JSON has no representation for these. Null is the most honest. }
     FB.Append('null');
     Exit;
   end;
@@ -286,8 +290,8 @@ var
   Digits: string;
 begin
   Separator;
-  { Currency er Int64 skalert med 10000. Formateres for hånd, slik at et
-    norsk desimalkomma aldri kan havne i JSON. }
+  { Currency is an Int64 scaled by 10000. Formatted by hand, so a Norwegian
+    decimal comma can never end up in JSON. }
   Scaled := PInt64(@V)^;
   Neg := Scaled < 0;
   if Neg then
@@ -299,8 +303,8 @@ begin
   FB.AppendInt(Whole);
   if Frac <> 0 then
   begin
-    { Fire desimaler alltid, men etterfølgende nuller er bare støy i en
-      payload som sendes over nettet. 1234.5000 blir 1234.5. }
+    { Always four decimals, but trailing zeroes are only noise in a payload
+      going over the network. 1234.5000 becomes 1234.5. }
     Digits := Copy(IntToStr(10000 + Frac), 2, 4);
     while (Length(Digits) > 1) and (Digits[Length(Digits)] = '0') do
       Delete(Digits, Length(Digits), 1);
@@ -444,7 +448,7 @@ begin
   Result := True;
 end;
 
-{ Skriver et kodepunkt som UTF-8. }
+{ Writes a code point as UTF-8. }
 procedure AppendUtf8(var B: TStrBuilder; Cp: Cardinal);
 begin
   if Cp < $80 then
@@ -484,8 +488,8 @@ begin
     Exit(False);
   Inc(P.Pos);
 
-  { De aller fleste strenger har ingen escapes. Da peker vi rett inn i
-    kildebufferet i stedet for å kopiere. }
+  { The vast majority of strings have no escapes. Then we point straight
+    into the source buffer instead of copying. }
   Start := P.Pos;
   Simple := True;
   while P.Pos < P.Src.Len do
@@ -890,8 +894,8 @@ begin
   case V^.Kind of
     jkNull: W.Null;
     jkBool: W.Bool(V^.BoolValue);
-    { Tallet slik det sto. Å gå om Double og tilbake ville gjort 1e400 til
-      noe annet og 0.1 til 0.1000000000000000055. }
+    { The number as it stood. Going through Double and back would turn 1e400
+      into something else and 0.1 into 0.1000000000000000055. }
     jkNumber: W.Raw(V^.Text);
     jkString: W.Str(V^.Text);
     jkArray:

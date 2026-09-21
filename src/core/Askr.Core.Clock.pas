@@ -1,12 +1,13 @@
-{ Askr.Core.Clock — tid i UTC, uten avhengighet til tidssone-oppsett.
+{ Askr.Core.Clock — time in UTC, with no dependency on time-zone setup.
 
-  HTTP krever en Date-header i RFC 9110-format. Vanlige datoruter i Pascal går
-  veien om lokal tid og tidssonedatabase; her regnes epoch-sekunder om til
-  kalenderdato med ren aritmetikk, slik at resultatet er UTC per definisjon og
-  koster det samme på hver plattform.
+  HTTP requires a Date header in RFC 9110 format. The usual date routines
+  in Pascal go by way of local time and the time-zone database; here epoch
+  seconds are converted to a calendar date with plain arithmetic, so the
+  result is UTC by definition and costs the same on every platform.
 
-  Formatert dato caches per tråd per sekund. En server som tar tusenvis av
-  requests i sekundet formaterer da datoen én gang, ikke én gang per respons. }
+  The formatted date is cached per thread per second. A server taking
+  thousands of requests a second then formats the date once, not once per
+  response. }
 unit Askr.Core.Clock;
 
 {$mode Delphi}{$H+}
@@ -18,32 +19,31 @@ uses
 
 { Sekunder siden 1970-01-01T00:00:00Z. }
 function UnixNow: Int64;
-{ Millisekunder siden epoch. Samme klokke som filsystemets mtime, så de to
-  kan trekkes fra hverandre — det kan ikke MonotonicMs. }
+{ Milliseconds since the epoch. The same clock as the file system's mtime,
+  so the two can be subtracted from one another — MonotonicMs cannot. }
 function UnixNowMs: Int64;
-{ Monotont klokkeslett i millisekunder, for timeouts og måling. }
+{ A monotonic reading in milliseconds, for timeouts and measurement. }
 function MonotonicMs: Int64;
 
-{ 'Sun, 06 Nov 1994 08:49:37 GMT' — nøyaktig 29 bytes. }
+{ 'Sun, 06 Nov 1994 08:49:37 GMT' — exactly 29 bytes. }
 procedure AppendHttpDate(var B: TStrBuilder; Epoch: Int64);
 procedure AppendHttpDateNow(var B: TStrBuilder);
 
-{ ISO 8601 i UTC med millisekunder: 2026-09-20T08:11:12.345Z.
+{ ISO 8601 in UTC with milliseconds: 2026-09-20T08:11:12.345Z.
 
-  Returnerer en vanlig streng og trenger ingen arena — den kalles fra
-  loggingen, som også kjører ved oppstart, fra køarbeidere og fra
-  scheduleren, altså steder der det ikke finnes noen omgivende arena.
-  UTC fordi en logg som skifter tidssone to ganger i året ikke lar seg
-  sortere. }
+  Returns an ordinary string and needs no arena — it is called from the
+  logger, which also runs at startup, from queue workers and from the
+  scheduler, all places where there is no surrounding arena. UTC because a
+  log that changes time zone twice a year cannot be sorted. }
 function IsoTimestamp(EpochMs: Int64): string;
 function IsoTimestampNow: string;
 
-{ Nå som TDateTime, i UTC.
+{ Now as a TDateTime, in UTC.
 
-  `SysUtils.Now` gir lokaltid. To servere i hver sin tidssone ville skrevet
-  ulike verdier for det samme øyeblikket i en created_at, og en rad laget
-  kl. 02:30 om høsten ville kommet to ganger. Samme grunn som at
-  scheduleren regner i UTC. }
+  `SysUtils.Now` gives local time. Two servers in different time zones
+  would write different values for the same instant into a created_at, and
+  a row made at 02:30 in the autumn would appear twice. The same reason
+  the scheduler works in UTC. }
 function UtcNow: TDateTime;
 
 implementation
@@ -84,8 +84,9 @@ end;
 
 {$IFDEF UNIX}
 const
-  { CLOCK_MONOTONIC har ulik verdi per kjerne. Deklareres direkte mot libc i
-    stedet for via Linux-unit, slik at macOS og BSD treffer samme kodesti. }
+  { CLOCK_MONOTONIC has a different value per kernel. Declared directly
+    against libc rather than through the Linux unit, so macOS and BSD take
+    the same code path. }
   ClockMonotonic = {$IFDEF DARWIN} 6 {$ELSE} 1 {$ENDIF};
 
 function clock_gettime(ClockId: cint; TP: ptimespec): cint; cdecl;
@@ -127,8 +128,9 @@ begin
 end;
 {$ENDIF}
 
-{ Howard Hinnant sin civil_from_days: dager siden epoch til år/måned/dag uten
-  løkker og uten tabeller. Gyldig langt utenfor det en HTTP-server trenger. }
+{ Howard Hinnant's civil_from_days: days since the epoch to
+  year/month/day with no loops and no tables. Valid far beyond anything an
+  HTTP server needs. }
 procedure CivilFromDays(Z: Int64; out Y: Int64; out M, D: Word);
 var
   Era, DoE, YoE, Doy, Mp: Int64;
@@ -215,7 +217,7 @@ begin
     Exit;
   end;
 
-  { Formaterer inn i kallerens arena og tar en kopi til trådcachen. }
+  { Formats into the caller's arena and takes a copy for the thread cache. }
   Tmp.Init(B.Arena, 48);
   FormatHttpDate(Tmp, Epoch);
   S := Tmp.ToStr;
@@ -243,7 +245,7 @@ var
 begin
   Sek := EpochMs div 1000;
   Ms := EpochMs mod 1000;
-  { Negativ epoke — en dato før 1970 — skal ikke gi negative klokkeslett. }
+  { A negative epoch — a date before 1970 — must not give negative times. }
   if Ms < 0 then
   begin
     Inc(Ms, 1000);
@@ -269,8 +271,8 @@ end;
 
 function UtcNow: TDateTime;
 begin
-  { UnixEpoch som TDateTime er 25569. Regnet ut her i stedet for å hente
-    DateUtils inn i klokka. }
+  { The Unix epoch as a TDateTime is 25569. Worked out here rather than
+    pulling DateUtils into the clock. }
   Result := 25569 + UnixNow / 86400;
 end;
 end.

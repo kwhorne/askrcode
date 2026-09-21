@@ -1,28 +1,27 @@
-{ Askr.Core.BigInt — 256-bits heltallsaritmetikk.
+{ Askr.Core.BigInt — 256-bit integer arithmetic.
 
-  Finnes for ECDSA-verifisering, som igjen finnes for WebAuthn. Askr har
-  ingen generell bignum-pakke og skal ikke få en: dette er nøyaktig det
-  P-256 trenger, i fast bredde, og ikke noe mer.
+  It exists for ECDSA verification, which in turn exists for WebAuthn.
+  Askr has no general bignum package and is not going to get one: this is
+  exactly what P-256 needs, at a fixed width, and nothing more.
 
-  LEMMENE ER 32 BIT, IKKE 64
+  THE LIMBS ARE 32 BITS, NOT 64
 
-  Et produkt av to 32-bits tall får plass i UInt64 med god margin — selv
-  med to bærere lagt til:
+  A product of two 32-bit numbers fits in a UInt64 with room to spare —
+  even with two carries added:
 
-    $FFFFFFFF * $FFFFFFFF + $FFFFFFFF + $FFFFFFFF
-      = $FFFFFFFFFFFFFFFF
+  $FFFFFFFF * $FFFFFFFF + $FFFFFFFF + $FFFFFFFF
+  = $FFFFFFFFFFFFFFFF
 
-  altså akkurat innenfor. With_ 64-bits lemmer måtte hvert produkt vært
-  128 bit, og den typen finnes ikke i Free Pascal. Prisen er omtrent
-  dobbelt så mange operasjoner; gevinsten er at ingenting her flyter
-  over, så uniten trenger ingen avskrudd område- eller overflytkontroll
-  og består `./askr check` slik
-  den står. Det er et bevisst bytte i kode der en stille feil ikke kan
-  oppdages ved lesing.
+  that is, just inside. With 64-bit limbs every product would have to be
+  128 bits, and that type does not exist in Free Pascal. The price is
+  roughly twice as many operations; the gain is that nothing here
+  overflows, so the unit needs no range or overflow checking turned off
+  and passes `./askr check` as it stands. It is a deliberate trade in code
+  where a silent error cannot be spotted by reading.
 
-  Lemmene ligger med minst signifikante først. Utad er formatet
-  big-endian byte-rekkefølge, fordi det er slik nøkler og signaturer
-  kommer over nettet. }
+  The limbs are stored least significant first. On the outside the format
+  is big-endian byte order, because that is how keys and signatures
+  arrive over the network. }
 unit Askr.Core.BigInt;
 
 {$mode Delphi}{$H+}
@@ -43,7 +42,7 @@ type
     L: array[0..U256Limbs - 1] of UInt32;
   end;
 
-  { 512 bit. Produktet av to TU256 får plass her. }
+  { 512 bits. The product of two TU256 fits here. }
   TU512 = record
     L: array[0..U512Limbs - 1] of UInt32;
   end;
@@ -59,14 +58,14 @@ function U256Cmp(const A, B: TU256): Integer;
 
 { Bit nummer I, 0 = minst signifikant. }
 function U256Bit(const A: TU256; I: Integer): Integer;
-{ Indeksen til høyeste satte bit, eller -1 for null. }
+{ The index of the highest set bit, or -1 for zero. }
 function U256HighBit(const A: TU256): Integer;
 
 { ---------------------------------------------------------- aritmetikk -- }
 
-{ Returnerer bæreren ut (0 eller 1). R kan være samme variabel som A. }
+{ Returns the carry out (0 or 1). R may be the same variable as A. }
 function U256Add(const A, B: TU256; out R: TU256): UInt32;
-{ Returnerer lånet ut (0 eller 1), altså 1 når A < B. }
+{ Returns the borrow out (0 or 1), that is 1 when A < B. }
 function U256Sub(const A, B: TU256; out R: TU256): UInt32;
 
 procedure U256Mul(const A, B: TU256; out R: TU512);
@@ -81,7 +80,7 @@ function U256ShrOne(var A: TU256): UInt32;
 procedure U512SetZero(out A: TU512);
 function U512Cmp(const A, B: TU512): Integer;
 function U512Sub(const A, B: TU512; out R: TU512): UInt32;
-{ De 256 lave, henholdsvis høye, bitene. }
+{ The low and the high 256 bits respectively. }
 procedure U512Low(const A: TU512; out R: TU256);
 procedure U512High(const A: TU512; out R: TU256);
 { Utvider 256 til 512. }
@@ -90,18 +89,18 @@ procedure U256To512(const A: TU256; out R: TU512);
 { Full 512 x 512 multiplikasjon, avkortet til 512 bit. }
 procedure U512MulLow(const A, B: TU512; out R: TU512);
 
-{ Skifter et 512-bits tall Count_ lemmer mot høyre, altså deler på
-  2^(32*Count_). }
+{ Shifts a 512-bit number Count limbs to the right, that is divides by
+  2^(32*Count). }
 procedure U512ShrLimbs(const A: TU512; Count_: Integer; out R: TU512);
 
 { ---------------------------------------------------------------- byte -- }
 
-{ Big-endian, 32 byte. False når lengden er feil. }
+{ Big-endian, 32 bytes. False when the length is wrong. }
 function U256FromBytes(const B: array of Byte; out R: TU256): Boolean;
 procedure U256ToBytes(const A: TU256; var B: array of Byte);
 
-{ Hex, til bruk i tester og i konstanter. Godtar store og små bokstaver
-  og valgfri 0x. Ikke ment for varm kode. }
+{ Hex, for use in tests and constants. Accepts upper and lower case and
+  an optional 0x. Not meant for hot code. }
 function U256FromHex(const S: string; out R: TU256): Boolean;
 function U256ToHex(const A: TU256): string;
 
@@ -112,26 +111,27 @@ procedure ModAdd(const A, B, M: TU256; out R: TU256);
 { A - B mod M. Krever A, B < M. }
 procedure ModSub(const A, B, M: TU256; out R: TU256);
 
-{ Reduserer et 512-bits tall modulo M, med binær langdivisjon.
+{ Reduces a 512-bit number modulo M, with binary long division.
 
-  Barrett ville vært raskere, men krever mellomregninger på 545 bit:
-  q1 * mu passer ikke i 512, og en avkortet multiplikasjon kaster
-  nettopp leddet man trenger. Det ville krevd en 1024-bits type for to
-  operasjoner per verifisering. Reduksjon modulo n brukes bare når u1 og
-  u2 regnes ut; feltet modulo p går den raske veien i Askr.Core.Ec. }
+  Barrett would be faster, but needs intermediates of 545 bits: q1 * mu
+  does not fit in 512, and a truncated multiplication throws away exactly
+  the term you need. It would have required a 1024-bit type for two
+  operations per verification. Reduction modulo n is used only when u1 and
+  u2 are computed; the field modulo p takes the fast route in
+  Askr.Core.Ec. }
 procedure ModReduce(const X: TU512; const M: TU256; out R: TU256);
 
 { A * B mod M. }
 procedure ModMul(const A, B, M: TU256; out R: TU256);
 
-{ Invers modulo M, med binær utvidet Euklid.
+{ Inverse modulo M, with the binary extended Euclidean algorithm.
 
-  Fermat — A^(M-2) — hadde vært kortere å skrive, men koster rundt 384
-  multiplikasjoner modulo M. Binær Euklid koster rundt 512 runder med
-  skift og subtraksjon, altså mye mindre. Inversen er den dyreste
-  enkeltoperasjonen i en verifisering, så forskjellen merkes.
+  Fermat — A^(M-2) — would have been shorter to write, but costs around
+  384 multiplications modulo M. Binary Euclid costs around 512 rounds of
+  shifting and subtraction, which is far less. The inverse is the most
+  expensive single operation in a verification, so the difference shows.
 
-  False når A ikke er invertibel (felles faktor med M). }
+  False when A is not invertible (a common factor with M). }
 function ModInv(const A, M: TU256; out R: TU256): Boolean;
 
 implementation
@@ -169,7 +169,7 @@ function U256Cmp(const A, B: TU256): Integer;
 var
   I: Integer;
 begin
-  { From_ toppen: første ulike lemme avgjør. }
+  { From the top: the first differing limb decides. }
   for I := U256Limbs - 1 downto 0 do
   begin
     if A.L[I] < B.L[I] then Exit(-1);
@@ -225,8 +225,8 @@ begin
   Laan := 0;
   for I := 0 to U256Limbs - 1 do
   begin
-    { Legger til 2^32 for å unngå at mellomregningen går under null.
-      Den ekstra biten blir lånet ut, invertert. }
+    { Adds 2^32 to keep the intermediate from going below zero. The extra
+      bit becomes the borrow out, inverted. }
     T := (UInt64(A.L[I]) + $100000000) - UInt64(B.L[I]) - Laan;
     R.L[I] := UInt32(T and $FFFFFFFF);
     if T < $100000000 then Laan := 1 else Laan := 0;
@@ -247,8 +247,8 @@ begin
     Baerer := 0;
     for J := 0 to U256Limbs - 1 do
     begin
-      { Dette er linja som avgjorde lemmebredden. With_ 32-bits lemmer
-        får produktet pluss to bærere akkurat plass i UInt64. }
+      { This is the line that decided the limb width. With 32-bit limbs the
+        product plus two carries fits in a UInt64 exactly. }
       T := UInt64(A.L[I]) * UInt64(B.L[J]) + UInt64(R.L[I + J]) + Baerer;
       R.L[I + J] := UInt32(T and $FFFFFFFF);
       Baerer := T shr 32;
@@ -259,9 +259,9 @@ end;
 
 procedure U256Sqr(const A: TU256; out R: TU512);
 begin
-  { Kunne utnyttet symmetrien og spart nesten halvparten. Gjør det ikke:
-    en egen kvadreringsrutine er en egen kilde til feil, og den ville
-    hatt sine egne vektorer å kreve. Multiplikasjonen er prøvd. }
+  { This could exploit the symmetry and save almost half. It does not: a
+    separate squaring routine is a separate source of error, and it would
+    demand vectors of its own. The multiplication has been tested. }
   U256Mul(A, A, R);
 end;
 
@@ -375,8 +375,8 @@ begin
       R.L[I + J] := UInt32(T and $FFFFFFFF);
       Baerer := T shr 32;
     end;
-    { Bæreren ut av toppen forsvinner med vilje: kallstedet bruker bare
-      de lave 512 bitene. }
+    { The carry out of the top is dropped deliberately: the call site uses
+      only the low 512 bits. }
   end;
 end;
 
@@ -482,8 +482,8 @@ var
   T: TU256;
 begin
   Baerer := U256Add(A, B, R);
-  { Summen kan bli >= M enten ved at den flyter over 256 bit, eller ved
-    at den bare er stor. Begge gir samme svar: trekk fra M én gang. }
+  { The sum can reach >= M either by overflowing 256 bits or by simply
+    being large. Both have the same answer: subtract M once. }
   if (Baerer <> 0) or (U256Cmp(R, M) >= 0) then
   begin
     U256Sub(R, M, T);
@@ -531,15 +531,16 @@ begin
 
   U256To512(M, Divisor);
 
-  { Er X allerede mindre enn M, er svaret X. Sparer 512 runder for det
-    vanlige tilfellet der en verdi bare skal snevres inn. }
+  { If X is already smaller than M, the answer is X. Saves 512 rounds for
+    the common case where a value is merely being narrowed. }
   if U512Cmp(X, Divisor) < 0 then
   begin
     U512Low(X, R);
     Exit;
   end;
 
-  { Binær langdivisjon. Kvotienten kastes — bare resten skal ut. }
+  { Binary long division. The quotient is discarded — only the remainder
+    is wanted. }
   U512SetZero(Rest);
   Hoy := U512Limbs * 32 - 1;
   for I := Hoy downto 0 do
@@ -572,8 +573,8 @@ begin
   if U256IsZero(A) or U256IsZero(M) then
     Exit(False);
 
-  { Binær utvidet Euklid. U og V krymper mot gcd; X1 og X2 følger med
-    som koeffisienter modulo M. }
+  { The binary extended Euclidean algorithm. U and V shrink towards the
+    gcd; X1 and X2 come along as coefficients modulo M. }
   U := A;
   V := M;
   U256SetU32(X1, 1);
@@ -588,8 +589,8 @@ begin
         U256ShrOne(X1)
       else
       begin
-        { X1 er odde: legg til M først, slik at halveringen er hel.
-          Bæreren ut må tas vare på — summen kan være 257 bit. }
+        { X1 is odd: add M first, so the halving is exact. The carry out has
+          to be kept — the sum can be 257 bits. }
         Baerer := U256Add(X1, M, T);
         X1 := T;
         U256ShrOne(X1);
@@ -623,7 +624,7 @@ begin
     end;
   end;
 
-  { gcd(A, M) står nå i U. Er den ikke 1, finnes ingen invers. }
+  { gcd(A, M) is now in U. If it is not 1 there is no inverse. }
   if U256IsZero(U) then
     Exit(False);
   U256SetU32(T, 1);

@@ -1,28 +1,29 @@
-{ Askr.Core.Config — ett oppslag for all konfigurasjon.
+{ Askr.Core.Config — one lookup for all configuration.
 
-  Før dette leste CLI-en `askr.toml` og appen leste `.env`, og de to visste
-  ikke om hverandre. En app som ville vite hvilken port den kjørte på måtte
-  enten gjette eller få den fortalt på kommandolinjen.
+  Before this the CLI read `askr.toml` and the app read `.env`, and the
+  two knew nothing about each other. An app that wanted to know which port
+  it was running on had to guess or be told on the command line.
 
-  Fire lag, i denne rekkefølgen:
+  Four layers, in this order:
 
-    1. ekte miljøvariabler
-    2. `.env`
-    3. `askr.toml`
-    4. standardverdien kalleren oppgir
+  1. real environment variables
+  2. `.env`
+  3. `askr.toml`
+  4. the default the caller supplies
 
-  Nøkkelen skrives med punktum — `app.port` — og oversettes til
-  `APP_PORT` når miljøet slås opp. Det er hele regelen, og den er den
-  eneste som er verdt å huske: **miljøet vinner alltid over fila.** En
-  utrulling skal kunne sette noe uten at en fil i repoet endres.
+  Keys are written with dots — `app.port` — and translated to `APP_PORT`
+  when the environment is consulted. That is the whole rule, and it is the
+  only one worth remembering: **the environment always beats the file.** A
+  deployment has to be able to set something without a file in the repo
+  changing.
 
-  Formatet i `askr.toml` er det minste som ser ut som TOML: nøkkel = verdi,
-  én per linje, seksjoner i klammer. Parseren her er den samme som CLI-en
-  bruker — `askr.toml` skal ikke kunne bety to ting.
+  The format in `askr.toml` is the smallest thing that looks like TOML:
+  key = value, one per line, sections in brackets. The parser here is the
+  one the CLI uses — `askr.toml` must not be able to mean two things.
 
-  **Verdier logges ikke.** `ConfigReport` viser nøkler og hvor de kom fra,
-  ikke hva de inneholder, med mindre noen ber om det eksplisitt. Grunnen
-  står i Askr.Core.Env: en `.env` er stedet hemmelighetene ligger. }
+  **Values are not logged.** `ConfigReport` shows keys and where they came
+  from, not what they hold, unless somebody asks explicitly. The reason is
+  in Askr.Core.Env: a `.env` is where the secrets live. }
 unit Askr.Core.Config;
 
 {$mode Delphi}{$H+}
@@ -35,14 +36,14 @@ uses
 type
   EConfigError = class(Exception);
 
-  { Where_ en verdi kom fra. To_ ConfigReport — «hvorfor er porten 9000» er
-    et spørsmål man stiller ofte nok til at svaret bør stå der. }
+  { Where a value came from. For ConfigReport — "why is the port 9000" is a
+    question asked often enough that the answer should be there. }
   TConfigSource = (csNone, csEnvironment, csDotEnv, csToml, csDefault);
 
-{ Leser askr.toml og .env, begge funnet ved å lete oppover fra StartDir
-  (tom betyr gjeldende katalog). Kalles én gang, først i app.lpr. Missing
-  en av dem, er det ikke en feil — en app i produksjon har gjerne bare
-  ekte miljøvariabler. }
+{ Reads askr.toml and .env, both found by searching upwards from StartDir
+  (empty means the current directory). Called once, first in app.lpr. If
+  one of them is missing that is not an error — an app in production often
+  has only real environment variables. }
 procedure LoadConfig(const StartDir: string = '');
 
 { Oppslag gjennom alle fire lagene. }
@@ -50,31 +51,32 @@ function Cfg(const Key: string): string; overload;
 function Cfg(const Key, Default_: string): string; overload;
 function CfgInt(const Key: string; Default_: Int64 = 0): Int64;
 function CfgBool(const Key: string; Default_: Boolean = False): Boolean;
-{ Finnes nøkkelen i noe lag, uansett om verdien er tom? }
+{ Does the key exist in any layer, empty value or not? }
 function CfgHas(const Key: string): Boolean;
-{ Kaster hvis den mangler eller er tom. Meldingen nevner nøkkelen, hvor det
-  ble lett og hvilken miljøvariabel som ville satt den — aldri en verdi. }
+{ Raises if it is missing or empty. The message names the key, where it
+  looked and which environment variable would set it — never a value. }
 function CfgOrFail(const Key: string): string;
 { Hvilket lag verdien kom fra. }
 function CfgSource(const Key: string): TConfigSource;
 function SourceName(S: TConfigSource): string;
 
-{ Miljøvariabelnavnet en nøkkel oversettes til: app.port blir APP_PORT. }
+{ The environment variable name a key translates to: app.port becomes
+  APP_PORT. }
 function EnvNameFor(const Key: string): string;
 
 function ConfigFile: string;
 function ConfigKeys: TStringArray;
 
-{ To_ `askr config`. Without ShowValues står bare nøkkel og kilde — det er
-  trygt å lime inn i en feilrapport. With_ ShowValues vises verdiene, men
-  nøkler som ser ut som hemmeligheter er fortsatt skjult. }
+{ For `askr config`. Without ShowValues only the key and its source are
+  shown — that is safe to paste into a bug report. With ShowValues the
+  values appear, but keys that look like secrets are still hidden. }
 function ConfigReport(ShowValues: Boolean = False): string;
-{ Ser nøkkelen ut til å holde en hemmelighet? Used av ConfigReport. }
+{ Does the key look like it holds a secret? Used by ConfigReport. }
 function LooksSecret(const Key: string): Boolean;
 
-{ Leser en askr.toml-lignende fil inn i en TStringList som «seksjon.nøkkel»
-  = verdi. Eksponert fordi CLI-en bruker den samme — to parsere for samme
-  fil ville før eller siden vært uenige om hva den betyr. }
+{ Reads an askr.toml-like file into a TStringList as "section.key" =
+  value. Exposed because the CLI uses the same one — two parsers for the
+  same file would sooner or later disagree about what it means. }
 function ParseTomlInto(const Path: string; Into: TStringList): Boolean;
 
 procedure ClearConfig;
@@ -126,10 +128,10 @@ begin
       Val := Trim(Copy(Line, Eq + 1, MaxInt));
       if (Length(Val) >= 2) and (Val[1] = '"') and (Val[Length(Val)] = '"') then
         Val := Copy(Val, 2, Length(Val) - 2);
-      { Add med «nøkkel=verdi», ikke Values[...] := . På 3.3.1 sletter
-        `Values[K] := ''` oppføringen i stedet for å sette den tom, og en
-        nøkkel med tom verdi i askr.toml ville forsvunnet på den ene
-        kompilatoren og blitt stående på den andre. Samme felle som i
+      { Add with "key=value", not Values[...] := . On 3.3.1
+        `Values[K] := ''` deletes the entry rather than setting it empty,
+        and a key with an empty value in askr.toml would vanish on one
+        compiler and survive on the other. The same trap as in
         Askr.Core.Env. }
       Eq := Into.IndexOfName(Section + Key);
       if Eq >= 0 then
@@ -166,7 +168,7 @@ procedure LoadConfig(const StartDir: string);
 var
   Path_: string;
 begin
-  { .env først, slik at Env() virker under resten av oppstarten. }
+  { .env first, so that Env() works through the rest of startup. }
   LoadEnvUpwards(StartDir);
 
   GLock.Acquire;
@@ -264,7 +266,7 @@ var
   EnvName, V: string;
 begin
   EnvName := EnvNameFor(Key);
-  { Env dekker både ekte miljøvariabler og .env, i den rekkefølgen. }
+  { Env covers both real environment variables and .env, in that order. }
   V := Env(EnvName);
   if V <> '' then
     Exit(V);
@@ -315,8 +317,9 @@ begin
   Result := Trim(Cfg(Key));
   if Result <> '' then
     Exit;
-  { Meldingen sier hvilken miljøvariabel som ville satt den. Without det er
-    oversettelsen fra app.port til APP_PORT noe man må slå opp. }
+  { The message says which environment variable would set it. Without that
+    the translation from app.port to APP_PORT is something you have to
+    look up. }
   Where_ := 'the environment';
   if EnvFile <> '' then
     Where_ := Where_ + ', ' + EnvFile;
@@ -331,8 +334,8 @@ end;
 
 function LooksSecret(const Key: string): Boolean;
 const
-  { Ikke en fasit, og den kan ikke bli det. Den fanger navnene folk faktisk
-    bruker, og standarden er uansett at ingen verdier vises. }
+  { Not definitive, and it cannot be. It catches the names people actually
+    use, and the default is that no values are shown anyway. }
   Word_: array[0..7] of string = (
     'secret', 'password', 'passwd', 'token', 'key', 'credential',
     'dsn', 'url');
@@ -353,8 +356,8 @@ var
   I, N: Integer;
   K: string;
 
-  { Samles i Acc, ikke i Result: inne i en nøstet funksjon er `Result` den
-    nøstede funksjonens eget resultat, ikke den ytres. }
+  { Collected in Acc rather than in Result: inside a nested function
+    `Result` is the nested function's own result, not the outer one's. }
   function Has_(const S: string): Boolean;
   var
     J: Integer;
@@ -379,7 +382,7 @@ begin
   N := 0;
   SetLength(Acc, 64);
 
-  { Først .env-nøklene, så askr.toml. Nøkler fra begge står én gang. }
+  { The .env keys first, then askr.toml. Keys from both appear once. }
   From_ := EnvKeys;
   for I := 0 to High(From_) do
     if not Has_(From_[I]) then
@@ -430,8 +433,8 @@ begin
     if not ShowValues then
       V := ''
     else if LooksSecret(K) then
-      { Nøkkelen vises, verdien ikke. Den som spør vet da at den er satt,
-        uten at den havner i en skjermdump. }
+      { The key is shown, the value is not. Whoever asks then knows it is
+        set, without it ending up in a screenshot. }
       V := '  (hidden)'
     else
       V := '  ' + Cfg(K);

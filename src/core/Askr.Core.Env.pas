@@ -1,24 +1,26 @@
-{ Askr.Core.Env — .env, lest én gang ved oppstart.
+{ Askr.Core.Env — .env, read once at startup.
 
-  Poenget er at hemmeligheter ikke skal stå i kildekoden. En API-nøkkel, et
-  databasepassord eller en sertifikatsti hører til utrullingen, og `.env` er
-  der man legger dem i utvikling.
+  The point is that secrets do not belong in the source. An API key, a
+  database password or a certificate path belongs to the deployment, and
+  `.env` is where you put them in development.
 
-  Tre regler, og de er ikke forhandlingsbare:
+  Three rules, and they are not negotiable:
 
-    * **Ekte miljøvariabler vinner.** Er `DATABASE_URL` satt i miljøet, blir
-      den brukt selv om `.env` sier noe annet. Det er slik produksjon kan
-      sette verdier uten at fila finnes, og slik alle andre gjør det.
-    * **Verdier logges aldri.** En feilmelding sier hvilken nøkkel som
-      manglet, aldri hva den inneholdt. `EnvOrFail` er skrevet for å være
-      trygg å la stå i en stacktrace.
-    * **`.env` sjekkes ikke inn.** `askr new` legger den i .gitignore og
-      lager en `.env.example` ved siden av.
+  * **Real environment variables win.** If `DATABASE_URL` is set in the
+  environment it is used, whatever `.env` says. That is how production
+  sets values without the file existing, and how everyone else does
+  it.
+  * **Values are never logged.** An error message names the key that was
+  missing, never what it held. `EnvOrFail` is written to be safe to
+  leave in a stack trace.
+  * **`.env` is not committed.** `askr new` puts it in .gitignore and
+  writes a `.env.example` beside it.
 
-  Fila leses inn i prosessens eget lager, ikke satt med `setenv`. Det er med
-  vilje: FPCs RTL holder sin egen kopi av miljøet fra oppstart, så `setenv`
-  når uansett ikke fram til barneprosesser — og et lager vi eier selv er
-  lettere å resonnere om enn et vi deler med libc. }
+  The file is read into the process's own store rather than set with
+  `setenv`. That is deliberate: FPC's RTL keeps its own copy of the
+  environment from startup, so `setenv` never reaches child processes
+  anyway — and a store we own is easier to reason about than one shared
+  with libc. }
 unit Askr.Core.Env;
 
 {$mode Delphi}{$H+}
@@ -31,46 +33,49 @@ uses
 type
   EEnvError = class(Exception);
 
-{ Leser fila hvis den finnes. Gjør ingenting hvis den ikke gjør det — en app
-  i produksjon har gjerne bare ekte miljøvariabler. Kalles én gang, tidlig. }
+{ Reads the file if it exists. Does nothing if it does not — an app in
+  production often has only real environment variables. Called once,
+  early. }
 procedure LoadEnv(const Path: string = '.env');
-{ Leser fra den første .env som finnes i denne mappa eller en over. Samme
-  måte som `askr` finner askr.toml. }
+{ Reads the first .env found in this directory or one above it. The same
+  way `askr` finds askr.toml. }
 procedure LoadEnvUpwards(const StartDir: string = '');
 
-{ Miljøet først, så .env, så tom streng. }
+{ The environment first, then .env, then the empty string. }
 function Env(const Key: string): string; overload;
 function Env(const Key, Default_: string): string; overload;
 function EnvInt(const Key: string; Default_: Int64 = 0): Int64;
 function EnvBool(const Key: string; Default_: Boolean = False): Boolean;
-{ Kaster hvis nøkkelen mangler eller er tom. Meldingen nevner nøkkelen og
-  hvor det ble lett — aldri verdien. }
+{ Raises if the key is missing or empty. The message names the key and
+  where it looked — never the value. }
 function EnvOrFail(const Key: string): string;
-{ Om nøkkelen finnes i det hele tatt, uansett om den er tom. }
+{ Whether the key exists at all, empty or not. }
 function EnvHas(const Key: string): Boolean;
 
-{ ------------------------------------------------------------- miljø -- }
+{ -------------------------------------------------- the environment -- }
 
-{ `APP_ENV`, i små bokstaver, eller 'local' når den ikke er satt.
+{ `APP_ENV`, lower-cased, or 'local' when it is not set.
 
-  Én nøkkel avgjør hva appen tror den er. Standarden er `local` og ikke
-  `production`, fordi en app som *tror* den er i produksjon uten å være det
-  skrur på ting ingen ba om — mens motsatt vei merkes med en gang. }
+  One key decides what the app thinks it is. The default is `local` rather
+  than `production`, because an app that *thinks* it is in production
+  without being so turns on things nobody asked for — while the other way
+  round is noticed immediately. }
 function AppEnv: string;
 function IsProduction: Boolean;
 function IsLocal: Boolean;
 function IsTesting: Boolean;
 
-{ Sjekker at alle nøklene finnes og ikke er tomme, og kaster én gang med
-  **alle** som mangler.
+{ Checks that every key exists and is non-empty, and raises once with
+  **all** of the missing ones.
 
-  Poenget er tidspunktet: uten den oppdages en manglende DATABASE_URL på
-  første request som treffer databasen, kanskje i produksjon, kanskje som
-  en 500 hos en bruker. With_ den stopper appen ved oppstart og sier hvilke
-  nøkler det gjelder. Aldri hvilke verdier. }
+  The point is the timing: without it a missing DATABASE_URL is discovered
+  on the first request that touches the database, perhaps in production,
+  perhaps as a 500 in front of a user. With this the app stops at startup
+  and says which keys are involved. Never which values. }
 procedure RequireEnv(const Keys: array of string);
 
-{ To_ diagnostikk. EnvKeys gir navnene som ble lest, ikke verdiene. }
+{ For diagnostics. EnvKeys gives the names that were read, not the
+  values. }
 function EnvFile: string;
 function EnvKeys: TStringArray;
 procedure ClearEnv;
@@ -85,12 +90,12 @@ var
   GFile: string = '';
   GLock: TCriticalSection;
 
-{ Verdien etter = i en .env-linje.
+{ The value after = on a .env line.
 
-  Tre former, som i alle andre .env-lesere:
-    KEY=rå verdi          — trimmes, og # etter mellomrom er kommentar
-    KEY="med escapes"     — \n, \t, \" og \\ tolkes
-    KEY='helt bokstavelig' — ingenting tolkes }
+  Three forms, as in every other .env reader:
+  KEY=raw value          — trimmed, and # after a space is a comment
+  KEY="with escapes"     — \n, \t, \" and \\ are interpreted
+  KEY='entirely literal' — nothing is interpreted }
 function ParseValue(const Raw: string): string;
 var
   S: string;
@@ -130,9 +135,9 @@ begin
     Exit;
   end;
 
-  { Ikke sitert: en # med mellomrom foran starter en kommentar. Without
-    mellomrom er den en del av verdien, slik at et passord med # i seg
-    ikke blir kuttet i to. }
+  { Unquoted: a # with a space in front of it starts a comment. Without
+    the space it is part of the value, so a password with a # in it is not
+    cut in two. }
   I := 2;
   while I <= Length(S) do
   begin
@@ -178,11 +183,11 @@ begin
         Key := TrimRight(Copy(L, 1, P - 1));
         if Key = '' then
           Continue;
-        { **Ikke Values[Key] := ...** — den setteren sletter oppføringen når
-          verdien er tom på FPC 3.3.1, mens 3.2.2 beholder den. En linje som
-          «API_KEY=» ville altså forsvunnet på trunk og blitt igjen på 3.2.2.
-          Vi skriver paret selv. Siste forekomst vinner, slik at en fil kan
-          overstyre seg selv. }
+        { **Not Values[Key] := ...** — that setter deletes the entry when the
+          value is empty on FPC 3.3.1, while 3.2.2 keeps it. A line like
+          "API_KEY=" would therefore vanish on trunk and survive on 3.2.2.
+          We write the pair ourselves. The last occurrence wins, so a file
+          can override itself. }
         Value_ := ParseValue(Copy(L, P + 1, MaxInt));
         Idx := GStore.IndexOfName(Key);
         if Idx >= 0 then
@@ -217,8 +222,8 @@ begin
     Forrige := Dir;
     Dir := ExtractFileDir(ExcludeTrailingPathDelimiter(Dir));
   until (Dir = '') or (Dir = Forrige);
-  { Ingen fil funnet er ikke en feil. Lageret opprettes likevel, slik at
-    Env() virker og bare svarer fra miljøet. }
+  { No file found is not an error. The store is created anyway, so Env()
+    works and simply answers from the environment. }
   LoadEnv('');
 end;
 
@@ -226,8 +231,8 @@ function Env(const Key: string): string;
 var
   Idx: Integer;
 begin
-  { Miljøet først. En verdi satt av systemd, docker eller et skall skal
-    aldri kunne overstyres av en fil som ligger igjen i katalogen. }
+  { The environment first. A value set by systemd, docker or a shell must
+    never be overridable by a file left lying in the directory. }
   Result := GetEnvironmentVariable(Key);
   if Result <> '' then
     Exit;
@@ -287,8 +292,8 @@ begin
   Result := Env(Key);
   if Result <> '' then
     Exit;
-  { Meldingen sier hvor det ble lett, slik at den som får den kan gjøre noe.
-    Den sier aldri hva noen annen nøkkel inneholder. }
+  { The message says where it looked, so whoever gets it can do something
+    about it. It never says what any other key holds. }
   if GFile <> '' then
     Where_ := Format(' Checked the environment and %s.', [GFile])
   else
@@ -329,7 +334,7 @@ begin
 end;
 
 
-{ ------------------------------------------------------------- miljø -- }
+{ -------------------------------------------------- the environment -- }
 
 function AppEnv: string;
 begin
@@ -343,8 +348,8 @@ var
   E: string;
 begin
   E := AppEnv;
-  { Begge skrivemåtene, fordi begge brukes i praksis og forskjellen
-    mellom dem aldri er noe noen mener. }
+  { Both spellings, because both are used in practice and the difference
+    between them is never anything anyone means. }
   Result := (E = 'production') or (E = 'prod');
 end;
 
@@ -382,8 +387,8 @@ begin
     end;
   if Count_ = 0 then
     Exit;
-  { All_ på én gang. En feil om gangen betyr like mange omstarter som det
-    er manglende nøkler. }
+  { All at once. One error at a time means as many restarts as there are
+    missing keys. }
   if GFile <> '' then
     raise EEnvError.CreateFmt(
       'Missing required configuration: %s. Looked in the environment and %s.',

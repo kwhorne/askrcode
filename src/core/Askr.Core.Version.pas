@@ -1,14 +1,15 @@
-{ Askr.Core.Version — rammeverkets versjon, ett sted.
+{ Askr.Core.Version — the framework's version, in one place.
 
-  Den lå før bare i cli/askr.lpr. Det holdt så lenge ingenting annet måtte
-  vite hvilken versjon det kjørte, men i det øyeblikket et prosjekt kan
-  pinne en versjon, må både verktøyet, rammeverket og npm-pakka si det
-  samme. De gjorde ikke det: CLI-en sa 0.6.0 mens frontend/lauf/package.json
-  sa 0.1.0, og ingenting sa fra. `askr_version_tests` holder dem i takt nå.
+  It used to live only in cli/askr.lpr. That held as long as nothing else
+  had to know which version it was running, but the moment a project can
+  pin a version, the tool, the framework and the npm package all have to
+  say the same thing. They did not: the CLI said 0.6.0 while
+  frontend/lauf/package.json said 0.1.0, and nothing said so. The version
+  test keeps them in step now.
 
-  Formatet er semver uten byggmetadata: MAJOR.MINOR.PATCH, eventuelt med
-  en forhåndsutgivelse etter bindestrek. Sammenligningen er her fordi
-  `askr outdated` må kunne rangere to versjoner uten å gjette. }
+  The format is semver without build metadata: MAJOR.MINOR.PATCH,
+  optionally with a prerelease after a hyphen. The comparison lives here
+  because `askr outdated` has to rank two versions without guessing. }
 unit Askr.Core.Version;
 
 {$mode Delphi}{$H+}
@@ -19,9 +20,9 @@ uses
   SysUtils;
 
 const
-  { Endres denne, må frontend/lauf/package.json følge etter. Testen feiler
-    ellers, og det er meningen: en utgivelse er ett tall over to
-    økosystemer. }
+  { Change this and frontend/lauf/package.json has to follow. The test
+    fails otherwise, and that is the point: one release is one number
+    across two ecosystems. }
   AskrVersion = '0.8.1';
 
 type
@@ -32,27 +33,28 @@ type
     Valid: Boolean;
   end;
 
-{ Tåler 'v'-prefiks, slik at en git-tag kan sendes rett inn. }
+{ Tolerates a 'v' prefix, so a git tag can be passed straight in. }
 function ParseSemVer(const S: string): TSemVer;
 
-{ -1, 0 eller 1. En forhåndsutgivelse kommer FØR utgivelsen den peker mot:
-  0.7.0-rc.1 < 0.7.0. Det er semver-regelen, og den er lett å bomme på. }
+{ -1, 0 or 1. A prerelease comes BEFORE the release it points at:
+  0.7.0-rc.1 < 0.7.0. That is the semver rule, and it is easy to get
+  wrong. }
 function CompareSemVer(const A, B: TSemVer): Integer; overload;
 function CompareSemVer(const A, B: string): Integer; overload;
 
-{ True når Have tilfredsstiller Want. Want kan være:
-    '0.6.0'    nøyaktig
-    '^0.6.0'   samme venstre-mest ikke-null ledd (npm-regelen)
-    '~0.6.0'   samme major.minor
-    '*'        hva som helst
-  Formene er de samme som package.json bruker, med vilje: en bruker skal
-  ikke måtte lære et nytt versjonsspråk for Pascal-halvdelen. }
+{ True when Have satisfies Want. Want may be:
+  '0.6.0'    exactly
+  '^0.6.0'   same left-most non-zero component (the npm rule)
+  '~0.6.0'   same major.minor
+  '*'        anything
+  The forms are the ones package.json uses, deliberately: nobody should
+  have to learn a second version language for the Pascal half. }
 function SatisfiesRange(const Have, Want: string): Boolean;
 
 implementation
 
-{ Math.CompareValue finnes, men å dra inn Math for tre linjer gir
-  `IfThen`-tvetydigheten som allerede har kostet tid her. }
+{ Math.CompareValue exists, but pulling Math in for three lines brings
+  the `IfThen` ambiguity that has already cost time here. }
 function Cmp(A, B: Integer): Integer;
 begin
   if A < B then Result := -1
@@ -75,8 +77,8 @@ begin
   if T = '' then
     Exit;
 
-  { Forhåndsutgivelsen skilles av først, ellers ville '0-rc' gjort
-    StrToInt til en exception i stedet for en ugyldig versjon. }
+  { The prerelease is split off first, or '0-rc' would turn StrToInt into
+    an exception rather than an invalid version. }
   P := Pos('-', T);
   if P > 0 then
   begin
@@ -124,8 +126,8 @@ begin
   if A.Patch <> B.Patch then
     Exit(Cmp(A.Patch, B.Patch));
 
-  { Like tall. Den med forhåndsutgivelse er den minste — 0.7.0-rc.1
-    kommer før 0.7.0, ikke etter. }
+  { Equal numbers. The one with a prerelease is the smaller — 0.7.0-rc.1
+    comes before 0.7.0, not after. }
   if (A.Pre = '') and (B.Pre = '') then
     Exit(0);
   if A.Pre = '' then
@@ -161,8 +163,9 @@ begin
     W := ParseSemVer(Copy(Spec, 2, Length(Spec)));
     if not W.Valid then Exit;
     if CompareSemVer(H, W) < 0 then Exit;
-    { npm-regelen: ^0.6.0 låser minor så lenge major er 0, fordi et
-      nullmajor-prosjekt bryter ting i minor. ^1.2.0 låser bare major. }
+    { The npm rule: ^0.6.0 locks the minor while the major is 0, because a
+      zero-major project breaks things in a minor. ^1.2.0 locks only the
+      major. }
     if W.Major > 0 then
       Result := H.Major = W.Major
     else if W.Minor > 0 then

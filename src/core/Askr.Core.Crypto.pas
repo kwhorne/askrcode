@@ -1,26 +1,28 @@
-{ Askr.Core.Crypto — grunnmuren under CSRF, sesjoner og innlogging.
+{ Askr.Core.Crypto — the foundation under CSRF, sessions and sign-in.
 
-  Alt her er skrevet i ren Pascal, uten OpenSSL. Det er et bevisst valg, og
-  grunnen er PRD-ens første løfte: binæren skal starte på en maskin uten
-  OpenSSL. Lener passordhashing seg på libcrypto, kan ingen app med
-  innlogging kjøre uten den, og «valgfri avhengighet» blir usant. TLS er noe
-  annet — en app bak en reverse proxy trenger aldri Askr.Tls, mens enhver app
-  med brukere trenger dette.
+  Everything here is written in plain Pascal, without OpenSSL. That is a
+  deliberate choice, and the reason is the PRD's first promise: the binary
+  must start on a machine with no OpenSSL. If password hashing leans on
+  libcrypto, no app with sign-in can run without it, and "optional
+  dependency" becomes untrue. TLS is a different matter — an app behind a
+  reverse proxy never needs Askr.Tls, while every app with users needs
+  this.
 
-  Prisen er at passordhashen er **PBKDF2-HMAC-SHA256**, ikke Argon2id.
-  OWASP regner PBKDF2 med høy iterasjonstelling som forsvarlig, men Argon2id
-  er det anbefalte i 2026 fordi det også koster minne og dermed er dyrere å
-  angripe med spesialisert maskinvare. Det er et kompromiss, ikke gratis, og
-  det står her i stedet for å være gjemt.
+  The price is that the password hash is **PBKDF2-HMAC-SHA256**, not
+  Argon2id. OWASP considers PBKDF2 with a high iteration count defensible,
+  but Argon2id is the recommendation in 2026 because it also costs memory
+  and is therefore more expensive to attack with specialised hardware. It
+  is a compromise, not free, and it is stated here rather than hidden.
 
-  Tilfeldigheten kommer fra kjernen, aldri fra `Random`. FPCs `Random` er en
-  Mersenne Twister sådd med klokka: den er fin til testdata og ubrukelig til
-  en sesjons-id.
+  Randomness comes from the kernel, never from `Random`. FPC's `Random` is
+  a Mersenne Twister seeded from the clock: fine for test data and useless
+  for a session id.
 
-  Vektorene algoritmene er testet mot står i tests/askr_crypto_tests.lpr:
-  NIST-vektorene for SHA-256, RFC 4231 for HMAC-SHA256 og RFC 6070 (med
-  SHA-256-varianten fra RFC 7914) for PBKDF2. En kryptoimplementasjon uten
-  offisielle vektorer er en gjetning. }
+  The vectors the algorithms are tested against are in
+  tests/askr_crypto_tests.lpr: the NIST vectors for SHA-256, RFC 4231 for
+  HMAC-SHA256 and RFC 6070 (with the SHA-256 variant from RFC 7914) for
+  PBKDF2. A crypto implementation without official vectors is a
+  guess. }
 unit Askr.Core.Crypto;
 
 {$mode Delphi}{$H+}
@@ -44,14 +46,15 @@ type
 
 { ------------------------------------------------------------ tilfeldig -- }
 
-{ Bytes fra operativsystemets CSPRNG. Kaster hvis den ikke får dem — en
-  tilfeldighet som stille faller tilbake på noe svakere er verre enn en
-  prosess som ikke starter. }
+{ Bytes from the operating system's CSPRNG. Raises if it cannot get them
+  — randomness that quietly falls back to something weaker is worse than a
+  process that does not start. }
 function RandomBytes(Count: Integer): TBytes;
-{ Samme, hex-kodet. `Count` er antall bytes, så strengen blir dobbelt så lang. }
+{ The same, hex encoded. `Count` is a number of bytes, so the string comes
+  out twice as long. }
 function RandomHex(Count: Integer): string;
-{ Samme, base64url uten utfylling. Formen som hører hjemme i en cookie,
-  en URL eller et skjult skjemafelt. }
+{ The same, base64url without padding. The form that belongs in a cookie,
+  a URL or a hidden form field. }
 function RandomToken(Count: Integer = 32): string;
 
 { --------------------------------------------------------------- SHA-256 -- }
@@ -68,10 +71,10 @@ function HmacSha256Hex(const Key, Msg: string): string;
 
 { ------------------------------------------------------ konstant tid -- }
 
-{ Sammenligner uten å røpe hvor de to er ulike. En vanlig `=` på strenger
-  stopper ved første avvik, og tiden det tar forteller en angriper hvor
-  langt han er kommet. Brukes på hver eneste sammenligning av noe hemmelig:
-  tokens, signaturer, hasher. }
+{ Compares without revealing where the two differ. An ordinary `=` on
+  strings stops at the first difference, and the time it takes tells an
+  attacker how far they have got. Used on every comparison of anything
+  secret: tokens, signatures, hashes. }
 function ConstantTimeEquals(const A, B: TBytes): Boolean; overload;
 function ConstantTimeEquals(const A, B: string): Boolean; overload;
 
@@ -79,8 +82,8 @@ function ConstantTimeEquals(const A, B: string): Boolean; overload;
 
 function Base64Encode(const Data: TBytes): string;
 function Base64Decode(const S: string): TBytes;
-{ base64url: `-` og `_` i stedet for `+` og `/`, og ingen `=` på slutten.
-  Trygg i en URL, i et filnavn og i en cookie-verdi. }
+{ base64url: `-` and `_` instead of `+` and `/`, and no `=` at the end.
+  Safe in a URL, in a filename and in a cookie value. }
 function Base64UrlEncode(const Data: TBytes): string;
 function Base64UrlDecode(const S: string): TBytes;
 
@@ -95,54 +98,59 @@ function Pbkdf2Sha256(const Password: string; const Salt: TBytes;
 { ----------------------------------------------------------- passord -- }
 
 const
-  { OWASPs anbefaling for PBKDF2-HMAC-SHA256 er 600 000 i 2026. Tallet står
-    i hashen, så en verdi hevet senere gjør ikke gamle hasher ugyldige —
-    NeedsRehash sier fra, og neste innlogging oppgraderer dem. }
+  { OWASP's recommendation for PBKDF2-HMAC-SHA256 is 600 000 in 2026. The
+    number is carried in the hash, so raising it later does not invalidate
+    old hashes — NeedsRehash says so, and the next sign-in upgrades
+    them. }
   DefaultPbkdf2Iterations = 600000;
 
-{ Hasher et passord. Resultatet er en PHC-streng som bærer med seg
-  algoritme, iterasjoner og salt:
+{ Hashes a password. The result is a PHC string carrying the algorithm,
+  the iteration count and the salt:
 
-      $pbkdf2-sha256$i=600000$<salt>$<hash>
+  $pbkdf2-sha256$i=600000$<salt>$<hash>
 
-  Hele strengen lagres i databasen. Det er den som gjør at parametrene kan
-  endres uten en migrasjon. }
+  The whole string is stored in the database. That is what lets the
+  parameters change without a migration. }
 function HashPassword(const Password: string;
   Iterations: Integer = DefaultPbkdf2Iterations): string;
-{ Sjekker et passord mot en hash fra HashPassword. Returnerer False på en
-  hash den ikke kjenner igjen — aldri en exception, for da ville et ødelagt
-  felt i databasen blitt en 500 i stedet for en avvist innlogging. }
+{ Checks a password against a hash from HashPassword. Returns False on a
+  hash it does not recognise — never an exception, because then a corrupt
+  field in the database would become a 500 rather than a refused
+  sign-in. }
 function VerifyPassword(const Password, Hash: string): Boolean;
-{ True hvis hashen ble laget med svakere parametre enn dagens. Kalles etter
-  en vellykket VerifyPassword: da har man passordet i klartekst og kan
-  skrive en ny hash uten å spørre brukeren om noe. }
+{ True if the hash was made with weaker parameters than today's. Called
+  after a successful VerifyPassword: the plaintext password is in hand
+  then, and a new hash can be written without asking the user
+  anything. }
 function NeedsRehash(const Hash: string;
   Iterations: Integer = DefaultPbkdf2Iterations): Boolean;
 
-{ ------------------------------------------------------------ appnøkkel -- }
+{ --------------------------------------------------------- the app key -- }
 
-{ Appens signeringsnøkkel. Én nøkkel for hele appen, brukt til alt som må
-  kunne bevises å komme fra oss: «husk meg»-kaka, signerte URL-er, og
-  senere kryptering.
+{ The app's signing key. One key for the whole app, used for everything
+  that has to be provably from us: the "remember me" cookie, signed URLs,
+  and encryption later.
 
-  Nøkkelen kommer fra miljøet, aldri fra kildekoden. Byttes den ut, blir
-  alt som er signert med den forrige ugyldig — det er hele poenget med å
-  kunne bytte den. }
+  The key comes from the environment, never from the source. Replace it
+  and everything signed with the previous one becomes invalid — that is
+  the whole point of being able to replace it. }
 procedure SetAppKey(const Key: string);
-{ Nøkkelen som bytes. Kaster hvis den ikke er satt: en app som signerer med
-  en tom nøkkel signerer ingenting, og det skal ikke være mulig å komme i
-  den tilstanden uten å merke det. }
+{ The key as bytes. Raises if it is not set: an app signing with an empty
+  key signs nothing, and it should not be possible to reach that state
+  without noticing. }
 function AppKey: TBytes;
 function HasAppKey: Boolean;
-{ En ny nøkkel, til `askr key:generate` og til .env.example. }
+{ A new key, for `askr key:generate` and for .env.example. }
 function GenerateAppKey: string;
 
-{ Signerer en tekst med appnøkkelen. Resultatet er `<tekst>.<signatur>`, og
-  teksten er **lesbar** — signaturen beviser at den ikke er endret, den
-  skjuler den ikke. Put aldri noe hemmelig i en signert verdi. }
+{ Signs a piece of text with the app key. The result is
+  `<text>.<signature>`, and the text is **readable** — the signature
+  proves it has not been changed, it does not hide it. Never put anything
+  secret in a signed value. }
 function Sign(const Payload: string): string;
-{ Sjekker signaturen og gir teksten tilbake. False hvis den ikke stemmer,
-  mangler eller er tuklet med. Sammenligningen går i konstant tid. }
+{ Checks the signature and gives the text back. False if it does not
+  match, is missing or has been tampered with. The comparison runs in
+  constant time. }
 function Unsign(const Signed: string; out Payload: string): Boolean;
 
 implementation
@@ -158,10 +166,10 @@ end;
 { ------------------------------------------------------------ tilfeldig -- }
 
 {$IFDEF WINDOWS}
-{ BCryptGenRandom er Windows' CSPRNG. Flagget 2 er
-  BCRYPT_USE_SYSTEM_PREFERRED_RNG, som lar oss slippe å åpne en algoritme-
-  handle først. Denne stien er skrevet, men aldri kjørt — som resten av
-  Windows-støtten i Askr. }
+{ BCryptGenRandom is Windows' CSPRNG. Flag 2 is
+  BCRYPT_USE_SYSTEM_PREFERRED_RNG, which saves us opening an algorithm
+  handle first. This path is written but never run — like the rest of the
+  Windows support in Askr. }
 const
   BCRYPT_USE_SYSTEM_PREFERRED_RNG = 2;
 
@@ -187,8 +195,8 @@ begin
   if F < 0 then
     raise ECryptoError.Create('Could not open /dev/urandom');
   try
-    { En kort lesning er lovlig fra en fil-deskriptor, også fra urandom.
-      Løkka er ikke pedanteri — uten den kunne halve nøkkelen vært nuller. }
+    { A short read is legal from a file descriptor, urandom included. The
+      loop is not pedantry — without it half the key could be zeroes. }
     Want := 0;
     while Want < Count do
     begin
@@ -223,10 +231,10 @@ end;
 
 { --------------------------------------------------------------- SHA-256 -- }
 
-{ SHA-256 regner modulo 2^32, og addisjonene flyter over med vilje. Without
-  denne merkingen krasjer hele uniten med ERangeError i enhver bygging med
-  -Cr eller -Co, som ./askr check gjør. Samme grunn som FNV-hashene i
-  Askr.Cache. }
+{ SHA-256 works modulo 2^32, and the additions overflow on purpose.
+  Without this marking the whole unit crashes with ERangeError in any
+  build with -Cr or -Co, which ./askr check does. The same reason as the
+  FNV hashes in Askr.Cache. }
 {$push}{$R-}{$Q-}
 
 const
@@ -278,8 +286,8 @@ var
   A, B, C, D, E, F, G, H, T1, T2, S0, S1, Ch, Maj: Cardinal;
   I: Integer;
 begin
-  { Big-endian inn. SHA-256 er spesifisert i nettverksrekkefølge, og maskinen
-    under er little-endian; bommer man her stemmer ingen vektor. }
+  { Big-endian in. SHA-256 is specified in network order and the machine
+    underneath is little-endian; get this wrong and no vector matches. }
   for I := 0 to 15 do
     W[I] := (Cardinal(Block[Offset + I * 4]) shl 24) or
             (Cardinal(Block[Offset + I * 4 + 1]) shl 16) or
@@ -342,8 +350,9 @@ var
   I: Integer;
 begin
   Bits := St.Total * 8;
-  { Utfylling: én 1-bit, så nuller, så lengden i bit som 64-bit big-endian.
-    Får ikke lengden plass i denne blokka, går den i en til. }
+  { Padding: one 1 bit, then zeroes, then the length in bits as a 64-bit
+    big-endian value. If the length does not fit in this block, it goes in
+    another one. }
   St.Buf[St.BufLen] := $80;
   Inc(St.BufLen);
   if St.BufLen > 56 then
@@ -415,8 +424,9 @@ var
   St: TSha256State;
   I: Integer;
 begin
-  { En nøkkel lengre enn blokka hashes først. Det er ikke en optimalisering,
-    det står i RFC 2104 — og uten det stemmer ikke RFC 4231-vektor 6. }
+  { A key longer than the block is hashed first. That is not an
+    optimisation, it is in RFC 2104 — and without it RFC 4231 vector 6
+    does not match. }
   if Length(Key) > 64 then
   begin
     D := Sha256(Key);
@@ -495,9 +505,9 @@ begin
 
   for I := 1 to Blocks do
   begin
-    { U1 = HMAC(P, S || INT_BE32(i)). Blokkteller er 1-basert og
-      big-endian — begge deler er lette å bomme på, og begge gir en hash
-      som ser riktig ut og ikke stemmer med noen vektor. }
+    { U1 = HMAC(P, S || INT_BE32(i)). The block counter is 1-based and
+      big-endian — both are easy to get wrong, and both give a hash that
+      looks right and matches no vector. }
     SetLength(Block, Length(Salt) + 4);
     if Length(Salt) > 0 then
       Move(Salt[0], Block[0], Length(Salt));
@@ -533,9 +543,9 @@ function ConstantTimeEquals(const A, B: TBytes): Boolean;
 var
   Diff, I: Integer;
 begin
-  { Ulik lengde er i seg selv en lekkasje, men en uunngåelig en: lengden på
-    en hash er offentlig. Det som ikke skal lekke, er *hvor* de er ulike,
-    og derfor går løkka alltid hele veien. }
+  { Differing lengths are themselves a leak, but an unavoidable one: the
+    length of a hash is public. What must not leak is *where* they differ,
+    which is why the loop always runs all the way. }
   if Length(A) <> Length(B) then
     Exit(False);
   Diff := 0;
@@ -701,18 +711,19 @@ var
 begin
   if Iterations < 1 then
     raise ECryptoError.Create('Password hashing needs at least one iteration');
-  { 16 byte salt er det PHC-formatet og OWASP begge lander på. Saltet er
-    ikke hemmelig — det står i klartekst i hashen — men det må være unikt
-    per passord, og derfor kommer det fra CSPRNG-en og ikke fra brukeren. }
+  { A 16-byte salt is what the PHC format and OWASP both land on. The salt
+    is not secret — it sits in cleartext in the hash — but it has to be
+    unique per password, which is why it comes from the CSPRNG and not
+    from the user. }
   Salt := RandomBytes(16);
   Dk := Pbkdf2Sha256(Password, Salt, Iterations, 32);
   Result := PhcPrefix + IntToStr(Iterations) + '$' + Base64UrlEncode(Salt) +
     '$' + Base64UrlEncode(Dk);
 end;
 
-{ Plukker fra hverandre `$pbkdf2-sha256$i=N$salt$hash`. Returnerer False i
-  stedet for å kaste: et ødelagt felt i databasen skal bli en avvist
-  innlogging, ikke en 500. }
+{ Takes `$pbkdf2-sha256$i=N$salt$hash` apart. Returns False rather than
+  raising: a corrupt field in the database should become a refused
+  sign-in, not a 500. }
 function ParsePhc(const Hash: string; out Iterations: Integer;
   out Salt, Dk: TBytes): Boolean;
 var
@@ -766,9 +777,9 @@ var
 begin
   if not ParsePhc(Hash, Iterations, Salt, Dk) then
     Exit(False);
-  { Lengden tas fra den lagrede hashen, ikke antatt til 32. Da virker en
-    hash laget med andre parametre, og sammenligningen er alltid mot like
-    lange tabeller. }
+  { The length is taken from the stored hash rather than assumed to be 32.
+    That way a hash made with other parameters still works, and the
+    comparison is always between tables of equal length. }
   Mine := Pbkdf2Sha256(Password, Salt, Iterations, Length(Dk));
   Result := ConstantTimeEquals(Mine, Dk);
 end;
@@ -784,7 +795,7 @@ begin
 end;
 
 
-{ ------------------------------------------------------------ appnøkkel -- }
+{ --------------------------------------------------------- the app key -- }
 
 var
   GAppKey: TBytes;
@@ -796,10 +807,10 @@ begin
     GAppKey := nil;
     Exit;
   end;
-  { Nøkkelen skrives som base64 i .env. Er den ikke det, brukes tegnene
-    som de står — en passfrase er svakere enn 32 tilfeldige byte, men å
-    avvise den ville gjort at en app ikke starter av en grunn som ikke er
-    sikkerhet. }
+  { The key is written as base64 in .env. If it is not, the characters are
+    used as they stand — a passphrase is weaker than 32 random bytes, but
+    refusing it would stop an app from starting for a reason that is not
+    security. }
   try
     GAppKey := Base64Decode(Key);
   except
@@ -851,8 +862,8 @@ var
   B: TBytes;
 begin
   Payload := '';
-  { Siste punktum skiller, ikke det første: teksten kan selv inneholde
-    punktum, signaturen kan ikke. }
+  { The last dot separates, not the first: the text may itself contain
+    dots, the signature cannot. }
   P := 0;
   for I := Length(Signed) downto 1 do
     if Signed[I] = '.' then

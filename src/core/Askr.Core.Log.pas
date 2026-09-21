@@ -1,32 +1,35 @@
-{ Askr.Core.Log — én logg for hele rammeverket.
+{ Askr.Core.Log — one log for the whole framework.
 
-  Før dette skrev serveren `WriteLn(StdErr, ...)` tre steder, og en app som
-  ville logge noe hadde ingenting å bruke. Det holder helt til noe går galt i
-  produksjon: da er en logg som ikke kan filtreres, ikke har nivåer og ikke
-  lar seg sende noe sted det samme som ingen logg.
+  Before this the server wrote `WriteLn(StdErr, ...)` in three places, and
+  an app that wanted to log something had nothing to use. That holds right
+  up until something goes wrong in production: then a log that cannot be
+  filtered, has no levels and cannot be sent anywhere is the same as no
+  log at all.
 
-  To formater:
+  Two formats:
 
-    * **text** — til et terminalvindu under utvikling:
-      `2026-09-20T08:11:12.345Z INFO  request  method=GET path=/ status=200`
-    * **json** — én linje per hendelse, til produksjon, der noe annet skal
-      lese dem. Hver linje er et JSON-objekt med ts, level, msg og feltene.
+  * **text** — for a terminal window during development:
+  `2026-09-20T08:11:12.345Z INFO  request  method=GET path=/ status=200`
+  * **json** — one line per event, for production, where something else
+  is going to read them. Each line is a JSON object with ts, level,
+  msg and the fields.
 
-  (Et eksempel på JSON-linja kan ikke stå her: klammeparenteser inne i en
-  Pascal-kommentar åpner en nøstet kommentar.)
+  (An example of the JSON line cannot go here: braces inside a Pascal
+  comment open a nested comment.)
 
-  Standardvalget følger `APP_ENV`: tekst lokalt, JSON i produksjon. Det er
-  det eneste stedet i Askr der miljøet endrer oppførsel av seg selv, og
-  grunnen er at feil standard her merkes med en gang — enten er terminalen
-  full av JSON, eller så er logginnsamleren full av tekst den ikke forstår.
+  The default follows `APP_ENV`: text locally, JSON in production. That is
+  the only place in Askr where the environment changes behaviour by
+  itself, and the reason is that a wrong default here is noticed
+  immediately — either the terminal is full of JSON, or the log collector
+  is full of text it does not understand.
 
-  **Verdier fra `.env` logges aldri av rammeverket.** Samme regel som i
-  `Askr.Core.Env`: en logglinje havner i et system flere har tilgang til enn
-  databasen. Logger appen selv en hemmelighet, er det appens valg — men
-  ingenting her gjør det for den.
+  **Values from `.env` are never logged by the framework.** The same rule
+  as in `Askr.Core.Env`: a log line ends up in a system more people can
+  read than the database. If the app logs a secret that is the app's
+  choice — but nothing here does it for it.
 
-  Loggen er trådsikker. All_ workerne skriver til den samme, og en linje
-  skal ikke kunne bli klippet i to av en annen tråd. }
+  The log is thread-safe. Every worker writes to the same one, and a line
+  must not be cut in two by another thread. }
 unit Askr.Core.Log;
 
 {$mode Delphi}{$H+}
@@ -38,43 +41,45 @@ uses
   Askr.Core.Clock;
 
 type
-  { llNone slår loggen helt av. Den er ikke et nivå man logger på, bare et
-    tak ingenting kommer over. }
+  { llNone turns the log off entirely. It is not a level you log at, only
+    a ceiling nothing gets over. }
   TLogLevel = (llDebug, llInfo, llWarn, llError, llNone);
   TLogFormat = (lfText, lfJson);
 
-  { Egen destinasjon: en linje om gangen, ferdig formatert, uten linjeskift.
-    Kalles med loggens lås holdt, så den skal ikke logge selv. }
+  { A destination of your own: one line at a time, already formatted,
+    without a line break. Called with the log's lock held, so it must not
+    log itself. }
   TLogSink = procedure(const Line: string);
 
 { ------------------------------------------------------------ oppsett -- }
 
 procedure SetLogLevel(L: TLogLevel);
 function LogLevel: TLogLevel;
-{ Sant når noe på dette nivået faktisk ville blitt skrevet. Bruk den til å
-  hoppe over dyr formatering:
+{ True when something at this level would actually be written. Use it to
+  skip expensive formatting:
 
-      if LogEnabled(llDebug) then
-        LogDebug(BygDyrMelding);
+  if LogEnabled(llDebug) then
+  LogDebug(BuildExpensiveMessage);
 
-  Selve LogDebug sjekker nivået selv, men argumentene er allerede regnet ut
-  når den kalles. }
+  LogDebug checks the level itself, but its arguments have already been
+  worked out by the time it is called. }
 function LogEnabled(L: TLogLevel): Boolean;
 
 procedure SetLogFormat(F: TLogFormat);
 function LogFormat: TLogFormat;
 
-{ Skriver til fil i stedet for stderr. Tom sti gir stderr tilbake. Fila
-  åpnes for tillegg og holdes åpen; en logg som åpner og lukker per linje
-  koster et systemkall for mye per request. }
+{ Writes to a file instead of stderr. An empty path gives stderr back.
+  The file is opened for append and held open; a log that opens and closes
+  per line costs one system call too many per request. }
 procedure SetLogFile(const Path: string);
 function LogFile: string;
 
 { Egen destinasjon. nil gir stderr eller fila tilbake. }
 procedure SetLogSink(S: TLogSink);
 
-{ Leser LOG_LEVEL, LOG_FORMAT og LOG_FILE fra miljøet, med APP_ENV som
-  standard for formatet. Kalles én gang ved oppstart, etter LoadEnv. }
+{ Reads LOG_LEVEL, LOG_FORMAT and LOG_FILE from the environment, with
+  APP_ENV as the default for the format. Called once at startup, after
+  LoadEnv. }
 procedure ConfigureLogFromEnv;
 
 function ParseLogLevel(const S: string; out L: TLogLevel): Boolean;
@@ -82,14 +87,14 @@ function LogLevelName(L: TLogLevel): string;
 
 { ------------------------------------------------------------ logging -- }
 
-{ Feltene er par: nøkkel, verdi, nøkkel, verdi. Nøklene er strenger,
-  verdiene hva som helst `array of const` tar imot — heltall, strenger,
-  boolske, flyttall.
+{ The fields are pairs: key, value, key, value. The keys are strings, the
+  values whatever `array of const` accepts — integers, strings, booleans,
+  floats.
 
-      LogInfo('order placed', ['id', Ordre.Id, 'total', Ordre.Total]);
+  LogInfo('order placed', ['id', Order.Id, 'total', Order.Total]);
 
-  En nøkkel uten verdi til slutt får tom verdi. En logglinje skal aldri
-  kunne velte det som logget den. }
+  A key with no value at the end gets an empty value. A log line must
+  never be able to bring down what logged it. }
 procedure LogWrite(L: TLogLevel; const Msg: string); overload;
 procedure LogWrite(L: TLogLevel; const Msg: string;
   const Fields: array of const); overload;
@@ -103,9 +108,9 @@ procedure LogWarn(const Msg: string; const Fields: array of const); overload;
 procedure LogError(const Msg: string); overload;
 procedure LogError(const Msg: string; const Fields: array of const); overload;
 
-{ En upåaktet exception. Klassenavn og melding, pluss feltene du gir den.
-  Stakksporet tas ikke med: det finnes bare med -gl, og halve spor i en
-  logg er verre enn ingen. }
+{ An unhandled exception. The class name and message, plus whatever
+  fields you give it. The stack trace is left out: it only exists with
+  -gl, and half a trace in a log is worse than none. }
 procedure LogException(E: Exception; const Context: string); overload;
 procedure LogException(E: Exception; const Context: string;
   const Fields: array of const); overload;
@@ -209,8 +214,8 @@ begin
       Exit;
     try
       AssignFile(GFile, Path);
-      { Tillegg, ikke overskriving: en omstart skal ikke slette forrige
-        kjørings logg. }
+      { Append, not overwrite: a restart must not delete the previous run's
+        log. }
       if FileExists(Path) then
         Append(GFile)
       else
@@ -219,8 +224,9 @@ begin
     except
       on E: EInOutError do
       begin
-        { En logg som ikke lar seg åpne skal si fra på stderr og fortsette
-          der. Å kaste her ville tatt ned appen fordi den ikke fikk logge. }
+        { A log that cannot be opened should say so on stderr and carry on
+          there. Raising here would take the app down because it could not
+          log. }
         GPath := '';
         GFileOpen := False;
         WriteLn(StdErr, '[askr] could not open log file ', Path, ': ',
@@ -252,8 +258,8 @@ begin
     if ParseLogLevel(Env('LOG_LEVEL'), L) then
       SetLogLevel(L)
     else
-      { Nøkkelen nevnes, verdien ikke — samme regel som EnvOrFail. En
-        LOG_LEVEL som er feilstavet skal si fra, ikke bli til stillhet. }
+      { The key is named, the value is not — the same rule as EnvOrFail. A
+        misspelled LOG_LEVEL should say so rather than become silence. }
       WriteLn(StdErr, '[askr] LOG_LEVEL is not a known level; using info');
   end;
 
@@ -263,8 +269,8 @@ begin
   else if F = 'text' then
     SetLogFormat(lfText)
   else if IsProduction then
-    { I produksjon leses loggen av en maskin, ikke av et menneske i et
-      terminalvindu. }
+    { In production the log is read by a machine, not by a person in a
+      terminal window. }
     SetLogFormat(lfJson)
   else
     SetLogFormat(lfText);
@@ -312,8 +318,8 @@ begin
   Result := FloatToStr(V, Fs);
 end;
 
-{ Sant for verdier som skal stå usitert i JSON. En logginnsamler som får
-  «"ms":"12"» kan ikke regne på den; «"ms":12» kan den. }
+{ True for values that belong unquoted in JSON. A log collector handed
+  "ms":"12" cannot do arithmetic on it; "ms":12 it can. }
 function IsNumber(const V: TVarRec): Boolean;
 begin
   Result := V.VType in [vtInteger, vtInt64, vtQWord, vtExtended, vtCurrency];
@@ -324,9 +330,9 @@ begin
   Result := V.VType = vtBoolean;
 end;
 
-{ Én verdi fra `array of const` til tekst. Alt som kan komme inn må ha en
-  gren: en logglinje som kaster fordi noen sendte en peker er verre enn
-  linja den erstattet. }
+{ One value from `array of const` to text. Everything that can come in
+  needs a branch: a log line that raises because somebody passed a pointer
+  is worse than the line it replaced. }
 function ValueText(const V: TVarRec): string;
 begin
   case V.VType of
@@ -345,9 +351,10 @@ begin
     vtWideChar: Result := string(V.VWideChar);
     vtWideString: Result := string(WideString(V.VWideString));
     vtUnicodeString: Result := string(UnicodeString(V.VUnicodeString));
-    { FloatToStr og CurrToStr følger locale, og på en norsk maskin blir
-      desimalskilletegnet komma. I en JSON-logg er «1,5» ikke et tall, det
-      er en syntaksfeil. Punktum settes derfor eksplisitt. }
+    { FloatToStr and CurrToStr follow the locale, and on a Norwegian machine
+      the decimal separator becomes a comma. In a JSON log "1,5" is not a
+      number, it is a syntax error. The dot is therefore set
+      explicitly. }
     vtExtended: Result := FloatWithDot(V.VExtended^);
     vtCurrency: Result := FloatWithDot(V.VCurrency^);
     vtPointer:
@@ -370,9 +377,9 @@ begin
   end;
 end;
 
-{ Tekstformatet siterer bare når det trengs. En verdi uten mellomrom eller
-  anførselstegn leses lettere uten dem, og det er et menneske som leser
-  dette formatet. }
+{ The text format quotes only when it has to. A value with no spaces or
+  quotes reads more easily without them, and it is a person reading this
+  format. }
 function TextValue(const S: string): string;
 var
   I: Integer;
@@ -403,15 +410,15 @@ begin
     begin
       try
         WriteLn(GFile, Line);
-        { Without Flush ligger de siste linjene i bufferet når prosessen dør,
-          og det er nettopp de linjene noen leter etter. }
+        { Without Flush the last lines sit in the buffer when the process
+          dies, and those are exactly the lines somebody is looking for. }
         Flush(GFile);
         Exit;
       except
         on EInOutError do
         begin
-          { Disken er full eller fila er borte. Fall tilbake til stderr i
-            stedet for å miste loggen helt. }
+          { The disk is full or the file is gone. Fall back to stderr rather
+            than losing the log entirely. }
           LukkFil;
           GPath := '';
         end;
@@ -455,7 +462,7 @@ begin
   end
   else
   begin
-    { Nivået fylles ut til fem tegn slik at meldingene står i kolonne. }
+    { The level is padded to five characters so the messages line up. }
     B := IsoTimestampNow + ' ' +
       Format('%-5s', [UpperCase(LogLevelName(L))]) + ' ' + Msg;
     I := 0;
@@ -539,13 +546,13 @@ begin
     Exit;
   end;
 
-  { Klassen og meldingen blir egne felter, ikke en del av meldingsteksten.
-    I JSON-formatet er det forskjellen på å kunne gruppere på feiltype og
-    å måtte lete i fritekst.
+  { The class and the message become their own fields rather than part of
+    the message text. In the JSON format that is the difference between
+    being able to group by error type and having to search free text.
 
-    En TVarRec holder bare en peker til strengen. De fire lokale variablene
-    står her nettopp for å holde dem i live til LogWrite har lest dem —
-    uttrykk på stedet ville vært frigjort for tidlig. }
+    A TVarRec only holds a pointer to the string. The four local variables
+    are here precisely to keep them alive until LogWrite has read them —
+    expressions in place would have been freed too early. }
   NKlasse := 'class';
   VKlasse := E.ClassName;
   NErr := 'error';
