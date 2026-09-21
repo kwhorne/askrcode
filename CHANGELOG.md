@@ -12,9 +12,20 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.10.1 — 2026-09-21
 
 ### Fixed
+
+- **Lauf's icon generator failed in Norwegian, and said only what broke.**
+  `lauf: ikongenereringen feilet` is a message a user of the framework sees
+  during `npm install`, and everything a user sees is English. The failure
+  it passes on is `Cannot find module 'heroicons/package.json'`, pointing at
+  a path inside the package cache, which explains nothing on its own.
+
+  It now names the directory to run `npm install` in. This is the error
+  anyone hits on the first build after moving the framework pin: the icons
+  are generated from heroicons and are not in git, so a freshly fetched
+  release has neither the icons nor the package to make them from.
 
 - **`TQuery.WhereAnyLike` was not in the documentation at all**, and
   `docs/queries.md` said the opposite of the truth: "`OR` groups are not in

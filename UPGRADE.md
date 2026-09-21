@@ -8,6 +8,17 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.10.1
+
+Nothing can break. Documentation, and one error message.
+
+**Worth reading if you use `WhereAnyLike`, or thought you could not.**
+`docs/queries.md` said "`OR` groups are not in the builder". That was
+wrong: `TQuery.WhereAnyLike` is one, it is the only one, and the data grid
+uses it for every search box. It is documented now — signature, the
+parenthesis around the group, and what `CaseSensitive` does on each
+dialect. No code changed.
+
 ## 0.10.0
 
 Nothing can break. Everything in this release is additive: an MCP server
