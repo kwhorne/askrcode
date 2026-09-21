@@ -4,6 +4,11 @@ A full-stack application framework in Pascal. Rails and Laravel ergonomics on
 a compiled stack: **one binary, no sidecars**, and low resource use as
 something you get for free while working as fast as you would in PHP or Ruby.
 
+**Documentation: [askrcode.com](https://askrcode.com)** — which is itself an
+Askr app, so the docs and the framework are never out of step.
+
+[![askrcode.com](docs/images/askrcode-com.png)](https://askrcode.com)
+
 ```sh
 askr new shop
 cd shop
