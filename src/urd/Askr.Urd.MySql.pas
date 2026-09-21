@@ -442,7 +442,11 @@ begin
 
   P := Pos(':', Dsn);
   if P <= 0 then
-    raise EDbError.CreateFmt('Invalid MySQL DSN: %s', [Dsn]);
+    { Never the DSN. A DSN that is wrong in some other way still carries a
+      password that is right, and this message is exactly the one that ends
+      up pasted into an issue. }
+    raise EDbError.Create('Invalid MySQL DSN: no scheme. Expected ' +
+      'mysql://user:password@host:port/database');
   Rest := Copy(Dsn, P + 1, MaxInt);
 
   if Copy(Rest, 1, 2) = '//' then

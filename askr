@@ -575,6 +575,20 @@ LPR
     fi
   }
 
+  # One reply, by its id. Grepping the whole stream is right for the
+  # properties that are about the stream -- that every line is JSON, that a
+  # password is nowhere in it -- and wrong for everything else: "the tables
+  # are listed" passed against an error message that happened to contain
+  # the table name, and "with no error" matched a different reply entirely.
+  # Both were green and both were meaningless.
+  reply_of() {  # $1 = id, $2 = output
+    printf '%s\n' "$2" | grep "\"id\":$1," || true
+  }
+
+  check_id() {  # $1 = id, $2 = description, $3 = output, $4 = pattern
+    check "$2" "$(reply_of "$1" "$3")" "$4"
+  }
+
   pure_json() {  # $1 = output
     if printf '%s\n' "$1" | grep -vq '^{.*}$'; then
       echo "  FAIL  stdout is nothing but JSON"
@@ -612,6 +626,18 @@ LPR
   # Every line on stdout is one JSON object. A single human line here makes
   # the whole stream invalid for the client.
   pure_json "$out"
+
+  # The build just failed, so there is no binary. routes and schema read
+  # the compiled binary, and an agent will ask for them in exactly this
+  # state -- they have to say so rather than answer emptily.
+  out2=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"routes","arguments":{}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"schema","arguments":{}}}' \
+    2>/dev/null || true)
+  check_id 1 "routes says the app is not built"  "$out2" 'not built'
+  check_id 1 "and that is a real tool error"     "$out2" '"isError":true'
+  check_id 2 "schema says the same"              "$out2" 'not built'
+  pure_json "$out2"
 
   echo
   echo "- in a project that compiles"
@@ -705,6 +731,111 @@ TOML
   check "and its version is reported"      "$out" 'for Askr 0.0.1-fake'
   # The decisive one: this repositorys docs are NOT what answered.
   check "the tools own docs are not read" "$out" 'No match for .*BackWithErrors'
+  pure_json "$out"
+
+  echo
+  echo "- a real app, with a secret in .env"
+  # The gate this scenario exists for: no tool output ever contains a
+  # password. Every tool is driven, so a tool added later that leaks is
+  # caught by an assertion nobody had to remember to write.
+  #
+  # The three keys are not interchangeable. DATABASE_URL and MAIL_PASSWORD
+  # are on LooksSecret's list; STRIPE_LIVE_ACCOUNT is not, and `askr config
+  # --values` prints it in full. That is measured, not assumed, and it is
+  # the whole reason the config tool shows no values at all rather than
+  # redacting: a redactor is a list of words, and the word that matters is
+  # the one not on it yet.
+  SENTINEL=hunter2-SECRET-PW
+  app="$BUILD/mcpapp"
+  rm -rf "$app"
+  mkdir -p "$app"
+  if have_local_fpc; then
+    ( cd "$app" && "$BIN/askr" new shop --no-auth >/dev/null 2>&1 )
+    sed -i.bak "s|^path = .*|path = \"$ROOT\"|" "$app/shop/askr.toml"
+  else
+    ensure_image
+    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work \
+      -w "/work/${app#$ROOT/}" "$IMAGE" \
+      "/work/${BIN#$ROOT/}/askr" new shop --no-auth >/dev/null 2>&1
+    sed -i.bak "s|^path = .*|path = \"/work\"|" "$app/shop/askr.toml"
+  fi
+  rm -f "$app/shop/askr.toml.bak"
+  cat > "$app/shop/.env" <<ENV
+APP_ENV=local
+DATABASE_URL=postgres://shopuser:$SENTINEL@db.invalid:5432/shop
+MAIL_PASSWORD=$SENTINEL
+STRIPE_LIVE_ACCOUNT=acct_$SENTINEL
+ENV
+
+  appframes='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"build","arguments":{}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"routes","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"config","arguments":{}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"schema","arguments":{}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"schema","arguments":{"table":"askr_migrations"}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"DATABASE_URL"}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"docs_read","arguments":{"page":"configuration"}}}
+{"jsonrpc":"2.0","id":8,"method":"ping"}'
+  out=$(run_mcp_in "${app#$ROOT/}/shop" "$appframes" 2>/dev/null || true)
+
+  check_id 1 "the app builds"                 "$out" 'OK  built'
+  check_id 2 "routes answers from the binary" "$out" 'GET'
+  check_id 3 "config names a key"             "$out" 'STRIPE_LIVE_ACCOUNT'
+  check_id 3 "and the layer it came from"     "$out" '[.]env'
+  check_id 3 "but never a value"              "$out" 'Values are not shown'
+  # The database is not reachable, which is the interesting half: a
+  # connection error is where a DSN leaks if it is going to.
+  check_id 4 "schema says it could not connect" "$out" 'Could not connect'
+  check_id 4 "naming the driver, not the DSN" "$out" 'postgres database'
+  check_id 4 "and that is a real tool error"  "$out" '"isError":true'
+  check "the server is still standing"        "$out" '"id":8'
+  pure_json "$out"
+
+  # A DSN with no scheme at all reaches a different raise -- one that used
+  # to print the whole DSN back. It happens: the password pasted into
+  # DATABASE_URL on its own is exactly this shape, and a DSN that is wrong
+  # in some other way still carries a password that is right.
+  printf 'APP_ENV=local\nDATABASE_URL=%s\n' \
+    "$SENTINEL" > "$app/shop/.env"
+  out2=$(run_mcp_in "${app#$ROOT/}/shop" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schema","arguments":{}}}' \
+    2>/dev/null || true)
+  check_id 1 "a DSN with no scheme says what was expected" "$out2" \
+    'must start with one of'
+  out="$out
+$out2"
+
+  # THE gate. Inverted: finding it is the failure.
+  if printf '%s\n' "$out" | grep -q "$SENTINEL"; then
+    echo "  FAIL  no tool output contains the password"
+    printf '%s\n' "$out" | grep -n "$SENTINEL" | cut -c1-160 | sed 's/^/        /'
+    fail=1
+  else
+    echo "  ok    no tool output contains the password"
+  fi
+
+  echo
+  echo "- and the schema tool reports a database it can reach"
+  # Both directions, as for build: a tool that always errors is as useless
+  # as one that always says OK.
+  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/app.db\n' > "$app/shop/.env"
+  # Migrated first, so there is a real table to report. Without this the
+  # tool answers `No table named "askr_migrations"` -- which contains the
+  # table name, and is what the first version of this check passed on.
+  if have_local_fpc; then
+    ( cd "$app/shop" && "$BIN/askr" migrate >/dev/null 2>&1 )
+  else
+    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work \
+      -w "/work/${app#$ROOT/}/shop" "$IMAGE" \
+      "/work/${BIN#$ROOT/}/askr" migrate >/dev/null 2>&1
+  fi
+  out=$(run_mcp_in "${app#$ROOT/}/shop" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"schema","arguments":{}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"schema","arguments":{"table":"askr_migrations"}}}' \
+    2>/dev/null || true)
+  check_id 1 "the driver is reported"          "$out" 'Driver     sqlite'
+  check_id 1 "the tables are listed"           "$out" '1 table(s)'
+  check_id 2 "and one table gives its columns" "$out" 'version'
+  check_id 2 "with no error"                   "$out" '"isError":false'
   pure_json "$out"
 
   echo

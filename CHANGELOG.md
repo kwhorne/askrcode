@@ -31,6 +31,31 @@ with the zero-major caveat that minor releases may break things until
   framework path that is not a checkout, and with no project at all. It runs
   as part of `./askr test`.
 
+- **The `routes`, `schema` and `config` tools.** What an agent cannot get
+  by reading files: the routing table in the order requests actually match,
+  what the database actually contains, and which layer each configuration
+  key resolved from.
+
+  **`config` never shows a value, and there is no flag that does.** `askr
+  config --values` is for a person at their own terminal; this output goes
+  into an agent's context and on to whatever model is behind it. Nothing is
+  redacted either, because nothing is read: a redactor is a list of words,
+  and `LooksSecret` says in its own comment that it cannot be definitive.
+  Measured against three secrets in `.env` — `--values` hides
+  `DATABASE_URL` and `MAIL_PASSWORD`, and prints `STRIPE_LIVE_ACCOUNT` in
+  full.
+
+  **`routes` and `schema` capture the app's output rather than inheriting
+  it.** They are the first tools that start a child process, which is the
+  hazard the MCP unit header names: an inherited stdout writes the app's
+  text straight onto the protocol channel. Mutation-checked by making the
+  capture an inherit, which fails four assertions.
+
+  No `--json` was added to the console commands, and the tools do not need
+  one: the app's own output is passed through unchanged, so an agent reads
+  exactly what a developer reads and there is no second format to keep in
+  step. A tool that had to parse it would need one; none of these do.
+
 - **The `docs_search` and `docs_read` tools.** The documentation an agent
   reads, over the same protocol as the build tool.
 
@@ -95,6 +120,18 @@ with the zero-major caveat that minor releases may break things until
   distinction an exit code cannot make.
 
 ### Fixed
+
+- **Two error paths printed the whole DSN, password included.**
+  `OpenDbConnection` raised `DSN has no scheme: <dsn>`, and the MySQL
+  driver raised `Invalid MySQL DSN: <dsn>`. A DSN that is wrong in some
+  other way still carries a password that is right, and these are exactly
+  the messages that end up in a log, a terminal or an issue. Both now say
+  what was expected instead — the registered schemes, and the URI shape.
+
+  Found by building a gate that drives every MCP tool against a project
+  whose `.env` carries a sentinel password, and requires it to appear
+  nowhere in the output. `askr config --values` and `askr db:show` were
+  already careful; these two were not, and nothing had ever looked.
 
 - **A build failure in the tool no longer kills the MCP server.** A missing
   compiler, an `ASKR_FPC` that points at nothing, or an `[askr] path` that

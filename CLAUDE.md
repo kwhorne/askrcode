@@ -79,6 +79,49 @@ ingen. Trengs den, er det `dup2` på deskriptoren — og et scenario som viser
 at den virker. Et verktøy som kjører noe ut, skal fange barnets utdata: det
 trenger teksten til svaret uansett.
 
+**Ingen verktøyutskrift inneholder et passord, og porten er en sveip over
+hele strømmen.** Et prosjekt med et sentinel-passord i `.env` drives gjennom
+hvert eneste verktøy, og det å finne strengen er feilen. Et verktøy som
+legges til senere og lekker, fanges av en assert ingen måtte huske å skrive.
+
+Den fant to ekte lekkasjer i driverlaget, begge eldre enn MCP:
+`OpenDbConnection` kastet `DSN has no scheme: <dsn>` og MySQL-driveren
+`Invalid MySQL DSN: <dsn>`. En DSN som er gal på én måte har fortsatt et
+riktig passord i seg.
+
+**`config`-verktøyet viser aldri en verdi, og har ikke noe flagg som gjør
+det.** `askr config --values` er for et menneske foran sin egen skjerm.
+Ingenting redigeres bort heller, for ingenting leses: en redaktør er en
+ordliste, og `LooksSecret` sier selv i kommentaren sin at den ikke kan være
+uttømmende. **Målt:** med `DATABASE_URL`, `MAIL_PASSWORD` og
+`STRIPE_LIVE_ACCOUNT` i `.env` skjuler `--values` de to første og skriver
+den tredje i klartekst.
+
+**`routes` og `schema` fanger barnets utdata, de arver den ikke.** Det er de
+første verktøyene som starter en prosess, altså akkurat det Mcp-overskriften
+sa at et verktøy må gjøre. Mutasjonssjekket: bytter man fangsten mot arv,
+feiler fire asserter — inkludert at stdout er ren JSON.
+
+**Det ble ikke lagt til `--json` i `Askr.Console`, og planen tok feil om at
+det trengtes.** Verktøyene sender appens egen utskrift gjennom uendret, så
+en agent leser nøyaktig det en utvikler leser, og det finnes ikke et annet
+format å holde i takt. Et verktøy som måtte *parse* utskriften ville trengt
+det; ingen av disse gjør det. `schema` er derfor `db:show` uten argument og
+`db:table` med — to kall i stedet for ett, og det er dessuten
+rekkefølgen man leser et skjema i.
+
+**`check_id` i porten sjekker ett svar, ikke strømmen.** To asserter var
+grønne av feil grunn før den kom: «the tables are listed» traff en
+feilmelding som inneholdt tabellnavnet, og «with no error» traff et helt
+annet svar. Sveip over strømmen er riktig for det som *er* en egenskap ved
+strømmen — at hver linje er JSON, at passordet ikke er noe sted — og galt
+for alt annet.
+
+**Mutasjonssjekk: bekreft at lappen traff før du tror på resultatet.** En
+`str.replace` som ikke finner ankeret skriver fila uendret, porten blir
+grønn, og mutasjonen ser ut til å være fanget av ingenting. Det skjedde her
+med `schema`-verktøyets table-argument. `assert old in s` først.
+
 **Docs-verktøyene leser prosjektets pin, ikke verktøyets eget tre.**
 `DocsDirFor` går gjennom `ResolveFramework` — samme kall som byggstien — så
 docs og kompilatoren kommer alltid fra ett tre. `askr mcp` kjøres før

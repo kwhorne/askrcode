@@ -369,7 +369,7 @@ begin
     Result := Result + GDrivers[I].Scheme;
   end;
   if Result = '' then
-    Result := '(ingen)';
+    Result := '(none)';
 end;
 
 function OpenDbConnection(const Dsn: string): TDbConnection;
@@ -380,7 +380,12 @@ var
 begin
   Scheme := DsnScheme(Dsn);
   if Scheme = '' then
-    raise EDbError.Create('DSN has no scheme: ' + Dsn);
+    { The DSN itself is never in the message. A DSN with no scheme is still
+      a DSN with a password in it, and this text goes to a log, a terminal
+      or an agent. Saying what was expected is as useful and costs nothing:
+      the one thing missing is the part before the colon. }
+    raise EDbError.Create('DSN has no scheme. It must start with one of: ' +
+      RegisteredDrivers);
 
   F := nil;
   GDriverLock.Acquire;

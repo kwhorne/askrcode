@@ -228,14 +228,19 @@ end;
 
 { Kjører appbinæren med et flagg, og lar den svare selv. Ruter og migrasjoner
   er appens kunnskap, ikke verktøyets. }
+function AppBinaryOf(P: TProject): string;
+begin
+  Result := IncludeTrailingPathDelimiter(P.Root) + '.build' + PathDelim +
+    'bin' + PathDelim + ChangeFileExt(ExtractFileName(P.MainFile), '');
+end;
+
 function RunApp(P: TProject; const Flagg: string): Integer;
 var
   Proc: TProcess;
   Bin: string;
   I: Integer;
 begin
-  Bin := IncludeTrailingPathDelimiter(P.Root) + '.build' + PathDelim +
-    'bin' + PathDelim + ChangeFileExt(ExtractFileName(P.MainFile), '');
+  Bin := AppBinaryOf(P);
   if not FileExists(Bin) then
   begin
     Si('The app is not built. Run: askr build');
@@ -795,6 +800,153 @@ begin
   end;
 end;
 
+{ Runs the app binary and hands back everything it said.
+
+  RunApp above deliberately does not do this: from a terminal the app owns
+  the terminal, and piping its output through the tool would only add a
+  buffer. Under MCP that same inheritance writes the app's output straight
+  onto the protocol channel — the first tool here that starts a child, and
+  the reason the Askr.Cli.Mcp header says a tool must capture rather than
+  inherit. It needs the text for the reply anyway, so the two point the
+  same way. }
+function RunAppCapturing(P: TProject; const Flag_, Arg_: string;
+  out Output_: string): Integer;
+var
+  Proc: TProcess;
+  Lines: TStringList;
+  Bin: string;
+begin
+  Output_ := '';
+  Bin := AppBinaryOf(P);
+  if not FileExists(Bin) then
+  begin
+    Output_ := 'The app is not built, so it cannot answer. Run the build ' +
+               'tool first; this reads the compiled binary, because the ' +
+               'routes, the schedule and the database connection are ' +
+               'compiled into it and are not in any file to read.';
+    Exit(-1);
+  end;
+
+  Proc := TProcess.Create(nil);
+  Lines := TStringList.Create;
+  try
+    Proc.Executable := Bin;
+    Proc.Parameters.Add(Flag_);
+    if Arg_ <> '' then
+      Proc.Parameters.Add(Arg_);
+    Proc.CurrentDirectory := P.Root;
+    Proc.Options := [poWaitOnExit, poUsePipes, poStderrToOutPut];
+    Proc.Execute;
+    Lines.LoadFromStream(Proc.Output);
+    Output_ := Lines.Text;
+    Result := Proc.ExitStatus;
+  finally
+    Lines.Free;
+    Proc.Free;
+  end;
+end;
+
+{ The project, or nil with a tool error already written. Shared by every
+  tool that needs one, so they say the same thing. }
+function McpProject(out IsError: Boolean; out Msg: string): TProject;
+begin
+  IsError := False;
+  Msg := '';
+  Result := TProject.Find(GetCurrentDir);
+  if Result = nil then
+  begin
+    IsError := True;
+    Msg := 'No askr.toml in the working directory or above it. ' +
+           'Create a project with: askr new <name>';
+  end;
+end;
+
+function McpToolRoutes(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  P: TProject;
+  Out_, Msg: string;
+begin
+  P := McpProject(IsError, Msg);
+  if P = nil then
+    Exit(Msg);
+  try
+    if RunAppCapturing(P, '--routes', '', Out_) <> 0 then
+      IsError := True;
+    Result := Out_;
+  finally
+    P.Free;
+  end;
+end;
+
+function McpToolSchema(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  P: TProject;
+  Out_, Msg, Table: string;
+begin
+  P := McpProject(IsError, Msg);
+  if P = nil then
+    Exit(Msg);
+  try
+    Table := Trim(JsonAsString(JsonMember(Args, 'table')));
+    { Two calls rather than one enormous one, and it is not only about
+      size: the tables first is the order anybody reads a schema in. A
+      database with sixty tables would otherwise answer a question nobody
+      asked with every column it has. }
+    if Table = '' then
+    begin
+      if RunAppCapturing(P, '--db:show', '', Out_) <> 0 then
+        IsError := True;
+    end
+    else
+      if RunAppCapturing(P, '--db:table', Table, Out_) <> 0 then
+        IsError := True;
+    Result := Out_;
+  finally
+    P.Free;
+  end;
+end;
+
+{ Configuration, with the keys and where each one came from — and never a
+  value.
+
+  `askr config --values` exists for a person at a terminal, who can see
+  their own screen and decide. This output goes into an agent's context and
+  from there to whatever model is behind it, so the decision is not the
+  tool's to make. Nothing is redacted here, because nothing is read: a
+  redactor is a denylist of words, `LooksSecret` says in its own comment
+  that it cannot be definitive, and `stripe_live_account` is not on
+  anybody's list until after it has leaked.
+
+  The layer each key resolved from is what answers almost every question
+  anyone actually has — "why is it using sqlite" is answered by `.env`,
+  not by the value. }
+function McpToolConfig(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  P: TProject;
+  Msg: string;
+begin
+  P := McpProject(IsError, Msg);
+  if P = nil then
+    Exit(Msg);
+  try
+    { In the tool, not in the app: the layering is computed from .env and
+      askr.toml, which are files, so this answers even when the project
+      does not compile. }
+    SetCurrentDir(P.Root);
+    LoadConfig(P.Root);
+    Result := ConfigReport(False) + #10 +
+      'Values are not shown, and there is no flag here that shows them: ' +
+      'this text goes into an agent context. At a terminal, ' +
+      '`askr config --values` shows them, with anything that looks like a ' +
+      'secret still hidden.';
+  finally
+    P.Free;
+  end;
+end;
+
 function McpToolDocsSearch(A: TArena; Args: PJsonValue;
   out IsError: Boolean): string;
 var
@@ -949,6 +1101,41 @@ const
     '"A level-two heading on that page, without the ##."}},' +
     '"additionalProperties":false}';
 
+  RoutesSchema = '{"type":"object","properties":{},' +
+    '"additionalProperties":false}';
+
+  RoutesDescription =
+    'The routing table of the built app, sorted by specificity — which is ' +
+    'the order requests actually match, not the order the routes were ' +
+    'registered in. It comes from the compiled binary because that is ' +
+    'where the routes are; no file in the project lists them in this ' +
+    'order. Build first if you have changed a route.';
+
+  SchemaSchema =
+    '{"type":"object","properties":{' +
+    '"table":{"type":"string","description":' +
+    '"One table, with its columns, types, indexes and foreign keys. ' +
+    'Omit to list every table instead."}},' +
+    '"additionalProperties":false}';
+
+  SchemaDescription =
+    'What the database actually contains, read from the database itself ' +
+    'and not from the migrations — a column added by hand, or a migration ' +
+    'that failed halfway, is real and shows up here. Call it with no ' +
+    'table to list them, then again with one to see its columns. Use it ' +
+    'before writing a query: in Askr a wrong column name is a compile ' +
+    'error, not a runtime one.';
+
+  ConfigSchema = '{"type":"object","properties":{},' +
+    '"additionalProperties":false}';
+
+  ConfigDescription =
+    'Every configuration key and which layer it resolved from — a real ' +
+    'environment variable, .env, askr.toml, or the built-in default. ' +
+    'That layering is computed and cannot be read off any single file, ' +
+    'and it answers nearly every question about why a setting is what it ' +
+    'is. Values are deliberately never shown, secret-looking or not.';
+
   DocsReadDescription =
     'Read a documentation page, or one section of it, for the exact Askr ' +
     'version this project builds against. Call it with no page to list ' +
@@ -1024,6 +1211,12 @@ begin
       @McpToolDocsSearch);
     RegisterMcpTool('docs_read', DocsReadDescription, DocsReadSchema,
       @McpToolDocsRead);
+    RegisterMcpTool('routes', RoutesDescription, RoutesSchema,
+      @McpToolRoutes);
+    RegisterMcpTool('schema', SchemaDescription, SchemaSchema,
+      @McpToolSchema);
+    RegisterMcpTool('config', ConfigDescription, ConfigSchema,
+      @McpToolConfig);
     McpServe;
     Exit;
   end;

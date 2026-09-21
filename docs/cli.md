@@ -229,8 +229,15 @@ it takes no arguments and needs no port.
 | Tool | What it does |
 |---|---|
 | `build` | Compiles the project and returns `file:line:column` with a severity |
+| `routes` | The routing table, in the order requests match |
+| `schema` | The tables in the database; with a table, its columns |
+| `config` | Every key and the layer it resolved from |
 | `docs_search` | Exact substring across the documentation |
 | `docs_read` | A page, or one section of it; no page lists them all |
+
+`routes` and `schema` read the compiled binary, because that is where the
+routes and the database connection are. They say so when the app has not
+been built rather than answering emptily.
 
 **The server runs in the tool, not in your app.** That is the opposite of
 what Laravel Boost does, and the reason is specific to a compiled
@@ -250,6 +257,22 @@ the `docs/` of the framework tree your project resolves to — the pin in
 An agent reading the current docs for a project pinned two releases back
 would be confidently wrong, and nothing would say so.
 
+**`config` never shows a value, and there is no flag here that does.**
+`askr config --values` exists for a person at their own terminal, who can
+see their own screen. This output goes into an agent's context and on to
+whatever model is behind it, and that is not the tool's decision to make.
+
+Nothing is redacted either, because nothing is read. A redactor is a list
+of words — `LooksSecret` says in its own comment that it cannot be
+definitive — and the word that matters is the one not on the list yet.
+Measured, in a project with three secrets in `.env`: `--values` hides
+`DATABASE_URL` and `MAIL_PASSWORD`, and prints `STRIPE_LIVE_ACCOUNT` in
+full.
+
+The layer each key came from is what answers nearly every question anyone
+actually has. "Why is it using SQLite" is answered by `.env`, not by the
+value.
+
 **The search is an exact substring, and never fuzzy.** Ask for a name that
 does not exist and you get no match — not the nearest one that does. Askr's
 API names are easy to guess wrong by a dot or a capital, and a search that
@@ -259,11 +282,14 @@ means no match, and the tool says so rather than guessing.
 
 ### What is not here yet
 
-`routes`, `config`, `schema` and `test` are not tools. They exist as
-commands, but the app binary has to answer them and the output has to be
-machine-readable first; that is the next step, not a missing feature to
-work around. There are no resources and no prompts — declaring a
-capability that is not served is worse than declaring none.
+`test` is not a tool. There are no resources and no prompts either —
+declaring a capability that is not served is worse than declaring none.
+
+There is no `--json` on the console commands, and the tools do not ask for
+one. The tool passes the app's own output through unchanged, so an agent
+reads exactly what you read, and there is no second format to keep in step
+with the first. A tool that had to *parse* that output would need one; none
+of these do.
 
 ## What is deliberately missing
 
