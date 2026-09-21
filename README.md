@@ -109,7 +109,7 @@ A project names the release it builds against, and `askr` fetches it:
 ```toml
 # askr.toml
 [askr]
-version = "0.6.0"
+version = "0.9.0"
 ```
 
 ```sh
