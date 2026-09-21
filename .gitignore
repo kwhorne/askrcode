@@ -1,4 +1,7 @@
 .build/
+# .build-<arch> for ./askr test:amd64. Ett per mål, fordi .ppu-filer er
+# bundet til målet og ikke kan dele katalog.
+.build-*/
 *.o
 *.ppu
 *.a
