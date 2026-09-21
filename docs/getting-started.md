@@ -8,11 +8,20 @@ whether a compiler limitation is gone or has only moved.
 
 ```sh
 # Debian, Ubuntu
-apt install fpc
+apt install fp-compiler fp-units-rtl fp-units-fcl fp-units-net
 
 # macOS
 brew install fpc
 ```
+
+> **Not `apt install fpc`.** That metapackage pulls in the GTK2,
+> multimedia and graphics unit packages and their `-dev` dependencies —
+> libvlc, Mesa, X11 headers. Measured on Ubuntu 24.04: **326 packages
+> against 11.** Askr uses the compiler, the RTL, the FCL (`Classes`,
+> `SyncObjs`, `TypInfo`) and `netdb` from the networking units, and
+> nothing else. If a unit does turn out to be missing, fpc names it —
+> `Can't find unit X` — and that is one package to add, not three hundred
+> to remove.
 
 If `fpc` is on `PATH` it is used. Otherwise the framework's own build script
 builds and uses the Docker image in `tools/Dockerfile.fpc`. Point

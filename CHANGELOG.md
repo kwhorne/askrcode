@@ -16,6 +16,19 @@ with the zero-major caveat that minor releases may break things until
 
 ### Changed
 
+- **The install instructions no longer say `apt install fpc`.** That
+  metapackage is 326 packages on Ubuntu 24.04, against 11 for
+  `fp-compiler fp-units-rtl fp-units-fcl fp-units-net` — it drags in the
+  GTK2, multimedia and graphics unit packages with libvlc, Mesa and X11
+  headers behind them. Measured, not guessed, while setting up a real
+  deployment.
+
+- **`docs/deployment.md` has a systemd section and a Caddy block**, both
+  taken from a deployment that is running rather than from memory, plus
+  the note that `ReadWritePaths` is what makes `ProtectSystem=strict`
+  survivable: SQLite writes `-wal` and `-shm` next to the database even
+  for a site that only reads.
+
 - **`tools/` is English.** The two Dockerfiles, the compose file, the
   generics probes and the WebView2 probe — comments, identifiers and
   output. The probe files were renamed with their unit names, since fpc

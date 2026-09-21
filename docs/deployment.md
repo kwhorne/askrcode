@@ -41,7 +41,66 @@ Opts.TlsCertFile := '';     { the app speaks HTTP }
 ```
 
 Then set `Sessions.Secure := True` so the session cookie is marked `Secure`
-even though the app itself did not do the TLS.
+even though the app itself did not do the TLS. The app cannot work this out
+for itself — it never sees the https — so it has to be told.
+
+Caddy, where the certificate is minted and renewed without a cron job:
+
+```
+example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8097
+}
+```
+
+`encode gzip` belongs here, because the app never compresses: Askr does not
+bind zlib, which is a documented choice rather than an oversight.
+
+The A record has to point at the machine **before** this is reloaded —
+Caddy mints the certificate over HTTP-01 on the first request, and that
+needs the name to resolve there already.
+
+## Under systemd
+
+Askr is one binary, which is the whole reason this is a unit file rather
+than a process manager:
+
+```ini
+[Unit]
+Description=example.com
+After=network.target
+
+[Service]
+ExecStart=/var/www/example/.build/bin/app
+WorkingDirectory=/var/www/example
+User=www
+Environment=APP_PORT=8097
+Restart=always
+RestartSec=2
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/www/example/storage
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`WorkingDirectory` is not optional: the app reads `.env`, `askr.toml`,
+`public/` and `storage/` relative to it.
+
+**`ReadWritePaths` is what makes `ProtectSystem=strict` survivable.**
+Strict makes the whole filesystem read-only, and `storage/` is the one
+place that must not be — SQLite writes its `-wal` and `-shm` files next to
+the database, and it does that even for a site that only reads. Without
+that line the first query fails.
+
+`systemd-analyze verify ./the.service` parses a unit without installing
+it, and `caddy validate --config <file>` does the same for a Caddyfile.
+Both are worth running before anything touches `/etc`, particularly on a
+machine where other sites share the proxy.
 
 ## TLS in the app
 
@@ -76,8 +135,27 @@ not be discarded.
 
 ## Building on a clean machine
 
-A build host has no `~/.askr/pkg` the first time, so the framework has
-to be fetched before anything compiles:
+The build host needs the compiler, `git`, and Node if the app has a
+frontend. On Debian and Ubuntu that is:
+
+```sh
+apt install fp-compiler fp-units-rtl fp-units-fcl fp-units-net
+```
+
+Not the `fpc` metapackage — see [Getting started](getting-started.md) for
+why; it is 326 packages instead of 11.
+
+The host also needs the `askr` tool itself, which is built from the
+framework and therefore comes before any project:
+
+```sh
+git clone --branch v0.9.1 --depth 1 https://github.com/kwhorne/askrcode.git
+cd askrcode && ./askr cli          # about a second
+export PATH="$PWD/.build/bin:$PATH"
+```
+
+After that the project has no `~/.askr/pkg` the first time, so the
+framework has to be fetched before anything compiles:
 
 ```sh
 askr install
@@ -160,3 +238,16 @@ still worth having.
 
 Not solved. Build on the platform you deploy to, or in a container that
 matches it — `tools/Dockerfile.fpc` is what the framework itself uses.
+
+**The architecture is a real axis, and it is not one Askr's own test suite
+covers.** Every build and every test run of this framework has been on
+aarch64. The first time it was compiled for x86_64 it did not build at all:
+`Currency(GetFloatProp(...))` is an illegal typecast there, because
+`Extended` is 80 bits and a type of its own, while on aarch64 it is an
+alias for `Double` and the same line compiles. Three sites, none of them
+caught by 705 tests. Fixed in 0.9.1.
+
+So if you deploy to an architecture you do not develop on, build there
+early rather than on the day you go live. Note also that Docker on an
+Apple Silicon machine runs arm64 images: a container is not by itself a
+different architecture.
