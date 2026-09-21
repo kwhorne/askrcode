@@ -79,6 +79,30 @@ ingen. Trengs den, er det `dup2` på deskriptoren — og et scenario som viser
 at den virker. Et verktøy som kjører noe ut, skal fange barnets utdata: det
 trenger teksten til svaret uansett.
 
+**Docs-verktøyene leser prosjektets pin, ikke verktøyets eget tre.**
+`DocsDirFor` går gjennom `ResolveFramework` — samme kall som byggstien — så
+docs og kompilatoren kommer alltid fra ett tre. `askr mcp` kjøres før
+`FindProject` og delegerer aldri, så binæren som svarer kan godt være en
+annen utgivelse enn den prosjektet bygger med. Porten beviser det med et
+fabrikkert rammeverkstre som har sin egen versjon og sin egen ene side:
+verktøyet melder den versjonen og ser ikke dette repoets docs i det hele
+tatt.
+
+**Søket er eksakt delstreng, aldri fuzzy, og det er hele poenget.**
+`Back.WithErrors` er feil navn for `BackWithErrors` — en feil som faktisk
+ble gjort her, i første utkast av docs/. Et søk som strøk tegnsetting ville
+matchet det mot det ekte navnet og levert en side som leses som
+bekreftelse. Testen sier egenskapen direkte: **hvert treff må inneholde det
+som ble spurt om.** Formulert slik holder den også når docs selv begynner å
+omtale det gale navnet — og det var nettopp det som skjedde: første utkast
+til `docs/cli.md` skrev «et søk på `Back.WithErrors` gir ingen treff», og
+gjorde dermed sida til et treff selv. Literalen er ute av docs igjen.
+
+**Et sidenavn bygger aldri en sti.** Det matches mot lista over hva som
+faktisk ligger i katalogen, og bare et navn som kom tilbake derfra åpnes.
+Å sette sammen en sti fra inndata og så lete etter `..` er den varianten
+som har en feil i seg.
+
 **`cmd_mcp_check` i `./askr` er skrevet på engelsk.** Resten av byggskriptet
 er norsk fra før og blir stående; ny kode skrives ut engelsk, også her.
 

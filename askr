@@ -490,6 +490,10 @@ cmd_mcp_check() {
   prepare
   fpc_run cli/askr.lpr
 
+  # The version this checkout is, read the same way TreeVersion reads it.
+  askrver=$(sed -n "s/.*AskrVersion *= *'\\([^']*\\)'.*/\\1/p" \
+    "$ROOT/src/core/Askr.Core.Version.pas" | head -1)
+
   dir="$BUILD/mcpcheck"
   rm -rf "$dir"
   mkdir -p "$dir"
@@ -540,12 +544,22 @@ LPR
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"build","arguments":{}}}
 {"jsonrpc":"2.0","id":4,"method":"ping"}'
 
-  run_mcp_in() {  # $1 = directory, relative to ROOT
+  # The docs tools are driven separately: the build frames above take a
+  # compile each, and these need none.
+  docframes='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"BackWithErrors"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"Back.WithErrors"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"docs_read","arguments":{"page":"validation","section":"Across a redirect"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"docs_read","arguments":{}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"docs_read","arguments":{"page":"../README.md"}}}
+{"jsonrpc":"2.0","id":6,"method":"ping"}'
+
+  run_mcp_in() {  # $1 = directory relative to ROOT, $2 = frames (default $frames)
+    f=${2:-$frames}
     if have_local_fpc; then
-      ( cd "$ROOT/$1" && printf '%s\n' "$frames" | "$BIN/askr" mcp )
+      ( cd "$ROOT/$1" && printf '%s\n' "$f" | "$BIN/askr" mcp )
     else
       ensure_image
-      printf '%s\n' "$frames" | docker run --rm -i $DOCKER_PLATFORM \
+      printf '%s\n' "$f" | docker run --rm -i $DOCKER_PLATFORM \
         -v "$ROOT":/work -w "/work/$1" "$IMAGE" "/work/${BIN#$ROOT/}/askr" mcp
     fi
   }
@@ -624,6 +638,73 @@ LPR
   # The decisive one: the server is still standing. Halt(1) here answered the
   # handshake and vanished, and the two above would still have been green.
   check "and the server is still standing" "$out" '"id":4'
+  pure_json "$out"
+
+  echo
+  echo "- the docs tools"
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck/ok" "$docframes" 2>/dev/null || true)
+  check "a real name is found"             "$out" 'validation.md:'
+  check "with the version the docs are for" "$out" "for Askr $askrver"
+  # The one that matters. Back.WithErrors is the wrong name for
+  # BackWithErrors, and it is a mistake that was made in this repository.
+  # A search that ignored punctuation would match it against the real name
+  # and hand back a page that reads as confirmation.
+  # The reply is JSON, so the quotes around the query arrive escaped.
+  check "a name that does not exist is not found" "$out" 'No match for .*Back[.]WithErrors'
+  check "a section reads"                  "$out" 'Across a redirect'
+  check "no page lists the pages"          "$out" 'uploads.md'
+  # A page name is text an agent wrote.
+  check "a path cannot escape docs/"       "$out" 'No page named'
+  check "and that is a real tool error"    "$out" '"isError":true'
+  check "the server is still standing"     "$out" '"id":6'
+  pure_json "$out"
+
+  echo
+  echo "- the docs follow the projects pin, not the tool"
+  # The architectural claim of these two tools: `askr mcp` runs before
+  # FindProject and never delegates, so the binary answering may be a
+  # different release from the one the project builds with. An agent reading
+  # this tools docs for a project pinned elsewhere would be confidently
+  # wrong, and nothing would say so.
+  #
+  # A fabricated tree with its own version and its own single page is the
+  # only way to tell the two apart in one repository.
+  fake="$BUILD/mcpfakefw"
+  rm -rf "$fake"
+  mkdir -p "$fake/src/core" "$fake/cli" "$fake/docs"
+  cat > "$fake/src/core/Askr.Core.Version.pas" <<'PAS'
+unit Askr.Core.Version;
+interface
+const
+  AskrVersion = '0.0.1-fake';
+implementation
+end.
+PAS
+  cat > "$fake/docs/onlyfake.md" <<'MD'
+# Fake
+
+## Only here
+
+sentinel-only-in-the-fake-tree
+MD
+  fakeproj="$BUILD/mcpfakeproj"
+  mkdir -p "$fakeproj"
+  if have_local_fpc; then fakepath="$fake"; else fakepath="/work/${fake#$ROOT/}"; fi
+  cat > "$fakeproj/askr.toml" <<TOML
+name = "mcpfakeproj"
+main = "app.lpr"
+units = "app"
+
+[askr]
+path = "$fakepath"
+TOML
+  fakeframes='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"sentinel-only-in-the-fake-tree"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"BackWithErrors"}}}'
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpfakeproj" "$fakeframes" 2>/dev/null || true)
+  check "the pinned trees own page is found" "$out" 'onlyfake.md:'
+  check "and its version is reported"      "$out" 'for Askr 0.0.1-fake'
+  # The decisive one: this repositorys docs are NOT what answered.
+  check "the tools own docs are not read" "$out" 'No match for .*BackWithErrors'
   pure_json "$out"
 
   echo

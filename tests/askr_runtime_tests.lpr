@@ -22,7 +22,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp;
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -4070,6 +4070,111 @@ end;
   These are the shapes a client actually sends. A server that answers
   `initialize` and nothing else looks like it works right up until the
   client asks for the tool list. }
+{ The docs tools, against this repository's own docs/.
+
+  The property that matters is not that a search finds things — it is what
+  it does with a name that does not exist. `Back.WithErrors` is the wrong
+  name for `BackWithErrors`, and it is a mistake that was actually made
+  here: it is one of the four wrong signatures in the first draft of docs/,
+  caught by reading the source rather than the prose.
+
+  An agent that asks about it must be told there is no such thing. A search
+  that ignored punctuation would match it against the real name and hand
+  back a page that reads as confirmation, and the agent would write the
+  wrong call with documentation apparently behind it. So both directions
+  are asserted, and the second is the one worth keeping. }
+procedure TestDocsSearchAndRead;
+var
+  Dir, Text_, Err: string;
+  Hits: TDocHits;
+  Total, I: Integer;
+  Pages: TDocPages;
+  Found: Boolean;
+begin
+  Dir := 'docs';
+  AssertTrue(DirectoryExists(Dir),
+    'docs/ is there (run from the repository root)');
+
+  Pages := DocPages(Dir);
+  AssertTrue(Length(Pages) > 20, 'the pages are found');
+  AssertTrue(Pages[0] < Pages[1], 'and come back sorted');
+
+  { The real name is in the docs, more than once and on more than one
+    page. Without this the assertion below would pass on an empty
+    directory. }
+  Hits := DocSearch(Dir, 'BackWithErrors', 100, Total);
+  AssertTrue(Total >= 5, 'the real name is found');
+  Found := False;
+  for I := 0 to High(Hits) do
+    if Hits[I].Page = 'validation.md' then
+      Found := True;
+  AssertTrue(Found, 'including on validation.md');
+
+  { The one that matters, asserted as the property rather than as the
+    absence of one string. Every hit must actually contain what was asked
+    for: a fuzzy search is exactly a search that returns lines which do
+    not. Stated this way it keeps holding when the docs themselves start
+    talking about the wrong name. }
+  Hits := DocSearch(Dir, 'Back.WithErrors', 100, Total);
+  AssertEqual(Total, 0, 'the name that does not exist is not found');
+  for I := 0 to High(Hits) do
+    AssertContains(LowerCase(Hits[I].Text_), 'back.witherrors',
+      'and no hit would be one that merely looks like it');
+
+  { Case does not matter — an agent writes what it remembers. }
+  DocSearch(Dir, 'backwitherrors', 100, Total);
+  AssertTrue(Total >= 5, 'but case does not matter');
+
+  { A hit carries the heading it sits under, because that is what
+    DocRead takes. A position an agent cannot follow is half an answer. }
+  Hits := DocSearch(Dir, 'session flash', 100, Total);
+  AssertTrue(Total > 0, 'a phrase with a space is found');
+  Found := False;
+  for I := 0 to High(Hits) do
+    if Hits[I].Heading <> '' then
+      Found := True;
+  AssertTrue(Found, 'and at least one hit names its section');
+
+  { Limit truncates the list but not the count. "3 of 47" is true;
+    "3" while quietly holding 44 more is not. }
+  Hits := DocSearch(Dir, 'the', 3, Total);
+  AssertEqual(Length(Hits), 3, 'the limit truncates');
+  AssertTrue(Total > 3, 'but the total is still the total');
+
+  AssertTrue(DocRead(Dir, 'validation.md', '', Text_, Err),
+    'a page reads');
+  AssertContains(Text_, '# Validation', 'and it is the right one');
+
+  AssertTrue(DocRead(Dir, 'validation', '', Text_, Err),
+    'the .md is optional');
+  AssertTrue(DocRead(Dir, 'VALIDATION.MD', '', Text_, Err),
+    'and case does not matter');
+
+  AssertTrue(DocRead(Dir, 'validation', 'Across a redirect', Text_, Err),
+    'a section reads');
+  AssertContains(Text_, '## Across a redirect', 'starting at its heading');
+  AssertNotContains(Text_, '## Why it lives in the model unit',
+    'and stopping at the next one');
+  AssertNotContains(Text_, '# Validation'#10, 'without the page title');
+
+  { A page name is text an agent wrote. It is matched against the listing
+    of what is there, so a traversal cannot name a file — it does not
+    equal any entry. }
+  AssertFalse(DocRead(Dir, '../README.md', '', Text_, Err),
+    'a path cannot escape docs/');
+  AssertFalse(DocRead(Dir, '../../etc/passwd', '', Text_, Err),
+    'nor reach outside the repository');
+  AssertFalse(DocRead(Dir, 'no-such-page', '', Text_, Err),
+    'an unknown page is refused');
+  AssertContains(Err, 'validation.md',
+    'and the refusal lists what there is');
+
+  AssertFalse(DocRead(Dir, 'validation', 'No such section', Text_, Err),
+    'an unknown section is refused');
+  AssertContains(Err, 'Across a redirect',
+    'and that refusal lists the sections');
+end;
+
 procedure TestMcpProtocol;
 var
   A: TArena;
@@ -4141,6 +4246,10 @@ begin
   Group('Scheduler');
   Group('MCP');
   Test('the handshake, the tool list and the error shapes', @TestMcpProtocol);
+
+  Group('Docs');
+  Test('search is exact, and a name that does not exist is not found',
+    @TestDocsSearchAndRead);
 
   Group('Compiler diagnostics');
   Test('fpc diagnostics parse the same on every compiler and architecture',

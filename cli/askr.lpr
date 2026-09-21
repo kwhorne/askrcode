@@ -16,7 +16,7 @@ uses
   SysUtils, Classes, Process, TermIO,
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
-  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag,
+  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
   Askr.Core.Arena, Askr.Core.Json;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
@@ -753,6 +753,164 @@ begin
   end;
 end;
 
+{ The documentation the project's own framework version ships with.
+
+  Not the tool's: `askr mcp` runs before FindProject and never delegates, so
+  the binary answering may be a different release from the one the project
+  builds with. An agent reading 0.9.2 docs for a project pinned to 0.8 would
+  be confidently wrong about the framework in front of it, and nothing would
+  say so. ResolveFramework is the same call the build path makes, so the
+  docs and the compiler always come from one tree. }
+function DocsDirFor(out Version: string; out Err: string): string;
+var
+  P: TProject;
+  Frame: string;
+  Origin: TPkgOrigin;
+begin
+  Result := '';
+  Version := '';
+  Err := '';
+  P := TProject.Find(GetCurrentDir);
+  if P = nil then
+  begin
+    Err := 'No askr.toml in the working directory or above it. The docs ' +
+           'tools read the documentation of the framework version this ' +
+           'project pins, so they need a project to know which that is.';
+    Exit;
+  end;
+  try
+    Frame := ResolveFramework(P, Origin, Err);
+    if Frame = '' then
+      Exit;
+    Version := TreeVersion(Frame);
+    Result := IncludeTrailingPathDelimiter(Frame) + 'docs';
+    if not DirectoryExists(Result) then
+    begin
+      Err := 'Askr ' + Version + ' is resolved at ' + Frame +
+             ' but has no docs/ directory.';
+      Result := '';
+    end;
+  finally
+    P.Free;
+  end;
+end;
+
+function McpToolDocsSearch(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  Dir, Version, Err, Query: string;
+  Hits: TDocHits;
+  Total, Limit, I: Integer;
+  B: TStringList;
+  Where_: string;
+begin
+  IsError := False;
+  Query := JsonAsString(JsonMember(Args, 'query'));
+  if Trim(Query) = '' then
+  begin
+    IsError := True;
+    Exit('docs_search needs a query.');
+  end;
+
+  Dir := DocsDirFor(Version, Err);
+  if Dir = '' then
+  begin
+    IsError := True;
+    Exit(Err);
+  end;
+
+  Limit := JsonAsInt(JsonMember(Args, 'limit'), 40);
+  if Limit <= 0 then
+    Limit := 40;
+
+  Hits := DocSearch(Dir, Query, Limit, Total);
+  if Total = 0 then
+    { Saying why, once, in the answer itself. The rule only protects an
+      agent that knows it is in force: told plainly that nothing matched
+      and that the search is exact, it looks for a shorter string. Told
+      only "0 results", it is as likely to conclude the docs are thin. }
+    Exit('No match for "' + Query + '" in the docs for Askr ' + Version +
+         '.'#10#10 +
+         'The search is an exact substring and is deliberately not fuzzy: ' +
+         'a near match would confirm a name that does not exist. Try a ' +
+         'shorter query, or docs_read with no page to list them.');
+
+  B := TStringList.Create;
+  try
+    if Total > Length(Hits) then
+      B.Add(Format('%d matches for "%s" in the docs for Askr %s, showing %d',
+        [Total, Query, Version, Length(Hits)]))
+    else
+      B.Add(Format('%d matches for "%s" in the docs for Askr %s',
+        [Total, Query, Version]));
+    B.Add('');
+    for I := 0 to High(Hits) do
+    begin
+      { page:line is the shape an editor and an agent already follow, and
+        the heading is exactly what docs_read takes as its section. }
+      Where_ := Format('%s:%d', [Hits[I].Page, Hits[I].Line]);
+      if Hits[I].Heading <> '' then
+        Where_ := Where_ + '  [' + Hits[I].Heading + ']';
+      B.Add(Where_);
+      B.Add('    ' + Hits[I].Text_);
+    end;
+    Result := B.Text;
+  finally
+    B.Free;
+  end;
+end;
+
+function McpToolDocsRead(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  Dir, Version, Err, Page, Section, Text_: string;
+  Pages: TDocPages;
+  B: TStringList;
+  I: Integer;
+begin
+  IsError := False;
+  Dir := DocsDirFor(Version, Err);
+  if Dir = '' then
+  begin
+    IsError := True;
+    Exit(Err);
+  end;
+
+  Page := Trim(JsonAsString(JsonMember(Args, 'page')));
+  Section := Trim(JsonAsString(JsonMember(Args, 'section')));
+
+  { No page is the index, not an error. It is the question an agent asks
+    first, and making it spell a page name to find out what the pages are
+    would be backwards. }
+  if Page = '' then
+  begin
+    Pages := DocPages(Dir);
+    B := TStringList.Create;
+    try
+      B.Add('The documentation for Askr ' + Version + ' — ' +
+        IntToStr(Length(Pages)) + ' pages. Read one with docs_read, or a ' +
+        'single section of one.');
+      B.Add('');
+      for I := 0 to High(Pages) do
+        B.Add('  ' + Pages[I]);
+      Result := B.Text;
+    finally
+      B.Free;
+    end;
+    Exit;
+  end;
+
+  if not DocRead(Dir, Page, Section, Text_, Err) then
+  begin
+    { A page or a section that is not there is the tool failing to run,
+      not a document whose content is bad news. Same line as the build
+      tool draws. }
+    IsError := True;
+    Exit(Err);
+  end;
+  Result := Text_;
+end;
+
 const
   { No arguments. `additionalProperties: false` so that a client which
     invents one is told, rather than having it silently ignored. }
@@ -766,6 +924,37 @@ const
     'wrong column name, a wrong type in a query, or a misspelled route ' +
     'parameter is a compile error, not a runtime one. Run it after ' +
     'editing Pascal sources and before saying the work is done.';
+
+  DocsSearchSchema =
+    '{"type":"object","properties":{' +
+    '"query":{"type":"string","description":' +
+    '"Exact substring, case-insensitive. Not fuzzy."},' +
+    '"limit":{"type":"integer","description":' +
+    '"Maximum hits to return. Default 40."}},' +
+    '"required":["query"],"additionalProperties":false}';
+
+  DocsSearchDescription =
+    'Search the documentation of the exact Askr version this project ' +
+    'builds against. Use it before writing framework code: Askr''s API ' +
+    'names are easy to guess wrong, and a wrong one is a compile error. ' +
+    'The search is an exact substring and never fuzzy, so no match means ' +
+    'the name does not exist — not that the docs are thin. Each hit gives ' +
+    'page:line and the section, which docs_read takes.';
+
+  DocsReadSchema =
+    '{"type":"object","properties":{' +
+    '"page":{"type":"string","description":' +
+    '"A page such as validation.md. Omit to list every page."},' +
+    '"section":{"type":"string","description":' +
+    '"A level-two heading on that page, without the ##."}},' +
+    '"additionalProperties":false}';
+
+  DocsReadDescription =
+    'Read a documentation page, or one section of it, for the exact Askr ' +
+    'version this project builds against. Call it with no page to list ' +
+    'every page. Each page also says what the framework does NOT have and ' +
+    'why, which is the part that stops an agent from looking for ' +
+    'something that was never built.';
 
 var
   Kommando: string;
@@ -831,6 +1020,10 @@ begin
   if Kommando = 'mcp' then
   begin
     RegisterMcpTool('build', BuildDescription, BuildSchema, @McpToolBuild);
+    RegisterMcpTool('docs_search', DocsSearchDescription, DocsSearchSchema,
+      @McpToolDocsSearch);
+    RegisterMcpTool('docs_read', DocsReadDescription, DocsReadSchema,
+      @McpToolDocsRead);
     McpServe;
     Exit;
   end;

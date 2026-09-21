@@ -31,6 +31,34 @@ with the zero-major caveat that minor releases may break things until
   framework path that is not a checkout, and with no project at all. It runs
   as part of `./askr test`.
 
+- **The `docs_search` and `docs_read` tools.** The documentation an agent
+  reads, over the same protocol as the build tool.
+
+  **The docs come from the version the project pins**, resolved through the
+  same `ResolveFramework` the compiler path uses — not from the `askr` on
+  your PATH. `askr mcp` runs before the project is found and never
+  delegates, so the binary answering may be a different release entirely.
+  An agent reading current docs for a project pinned two releases back
+  would be confidently wrong, and nothing would say so. The gate proves it
+  with a fabricated framework tree carrying its own version and its own
+  single page: the tool reports that version and cannot see this
+  repository's own docs.
+
+  **The search is an exact substring and never fuzzy.** Ask for a name that
+  does not exist and the answer is that there is no such name — not the
+  nearest one that does. Askr's API names are easy to guess wrong by a dot
+  or a capital, and a forgiving search would hand back a page reading as
+  confirmation. The test asserts the property itself: every hit contains
+  what was asked for. Mutation-checked by making the search ignore
+  punctuation, which is exactly the failure it exists to prevent.
+
+  **A page name never builds a path.** It is matched against the listing of
+  what is in the directory, and only a name that came back from the listing
+  is opened. `../../etc/passwd` does not equal any entry.
+
+  `docs_read` with no page lists the pages; an unknown page or section is
+  refused with what there is instead.
+
 - **The `build` tool.** Runs the Rún transpiler and the compiler over the
   project and answers with `file:line:column  Severity: message` — the shape
   every editor and every agent already follows — after a first line saying

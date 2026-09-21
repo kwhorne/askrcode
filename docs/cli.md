@@ -213,6 +213,58 @@ app.port          askr.toml     8080
 `key:generate` prints a key; it does **not** write it into `.env`. A key
 swapped silently logs everyone out.
 
+## An MCP server for agents
+
+```sh
+askr mcp
+```
+
+JSON-RPC 2.0 over stdio, for coding agents. Point a client at the command;
+it takes no arguments and needs no port.
+
+```json
+{ "mcpServers": { "askr": { "command": "askr", "args": ["mcp"] } } }
+```
+
+| Tool | What it does |
+|---|---|
+| `build` | Compiles the project and returns `file:line:column` with a severity |
+| `docs_search` | Exact substring across the documentation |
+| `docs_read` | A page, or one section of it; no page lists them all |
+
+**The server runs in the tool, not in your app.** That is the opposite of
+what Laravel Boost does, and the reason is specific to a compiled
+framework: if the app does not compile there is no app to ask — and that is
+exactly the moment an agent most needs to be told what is wrong. `askr mcp`
+answers the handshake whether or not your project builds, and whether or
+not there is a project at all.
+
+**A failed build is a successful call.** The tool reports the diagnostics
+and sets `isError` to false. `isError` is true only when the tool could not
+run: no project, no compiler, an `[askr] path` that is not a checkout.
+Conflating the two makes an agent retry the wrong thing.
+
+**The docs are your version's docs.** `docs_search` and `docs_read` read
+the `docs/` of the framework tree your project resolves to — the pin in
+`askr.toml`, not whatever release the `askr` on your PATH happens to be.
+An agent reading the current docs for a project pinned two releases back
+would be confidently wrong, and nothing would say so.
+
+**The search is an exact substring, and never fuzzy.** Ask for a name that
+does not exist and you get no match — not the nearest one that does. Askr's
+API names are easy to guess wrong by a dot or a capital, and a search that
+forgave that would hand back a page reading as confirmation; the agent would
+then write the wrong call with documentation apparently behind it. No match
+means no match, and the tool says so rather than guessing.
+
+### What is not here yet
+
+`routes`, `config`, `schema` and `test` are not tools. They exist as
+commands, but the app binary has to answer them and the output has to be
+machine-readable first; that is the next step, not a missing feature to
+work around. There are no resources and no prompts — declaring a
+capability that is not served is worse than declaring none.
+
 ## What is deliberately missing
 
 Laravel has `optimize`, `config:cache`, `route:cache`, `view:cache` and
