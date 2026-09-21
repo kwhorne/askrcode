@@ -1,8 +1,9 @@
-{ Askr.Norn.Schema — skjemaendringer beskrevet i Pascal, oversatt til SQL.
+{ Askr.Norn.Schema — schema changes described in Pascal, translated into
+  SQL.
 
-  Nornene skriver, Urd husker. Denne enheten er skrivedelen: en migrasjon
-  beskriver hva som skal skje, og byggeren oversetter det til den dialekten
-  forbindelsen faktisk snakker.
+  The Norns write, Urd remembers. This unit is the writing part: a migration
+  describes what is to happen, and the builder translates it into the
+  dialect the connection actually speaks.
 
       with S.Create('customers') do
       begin
@@ -14,9 +15,9 @@
         Index(['created_at']);
       end;
 
-  Ingenting her er arena-basert. Migrasjoner kjører utenfor en request, lever
-  kort, og eier objektene sine på vanlig vis. Å dra arenaen inn i byggetid
-  ville vært å låne en mekanisme til noe den ikke er til for. }
+  Nothing here is arena based. Migrations run outside a request, live
+  briefly, and own their objects in the ordinary way. Pulling the arena into
+  build time would be lending a mechanism to something it is not for. }
 unit Askr.Norn.Schema;
 
 {$mode Delphi}{$H+}
@@ -30,13 +31,13 @@ type
   ENornError = class(EDbError);
 
   TColumnType = (
-    ctBigSerial,   { autonøkkel }
+    ctBigSerial,   { auto key }
     ctBigInt,
     ctInt,
     ctSmallInt,
-    ctText,        { fri tekst, eller VARCHAR(n) når lengde er oppgitt }
+    ctText,        { free text, or VARCHAR(n) when a length is given }
     ctBoolean,
-    ctNumeric,     { presisjon og skala }
+    ctNumeric,     { precision and scale }
     ctFloat,
     ctTimestamp,
     ctDate,
@@ -66,9 +67,9 @@ type
   public
     constructor Create(const AName: string; AKind: TColumnType);
 
-    { Byggerne returnerer Self, slik PRD-en skriver det:
-        Text('email', 255).Unique
-        Money('balance').Default(0) }
+    { The builders return Self, the way the PRD writes it:
+      Text('email', 255).Unique
+      Money('balance').Default(0) }
     function Nullable: TNornColumn;
     function Unique: TNornColumn;
     function PrimaryKey: TNornColumn;
@@ -76,7 +77,8 @@ type
     function Default(Value: Int64): TNornColumn; overload;
     function Default(Value: Currency): TNornColumn; overload;
     function Default(Value: Boolean): TNornColumn; overload;
-    { Rå SQL som standardverdi — now(), gen_random_uuid() og liknende. }
+    { Raw SQL as a default value — now(), gen_random_uuid() and the
+      like. }
     function DefaultRaw(const Sql: string): TNornColumn;
     function References(const ATable: string; const AColumn: string = 'id';
       const AOnDelete: string = 'CASCADE'): TNornColumn;
@@ -121,7 +123,7 @@ type
     constructor Create(const ATable: string; AOp: TTableOp);
     destructor Destroy; override;
 
-    { Autonøkkel. Heter id med mindre noe annet oppgis. }
+    { An auto key. Called id unless something else is given. }
     procedure Id(const AName: string = 'id');
     function Text(const AName: string; ALength: Integer = 0): TNornColumn;
     function Int(const AName: string): TNornColumn;
@@ -138,14 +140,16 @@ type
     function Json(const AName: string): TNornColumn;
     function Uuid(const AName: string): TNornColumn;
     function Bytes(const AName: string): TNornColumn;
-    { BIGINT med fremmednøkkel. ForeignKey('customer_id', 'customers'). }
+    { BIGINT with a foreign key. ForeignKey('customer_id', 'customers'). }
     function ForeignKey(const AName, ATable: string;
       const AColumn: string = 'id'): TNornColumn;
-    { created_at og updated_at, begge NOT NULL med now() som standard. }
+    { created_at and updated_at, both NOT NULL with now() as the
+      default. }
     procedure Timestamps;
-    { deleted_at, nullbar. Motstykket til S.SoftDeletes på modellen — uten
-      den måtte kolonnen skrives for hånd mens modellen hadde en linje, og
-      den asymmetrien er lett å glemme helt til en sletting ikke virker. }
+    { deleted_at, nullable. The counterpart to S.SoftDeletes on the model —
+      without it the column would have to be written by hand while the
+      model had one line, and that asymmetry is easy to forget until a
+      delete stops working. }
     procedure SoftDeletes(const AName: string = 'deleted_at');
 
     procedure DropColumn(const AName: string);
@@ -171,21 +175,23 @@ type
     constructor Create(ADialect: TSqlDialect); overload;
     destructor Destroy; override;
 
-    { PRD-en skriver S.Create('customers'). Metoden overlaster
-      constructoren; signaturene er ulike, så oppløsningen er entydig. }
+    { The PRD writes S.Create('customers'). The method overloads the
+      constructor; the signatures differ, so the resolution is
+      unambiguous. }
     function Create(const ATable: string): TTableBuilder; overload;
     function Alter(const ATable: string): TTableBuilder;
     procedure Drop(const ATable: string; AIfExists: Boolean = True);
     procedure Rename(const AFrom, ATo: string);
-    { Nødutgang for det byggeren ikke dekker. }
+    { An escape hatch for what the builder does not cover. }
     procedure Execute(const Sql: string);
 
-    { All_ setningene i rekkefølge. }
+    { All the statements in order. }
     function ToSql: TStringArray;
     property Dialect: TSqlDialect read FDialect;
   end;
 
-{ Eksponert fordi introspeksjon og codegen trenger den samme oversettelsen. }
+{ Exposed because introspection and codegen need the same
+  translation. }
 function SqlTypeFor(Kind: TColumnType; Dialect: TSqlDialect;
   Length_, Precision, Scale: Integer): string;
 
@@ -246,16 +252,16 @@ begin
       case Dialect of
         sdPostgres: Result := 'TIMESTAMPTZ';
         sdMySql:    Result := 'DATETIME';
-        { SQLite har ingen datotype og lagrer tekst uansett. Men den
-          **erklærte** typen er det introspeksjonen leser, og med TEXT kan
-          den ikke skille en dato fra en hvilken som helst streng — da
-          typet `askr schema` created_at som string mot SQLite og som
-          TDateTime mot Postgres, av samme migrasjon.
+        { SQLite has no date type and stores text anyway. But the
+          **declared** type is what the introspection reads, and with TEXT
+          it cannot tell a date from any other string — then `askr schema`
+          typed created_at as string against SQLite and as TDateTime
+          against Postgres, from the same migration.
 
-          DATETIME gir NUMERIC-affinitet, og en ISO-tekst lar seg ikke
-          konvertere tapsfritt til et tall, så den blir liggende som tekst.
-          Lagringen er altså uendret; det er bare navnet som nå sier hva
-          kolonnen er. }
+          DATETIME gives NUMERIC affinity, and an ISO text cannot be
+          converted losslessly to a number, so it stays as text. The
+          storage is therefore unchanged; it is only the name that now
+          says what the column is. }
         sdSqlite:   Result := 'DATETIME';
       end;
     ctDate:
@@ -313,7 +319,7 @@ end;
 
 function TNornColumn.Default(const Value: string): TNornColumn;
 begin
-  { Text_ siteres. DefaultRaw finnes for det som ikke skal det. }
+  { Text is quoted. DefaultRaw exists for what is not to be. }
   FDefault := '''' + StringReplace(Value, '''', '''''', [rfReplaceAll]) + '''';
   FHasDefault := True;
   Result := Self;
@@ -491,19 +497,19 @@ end;
 
 procedure TTableBuilder.Timestamps;
 begin
-  { CURRENT_TIMESTAMP, ikke now(). now() finnes i Postgres og MySQL, men
-    ikke i SQLite — og CURRENT_TIMESTAMP finnes i alle tre. }
+  { CURRENT_TIMESTAMP, not now(). now() exists in Postgres and MySQL, but
+    not in SQLite — and CURRENT_TIMESTAMP exists in all three. }
   Timestamp('created_at').DefaultRaw('CURRENT_TIMESTAMP');
   Timestamp('updated_at').DefaultRaw('CURRENT_TIMESTAMP');
 end;
 
 procedure TTableBuilder.SoftDeletes(const AName: string);
 begin
-  { Nullbar, og uten standardverdi: NULL betyr «ikke slettet», og det er
-    nettopp den forskjellen spørringene filtrerer på. }
+  { Nullable, and with no default: NULL means "not deleted", and that is
+    precisely the difference the queries filter on. }
   Timestamp(AName).Nullable;
-  { Indeksert fordi hver eneste spørring mot tabellen nå har et ledd om
-    denne kolonnen. }
+  { Indexed because every single query against the table now has a clause
+    about this column. }
   Index([AName]);
 end;
 
@@ -580,7 +586,7 @@ end;
 
 procedure TSchemaBuilder.Execute(const Sql: string);
 begin
-  { Rå SQL legges inn som en egen operasjon i rekkefølgen. }
+  { Raw SQL is put in as an operation of its own in the order. }
   FRaw.AddObject(Sql, TObject(PtrInt(FOps.Count)));
 end;
 
@@ -600,18 +606,19 @@ begin
   if C.FUnique and not C.FPrimaryKey then
     Result := Result + ' UNIQUE';
 
-  { **InnoDB overser REFERENCES skrevet på kolonnen.** Setningen parses uten
-    feil, tabellen opprettes, og fremmednøkkelen finnes ikke — det er verre
-    enn en feilmelding, for skjemaet ser riktig ut helt til noe sletter en
-    rad det pekes på. MySQL får derfor en FOREIGN KEY-klausul på tabellnivå,
-    lagt til av kalleren. }
+  { **InnoDB silently ignores REFERENCES written on the column.** The
+    statement parses without error, the table is created, and the foreign
+    key does not exist — which is worse than an error message, because the
+    schema looks right until something deletes a row that is pointed at.
+    MySQL therefore gets a FOREIGN KEY clause at table level, added by the
+    caller. }
   if (C.FRefTable <> '') and (Dialect <> sdMySql) then
     Result := Result + ' REFERENCES ' + QuoteIdent(C.FRefTable, Dialect) +
       '(' + QuoteIdent(C.FRefColumn, Dialect) + ') ON DELETE ' + C.FOnDelete;
 end;
 
-{ Fremmednøkkel på tabellnivå. Bare MySQL trenger den; de to andre tar
-  kolonneformen. }
+{ A foreign key at table level. Only MySQL needs it; the other two take
+  the column form. }
 function ForeignKeySql(C: TNornColumn; Dialect: TSqlDialect): string;
 begin
   Result := 'FOREIGN KEY (' + QuoteIdent(C.Name, Dialect) + ') REFERENCES ' +
@@ -648,7 +655,7 @@ begin
   try
     for I := 0 to FOps.Count - 1 do
     begin
-      { Rå SQL som ble lagt inn før denne operasjonen. }
+      { Raw SQL that was put in before this operation. }
       for K := 0 to FRaw.Count - 1 do
         if PtrInt(FRaw.Objects[K]) = I then
           Out_.Add(FRaw[K]);
@@ -689,8 +696,9 @@ begin
             begin
               Out_.Add('ALTER TABLE ' + QuoteIdent(T.Table, FDialect) +
                 ' ADD COLUMN ' + ColumnSql(C, FDialect, False));
-              { Samme grunn som over: kolonneformen blir borte i MySQL, så
-                fremmednøkkelen må legges til som egen setning. }
+              { The same reason as above: the column form disappears in MySQL, so
+                the foreign key has to be added as a statement of its
+                own. }
               if (FDialect = sdMySql) and (C.FRefTable <> '') then
                 Out_.Add('ALTER TABLE ' + QuoteIdent(T.Table, FDialect) +
                   ' ADD ' + ForeignKeySql(C, FDialect));
@@ -727,7 +735,7 @@ begin
       end;
     end;
 
-    { Rå SQL lagt inn etter siste tabelloperasjon. }
+    { Raw SQL put in after the last table operation. }
     for K := 0 to FRaw.Count - 1 do
       if PtrInt(FRaw.Objects[K]) >= FOps.Count then
         Out_.Add(FRaw[K]);

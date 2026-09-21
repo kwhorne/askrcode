@@ -1,7 +1,7 @@
-{ Askr.Norn.Migration — migrasjoner og kjøring av dem.
+{ Askr.Norn.Migration — migrations and running them.
 
-  En migrasjon er en klasse som registrerer seg selv i sin initialization.
-  Versjonen er et tidsstempel som tekst, slik at sortering er rekkefølge.
+  A migration is a class that registers itself in its own initialization.
+  The version is a timestamp as text, so that sorting is order.
 
       type
         TCreateCustomers = class(TMigration)
@@ -11,10 +11,10 @@
           procedure Down(S: TSchemaBuilder); override;
         end;
 
-  Hver migrasjon kjøres i sin egen transaksjon der dialekten tillater det.
-  Postgres og SQLite gjør det; MySQL committer implisitt ved DDL, og der er
-  en halvkjørt migrasjon noe brukeren må rydde selv. Det sies eksplisitt i
-  stedet for å latest som om det er trygt. }
+  Each migration runs in a transaction of its own where the dialect allows
+  it. Postgres and SQLite do; MySQL commits implicitly on DDL, and there a
+  half-run migration is something the user has to clean up. That is said
+  explicitly rather than pretending it is safe. }
 unit Askr.Norn.Migration;
 
 {$mode Delphi}{$H+}
@@ -31,12 +31,14 @@ const
 type
   TMigration = class
   public
-    { Tidsstempel som tekst: '20260919143000'. Sortering er rekkefølge. }
+    { A timestamp as text: '20260919143000'. Sorting is order. }
     class function Version: string; virtual; abstract;
-    { Lesbart navn. Utledes fra klassenavnet om den ikke overstyres. }
+    { A readable name. Derived from the class name unless it is
+      overridden. }
     class function Title: string; virtual;
     procedure Up(S: TSchemaBuilder); virtual; abstract;
-    { Without Down er migrasjonen ikke reversibel, og Down vil nekte. }
+    { Without Down the migration is not reversible, and Down will
+      refuse. }
     procedure Down(S: TSchemaBuilder); virtual;
     class function Reversible: Boolean; virtual;
   end;
@@ -52,8 +54,8 @@ type
   end;
   TMigrationInfoArray = array of TMigrationInfo;
 
-  { Vanlig prosedyre, ikke «of object». Loggingen her er et verktøy som
-    kjøres fra en kommandolinje, ikke en hendelse på et objekt. }
+  { An ordinary procedure, not "of object". The logging here is a tool run
+    from a command line, not an event on an object. }
   TNornLog = procedure(const Line: string);
 
   TMigrator = class
@@ -73,12 +75,13 @@ type
     constructor Create(AConn: TDbConnection);
     destructor Destroy; override;
 
-    { All_ registrerte og alle kjørte, slått sammen og sortert. En rad som er
-      kjørt men ikke registrert betyr at en migrasjonsfil er borte. }
+    { All registered and all run, merged and sorted. A row that has been
+      run but is not registered means a migration file has gone
+      missing. }
     function Status: TMigrationInfoArray;
     function PendingCount: Integer;
 
-    { Kjører ventende migrasjoner. Steps = 0 betyr alle. }
+    { Runs pending migrations. Steps = 0 means all of them. }
     function Up(Steps: Integer = 0): Integer;
     { Ruller tilbake de siste. }
     function Down(Steps: Integer = 1): Integer;
@@ -177,8 +180,8 @@ end;
 
 function TMigrator.UseTransaction: Boolean;
 begin
-  { MySQL committer implisitt ved DDL, så en transaksjon der gir falsk
-    trygghet. }
+  { MySQL commits implicitly on DDL, so a transaction there gives false
+    confidence. }
   Result := FConn.Dialect <> sdMySql;
 end;
 
@@ -195,10 +198,10 @@ begin
       IfNotExists := True;
       Text('version', 64).PrimaryKey;
       Text('title', 255);
-      { CURRENT_TIMESTAMP, ikke now(). now() finnes i Postgres og MySQL,
-        men ikke i SQLite — og migrasjonstabellens egen DDL hadde aldri
-        vært kjørt mot SQLite før, fordi Norn-testene går mot de to andre.
-        Samme regel som TTableBuilder.Timestamps følger. }
+      { CURRENT_TIMESTAMP, not now(). now() exists in Postgres and MySQL,
+        but not in SQLite — and the migration table's own DDL had never
+        been run against SQLite before, because the Norn tests go against
+        the other two. The same rule TTableBuilder.Timestamps follows. }
       Timestamp('applied_at').DefaultRaw('CURRENT_TIMESTAMP');
     end;
     Stmts := S.ToSql;
@@ -335,7 +338,8 @@ begin
       Result[N].Applied := Applied.IndexOf(M.Version) >= 0;
     end;
 
-    { Kjørte versjoner uten registrert klasse — filen er borte. }
+    { Versions that have been run with no registered class — the file is
+      gone. }
     for I := 0 to Applied.Count - 1 do
     begin
       Found := False;

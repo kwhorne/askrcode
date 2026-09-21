@@ -1,12 +1,12 @@
-{ Askr.Norn.Introspect — leser det faktiske skjemaet ut av databasen.
+{ Askr.Norn.Introspect — reads the actual schema out of the database.
 
-  Dette er halve poenget med Norn. Migrasjonen sier hva som skulle skje;
-  introspeksjonen sier hva som faktisk står der. Codegen bygger på det siste,
-  ikke det første, slik at en kolonne som ble lagt til for hånd eller en
-  migrasjon som feilet halvveis ikke blir usynlig.
+  This is half the point of Norn. The migration says what was supposed to
+  happen; the introspection says what is actually there. Codegen builds on
+  the latter, not the former, so that a column added by hand or a migration
+  that failed halfway does not become invisible.
 
-  Postgres og SQLite er implementert. MySQL har samme form og kan legges til
-  uten å røre codegen. }
+  Postgres and SQLite are implemented. MySQL has the same shape and can be
+  added without touching codegen. }
 unit Askr.Norn.Introspect;
 
 {$mode Delphi}{$H+}
@@ -61,8 +61,9 @@ type
     function ForeignKey(Index: Integer): TDbForeignKey;
     function IndexCount: Integer;
     function IndexAt(Index: Integer): TDbIndex;
-    { True når kolonnen er første kolonne i en indeks. Det er dette en
-      advarsel om «Where mot kolonne uten indeks» må bygge på. }
+    { True when the column is the first column in an index. That is what a
+      warning about "Where against a column without an index" has to build
+      on. }
     function IsIndexed(const AColumn: string): Boolean;
     property Name: string read FName;
   end;
@@ -82,10 +83,11 @@ type
 { Leser hele skjemaet. Kalleren eier resultatet. }
 function IntrospectSchema(Conn: TDbConnection): TDbSchema;
 
-{ Oversetter en SQL-type til kolonnetypen query builderen bruker.
-  Returnerer navnet på TCol-aliaset: 'TColInt64', 'TColStr' og så videre. }
+{ Translates a SQL type to the column type the query builder uses.
+  Returns the name of the TCol alias: 'TColInt64', 'TColStr' and so on. }
 function ColAliasFor(const SqlType: string; Scale: Integer): string;
-{ Pascal-typen bak aliaset, til bruk i kommentarer og manifest. }
+{ The Pascal type behind the alias, for use in comments and the
+  manifest. }
 function PascalTypeFor(const SqlType: string; Scale: Integer): string;
 
 implementation
@@ -219,14 +221,14 @@ begin
      (T = 'int8') or (T = 'smallint') or (T = 'int2') or (T = 'serial') or
      (T = 'bigserial') then
     Exit('TColInt64');
-  { MySQL og SQLite har ingen egen boolsk type: begge skriver TINYINT(1),
-    og det er konvensjonen som gjør den boolsk. Bredden må derfor leses før
-    parentesen strykes. }
+  { MySQL and SQLite have no boolean type of their own: both write
+    TINYINT(1), and it is the convention that makes it boolean. The width
+    therefore has to be read before the parentheses are stripped. }
   if (T = 'tinyint(1)') or (T = 'bit(1)') then
     Exit('TColBool');
-  { SQLite oppgir typen slik den ble erklært: NUMERIC(12,2), VARCHAR(60),
-    TINYINT(1). MySQLs column_type ser likedan ut. Parentesen må vekk før
-    sammenlikningen. }
+  { SQLite reports the type the way it was declared: NUMERIC(12,2),
+    VARCHAR(60), TINYINT(1). MySQL's column_type looks the same. The
+    parentheses have to go before the comparison. }
   if Pos('(', T) > 0 then
     T := Trim(Copy(T, 1, Pos('(', T) - 1));
   { Resten av MySQLs heltallstyper. Without dem ville en mediumint blitt tekst. }
@@ -240,8 +242,9 @@ begin
     Exit('TColBool');
   if (T = 'numeric') or (T = 'decimal') or (T = 'money') then
   begin
-    { Currency har fire desimaler. Mer enn det måtte gått til flyttall, og da
-      er det bedre å si det enn å miste presisjon i det stille. }
+    { Currency has four decimals. More than that would have to go to
+      floating point, and then it is better to say so than to lose
+      precision in silence. }
     if (Scale >= 0) and (Scale <= 4) then
       Exit('TColCurrency');
     Exit('TColFloat');
@@ -249,13 +252,14 @@ begin
   if (T = 'double precision') or (T = 'double') or (T = 'real') or
      (T = 'float') or (T = 'float4') or (T = 'float8') then
     Exit('TColFloat');
-  { MySQLs datetime starter ikke med «time», og ville falt gjennom til tekst
-    hvis den ikke sto her. }
+  { MySQL's datetime does not start with "time", and would have fallen
+    through to text if it were not here. }
   if (Pos('timestamp', T) = 1) or (T = 'date') or (T = 'datetime') or
      (Pos('time', T) = 1) then
     Exit('TColDateTime');
-  { Alt annet — text, varchar, uuid, jsonb, bytea — behandles som tekst.
-    Det er sant for wire-formatet, som er det query builderen ser. }
+  { Everything else — text, varchar, uuid, jsonb, bytea — is treated as
+    text. That is true of the wire format, which is what the query builder
+    sees. }
   Result := 'TColStr';
 end;
 
@@ -418,8 +422,8 @@ begin
       if T = nil then
         Continue;
 
-      { Radene kommer sortert per indeks, så vi utvider den siste hvis navnet
-        er det samme. }
+      { The rows come sorted per index, so we extend the last one if the
+        name is the same. }
       N := Length(T.FIndexes);
       if (N > 0) and (T.FIndexes[N - 1].Name = IdxName) then
       begin
@@ -446,16 +450,16 @@ end;
 { MySQL }
 
 const
-  { DATABASE() er skjemaet forbindelsen står i. Det gjør spørringene
-    uavhengige av hva databasen heter, på samme måte som current_schema()
-    gjør i Postgres. }
+  { DATABASE() is the schema the connection is in. That makes the queries
+    independent of what the database is called, the same way
+    current_schema() does in Postgres. }
   MySqlTables =
     'SELECT table_name FROM information_schema.tables ' +
     'WHERE table_schema = DATABASE() AND table_type = ''BASE TABLE'' ' +
     'ORDER BY table_name';
 
-  { column_type, ikke data_type: det er den som skiller tinyint(1) fra
-    tinyint(4), og dermed boolsk fra heltall. }
+  { column_type, not data_type: that is the one that separates tinyint(1)
+    from tinyint(4), and so boolean from integer. }
   MySqlColumns =
     'SELECT table_name, column_name, column_type, is_nullable, ' +
     '       IFNULL(column_default, ''''), ' +
@@ -478,8 +482,8 @@ const
     'WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL ' +
     'ORDER BY table_name, constraint_name, ordinal_position';
 
-  { non_unique er 0 for unike indekser — altså omvendt av navnet. Primær-
-    nøkkelen heter alltid PRIMARY i MySQL. }
+  { non_unique is 0 for unique indexes — that is, the opposite of the
+    name. The primary key is always called PRIMARY in MySQL. }
   MySqlIndexes =
     'SELECT table_name, index_name, ' +
     '       CASE WHEN non_unique = 0 THEN 1 ELSE 0 END, ' +
@@ -589,8 +593,8 @@ begin
   end;
 end;
 
-{ SQLite har ingen information_schema. Alt går gjennom pragmaer, og de
-  returnerer én tabell om gangen — derfor løkka over tabellnavn. }
+{ SQLite has no information_schema. Everything goes through pragmas, and
+  they return one table at a time — hence the loop over table names. }
 function IntrospectSqlite(Conn: TDbConnection; A: TArena): TDbSchema;
 var
   R, RC, RI, RF: TDbResult;
@@ -629,9 +633,10 @@ begin
         C.DefaultExpr := RC.Value(J, 4).ToString;
         C.MaxLength := 0;
         C.Precision := 0;
-        { SQLite oppgir NUMERIC(12,2) som typetekst, ikke som egne felter.
-          Skalaen leses ut av teksten, fordi det er den som avgjør om
-          kolonnen blir Currency eller Double i generert kode. }
+        { SQLite reports NUMERIC(12,2) as type text, not as separate fields.
+          The scale is read out of the text, because that is what decides
+          whether the column becomes Currency or Double in generated
+          code. }
         C.Scale := -1;
         K := Pos(',', C.SqlType);
         if (K > 0) and (Pos('(', C.SqlType) > 0) then
@@ -656,8 +661,9 @@ begin
         T.FIndexes[N].IsPrimary := RI.Value(J, 3).EqualsStr('pk');
         SetLength(T.FIndexes[N].Columns, 0);
       end;
-      { Kolonnene per indeks krever et eget pragma-kall, og det må gjøres
-        etter at index_list er lest ferdig — arenaen nullstilles under. }
+      { The columns per index require a pragma call of their own, and that
+        has to be done after index_list has been read to the end — the
+        arena is reset underneath. }
       for J := 0 to High(T.FIndexes) do
       begin
         A.Reset;

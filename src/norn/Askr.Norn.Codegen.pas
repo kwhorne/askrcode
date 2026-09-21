@@ -1,21 +1,22 @@
-{ Askr.Norn.Codegen — genererer typede kolonner fra det faktiske skjemaet.
+{ Askr.Norn.Codegen — generates typed columns from the actual schema.
 
-  Nornene skriver, Urd husker. Dette er filene Urd leser.
+  The Norns write, Urd remembers. These are the files Urd reads.
 
-  For hver tabell lages en unit med en record av TCol<T>-konstanter. Det er
-  disse som gjør at en skrivefeil i et kolonnenavn blir en kompileringsfeil,
-  og at .Where(Customers.Balance, GT, 'abc') ikke kompilerer.
+  For each table a unit is made with a record of TCol<T> constants. They are
+  what turns a typo in a column name into a compile error, and what keeps
+  .Where(Customers.Balance, GT, 'abc') from compiling.
 
-  I tillegg lages et manifest med indekser, fremmednøkler og kardinalitet.
-  PRD-en peker på manifestet som grunnlaget for tre analyser: advarsel ved
-  Where mot kolonne uten indeks, N+1 i en løkke, og Inertia-felt som ikke
-  finnes. Ingen av dem kan håndheves ved kompilering i Free Pascal, fordi
-  språket ikke har comptime. Manifestet er derfor data og oppslag ved kjøring
-  — nok til en analysator utenfor kompilatoren, ikke nok til det PRD-en lover.
-  Det er en av de tingene fase 3 må ta stilling til.
+  In addition a manifest is made with indexes, foreign keys and cardinality.
+  The PRD points at the manifest as the basis for three analyses: a warning
+  on a Where against a column without an index, N+1 in a loop, and Inertia
+  fields that do not exist. None of them can be enforced at compile time in
+  Free Pascal, because the language has no comptime. The manifest is
+  therefore data and lookups at run time — enough for an analyser outside
+  the compiler, not enough for what the PRD promises. That is one of the
+  things phase 3 has to take a position on.
 
-  Filene her redigeres aldri for hånd og sjekkes inn i git. `askr schema:check`
-  sier fra når de ikke lenger stemmer med databasen. }
+  The files here are never edited by hand and are checked into git.
+  `askr schema:check` says so when they no longer match the database. }
 unit Askr.Norn.Codegen;
 
 {$mode Delphi}{$H+}
@@ -45,30 +46,32 @@ function DefaultCodegenOptions: TCodegenOptions;
 function GenerateSources(Schema: TDbSchema;
   const Opts: TCodegenOptions): TGeneratedFiles;
 
-{ Skriver filene. Returnerer navnene på dem som faktisk ble endret. }
+{ Writes the files. Returns the names of the ones that actually
+  changed. }
 function WriteSources(const Files: TGeneratedFiles;
   const Opts: TCodegenOptions): TStringArray;
 
-{ Sammenlikner generert kildekode med det som ligger på disk.
-  Tom liste betyr at de stemmer. }
+{ Compares generated source with what is on disk. An empty list means
+  they match. }
 function CheckDrift(const Files: TGeneratedFiles;
   const Opts: TCodegenOptions): TStringArray;
 
-{ Navnekonvensjoner, eksponert fordi testene og manifestet bruker dem. }
+{ Naming conventions, exposed because the tests and the manifest use
+  them. }
 function PascalCase(const S: string): string;
 function TableTypeName(const Table: string): string;
 function TableConstName(const Table: string): string;
 function MemberName(const Column: string): string;
 function SchemaFingerprint(Schema: TDbSchema): string;
-{ Avtrykk for én tabell. Ligger i tabellens egen fil, slik at en endring i
-  customers ikke får orders til å se endret ut. }
+{ The fingerprint for one table. It lives in the table's own file, so that
+  a change in customers does not make orders look changed. }
 function TableFingerprint(T: TDbTable): string;
 
 implementation
 
 const
-  { Ord som ikke kan brukes som feltnavn. Kolliderer et kolonnenavn med ett
-    av dem, får medlemmet en understrek bak. }
+  { Words that cannot be used as field names. If a column name collides
+    with one of them, the member gets a trailing underscore. }
   Reserved: array[0..40] of string = (
     'and', 'array', 'as', 'begin', 'case', 'class', 'const', 'div', 'do',
     'downto', 'else', 'end', 'except', 'file', 'for', 'function', 'goto',
@@ -142,13 +145,14 @@ begin
     Result := Result + ' ';
 end;
 
-{ FNV-1a. Trenger ikke være kryptografisk — den skal bare endre seg når
-  skjemaet gjør det.
+{ FNV-1a. It does not need to be cryptographic — it only has to change
+  when the schema does.
 
-  Algoritmen er tuftet på at multiplikasjonen flyter over og brytes modulo
-  ordstørrelsen. Bygger noen med -Cr eller -Co, som er helt rimelig i en
-  debug-bygging, blir den tilsiktede wraparounden til en ERangeError.
-  Avhengigheten står derfor her i stedet for å være stilltiende. }
+  The algorithm is built on the multiplication overflowing and being cut
+  modulo the word size. If somebody builds with -Cr or -Co, which is
+  entirely reasonable in a debug build, the intended wraparound becomes an
+  ERangeError. The dependency is therefore written here rather than being
+  tacit. }
 {$push}{$R-}{$Q-}
 function Fnv1a(const S: string; Seed: QWord): QWord;
 var
@@ -241,7 +245,8 @@ begin
   TypeName := TableTypeName(T.Name);
   ConstName := TableConstName(T.Name);
 
-  { Kolonnene stilles opp, så filen er lesbar når noen først åpner den. }
+  { The columns are lined up, so the file is readable when somebody does
+    open it. }
   WName := 0;
   WType := 0;
   for I := 0 to T.ColumnCount - 1 do
@@ -408,8 +413,8 @@ begin
     end;
     B.Add('');
 
-    { Fremmednøkler — kardinaliteten PRD-en ber om ligger her: hver rad er en
-      mange-til-én fra Table.Column til RefTable.RefColumn. }
+    { Foreign keys — the cardinality the PRD asks for is here: each row is
+      a many-to-one from Table.Column to RefTable.RefColumn. }
     Total := 0;
     for I := 0 to Schema.TableCount - 1 do
       Inc(Total, Schema.TableAt(I).ForeignKeyCount);
@@ -436,15 +441,16 @@ begin
     end;
 
     B.Add('');
-    B.Add('{ Oppslag ved kjøring. PRD-en vil ha disse ved kompilering — det');
-    B.Add('  krever comptime, som Free Pascal ikke har. Se Rún-dokumentet. }');
+    B.Add('{ Lookups at run time. The PRD wants these at compile time — that');
+    B.Add('  requires comptime, which Free Pascal does not have. See the');
+    B.Add('  Rún document. }');
     B.Add('function ColumnExists(const Table, Column: string): Boolean;');
     B.Add('function IsIndexed(const Table, Column: string): Boolean;');
     B.Add('function PascalTypeOf(const Table, Column: string): string;');
     B.Add('');
     B.Add('implementation');
     B.Add('');
-    { uses hører rett etter implementation, ikke nederst. }
+    { uses belongs right after implementation, not at the bottom. }
     B.Add('uses');
     B.Add('  SysUtils;');
     B.Add('');
@@ -566,8 +572,8 @@ begin
   for I := 0 to High(Files) do
   begin
     Path := IncludeTrailingPathDelimiter(Opts.OutputDir) + Files[I].FileName;
-    { Uendrede filer røres ikke, slik at tidsstempler og inkrementell
-      kompilering ikke forstyrres unødig. }
+    { Unchanged files are left alone, so that timestamps and incremental
+      compilation are not disturbed for no reason. }
     if ReadWhole(Path) = Files[I].Source then
       Continue;
     L := TStringList.Create;
