@@ -8,6 +8,28 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.9.0
+
+One thing can break, and only if you use the CBOR reader directly:
+**`TCborReader.Ferdig` is now `TCborReader.FullyConsumed`.** Nothing in
+Askr called it — `Askr.WebAuthn` uses `AtEnd` — so this is very unlikely
+to be you. Every other renamed identifier in this release was private or
+local.
+
+Two things are worth knowing but cannot break an existing project:
+
+**The code `askr new --auth` generates uses English names now.** `Epost`
+is `Email`, `Passord` is `Password`, `Meg` is `CurrentUser`, and so on.
+Your already-generated `App.Http.AuthController.pas` is yours and is not
+touched; only newly scaffolded projects differ. If you rerun
+`askr make auth --force`, the file is rewritten and your own edits to it
+go with it — that has always been true of `--force`.
+
+**`Lauf.Tabs` gained props and changed no defaults.** `variant` defaults
+to `underline` and `size` to `base`, which is what the old component
+rendered. Tabs that overflow now wrap instead of pushing the page wider;
+if you want the old single line, pass `scrollable`.
+
 ## 0.8.1
 
 Nothing can break. Documentation only.

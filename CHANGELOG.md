@@ -12,7 +12,10 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.9.0 — 2026-09-21
+
+A markdown editor, tabs that do what Flux's do, and the last of the
+Norwegian out of the framework's own source.
 
 ### Added
 
@@ -80,18 +83,51 @@ with the zero-major caveat that minor releases may break things until
 
 ### Changed
 
-- **Comments and identifiers in code are English from now on.** The rule
-  in the working notes is reversed: code is English, working notes stay
-  Norwegian. Existing code was not rewritten wholesale — the identifiers
-  were (3164 occurrences, compiler-verified on both compilers) and
-  `src/core` was, but the rest still carries Norwegian comments and is
-  converted as files are touched.
+- **All of `src/` is English — comments and identifiers.** The rule in the
+  working notes is reversed: code is English, the working notes stay
+  Norwegian. This release finishes the sweep for the framework itself:
+  every unit under `src/` now carries English comments, and the last
+  Norwegian identifiers are gone (about 1100 further occurrences on top of
+  the 3164 renamed earlier, all compiler-verified on 3.2.2 and 3.3.1).
+
+  A comment nobody can read is not a comment, and the reasons written down
+  in this code are most of its value.
+
+- **The code `askr new --auth` generates is English too.** That is the part
+  a user actually reads: the sign-in controller, the user and credential
+  models, the migrations and `app.lpr`. It had Norwegian identifiers —
+  `Epost`, `Passord`, `Meg`, `Plassholder`, `BremseNokkel` — in a file the
+  scaffolding hands you and tells you to edit. They are now `Email`,
+  `Password`, `CurrentUser`, `Placeholder`, `ThrottleKey`.
+
+  Verified by scaffolding an app and building it, not by reading: nothing
+  in `./askr test` compiles the generated output.
+
+- `TCborReader.Ferdig` is now `TCborReader.FullyConsumed`. It is the one
+  renamed identifier that was public; see [UPGRADE.md](UPGRADE.md).
+
+### Fixed
+
+- **`Lauf.Tabs.Panel findable` threw on every unmount.** The effect's
+  teardown read `el` again, and `bind:this` has already set it back to
+  null by then, so `removeEventListener` ran on null. The node is captured
+  now.
+
+  It threw on every single unmount and nothing failed — vitest reported it
+  as an unhandled rejection beside a green run. The test that holds it
+  closed asserts the listener was actually removed, and was mutation-checked
+  by putting the old line back.
 
 ### Notes
 
 `Editor` measures 95 kB mounted and minified, against a 73 kB floor for a
 bare `<Button>`. An app that does not use it pays none of that, and the
 tree-shaking test checks exactly that.
+
+**The sweep stops at `src/`.** `tests/`, `examples/` and `tools/` still
+carry Norwegian comments — around 440 lines. They are converted as files
+are touched, the same way `src/` was, and nothing in them is read by
+someone using the framework.
 
 ## 0.8.1 — 2026-09-21
 

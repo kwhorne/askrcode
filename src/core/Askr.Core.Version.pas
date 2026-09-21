@@ -23,12 +23,12 @@ const
   { Change this and frontend/lauf/package.json has to follow. The test
     fails otherwise, and that is the point: one release is one number
     across two ecosystems. }
-  AskrVersion = '0.8.1';
+  AskrVersion = '0.9.0';
 
 type
   TSemVer = record
     Major, Minor, Patch: Integer;
-    { Tom for en vanlig utgivelse. '0.7.0-rc.1' gir 'rc.1'. }
+    { Empty for an ordinary release. '0.7.0-rc.1' gives 'rc.1'. }
     Pre: string;
     Valid: Boolean;
   end;

@@ -49,8 +49,12 @@
   $effect(() => {
     if (!el) return
     if (!findable) return
-    el.addEventListener('beforematch', reveal)
-    return () => el.removeEventListener('beforematch', reveal)
+    // The node is captured, not read again in the teardown: `bind:this`
+    // has already set `el` back to null by the time cleanup runs, and
+    // reading it there throws on every unmount.
+    const node = el
+    node.addEventListener('beforematch', reveal)
+    return () => node.removeEventListener('beforematch', reveal)
   })
 
   // A MutationObserver rather than an effect, because Bits rewrites
@@ -65,13 +69,14 @@
   // 'until-found' already there and does nothing.
   $effect(() => {
     if (!el || !findable) return
+    const node = el
     const mark = () => {
-      if (el.hasAttribute('hidden') && el.getAttribute('hidden') !== 'until-found')
-        el.setAttribute('hidden', 'until-found')
+      if (node.hasAttribute('hidden') && node.getAttribute('hidden') !== 'until-found')
+        node.setAttribute('hidden', 'until-found')
     }
     mark()
     const mo = new MutationObserver(mark)
-    mo.observe(el, { attributes: true, attributeFilter: ['hidden'] })
+    mo.observe(node, { attributes: true, attributeFilter: ['hidden'] })
     return () => mo.disconnect()
   })
 </script>

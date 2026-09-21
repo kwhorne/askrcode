@@ -170,6 +170,20 @@ describe('Tabs — findable', () => {
       .find((p) => p.textContent.includes('profile'))
     expect(profile.getAttribute('hidden')).toBe('until-found')
   })
+
+  // The teardown must not read `el` again: `bind:this` has already set it
+  // back to null by the time an effect's cleanup runs, so reading it there
+  // throws on every unmount. It threw on every single one, and nothing
+  // failed — vitest reported it as an unhandled rejection beside a green
+  // run. The listener is what proves the node was captured.
+  it('unmounting removes the listener instead of throwing', () => {
+    const { container } = render(TabsFull, { findable: true })
+    const panel = container.querySelector('[role="tabpanel"]')
+    const removed = []
+    panel.removeEventListener = (type) => removed.push(type)
+    expect(() => cleanup()).not.toThrow()
+    expect(removed).toContain('beforematch')
+  })
 })
 
 describe('Tabs — axe', () => {
