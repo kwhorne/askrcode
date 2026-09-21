@@ -686,10 +686,13 @@ engelsk. Ikke bland i samme funksjon.
 **Arbeidsnotatene er fortsatt norske** — CLAUDE.md, LAUF.md og LARAVEL.md.
 De er ikke kode og ikke produkt; de er notater til oss.
 
-**Sveipen er ferdig for `src/`, `tools/` og `tests/`.** Det som står igjen
-er `examples/`. Ikke-ASCII testdata er bevisst beholdt: `Blåbærsyltetøy 🫐`
+**Sveipen er ferdig.** `src/`, `tools/`, `tests/` og `examples/` er
+engelske. Ikke-ASCII testdata er bevisst beholdt: `Blåbærsyltetøy 🫐`
 tester utf8mb4, `/a/b/æ` tester prosentdekoding og `æøå — 日本` tester UTF-8
 gjennom JSON. De er data, ikke tekst noen leser.
+
+**`./askr` selv skriver fortsatt norsk**, og skal gjøre det: det er
+byggverktøyet vårt, ikke produktet.
 
 **README.md er unntaket som flyttet.** Den var et arbeidsnotat på norsk til
 repoet ble offentlig. Nå er den det første noen ser på GitHub, altså
