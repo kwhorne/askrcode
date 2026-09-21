@@ -1,6 +1,6 @@
-{ Generisk metode inne i en generisk klasse.
+{ A generic method inside a generic class.
   3.2.2: Declaration of generic inside another generic is not allowed. }
-unit p1_generisk_i_generisk;
+unit p1_generic_in_generic;
 {$mode Delphi}{$H+}
 interface
 type

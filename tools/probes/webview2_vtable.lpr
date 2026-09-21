@@ -1,23 +1,23 @@
-{ Sjekker det som kan sjekkes av WebView2-bindingen uten Windows.
+{ Checks what can be checked of the WebView2 binding without Windows.
 
-  Dette er ikke en kjøring, og det later ikke som det. Windows-API-et er
-  stubbet ut. Det som faktisk prøves er Pascal-siden:
+  This is not a run, and it does not pretend to be one. The Windows API is
+  stubbed out. What is actually tried is the Pascal side:
 
-    * at COM-interfacene lar seg deklarere med den metoderekkefølgen
-      WebView2.h har,
-    * at TInterfacedObject-klassene **faktisk oppfyller** callback-
-      interfacene — kompilatoren sammenligner signaturene, og en feil der
-      er en av de få tingene som ellers først ville vist seg som et krasj
-      hos en bruker,
-    * at «as»-castene og flyten går opp.
+    * that the COM interfaces can be declared in the method order
+      WebView2.h has,
+    * that the TInterfacedObject classes **actually satisfy** the callback
+      interfaces — the compiler compares the signatures, and a mistake
+      there is one of the few things that would otherwise first show up as
+      a crash in front of a user,
+    * that the "as" casts and the flow add up.
 
-  Signaturene mot Windows-API-et er verifisert hver for seg, ved å lese
-  FPCs egne deklarasjoner i rtl/win. Det er to ulike sjekker, og ingen av
-  dem erstatter å kjøre koden på Windows.
+  The signatures against the Windows API are verified separately, by
+  reading FPC's own declarations in rtl/win. Those are two different
+  checks, and neither replaces running the code on Windows.
 
-  Deklarasjonene her er en kopi av dem i Askr.Desktop. Endres den ene, må
-  den andre følge etter — de kan ikke deles, fordi originalen ligger bak
-  en betinget kompilering for Windows. }
+  The declarations here are a copy of the ones in Askr.Desktop. Change one
+  and the other has to follow — they cannot be shared, because the
+  original sits behind conditional compilation for Windows. }
 program webview2_vtable;
 
 {$mode Delphi}{$H+}
@@ -26,7 +26,7 @@ uses
   SysUtils;
 
 type
-  { Stubber. Only formen betyr noe her. }
+  { Stubs. Only the shape matters here. }
   HWND = PtrUInt;
   TRect = record Left, Top, Right, Bottom: LongInt; end;
 
@@ -144,13 +144,13 @@ var
   Env: ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler;
   Ctrl: ICoreWebView2CreateCoreWebView2ControllerCompletedHandler;
 begin
-  { Oppfyller klassene interfacene? Kompilatoren svarer på det over; her
-    sjekkes at castene også går opp i praksis. }
+  { Do the classes satisfy the interfaces? The compiler answers that
+    above; here we check that the casts also add up in practice. }
   GEnvHandler := TEnvHandler.Create;
   Env := GEnvHandler as ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler;
   if Env = nil then
   begin
-    WriteLn('FEIL: TEnvHandler oppfyller ikke miljø-callbacken');
+    WriteLn('FAIL: TEnvHandler does not satisfy the environment callback');
     Halt(1);
   end;
 
@@ -158,29 +158,30 @@ begin
   Ctrl := GCtrlHandler as ICoreWebView2CreateCoreWebView2ControllerCompletedHandler;
   if Ctrl = nil then
   begin
-    WriteLn('FEIL: TControllerHandler oppfyller ikke kontroller-callbacken');
+    WriteLn('FAIL: TControllerHandler does not satisfy the controller callback');
     Halt(1);
   end;
 
-  { Et kall med feilkode skal komme uskadd tilbake uten å røre noe COM. }
+  { A call with an error code must come back unharmed without touching
+    any COM. }
   if Env.Invoke(HResult($80004005), nil) <> 0 then
   begin
-    WriteLn('FEIL: Invoke med feilkode returnerte ikke S_OK');
+    WriteLn('FAIL: Invoke with an error code did not return S_OK');
     Halt(1);
   end;
   if Ctrl.Invoke(HResult($80004005), nil) <> 0 then
   begin
-    WriteLn('FEIL: kontroller-Invoke med feilkode returnerte ikke S_OK');
+    WriteLn('FAIL: the controller Invoke with an error code did not return S_OK');
     Halt(1);
   end;
 
-  WriteLn('ok  COM-interfacene lar seg deklarere i WebView2.h-rekkefølge');
-  WriteLn('ok  begge callback-klassene oppfyller interfacene sine');
-  WriteLn('ok  feilkode-stien returnerer S_OK uten å røre COM');
+  WriteLn('ok  the COM interfaces can be declared in WebView2.h order');
+  WriteLn('ok  both callback classes satisfy their interfaces');
+  WriteLn('ok  the error-code path returns S_OK without touching COM');
   WriteLn;
-  WriteLn('Merk: Windows-API-kallene er IKKE testet her. De er verifisert');
-  WriteLn('mot FPCs egne deklarasjoner i rtl/win, som er noe annet enn å');
-  WriteLn('kjøre dem.');
+  WriteLn('Note: the Windows API calls are NOT tested here. They are');
+  WriteLn('verified against FPC''s own declarations in rtl/win, which is');
+  WriteLn('something else than running them.');
   Env := nil;
   Ctrl := nil;
   GEnvHandler := nil;

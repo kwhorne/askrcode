@@ -1,8 +1,8 @@
-# Databaser å utvikle Urd mot.
+# Databases to develop Urd against.
 #
-# Egne instanser på egne porter, slik at de ikke kolliderer med andre
-# prosjekter på maskinen. Alt her er kastbart: ingen volumer, ingen data som
-# skal overleve en `docker compose down`.
+# Their own instances on their own ports, so that they do not collide with
+# other projects on the machine. Everything here is throwaway: no volumes,
+# no data that is meant to survive a `docker compose down`.
 #
 #   docker compose -f tools/docker-compose.yml up -d
 #   docker compose -f tools/docker-compose.yml down

@@ -1,9 +1,9 @@
-# Free Pascal-verktøykjede for Askr.
+# The Free Pascal toolchain for Askr.
 #
-# Det offisielle freepascal/fpc-imaget er musl-basert, og FPC 3.2.2 sin
-# cprt0.o er bygget mot glibc. Kombinasjonen linker ikke så snart cthreads
-# drar inn libc. Debians egen fpc-pakke er bygget mot den glibc som ligger i
-# samme image, og er derfor det som faktisk fungerer.
+# The official freepascal/fpc image is musl based, and FPC 3.2.2's cprt0.o
+# is built against glibc. The combination does not link as soon as cthreads
+# pulls in libc. Debian's own fpc package is built against the glibc that
+# sits in the same image, and is therefore what actually works.
 FROM debian:bookworm-slim
 
 RUN apt-get update \
@@ -16,34 +16,35 @@ RUN apt-get update \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# gcc er med for crtbegin.o/crtend.o, som FPC advarer om uten å feile — og
-# fordi steg 2 uansett trenger en C-verktøykjede for libpq og OpenSSL.
+# gcc is here for crtbegin.o/crtend.o, which FPC warns about without
+# failing — and because step 2 needs a C toolchain for libpq and OpenSSL
+# anyway.
 
 WORKDIR /work
 
-# libpq i eget lag, slik at fpc-laget over beholder cachen når driverne
-# utvides. Headerne trengs ikke — bindingen deklareres mot C-ABI-et direkte
-# og lastes med dlopen ved første bruk.
+# libpq in a layer of its own, so that the fpc layer above keeps its cache
+# when the drivers grow. The headers are not needed — the binding is
+# declared against the C ABI directly and loaded with dlopen on first use.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libpq5 postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
-# MySQL-klienten er MariaDBs connector. Den er ABI-kompatibel med
-# libmysqlclient, ligger i Debian, og finnes på Homebrew som
-# mariadb-connector-c — altså én binding som dekker begge serverne.
-# mariadb-client er med for å sette opp skjema i testene.
+# The MySQL client is MariaDB's connector. It is ABI compatible with
+# libmysqlclient, is in Debian, and is on Homebrew as mariadb-connector-c —
+# that is, one binding covering both servers. mariadb-client is here for
+# setting up schemas in the tests.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libmariadb3 mariadb-client \
  && rm -rf /var/lib/apt/lists/*
 
-# libvips for Askr.Image.Vips. Samme mønster som libpq og OpenSSL: den
-# lastes med dlopen ved første bruk, så binæren starter uten den, og en
-# app som aldri skalerer et bilde betaler ingenting.
+# libvips for Askr.Image.Vips. The same pattern as libpq and OpenSSL: it is
+# loaded with dlopen on first use, so the binary starts without it, and an
+# app that never resizes an image pays nothing.
 #
-# Den ligger her og ikke på macOS-siden fordi denne maskinen ikke har
-# Homebrew — og fordi det allerede er slik TLS-testene gjøres: det som
-# krever et systembibliotek prøves i containeren, og suiten hopper over
-# seg selv der biblioteket mangler.
+# It is here and not on the macOS side because that machine has no
+# Homebrew — and because this is already how the TLS tests are done:
+# anything that needs a system library is tried in the container, and the
+# suite skips itself where the library is missing.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libvips42 \
  && rm -rf /var/lib/apt/lists/*

@@ -1,12 +1,12 @@
-{ Generisk klassemetode på en ikke-generisk klasse.
-  3.2.2: samme mismatch, og kompilatorkrasj. }
-unit p3_generisk_klassemetode;
+{ A generic class method on a non-generic class.
+  3.2.2: the same mismatch, plus a compiler crash. }
+unit p3_generic_class_method;
 {$mode Delphi}{$H+}
 interface
 type
   TBox<M: class> = class
   public
-    Klasse: TClass;
+    Cls: TClass;
   end;
 
   Urd = class
@@ -17,6 +17,6 @@ implementation
 class function Urd.Query<M>: TBox<M>;
 begin
   Result := TBox<M>.Create;
-  Result.Klasse := M;
+  Result.Cls := M;
 end;
 end.

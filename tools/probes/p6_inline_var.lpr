@@ -1,4 +1,4 @@
-{ Inline variabeldeklarasjon i en for-løkke.
+{ An inline variable declaration in a for loop.
   3.2.2: Illegal expression. }
 program p6_inline_var;
 {$mode Delphi}{$H+}

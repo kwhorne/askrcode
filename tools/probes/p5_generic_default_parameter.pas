@@ -1,6 +1,6 @@
-{ Generisk frittstående funksjon med standardparameter.
-  3.2.2: signaturene matcher ikke. }
-unit p5_generisk_standardparameter;
+{ A generic standalone function with a default parameter.
+  3.2.2: the signatures do not match. }
+unit p5_generic_default_parameter;
 {$mode Delphi}{$H+}
 interface
 type

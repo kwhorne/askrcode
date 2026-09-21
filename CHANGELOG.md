@@ -12,6 +12,21 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Changed
+
+- **`tools/` is English.** The two Dockerfiles, the compose file, the
+  generics probes and the WebView2 probe — comments, identifiers and
+  output. The probe files were renamed with their unit names, since fpc
+  requires the two to match: `p2_generisk_funksjon_i_unit.pas` is
+  `p2_generic_function_in_unit.pas`. `run.sh` globs `p*`, so nothing
+  pointed at the old names.
+
+  Running them is unchanged: all seven still fail, with the same errors,
+  on 3.2.2 and on trunk. The working notes said six; there are seven
+  files — six limits and the call site that depends on the second.
+
 ## 0.9.0 — 2026-09-21
 
 A markdown editor, tabs that do what Flux's do, and the last of the

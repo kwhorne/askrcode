@@ -31,7 +31,10 @@ Koden bygger og består alle testene på både 3.2.2 og 3.3.1 trunk. Hold det
 slik: det er den eneste måten å vite om en grense er borte eller bare flyttet.
 
 `tools/probes/run.sh <fpc>` kjører generics-probene mot en gitt kompilator.
-Alle seks feiler fortsatt på trunk.
+Det er sju filer — seks grenser (p1–p6) og kallstedet (p7) som avhenger av
+p2 — og **alle sju feiler fortsatt**, på 3.2.2 og på trunk. Probene er
+engelske nå, og filnavnene fulgte med: `p2_generic_function_in_unit.pas`
+og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
 
 ## .env og konfigurasjon
 

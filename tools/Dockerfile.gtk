@@ -1,10 +1,10 @@
-# Askr-verktøykjeden pluss GTK3 og WebKitGTK, til å faktisk kjøre
-# Linux-webviewen.
+# The Askr toolchain plus GTK3 and WebKitGTK, for actually running the
+# Linux webview.
 #
-# Holdt utenfor hovedimaget med vilje: WebKitGTK drar inn noen hundre
-# megabyte, og ./askr test skal ikke betale for det. Desktop-uniten
-# kompilerer uansett uten disse pakkene — alt lastes med dlopen — så det
-# bare er kjøringen som trenger dem.
+# Kept out of the main image deliberately: WebKitGTK pulls in a few hundred
+# megabytes, and ./askr test should not pay for that. The desktop unit
+# compiles without these packages anyway — everything is loaded with
+# dlopen — so it is only the running that needs them.
 #
 #   ./askr desktop:linux
 ARG BASE=askr-fpc:bookworm
@@ -18,8 +18,8 @@ RUN apt-get update \
       dbus-x11 \
  && rm -rf /var/lib/apt/lists/*
 
-# WebKitGTK vil ha en egen prosess-sandkasse som ikke får lov i en vanlig
-# container. Uten dette starter ikke nettmotoren.
+# WebKitGTK wants a process sandbox of its own, which is not allowed in an
+# ordinary container. Without this the web engine does not start.
 ENV WEBKIT_DISABLE_COMPOSITING_MODE=1 \
     WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1 \
     GDK_BACKEND=x11 \
