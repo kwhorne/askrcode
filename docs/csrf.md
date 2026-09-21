@@ -65,8 +65,8 @@ character, and how long it took tells an attacker how far a guess got.
 
 ## Why 419
 
-`419 Page Expired` is not in any RFC — it is Laravel's, and the Inertia
-client recognises it and reloads the page instead of showing an error. That
+`419 Page Expired` is not in any RFC. It is a convention the Inertia
+client recognises: it reloads the page instead of showing an error. That
 is the right behaviour: an expired token usually means the user left a tab
 open, not that someone is attacking them. A plain 403 would be a dead end.
 

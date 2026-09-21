@@ -96,7 +96,7 @@ R.Use(@RequireJson);
 `askr make middleware <Name>` writes the skeleton.
 
 Middleware is **global** today. Per-route and per-group middleware is a real
-gap, listed in `LARAVEL.md`, and not yet built.
+gap, and not yet built.
 
 ## Response filters
 

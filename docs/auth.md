@@ -217,8 +217,8 @@ override a gate from a library.
 
 ### Gates, not policies
 
-Laravel's policies are a convention over reflection: class names resolved at
-runtime. A gate is a function with a name, and the compiler can see it.
+Policy classes are a convention over reflection: names resolved at runtime.
+A gate is a function with a name, and the compiler can see it.
 
 ## Requiring login
 

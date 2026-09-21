@@ -19,8 +19,8 @@
 
   The cost is measured: 3–4 ms against SQLite with up to 62 tables.
   Against Postgres it is 70 ms at 61 tables, which is more than the
-  developer loop has to spare — see LARAVEL.md and the Rún document. A
-  production variant has to cache the schema.
+  developer loop has to spare — the measurement and what follows from it
+  are in the Rún document. A production variant has to cache the schema.
 
   The unit keeps state in global variables. That is deliberate: a
   translation is one run from start to finish, and a context record would

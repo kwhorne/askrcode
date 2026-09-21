@@ -73,9 +73,9 @@ Res.StatusCode;
 ```
 
 `StatusText` knows the usual codes plus **419 Page Expired**, which is not
-in any RFC — it is Laravel's, and the Inertia client recognises it and
-reloads the page instead of showing an error. That is the right behaviour
-for an expired CSRF token: usually the user left a tab open, not an attack.
+in any RFC. It is a convention the Inertia client recognises: it reloads
+the page instead of showing an error. That is the right behaviour for an
+expired CSRF token — usually the user left a tab open, not an attack.
 
 ## Redirect status matters
 

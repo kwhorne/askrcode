@@ -167,7 +167,8 @@ and cannot be one — which is why the default is to show no values at all.
 
 ## What is not here
 
-Laravel's `config/` directory of PHP files, and `config:cache`. Askr's units
+A `config/` directory of source files, and a command to pre-compile it.
+Askr's units
 already take typed options records — `TServerOptions`, `TSessionStore.Create`,
 `TDbPool.Create` — and a string-keyed `config('mail.from')` would be a step
 down from something the compiler checks. The configuration layer is for

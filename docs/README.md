@@ -1,9 +1,9 @@
 # Askr
 
 Askr is an application framework for Free Pascal. It gives you what Rails
-and Laravel give you — routing, models, migrations, validation, sessions,
-auth, queues, mail, a console — on a compiled stack that ships as **one
-binary with no sidecars**.
+gives you — routing, models, migrations, validation, sessions, auth,
+queues, mail, a console — on a compiled stack that ships as **one binary
+with no sidecars**.
 
 Three things make it different from the frameworks it borrows from, and
 they shape everything else in this documentation:
@@ -33,6 +33,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Configuration](configuration.md) | `.env`, `askr.toml`, and which one wins |
 | [Versions](versions.md) | Pinning a release, `askr install` and `askr update` |
 | [The arena](arena.md) | The memory model, and the rules it imposes on your code |
+| [Coding agents](cli.md#an-mcp-server-for-agents) | `askr mcp`, and the tools it serves |
 
 ## HTTP
 
@@ -107,12 +108,12 @@ appear:
   gap: `api.resend.com` returns a 401 that parses into `EResendError`, and
   no mail has been sent from here with a valid key.
 
-Things that exist in Laravel and deliberately do **not** exist here, with
-reasons, are listed in each relevant page and collected in `LARAVEL.md` at
-the repository root.
+Things that deliberately do **not** exist here, with the reasons, are
+listed on each relevant page. Every page has that section, and it is the
+part that makes this documentation something other than marketing.
 
 ## Version
 
-This documentation describes Askr 0.9.2. The framework builds and passes
-its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on macOS and
-Linux.
+This documentation describes Askr 0.10.0. The framework builds and passes
+its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on aarch64 and
+x86_64, on macOS and Linux.

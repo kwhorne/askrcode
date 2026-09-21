@@ -1,6 +1,6 @@
 # Elyra Askr Framework
 
-A full-stack application framework in Pascal. Rails and Laravel ergonomics on
+A full-stack application framework in Pascal. Rails-style ergonomics on
 a compiled stack: **one binary, no sidecars**, and low resource use as
 something you get for free while working as fast as you would in PHP or Ruby.
 
@@ -41,6 +41,7 @@ exactly that over 500 requests.
 | Images | What an upload really is, and resizing it with libvips |
 | Runtime | Queue (in-process or durable), scheduler, cache, mail, logging, configuration |
 | Security | Pure-Pascal crypto, password hashing, sign-in, gates, signed URLs |
+| Agents | An MCP server: `askr mcp` compiles, tests, and answers about your routes, schema and docs |
 | Desktop | The same app in a native window — WKWebView on macOS, WebKitGTK on Linux |
 | AI | Claude over the Messages API: text, streaming, tools, structured output |
 
@@ -73,9 +74,9 @@ and `aria-invalid`, and the button shows a spinner while the request is out.
 
 ## Status
 
-Phases 1 and 2 are complete on **macOS and Linux**. The data layer is
-complete for all three dialects. The CLI has 22 commands. Documentation is
-35 pages under [`docs/`](docs/).
+Phases 1 and 2 are complete on **macOS and Linux**, on **aarch64 and
+x86_64**. The data layer is complete for all three dialects. The CLI has 26
+commands. Documentation is 36 pages under [`docs/`](docs/).
 
 Three things are **written and have never been run in earnest**, and they
 will say so until someone runs them:
@@ -114,7 +115,7 @@ A project names the release it builds against, and `askr` fetches it:
 ```toml
 # askr.toml
 [askr]
-version = "0.9.0"
+version = "0.10.0"
 ```
 
 ```sh
@@ -162,15 +163,17 @@ marketing copy with the negatives removed; it is kept current.
 
 ```sh
 ./askr test        # build and run every suite
+./askr test:amd64  # the same, built for x86_64 in a container
 ./askr check       # the same, with range and overflow checking on
 ./askr lauf        # the frontend suite
 ./askr lauf:check  # contrast and screenshots in a real browser
 ./askr db:up       # Postgres on 5433 and MySQL on 3308, for development
 ```
 
-The code builds and passes on both FPC **3.2.2** and **3.3.1 trunk**, and
-that is deliberate: it is the only way to tell whether a limitation is gone
-or has merely moved.
+The code builds and passes on FPC **3.2.2** and **3.3.1 trunk**, and on
+**aarch64 and x86_64**. All three are deliberate: they are the only way to
+tell whether a limitation is gone or has merely moved — and the x86_64 gate
+was added after a release that did not compile there at all.
 
 `fpc` from `PATH` is used when present, or the one `ASKR_FPC` points at.
 Otherwise the toolchain image from `tools/Dockerfile.fpc` is built.

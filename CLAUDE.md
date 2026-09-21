@@ -382,7 +382,7 @@ og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
 * Prisen er **PBKDF2-HMAC-SHA256, ikke Argon2id**. Argon2 finnes i libcrypto
   fra OpenSSL 3.2; bookworm har 3.0, og macOS-maskinen har ingen. Det kunne
   altså ikke kjøres i noe testmiljø, og utestet kode som hasher passord er
-  verre enn ingen. Står i både `Askr.Core.Crypto` og LARAVEL.md.
+  verre enn ingen. Står i `Askr.Core.Crypto`.
 * **SHA-256 er merket `{$push}{$R-}{$Q-}`**, av samme grunn som FNV-hashene:
   algoritmen regner modulo 2^32 og flyter over med vilje. Uten merkingen dør
   hele uniten på `ERangeError` i `./askr check`.
@@ -836,7 +836,7 @@ som sendes opp mot det den skal være.
 * **`docs/` og README.md er produkt og er på engelsk.** Det er det en
   bruker av rammeverket leser, og faller derfor inn under regelen under.
   README-en er inngangsdøra til et offentlig repo; CLAUDE.md, LAUF.md og
-  LARAVEL.md er arbeidsnotater og blir værende norske.
+  LAUF.md er arbeidsnotater og blir værende norske.
 * **Signaturene skal verifiseres, ikke huskes.** Første utkast hadde
   `Back.WithErrors` (heter `BackWithErrors`), `Mail.Send(tekst, emne)`
   (tar en `TMailMessage`), tre valideringsregler som ikke finnes
@@ -874,8 +874,8 @@ Pascal og JavaScript, og en masseomdøping er sin egen jobb med sin egen
 risiko. Skriver du ny kode, eller skriver du om en fil helt, skal den ut
 engelsk. Ikke bland i samme funksjon.
 
-**Arbeidsnotatene er fortsatt norske** — CLAUDE.md, LAUF.md og LARAVEL.md.
-De er ikke kode og ikke produkt; de er notater til oss.
+**Arbeidsnotatene er fortsatt norske** — CLAUDE.md og LAUF.md. De er ikke
+kode og ikke produkt; de er notater til oss.
 
 **Sveipen er ferdig.** `src/`, `tools/`, `tests/` og `examples/` er
 engelske. Ikke-ASCII testdata er bevisst beholdt: `Blåbærsyltetøy 🫐`
@@ -1734,8 +1734,7 @@ kjøring, ikke mer kode. `tools/probes/webview2_vtable.lpr` kjøres av
 `./askr test` nettopp for at den parkerte koden skal fortsette å kompilere;
 parkert kode som ikke bygges, råtner.
 
-**Laget utenfor PRD-en**, som kom av `LARAVEL.md`, er gjennomgått i sin
-helhet: `.env`, krypto, CSRF, auth, filopplasting, konfigurasjon, logging,
+**Laget utenfor PRD-en** er gjennomgått i sin helhet: `.env`, krypto, CSRF, auth, filopplasting, konfigurasjon, logging,
 varig kø, modell-livskvalitet, HTTP-klient, AI, kommandolinja og
 auth-stillaset. Ingenting i «stopper produksjon»-tabellen står åpent.
 
@@ -1745,7 +1744,12 @@ API-nøkkel, og Resend-transporten med en gyldig nøkkel. De to siste har
 begge et ekte 401 bak seg — DNS, TLS, requestform og feilsti er prøvd — men
 ingen av dem har fått et svar med innhold.
 
-Rekkefølgen videre og begrunnelsene står i LARAVEL.md, ikke her.
+**LARAVEL.md er slettet.** Den var et arbeidsnotat som målte Askr mot
+Laravel punkt for punkt, og den hadde gjort jobben sin: alt i «stopper
+produksjon»-tabellen er bygget. Å la den ligge ville holdt et annet
+rammeverk som målestokk for et som nå har sine egne begrunnelser, og docs
+peker ikke lenger på den. Det som fortsatt gjelder — hva som bevisst ikke
+finnes, og hvorfor — står på den siden i `docs/` der det hører hjemme.
 
 Datalaget er komplett for alle tre dialektene: drivere, introspeksjon,
 migrasjoner og prepared statements med cache. Cachen hører til **steg 2** i

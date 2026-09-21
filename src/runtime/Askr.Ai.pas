@@ -18,8 +18,9 @@
   **The key comes from the environment, never from the source code**, and
   is not logged. The same rule as the rest of the `.env` layer.
 
-  Four things in order, the way LARAVEL.md sets them up: text generation,
-  streaming, tool calls, structured output. Embeddings and vector search
+  Four things in order: text generation, streaming, tool calls, structured
+  output. That is the order an application needs them in. Embeddings and
+  vector search
   are not here — they come after those four, and they need `pgvector`,
   which SQLite does not have.
 

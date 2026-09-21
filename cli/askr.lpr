@@ -914,9 +914,9 @@ end;
 
   Not the tool's: `askr mcp` runs before FindProject and never delegates, so
   the binary answering may be a different release from the one the project
-  builds with. An agent reading 0.9.2 docs for a project pinned to 0.8 would
-  be confidently wrong about the framework in front of it, and nothing would
-  say so. ResolveFramework is the same call the build path makes, so the
+  builds with. An agent reading current docs for a project pinned two
+  releases back would be confidently wrong about the framework in front of
+  it, and nothing would say so. ResolveFramework is the same call the build path makes, so the
   docs and the compiler always come from one tree. }
 function DocsDirFor(out Version: string; out Err: string): string;
 var

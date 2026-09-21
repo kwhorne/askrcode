@@ -12,16 +12,16 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.10.0 — 2026-09-21
 
 ### Added
 
 - **`askr mcp` — an MCP server for AI agents, over stdio.** JSON-RPC 2.0
   with `initialize`, `tools/list`, `tools/call` and `ping`.
 
-  **It runs in the tool, not in the app**, which is the opposite of what
-  Laravel Boost does and for a reason specific to a compiled framework: if
-  the app does not compile there is no app to ask, and that is exactly when
+  **It runs in the tool, not in the app**, for a reason specific to a
+  compiled framework: if the app does not compile there is no app to ask,
+  and that is exactly when
   an agent most needs to be told what is wrong. `askr` is built from the
   pinned release and does not depend on the project compiling.
 

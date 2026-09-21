@@ -8,6 +8,27 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.10.0
+
+Nothing can break. Everything in this release is additive: an MCP server
+for coding agents, and the tools it serves.
+
+**Worth knowing if you use a coding agent.** `askr mcp` is a server your
+agent can talk to over stdio — it compiles, runs the tests, and answers
+questions about the routes, the database and the documentation of the Askr
+version *this project* pins. Wire it in with `askr mcp:install`. New
+projects also get an `AGENTS.md`; an existing project can copy one from a
+scaffolded project, or write its own.
+
+**Two error paths stopped printing your DSN.** `DSN has no scheme: <dsn>`
+and `Invalid MySQL DSN: <dsn>` put the whole connection string, password
+included, into the message — and that message is the one that ends up in a
+log or an issue. They now say what was expected instead. If anything of
+yours matched on that text, it has changed.
+
+**`LARAVEL.md` is gone** from the repository. Nothing in `docs/` pointed at
+it any more.
+
 ## 0.9.2
 
 Nothing can break. Documentation, the test suites, one example, and a new

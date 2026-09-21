@@ -224,13 +224,13 @@ See [Validation](validation.md).
 
 ## What is not here
 
-**Eloquent's magic.** Dynamic attributes and `__get` are impossible and
-unwanted. Askr's typed columns catch `Where(Customers.Email, Eq, 42)` at
-compile time — better than what Laravel can offer, not worse.
+**Dynamic attributes.** Properties conjured at runtime are impossible here
+and unwanted. Askr's typed columns catch `Where(Customers.Email, Eq, 42)`
+at compile time, which is the stronger guarantee, not the weaker one.
 
 **Casts and accessors.** The types are already static: a `Currency` is a
-`Currency` the whole way. Laravel's casts exist because values from the
-database arrive in PHP as strings.
+`Currency` the whole way. Casts exist in dynamically typed stacks because
+every value arrives from the database as a string.
 
 **Factories and seeders-as-model-builders.** Seeders exist
 (`askr make seeder`); a factory layer without reflection would be mostly

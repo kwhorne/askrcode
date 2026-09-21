@@ -255,9 +255,9 @@ would start lying the first time Askr is upgraded.
 routes and the database connection are. They say so when the app has not
 been built rather than answering emptily.
 
-**The server runs in the tool, not in your app.** That is the opposite of
-what Laravel Boost does, and the reason is specific to a compiled
-framework: if the app does not compile there is no app to ask — and that is
+**The server runs in the tool, not in your app.** The reason is specific to
+a compiled framework: if the app does not compile there is no app to ask —
+and that is
 exactly the moment an agent most needs to be told what is wrong. `askr mcp`
 answers the handshake whether or not your project builds, and whether or
 not there is a project at all.
@@ -319,13 +319,14 @@ of these do.
 
 ## What is deliberately missing
 
-Laravel has `optimize`, `config:cache`, `route:cache`, `view:cache` and
-`clear-compiled`. Those exist because PHP re-parses source on every request,
+Commands that pre-compile configuration, routes or views. They exist in
+interpreted stacks because the runtime re-parses source on every request,
 and the cache is what saves it. **In Askr the binary is the cache.** Those
 commands would be ceremony with no effect.
 
-`vendor:publish`, `package:discover` and `install:*` belong to Composer.
-`make:cast`, `make:trait`, `make:interface` and `make:provider` are PHP
-language constructs and the service container, which Askr has declined with
-reasons in `LARAVEL.md`. `tinker` needs an interpreter for Pascal
+Commands that publish or discover package assets belong to a package
+manager, and Askr's is `askr install`. Generators for casts, traits,
+interfaces and service providers are for language constructs Pascal does
+not have and for a service container Askr has declined, with reasons on the
+pages where they would have applied. A REPL needs an interpreter for Pascal
 expressions and is deferred on purpose.
