@@ -73,6 +73,26 @@ function DiagSeverityName(S: TDiagSeverity): string;
   as a failure would be wrong in the most common case there is. }
 function HasErrors(const Diags: TDiagArray): Boolean;
 
+{ How many real defects there are, as opposed to how many error-level lines
+  fpc printed. The two are not the same, and the difference is large enough
+  to mislead: one wrong type produces four error-level lines.
+
+    errors.pas(18,8) Error: Identifier not found "NoSuchIdentifier"   <- one
+    errors.pas(24) Fatal: There were 3 errors compiling module        <- not
+    Fatal: Compilation aborted                                        <- not
+    Error: /usr/bin/ppca64 returned an error exitcode                 <- not
+
+  **A column is the signal, and it is structural, not textual.** fpc gives
+  a column when it is pointing at a token in the source; its summaries
+  never have one, whether they carry a line (`There were N errors`, at the
+  file's last line) or no position at all. Counting by message text is the
+  thing this unit must not do, and would break on the next compiler.
+
+  The premise test holds it against all nine captured vectors: three real
+  defects in errors.pas and one in syntax.pas, identical on 3.2.2/aarch64,
+  3.2.2/x86_64 and 3.3.1 trunk — and agreeing with fpc's own tally. }
+function CountDefects(const Diags: TDiagArray): Integer;
+
 implementation
 
 const
@@ -92,6 +112,16 @@ begin
   for I := 0 to High(Diags) do
     if Diags[I].Severity >= dsError then
       Exit(True);
+end;
+
+function CountDefects(const Diags: TDiagArray): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to High(Diags) do
+    if (Diags[I].Severity >= dsError) and (Diags[I].Col > 0) then
+      Inc(Result);
 end;
 
 { Reads a severity and its colon at Pos_ in S. Advances Pos_ past ': ' on a

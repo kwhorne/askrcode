@@ -480,27 +480,88 @@ end;
 
 { Bygger og kjører prosjektets testprogram. Rammeverket er Askr.Testing;
   verktøyet gjør bare bygg og kjør. }
-procedure CmdTest(P: TProject);
+{ What a test run ended up being. The exit code alone cannot say it: a
+  suite that did not compile and a suite that failed both exit non-zero,
+  and an agent told only "non-zero" fixes the wrong thing. }
+type
+  TTestOutcome = (toNoTests, toDidNotBuild, toFailed, toPassed, toTimedOut);
+
+{ Builds the test suite and runs it.
+
+  Shared by `askr test` and the MCP test tool, for the same reason
+  CompileProject is: two paths to the tests would drift, and then the agent
+  and the developer would be looking at different failures.
+
+  The two differ in one thing, and it is not the logic — it is who is
+  watching. A person at a terminal sees a suite hang and presses Ctrl-C,
+  and wants the output as it appears, so the command captures nothing and
+  sets no deadline. An agent can do neither: a tool that never returns
+  takes the session with it, and there is nothing to interrupt it. So the
+  tool captures and passes a deadline, and TimeoutMs = 0 means none. }
+function RunTests(P: TProject; Capture: Boolean; TimeoutMs: Integer;
+  out Output_: string): TTestOutcome;
 var
   Proc: TProcess;
-  Lines, Params: TStringList;
-  I: Integer;
+  Params: TStringList;
+  S: TStringStream;
+  Buf: array[0..8191] of Byte;
+  N, I: Integer;
   Fil, Bin: string;
+  Deadline, Reaped: QWord;
+
+  { Drains the pipe while waiting, rather than waiting and then reading. A
+    child that fills the pipe buffer blocks on the write, and a parent that
+    is only watching Running would then wait for a process that is waiting
+    for it. }
+  function Pump(Pr: TProcess): Boolean;
+  begin
+    Result := True;
+    while Pr.Running or (Pr.Output.NumBytesAvailable > 0) do
+    begin
+      if Pr.Output.NumBytesAvailable > 0 then
+      begin
+        N := Pr.Output.Read(Buf, SizeOf(Buf));
+        if N > 0 then
+          S.Write(Buf, N);
+      end
+      else
+      begin
+        if (TimeoutMs > 0) and (GetTickCount64 > Deadline) then
+        begin
+          Pr.Terminate(1);
+          { Reaped here rather than left to the destructor, which does not
+            wait: this server is long-lived, and a zombie per timed-out run
+            accumulates. Bounded, because a process that ignores SIGTERM
+            must not turn a stopped hang back into a hanging one — a stray
+            child is the lesser of the two. }
+          Reaped := GetTickCount64 + 2000;
+          while Pr.Running and (GetTickCount64 < Reaped) do
+            Sleep(10);
+          Exit(False);
+        end;
+        Sleep(10);
+      end;
+    end;
+  end;
+
 begin
+  Output_ := '';
   Fil := P.TestFile;
   if not FileExists(IncludeTrailingPathDelimiter(P.Root) + Fil) then
   begin
-    Si('No tests found: ' + Fil);
-    Si('Write one, or set  tests = "path/to/tests.lpr"  in askr.toml.');
-    Halt(1);
+    Output_ := 'No tests found: ' + Fil + #10 +
+      'Write one, or set  tests = "path/to/tests.lpr"  in askr.toml.';
+    Exit(toNoTests);
   end;
 
   ForceDirectories(IncludeTrailingPathDelimiter(P.Root) + '.build/units');
   ForceDirectories(IncludeTrailingPathDelimiter(P.Root) + '.build/bin');
 
+  { Building the suite is always captured: a compiler that says nothing is
+    the normal case, and its diagnostics are the answer when it does. }
   Proc := TProcess.Create(nil);
-  Lines := TStringList.Create;
   Params := TStringList.Create;
+  S := TStringStream.Create('');
   try
     Params.Delimiter := ' ';
     Params.StrictDelimiter := True;
@@ -515,29 +576,87 @@ begin
     Proc.CurrentDirectory := P.Root;
     Proc.Options := [poWaitOnExit, poUsePipes, poStderrToOutPut];
     Proc.Execute;
-    Lines.LoadFromStream(Proc.Output);
+    S.Size := 0;
+    while Proc.Output.NumBytesAvailable > 0 do
+    begin
+      N := Proc.Output.Read(Buf, SizeOf(Buf));
+      if N > 0 then
+        S.Write(Buf, N);
+    end;
     if Proc.ExitStatus <> 0 then
     begin
-      Write(Lines.Text);
-      Halt(1);
+      Output_ := S.DataString;
+      Exit(toDidNotBuild);
     end;
   finally
+    S.Free;
     Params.Free;
-    Lines.Free;
     Proc.Free;
   end;
 
   Bin := IncludeTrailingPathDelimiter(P.Root) + '.build' + PathDelim +
     'bin' + PathDelim + ChangeFileExt(ExtractFileName(Fil), '');
   Proc := TProcess.Create(nil);
+  S := TStringStream.Create('');
   try
     Proc.Executable := Bin;
     Proc.CurrentDirectory := P.Root;
-    Proc.Options := [poWaitOnExit];
+    if Capture then
+      Proc.Options := [poUsePipes, poStderrToOutPut]
+    else
+      Proc.Options := [poWaitOnExit];
+    Deadline := GetTickCount64 + QWord(TimeoutMs);
     Proc.Execute;
-    Halt(Proc.ExitStatus);
+    if Capture then
+    begin
+      if not Pump(Proc) then
+      begin
+        Output_ := S.DataString + #10 +
+          Format('The suite was still running after %d seconds and was ' +
+                 'stopped. The output above is what it had produced. A ' +
+                 'test that waits on a socket, a queue or a lock is the ' +
+                 'usual cause.', [TimeoutMs div 1000]);
+        Exit(toTimedOut);
+      end;
+      Output_ := S.DataString;
+    end;
+    if Proc.ExitStatus <> 0 then
+      Result := toFailed
+    else
+      Result := toPassed;
   finally
+    S.Free;
     Proc.Free;
+  end;
+end;
+
+procedure CmdTest(P: TProject);
+var
+  Ut: string;
+begin
+  { No deadline and no capture: a person at a terminal wants the output as
+    it appears, and can stop a suite that hangs. }
+  case RunTests(P, False, 0, Ut) of
+    toNoTests:
+      begin
+        Si(Ut);
+        Halt(1);
+      end;
+    toDidNotBuild:
+      begin
+        Write(Ut);
+        Halt(1);
+      end;
+    toTimedOut:
+      { Cannot happen from here — this path passes no deadline. Written out
+        rather than left to an `else`, so that a sixth outcome added later
+        is a warning about an unhandled case instead of a silent default.
+        Trunk found the version that left two out. }
+      Halt(1);
+    toFailed:
+      Halt(1);
+    toPassed:
+      ;
   end;
 end;
 
@@ -666,15 +785,64 @@ end;
   The project is found here and not at start-up. The server answers the
   handshake wherever it was started; a tool that needs a project says so
   through the protocol, which is the only channel a client can read. }
+function Plural(N: Integer): string;
+begin
+  if N = 1 then
+    Result := ''
+  else
+    Result := 's';
+end;
+
+{ Compiler diagnostics as `file:line:column  Severity: message` — the
+  shape every editor and every agent already follows.
+
+  One function for the build tool and the test tool both. Two formatters
+  would drift, and then the same compiler error would reach an agent in two
+  different shapes depending on which call produced it. Notes and hints are
+  left out: a compile that emitted only those produced a binary, and the
+  tally is what says so. }
+procedure FormatDiagnostics(const Raw: string; Into: TStringList;
+  out Errors, Warnings: Integer);
+var
+  Diags: TDiagArray;
+  I: Integer;
+  Line_: string;
+begin
+  Diags := ParseDiagnostics(Raw);
+  { Defects, not error-level lines: fpc follows one wrong type with three
+    lines of its own summary, and `4 errors` for one mistake sends an agent
+    looking for three more. Every line is still listed below — the
+    compiler's own tally among them. }
+  Errors := CountDefects(Diags);
+  Warnings := 0;
+  for I := 0 to High(Diags) do
+    if Diags[I].Severity = dsWarning then
+      Inc(Warnings);
+
+  for I := 0 to High(Diags) do
+  begin
+    if Diags[I].Severity < dsWarning then
+      Continue;
+    if Diags[I].FileName_ = '' then
+      Line_ := ''
+    else if Diags[I].Col = 0 then
+      Line_ := Format('%s:%d  ', [Diags[I].FileName_, Diags[I].Line])
+    else
+      Line_ := Format('%s:%d:%d  ',
+        [Diags[I].FileName_, Diags[I].Line, Diags[I].Col]);
+    Into.Add(Line_ + DiagSeverityName(Diags[I].Severity) + ': ' +
+      Diags[I].Message_);
+  end;
+end;
+
 function McpToolBuild(A: TArena; Args: PJsonValue;
   out IsError: Boolean): string;
 var
   P: TProject;
-  Ut, Err, Line_: string;
+  Ut, Err: string;
   Code: Integer;
-  Diags: TDiagArray;
-  I, Errors, Warnings: Integer;
-  B: TStringList;
+  Errors, Warnings: Integer;
+  B, DL: TStringList;
 begin
   IsError := False;
   P := TProject.Find(GetCurrentDir);
@@ -709,40 +877,23 @@ begin
         Exit(E.Message);
       end;
     end;
-    Diags := ParseDiagnostics(Ut);
+    DL := TStringList.Create;
+    try
+      FormatDiagnostics(Ut, DL, Errors, Warnings);
 
-    Errors := 0;
-    Warnings := 0;
-    for I := 0 to High(Diags) do
-      if Diags[I].Severity >= dsError then
-        Inc(Errors)
-      else if Diags[I].Severity = dsWarning then
-        Inc(Warnings);
-
-    { The exit code decides, not the diagnostic count: a build can fail for
-      a reason the compiler did not attach to a line, and a build that only
-      emitted notes still produced a binary. }
-    if Code = 0 then
-      B.Add(Format('OK  built .build/bin/%s  (%d warnings)',
-        [ChangeFileExt(ExtractFileName(ChooseMainFile(P)), ''), Warnings]))
-    else
-      B.Add(Format('FAILED  %d errors, %d warnings', [Errors, Warnings]));
-
-    { file:line:col is the shape every editor and every agent already
-      knows how to follow. }
-    for I := 0 to High(Diags) do
-    begin
-      if Diags[I].Severity < dsWarning then
-        Continue;
-      if Diags[I].FileName_ = '' then
-        Line_ := ''
-      else if Diags[I].Col = 0 then
-        Line_ := Format('%s:%d  ', [Diags[I].FileName_, Diags[I].Line])
+      { The exit code decides, not the diagnostic count: a build can fail
+        for a reason the compiler did not attach to a line, and a build
+        that only emitted notes still produced a binary. }
+      if Code = 0 then
+        B.Add(Format('OK  built .build/bin/%s  (%d warning%s)',
+          [ChangeFileExt(ExtractFileName(ChooseMainFile(P)), ''), Warnings,
+           Plural(Warnings)]))
       else
-        Line_ := Format('%s:%d:%d  ',
-          [Diags[I].FileName_, Diags[I].Line, Diags[I].Col]);
-      B.Add(Line_ + DiagSeverityName(Diags[I].Severity) + ': ' +
-        Diags[I].Message_);
+        B.Add(Format('FAILED  %d error%s, %d warning%s',
+          [Errors, Plural(Errors), Warnings, Plural(Warnings)]));
+      B.AddStrings(DL);
+    finally
+      DL.Free;
     end;
 
     if (Code <> 0) and (Errors = 0) then
@@ -947,6 +1098,80 @@ begin
   end;
 end;
 
+{ The test tool.
+
+  A failing test is a successful call reporting bad news, exactly as a
+  failing build is. IsError is true only when the tool could not run at
+  all: no project, no test file. Conflate the two and an agent reacts to a
+  red suite by hunting for a broken tool.
+
+  A suite that did not compile is reported as its own thing, because the
+  exit code cannot tell it apart from a suite that failed, and the two need
+  opposite work. }
+function McpToolTest(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+const
+  DefaultTimeoutSec = 120;
+  { A cap, not a suggestion. Without one, an agent that hits the deadline
+    can answer it by raising the deadline, which is how a hang comes back
+    wearing a number. }
+  MaxTimeoutSec = 600;
+var
+  P: TProject;
+  Msg, Out_: string;
+  Secs, Errors, Warnings: Integer;
+  B: TStringList;
+begin
+  P := McpProject(IsError, Msg);
+  if P = nil then
+    Exit(Msg);
+  try
+    Secs := JsonAsInt(JsonMember(Args, 'timeout_seconds'), DefaultTimeoutSec);
+    if Secs <= 0 then
+      Secs := DefaultTimeoutSec;
+    if Secs > MaxTimeoutSec then
+      Secs := MaxTimeoutSec;
+
+    case RunTests(P, True, Secs * 1000, Out_) of
+      toNoTests:
+        begin
+          IsError := True;
+          Result := Out_;
+        end;
+      toDidNotBuild:
+        begin
+          { The same shape the build tool gives. An agent should not get
+            compiler errors in two forms depending on which call found
+            them. }
+          B := TStringList.Create;
+          try
+            FormatDiagnostics(Out_, B, Errors, Warnings);
+            B.Insert(0, Format('FAILED  the test suite did not compile ' +
+              '(%d error%s, %d warning%s)',
+              [Errors, Plural(Errors), Warnings, Plural(Warnings)]));
+            if Errors = 0 then
+              { Nothing the compiler attached to a line — a linker error, a
+                missing unit path. Hiding its output would leave the agent
+                with a failure and nothing to read. }
+              B.Add(Trim(Out_));
+            Result := B.Text;
+          finally
+            B.Free;
+          end;
+        end;
+      toTimedOut:
+        Result := Format('TIMED OUT  after %d seconds', [Secs]) + #10#10 +
+                  Out_;
+      toFailed:
+        Result := 'FAILED  the suite ran and reported failures'#10#10 + Out_;
+    else
+      Result := 'OK  the suite passed'#10#10 + Out_;
+    end;
+  finally
+    P.Free;
+  end;
+end;
+
 function McpToolDocsSearch(A: TArena; Args: PJsonValue;
   out IsError: Boolean): string;
 var
@@ -1136,6 +1361,21 @@ const
     'and it answers nearly every question about why a setting is what it ' +
     'is. Values are deliberately never shown, secret-looking or not.';
 
+  TestSchema =
+    '{"type":"object","properties":{' +
+    '"timeout_seconds":{"type":"integer","description":' +
+    '"Give up and stop the suite after this long. Default 120, capped at ' +
+    '600."}},' +
+    '"additionalProperties":false}';
+
+  TestDescription =
+    'Build and run the project''s test suite, and return what it said. ' +
+    'A suite that fails is a normal answer, not a tool error — read the ' +
+    'output. A suite that did not compile is reported as that, because it ' +
+    'needs different work from one that failed. The run is stopped if it ' +
+    'takes too long, so a test that waits on a socket or a lock cannot ' +
+    'hang this call.';
+
   DocsReadDescription =
     'Read a documentation page, or one section of it, for the exact Askr ' +
     'version this project builds against. Call it with no page to list ' +
@@ -1217,6 +1457,7 @@ begin
       @McpToolSchema);
     RegisterMcpTool('config', ConfigDescription, ConfigSchema,
       @McpToolConfig);
+    RegisterMcpTool('test', TestDescription, TestSchema, @McpToolTest);
     McpServe;
     Exit;
   end;

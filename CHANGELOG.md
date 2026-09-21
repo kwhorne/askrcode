@@ -31,6 +31,23 @@ with the zero-major caveat that minor releases may break things until
   framework path that is not a checkout, and with no project at all. It runs
   as part of `./askr test`.
 
+- **The `test` tool.** Builds and runs the project's suite and returns what
+  it said.
+
+  **It stops a suite that hangs**, after 120 seconds by default and 600 at
+  most. A person at a terminal sees a suite stall and presses Ctrl-C; an
+  agent cannot, and a call that never returns takes the session with it.
+  What the suite printed before it was stopped comes back with the answer,
+  because that is usually where the hang is. `askr test` itself passes no
+  deadline and captures nothing — the difference between the two paths is
+  who is watching, and nothing else; both go through one `RunTests`.
+
+  **Four outcomes, where the exit code offers two.** A suite that did not
+  compile and a suite that failed both exit non-zero and need opposite
+  work, so they are reported as different things. A failing suite is a
+  successful call, as a failing build is; `isError` is true only when there
+  is no project and no test file.
+
 - **The `routes`, `schema` and `config` tools.** What an agent cannot get
   by reading files: the routing table in the order requests actually match,
   what the database actually contains, and which layer each configuration
@@ -120,6 +137,21 @@ with the zero-major caveat that minor releases may break things until
   distinction an exit code cannot make.
 
 ### Fixed
+
+- **`build` counted four errors where there was one.** fpc follows a single
+  mistake with three lines of its own summary — `There were 1 errors
+  compiling module`, `Compilation aborted`, `ppca64 returned an error
+  exitcode` — and all three are error-level. An agent told `4 errors` for
+  one mistake goes looking for three that are not there.
+
+  `CountDefects` counts only diagnostics that carry a **column**. That is
+  structural, not textual: fpc gives a column when it is pointing at a
+  token in the source, and never on a summary, whether the summary carries
+  a line or no position at all. Counting by message text is what
+  `Askr.Cli.Diag` exists not to do. The premise test holds it against all
+  nine captured vectors — three defects in `errors.pas`, one in
+  `syntax.pas`, identical on 3.2.2/aarch64, 3.2.2/x86_64 and 3.3.1 trunk,
+  and agreeing with fpc's own tally.
 
 - **Two error paths printed the whole DSN, password included.**
   `OpenDbConnection` raised `DSN has no scheme: <dsn>`, and the MySQL

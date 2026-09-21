@@ -553,13 +553,26 @@ LPR
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"docs_read","arguments":{"page":"../README.md"}}}
 {"jsonrpc":"2.0","id":6,"method":"ping"}'
 
+  # A ceiling on the call itself. The whole point of the test tool is that
+  # a hung suite cannot hang the agent, and a gate that proves it by
+  # hanging is worse than none -- it stalls ./askr test with no message.
+  # Generous: the longest honest call here is a scaffolded app compiling,
+  # which is seconds. This is the last resort, not the deadline being
+  # tested -- and it has to fail in a bounded time, or it is the same
+  # problem one level up.
+  if command -v timeout >/dev/null 2>&1; then
+    cap="timeout 120"
+  else
+    cap=""
+  fi
+
   run_mcp_in() {  # $1 = directory relative to ROOT, $2 = frames (default $frames)
     f=${2:-$frames}
     if have_local_fpc; then
-      ( cd "$ROOT/$1" && printf '%s\n' "$f" | "$BIN/askr" mcp )
+      ( cd "$ROOT/$1" && printf '%s\n' "$f" | $cap "$BIN/askr" mcp )
     else
       ensure_image
-      printf '%s\n' "$f" | docker run --rm -i $DOCKER_PLATFORM \
+      printf '%s\n' "$f" | $cap docker run --rm -i $DOCKER_PLATFORM \
         -v "$ROOT":/work -w "/work/$1" "$IMAGE" "/work/${BIN#$ROOT/}/askr" mcp
     fi
   }
@@ -837,6 +850,78 @@ $out2"
   check_id 2 "and one table gives its columns" "$out" 'version'
   check_id 2 "with no error"                   "$out" '"isError":false'
   pure_json "$out"
+
+  echo
+  echo "- the test tool"
+  # Four outcomes, and the exit code can only tell two of them apart. A
+  # suite that did not compile and a suite that failed both exit non-zero,
+  # and they need opposite work.
+  mkdir -p "$app/shop/tests"
+  write_suite() {  # $1 = the body of the one test
+    cat > "$app/shop/tests/app_tests.lpr" <<LPR
+program app_tests;
+{\$mode Delphi}{\$H+}
+uses
+{\$IFDEF UNIX}
+  cthreads,
+{\$ENDIF}
+  SysUtils, Askr.Testing;
+
+procedure TestArithmetic;
+begin
+  $1
+end;
+
+begin
+  Group('Arithmetic');
+  Test('adds up', @TestArithmetic);
+  RunTestsAndHalt;
+end.
+LPR
+  }
+  testframes='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"test","arguments":{}}}
+{"jsonrpc":"2.0","id":2,"method":"ping"}'
+
+  write_suite "AssertEqual(2 + 2, 4, 'two and two');"
+  out=$(run_mcp_in "${app#$ROOT/}/shop" "$testframes" 2>/dev/null || true)
+  check_id 1 "a passing suite is reported as passing" "$out" 'OK  the suite passed'
+  check_id 1 "with what the suite printed"            "$out" '0 failures'
+  check_id 1 "and it is not a tool error"             "$out" '"isError":false'
+
+  write_suite "AssertEqual(2 + 2, 5, 'two and two');"
+  out=$(run_mcp_in "${app#$ROOT/}/shop" "$testframes" 2>/dev/null || true)
+  check_id 1 "a failing suite says the suite failed"  "$out" 'FAILED  the suite ran'
+  # A failing test is a successful call reporting bad news, as a failing
+  # build is. Conflate them and an agent hunts for a broken tool.
+  check_id 1 "but the call itself went fine"          "$out" '"isError":false'
+
+  write_suite "AssertEqual(NoSuchThing, 5, 'two and two');"
+  out=$(run_mcp_in "${app#$ROOT/}/shop" "$testframes" 2>/dev/null || true)
+  check_id 1 "a suite that will not compile says so"  "$out" 'did not compile'
+  # The same shape the build tool gives. An agent should not meet compiler
+  # errors in two forms depending on which call found them.
+  check_id 1 "with file, line and column"             "$out" 'app_tests.lpr:11:'
+  # One mistake, not the four error-level lines fpc prints around it.
+  check_id 1 "and one error, not four"                "$out" '(1 error,'
+
+  # A hang. A person at a terminal presses Ctrl-C; an agent cannot, and a
+  # tool that never returns takes the session with it.
+  write_suite "WriteLn('before the hang'); Flush(Output); while True do Sleep(1000);"
+  out=$(run_mcp_in "${app#$ROOT/}/shop" \
+    '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"test","arguments":{"timeout_seconds":3}}}
+{"jsonrpc":"2.0","id":2,"method":"ping"}' 2>/dev/null || true)
+  check_id 1 "a hanging suite is stopped"        "$out" 'TIMED OUT  after 3 seconds'
+  check_id 1 "and what it had printed is kept"   "$out" 'before the hang'
+  check "and the server is still standing"       "$out" '"id":2'
+  pure_json "$out"
+
+  # A project that never had tests, rather than deleting the one above:
+  # the hang scenario's container is still shutting down at this point,
+  # and an rm -rf racing it left the file in place on the slower of the
+  # two architectures. The assertion then passed or failed by timing.
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck/ok" "$testframes" 2>/dev/null || true)
+  check_id 1 "no test file is a tool error"      "$out" '"isError":true'
+  check_id 1 "and it says where it looked"       "$out" 'tests/app_tests.lpr'
 
   echo
   echo "- with no project at all"

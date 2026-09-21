@@ -233,6 +233,7 @@ it takes no arguments and needs no port.
 | `schema` | The tables in the database; with a table, its columns |
 | `config` | Every key and the layer it resolved from |
 | `docs_search` | Exact substring across the documentation |
+| `test` | Builds and runs the test suite, and stops one that hangs |
 | `docs_read` | A page, or one section of it; no page lists them all |
 
 `routes` and `schema` read the compiled binary, because that is where the
@@ -246,10 +247,20 @@ exactly the moment an agent most needs to be told what is wrong. `askr mcp`
 answers the handshake whether or not your project builds, and whether or
 not there is a project at all.
 
-**A failed build is a successful call.** The tool reports the diagnostics
-and sets `isError` to false. `isError` is true only when the tool could not
-run: no project, no compiler, an `[askr] path` that is not a checkout.
-Conflating the two makes an agent retry the wrong thing.
+**A failed build is a successful call**, and so is a failing test. The
+tool reports what happened and sets `isError` to false. `isError` is true
+only when the tool could not run: no project, no compiler, an `[askr] path`
+that is not a checkout, no test file. Conflating the two makes an agent
+retry the wrong thing.
+
+`test` separates a suite that failed from one that did not compile. Both
+exit non-zero, and they need opposite work.
+
+**`test` stops a suite that hangs**, after 120 seconds by default and 600
+at most. A person at a terminal sees a suite stall and presses Ctrl-C; an
+agent cannot, and a call that never returns takes the session with it. What
+the suite printed before it was stopped comes back with the answer, because
+that is usually where the hang is.
 
 **The docs are your version's docs.** `docs_search` and `docs_read` read
 the `docs/` of the framework tree your project resolves to — the pin in
@@ -282,8 +293,8 @@ means no match, and the tool says so rather than guessing.
 
 ### What is not here yet
 
-`test` is not a tool. There are no resources and no prompts either —
-declaring a capability that is not served is worse than declaring none.
+There are no resources and no prompts — declaring a capability that is not
+served is worse than declaring none.
 
 There is no `--json` on the console commands, and the tools do not ask for
 one. The tool passes the app's own output through unchanged, so an agent

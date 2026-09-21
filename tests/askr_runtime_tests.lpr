@@ -3995,6 +3995,15 @@ begin
       D := Positioned(ParseDiagnostics(Src));
       AssertEqual(Length(D), 4, Toolchains[T] + ': four positioned lines');
 
+      { How many defects there are, as opposed to how many error-level
+        lines fpc printed. errors.pas has three, and fpc then says so in a
+        summary that is error-level itself — so counting lines gives six.
+        A column separates a defect from a summary, and it does so on
+        every one of these vectors. An agent told `6 errors` for three
+        mistakes goes looking for three that are not there. }
+      AssertEqual(CountDefects(ParseDiagnostics(Src)), 3,
+        Toolchains[T] + ': three defects, not six error-level lines');
+
       AssertEqual(D[0].FileName_, 'errors.pas', Toolchains[T] + ': the file');
       AssertEqual(D[0].Line, 18, Toolchains[T] + ': the line');
       AssertEqual(D[0].Col, 8, Toolchains[T] + ': the column');
@@ -4019,6 +4028,10 @@ begin
       AssertEqual(D[0].Line, 11, Toolchains[T] + ': the syntax error line');
       AssertEqual(D[0].Col, 14, Toolchains[T] + ': and its column');
       AssertTrue(D[0].Severity = dsFatal, Toolchains[T] + ': it is fatal');
+      { A syntax error is Fatal, not Error, and it is still one defect. The
+        two lines after it are fpc stopping, and have no column. }
+      AssertEqual(CountDefects(ParseDiagnostics(Src)), 1,
+        Toolchains[T] + ': one defect, though three error-level lines');
 
       { ---- a build that SUCCEEDS while saying things ---- }
       Src := Load('warnings', Toolchains[T]);

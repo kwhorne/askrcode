@@ -79,6 +79,51 @@ ingen. Trengs den, er det `dup2` på deskriptoren — og et scenario som viser
 at den virker. Et verktøy som kjører noe ut, skal fange barnets utdata: det
 trenger teksten til svaret uansett.
 
+**`test`-verktøyet stopper en suite som henger; `askr test` gjør det ikke.**
+Forskjellen mellom de to stiene er én ting, og det er ikke logikken — det er
+hvem som ser på. Et menneske foran en terminal ser en suite stå stille og
+trykker Ctrl-C, og vil ha utskriften mens den kommer. En agent kan ingen av
+delene, og et kall som aldri returnerer tar økta med seg. Derfor fanger
+verktøyet og sender en frist, kommandoen gjør ingen av delene, og begge går
+gjennom én `RunTests`.
+
+Fristen trekker pipa mens den venter i stedet for å vente og så lese: et
+barn som fyller pipebufferet blokkerer på skrivingen, og en forelder som
+bare ser på `Running` venter da på en prosess som venter på den. Etter
+`Terminate` høstes barnet, men med et tak på to sekunder — en prosess som
+overser SIGTERM skal ikke gjøre en stoppet heng om til en hengende igjen.
+
+**Fire utfall der exitkoden tilbyr to.** En suite som ikke kompilerer og en
+som feiler har begge exitkode ulik null og krever motsatt arbeid.
+
+**Porten har et eget tak på hvert kall.** Uten det hang hele `./askr test`
+da fristen ble mutert bort — en port som henger i stedet for å feile er
+verre enn ingen, og det er samme feil ett nivå opp. `timeout` når den
+finnes; taket er romslig, for det er siste utvei og ikke fristen som testes.
+
+**`build` telte fire feil der det var én.** fpc følger én bom med tre linjer
+egen oppsummering, alle på feilnivå. `CountDefects` teller bare diagnostikk
+som har en **kolonne** — strukturelt, ikke tekstlig: fpc gir kolonne når den
+peker på et token i kilden, og aldri på en oppsummering, uansett om den
+bærer et linjenummer. Premisstesten holder det mot alle ni vektorene: tre
+defekter i errors.pas, én i syntax.pas, identisk på alle tre verktøykjedene
+og enig med fpcs eget tall.
+
+**`FormatDiagnostics` er felles for `build` og `test`.** To formaterere
+ville drevet fra hverandre, og da møter en agent samme kompilatorfeil i to
+former avhengig av hvilket kall som fant den.
+
+**Et `case` over en enum må dekke alle verdiene på trunk.** `CmdTest` lot to
+stå igjen og trunk sa fra — 3.2.2 gjorde ikke det. Skriv ut den umulige
+grenen i stedet for en `else`, så blir et sjette utfall en advarsel i stedet
+for en stille default. Samme regel som den om død `else`, sett fra andre
+siden.
+
+**En port må ikke kappløpe med sin egen forrige prosess.** «Ingen testfil»
+slettet katalogen rett etter heng-scenariet, mens containeren fortsatt
+avsluttet. Den var grønn på aarch64 og rød på amd64, altså avgjort av
+timing. Bruk et prosjekt som aldri hadde tester i stedet for å slette noe.
+
 **Ingen verktøyutskrift inneholder et passord, og porten er en sveip over
 hele strømmen.** Et prosjekt med et sentinel-passord i `.env` drives gjennom
 hvert eneste verktøy, og det å finne strengen er feilen. Et verktøy som
