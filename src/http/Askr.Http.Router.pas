@@ -4,12 +4,12 @@
   the PRD describes: App.RegisterRoutes(RegisterAppRoutes) is all the
   desktop variant needs to answer the same addresses.
 
-  procedure RegisterAppRoutes(R: TRouter);
-  begin
-  R.Get('/customers', Ctrl.Index);
-  R.Get('/customers/:id', Ctrl.Show);
-  R.Post('/customers', Ctrl.Store);
-  end;
+      procedure RegisterAppRoutes(R: TRouter);
+      begin
+        R.Get('/customers', Ctrl.Index);
+        R.Get('/customers/:id', Ctrl.Show);
+        R.Post('/customers', Ctrl.Store);
+      end;
 
   Patterns have three kinds of segment: literal, :name which captures one
   segment, and *name which captures the rest of the path. No regular

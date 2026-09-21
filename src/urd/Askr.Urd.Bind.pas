@@ -1,21 +1,21 @@
-{ Askr.Urd.Bind — fra request til modell.
+{ Askr.Urd.Bind — from request to model.
 
       C := Req.Arena.New<TCustomer>;
       Req.FillInto(C);
 
-  FillInto er en class helper på TRequest. Det er med vilje: HTTP-laget skal
-  ikke kjenne til Urd — desktop-skallet og en ren JSON-tjeneste bruker
-  TRequest uten datalag i det hele tatt. Helperen snur avhengigheten riktig
-  vei og gir likevel formen PRD-en skriver.
+  FillInto is a class helper on TRequest. That is deliberate: the HTTP
+  layer must not know about Urd — the desktop shell and a pure JSON
+  service use TRequest with no data layer at all. The helper turns the
+  dependency the right way round and still gives the form the PRD writes.
 
-  Tre kilder leses, i denne rekkefølgen: JSON-kropp, skjemakropp
-  (application/x-www-form-urlencoded) og query-streng. Bare felter som
-  faktisk er sendt røres, slik at en delvis oppdatering ikke nullstiller
-  resten.
+  Three sources are read, in this order: the JSON body, the form body
+  (application/x-www-form-urlencoded) and the query string. Only fields
+  that were actually sent are touched, so a partial update does not clear
+  the rest.
 
-  Primærnøkkelen fylles aldri fra en request. Det er ikke en bekvemmelighet
-  som mangler — det er hele poenget: uten den regelen kan en klient overskrive
-  hvilken rad som helst ved å sende med en id. }
+  The primary key is never filled from a request. That is not a missing
+  convenience — it is the whole point: without that rule a client can
+  overwrite any row it likes by sending an id along. }
 unit Askr.Urd.Bind;
 
 {$mode Delphi}{$H+}
@@ -32,7 +32,7 @@ type
   public
     { Fyller modellens published properties fra requesten. }
     procedure FillInto(M: TModel);
-    { Én verdi, uavhengig av om den kom som JSON, skjema eller query. }
+    { One value, whether it came as JSON, form or query. }
     function Input(const AName: string): TStr;
     function HasInput(const AName: string): Boolean;
     function InputInt(const AName: string; Default: Int64 = 0): Int64;
@@ -58,13 +58,14 @@ begin
   GJson.Parsed := False;
 end;
 
-{ JSON-kroppen parses én gang per request. Without dette ville FillInto over
-  tjue felter parset den tjue ganger.
+{ The JSON body is parsed once per request. Without this, a FillInto
+  across twenty fields would parse it twenty times.
 
-  Cachen kan ikke nøkles på request-pekeren alene: arenaen gjenbruker de
-  samme adressene, så neste request lander ofte nøyaktig der forrige lå og
-  ville arvet cachen. Derfor ryddes den av Arena.Defer ved Reset — som er
-  nettopp det den mekanismen finnes til. }
+  The cache cannot be keyed on the request pointer alone: the arena reuses
+  the same addresses, so the next request often lands exactly where the
+  previous one was and would inherit the cache. So it is cleared by
+  Arena.Defer at Reset — which is precisely what that mechanism is
+  for. }
 function JsonRoot(Req: TRequest): PJsonValue;
 var
   ErrPos: SizeInt;

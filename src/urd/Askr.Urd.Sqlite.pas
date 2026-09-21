@@ -1,21 +1,23 @@
-{ Askr.Urd.Sqlite — SQLite bak TDbConnection.
+{ Askr.Urd.Sqlite — SQLite behind TDbConnection.
 
-  Dette er desktop-variantens datalag. PRD-en skriver
-  App.UseDatabase('sqlite:local.db'), og forskjellen mellom web og desktop
-  skal i praksis være én unit og valg av databaseadapter.
+  This is the desktop variant's data layer. The PRD writes
+  App.UseDatabase('sqlite:local.db'), and in practice the difference
+  between web and desktop should be one unit and the choice of database
+  adapter.
 
-  SQLite oppfører seg annerledes enn Postgres på tre punkter som må håndteres
-  her og ikke lekke oppover:
+  SQLite behaves differently from Postgres on three points that have to be
+  handled here and not leak upwards:
 
-    * Plassholdere er ?, ikke $1.
-    * Typing er dynamisk. En kolonne erklært NUMERIC kan inneholde hva som
-      helst. Driveren leverer alt som tekst, slik Postgres-driveren gjør,
-      og lar Urd konvertere — da er oppførselen den samme i begge.
-    * Én skriver om gangen. WAL og busy_timeout settes ved oppkobling, ellers
-      får en pool med flere workere SQLITE_BUSY i stedet for å vente.
+    * Placeholders are ?, not $1.
+    * Typing is dynamic. A column declared NUMERIC can hold anything. The
+      driver delivers everything as text, as the Postgres driver does, and
+      lets Urd convert — then the behaviour is the same in both.
+    * One writer at a time. WAL and busy_timeout are set at connection, or
+      a pool with several workers gets SQLITE_BUSY instead of waiting.
 
-  Biblioteket lastes med dlopen som libpq. På macOS ligger libsqlite3 i
-  dyld-cachen og finnes ikke som fil på disk — dlopen finner den likevel. }
+  The library is loaded with dlopen like libpq. On macOS libsqlite3 lives
+  in the dyld cache and does not exist as a file on disk — dlopen finds it
+  anyway. }
 unit Askr.Urd.Sqlite;
 
 {$mode Delphi}{$H+}
@@ -38,14 +40,14 @@ type
     FCacheHits: Int64;
     procedure Pragma(const Sql: string);
     procedure RaiseLast(const Sql: string);
-    { Cachet sier om statementet ligger i cachen. Gjør det ikke det, eier
-      kalleren det og må frigjøre det. }
+    { Cached says whether the statement is in the cache. If it is not, the
+      caller owns it and has to free it. }
     function Prepared(const Sql: string; UseCache: Boolean;
       out Cachet: Boolean): Pointer;
     function Run(A: TArena; const Sql: string;
       const Params: array of TDbParam; UseCache: Boolean): TDbResult;
   public
-    { Dsn er 'sqlite:sti/til/fil.db' eller 'sqlite::memory:'. }
+    { Dsn is 'sqlite:path/to/file.db' or 'sqlite::memory:'. }
     constructor Create(const ADsn: string);
     destructor Destroy; override;
 
@@ -60,21 +62,21 @@ type
     procedure Commit; override;
     procedure Rollback; override;
 
-    { Frigjør alle cachede statements og tømmer cachen. }
+    { Frees every cached statement and empties the cache. }
     procedure FlushStatementCache;
-    { SQLites eget tall på hvor mange statements som står åpne mot denne
-      forbindelsen. Driverens egne tellere sier hva den *tror*; denne sier
-      hva som faktisk finnes, og det er den forskjellen som avdekker en
-      lekkasje. }
+    { SQLite's own count of how many statements are open against this
+      connection. The driver's own counters say what it *thinks*; this
+      says what is actually there, and that difference is what exposes a
+      leak. }
     function OpenStatements: Integer;
 
     property Path: string read FPath;
-    { Where_ mange statements som er forberedt, og hvor mange kall som slapp
-      unna med et cachet. Samme flate som Postgres- og MySQL-driveren. }
+    { How many statements are prepared, and how many calls got away with a
+      cached one. The same surface as the Postgres and MySQL drivers. }
     property PreparedCount: Int64 read FPrepared;
     property CacheHits: Int64 read FCacheHits;
-    { 0 slår cachen av, og da forberedes og frigjøres hvert kall som før.
-      Standard er 64. }
+    { 0 turns the cache off, and then every call prepares and frees as
+      before. The default is 64. }
     property CacheLimit: Integer read FCacheLimit write FCacheLimit;
   end;
 
@@ -95,7 +97,8 @@ const
 
   OpenReadWrite = $00000002;
   OpenCreate    = $00000004;
-  { Full mutex: flere tråder kan dele biblioteket, men ikke én forbindelse. }
+  { Full mutex: several threads may share the library, but not one
+    connection. }
   OpenFullMutex = $00010000;
 
 type
@@ -156,8 +159,9 @@ var
 function Candidates: TStringArray;
 begin
 {$IFDEF DARWIN}
-  { libsqlite3.dylib finnes ikke som fil på nyere macOS — dyld løser den fra
-    delt cache. dlopen på navnet virker likevel. }
+  { libsqlite3.dylib does not exist as a file on newer macOS — dyld
+    resolves it from the shared cache. dlopen on the name works
+    anyway. }
   Result := ['libsqlite3.dylib', '/usr/lib/libsqlite3.dylib'];
 {$ELSE}
 {$IFDEF WINDOWS}
@@ -288,7 +292,7 @@ begin
   P := Pos(':', FPath);
   if P > 0 then
     Delete(FPath, 1, P);
-  { 'sqlite://fil.db' skal også virke. }
+  { 'sqlite://file.db' has to work too. }
   while (Length(FPath) > 0) and (FPath[1] = '/') and
         (Copy(FPath, 1, 2) = '//') do
     Delete(FPath, 1, 2);
@@ -308,22 +312,23 @@ begin
       [FPath, Rc]);
   end;
 
-  { WAL lar lesere og én skriver jobbe samtidig. Without busy_timeout gir en
-    pool med flere workere SQLITE_BUSY i stedet for å vente. En fil i minnet
-    har ingen WAL. }
+  { WAL lets readers and one writer work at the same time. Without
+    busy_timeout a pool with several workers gets SQLITE_BUSY instead of
+    waiting. A file in memory has no WAL. }
   if FPath <> ':memory:' then
     Pragma('PRAGMA journal_mode = WAL');
   Pragma('PRAGMA busy_timeout = 5000');
-  { SQLite håndhever ikke fremmednøkler med mindre man ber om det. }
+  { SQLite does not enforce foreign keys unless you ask it to. }
   Pragma('PRAGMA foreign_keys = ON');
 end;
 
 destructor TSqliteConnection.Destroy;
 begin
-  { Statementene må frigjøres før basen lukkes. sqlite3_close_v2 tåler
-    riktignok at de henger igjen — den utsetter lukkingen til siste
-    statement er borte — men da ville fila stått åpen på ubestemt tid, og
-    «lukket» ville betydd noe annet enn det ser ut som. }
+  { The statements have to be freed before the database is closed.
+    sqlite3_close_v2 does tolerate them hanging around — it defers the
+    close until the last statement is gone — but then the file would stay
+    open indefinitely, and "closed" would mean something other than it
+    looks like. }
   if FCache <> nil then
   begin
     FlushStatementCache;
@@ -381,10 +386,10 @@ begin
       Inc(FCacheHits);
       Cachet := True;
       Result := Pointer(FCache.Objects[Idx]);
-      { Et gjenbrukt statement må nullstilles før det kjøres igjen, og
-        bindingene ryddes: SQLite eier kopier av dem etter
-        SQLITE_TRANSIENT, og uten dette blir de liggende til neste
-        binding overskriver dem. }
+      { A reused statement has to be reset before it runs again, and the
+        bindings cleared: SQLite owns copies of them after
+        SQLITE_TRANSIENT, and without this they stay until the next
+        binding overwrites them. }
       sqlite3_reset(Result);
       sqlite3_clear_bindings(Result);
       Exit;
@@ -399,9 +404,9 @@ begin
 
   if UseCache and (FCacheLimit > 0) then
   begin
-    { Grensen er en grense, ikke en gjenbruksrekkefølge. Faller cachen over,
-      tømmes den helt — enklere enn en LRU, og treffer sjelden, fordi
-      spørringene i en app er et endelig sett. }
+    { The limit is a limit, not a reuse order. If the cache goes over, it
+      is emptied entirely — simpler than an LRU, and it rarely happens,
+      because the queries in an app are a finite set. }
     if FCache.Count >= FCacheLimit then
       FlushStatementCache;
     FCache.AddObject(Sql, TObject(Stmt));
@@ -428,8 +433,8 @@ var
 begin
   Msg := string(sqlite3_errmsg(FDb));
   Code := sqlite3_errcode(FDb);
-  { SQLite har ikke SQLSTATE. De to kodene Urd faktisk bryr seg om oversettes,
-    slik at IsUniqueViolation virker likt på tvers av dialekter. }
+  { SQLite has no SQLSTATE. The two codes Urd actually cares about are
+    translated, so IsUniqueViolation works the same across dialects. }
   case Code of
     19: State := '23505';   { SQLITE_CONSTRAINT }
     787: State := '23503';  { SQLITE_CONSTRAINT_FOREIGNKEY }
@@ -473,11 +478,11 @@ var
   Txt: PByte;
   Cachet: Boolean;
 begin
-  { Gjenbruk er trygt her fordi løkka under alltid tømmer statementet til
-    SQLITE_DONE før den returnerer. Et cachet statement er derfor aldri
-    midt i en iterasjon når neste kall henter det — hadde radene blitt
-    levert dovent, ville den samme spørringen inne i sin egen løkke ha
-    nullstilt seg selv. }
+  { Reuse is safe here because the loop below always drains the statement
+    to SQLITE_DONE before returning. A cached statement is therefore never
+    mid-iteration when the next call picks it up — had the rows been
+    delivered lazily, the same query inside its own loop would have reset
+    itself. }
   Stmt := Prepared(Sql, UseCache, Cachet);
 
   try
@@ -488,8 +493,9 @@ begin
         sqlite3_bind_null(Stmt, I + 1);
         Continue;
       end;
-      { SQLITE_TRANSIENT (-1) ber SQLite ta sin egen kopi. Without det måtte
-        bufferet overleve helt til finalize, og arenaen spoles ofte før. }
+      { SQLITE_TRANSIENT (-1) asks SQLite to take its own copy. Without it
+        the buffer would have to survive all the way to finalize, and the
+        arena is often rewound before that. }
       Buf := PByte(A.Alloc(PtrUInt(Params[I].Value.Len) + 1));
       if Params[I].Value.Len > 0 then
         Move(Params[I].Value.Data^, Buf^, Params[I].Value.Len);
@@ -503,8 +509,9 @@ begin
     Last := nil;
     RowCount := 0;
 
-    { SQLite sier ikke hvor mange rader som kommer. Radene samles i en kjede
-      i arenaen, og TDbResult allokeres når tallet er kjent. }
+    { SQLite does not say how many rows are coming. The rows are collected
+      in a chain in the arena, and TDbResult is allocated once the number
+      is known. }
     repeat
       Rc := sqlite3_step(Stmt);
       if Rc = SqliteRow then
@@ -560,10 +567,9 @@ begin
     end;
   finally
     if Cachet then
-      { Nullstilles nå, ikke ved neste bruk: et statement som står igjen
-        ferdig-stepped holder på lesesperren sin, og da ville en cachet
-        SELECT blokkert en skriver til noen kjørte den samme spørringen om
-        igjen. }
+      { Reset now, not at the next use: a statement left finished-stepping
+        holds on to its read lock, and then a cached SELECT would block a
+        writer until somebody ran the same query again. }
       sqlite3_reset(Stmt)
     else
       sqlite3_finalize(Stmt);
@@ -572,9 +578,9 @@ end;
 
 function TSqliteConnection.Exec(A: TArena; const Sql: string): TDbResult;
 begin
-  { Without parametre caches det ikke. Det er her migrasjoner og DDL havner,
-    og et cachet CREATE TABLE er verken til nytte eller ønskelig. Samme
-    deling som i Postgres- og MySQL-driveren. }
+  { Without parameters it is not cached. This is where migrations and DDL
+    end up, and a cached CREATE TABLE is neither useful nor wanted. The
+    same split as in the Postgres and MySQL drivers. }
   Result := Run(A, Sql, [], False);
 end;
 
@@ -590,8 +596,8 @@ begin
   Run(A, Sql, Params, Length(Params) > 0);
   if IdColumn = '' then
     Exit(0);
-  { SQLite har RETURNING fra 3.35, men last_insert_rowid virker i alle
-    versjoner og koster ingen ekstra spørring. }
+  { SQLite has RETURNING from 3.35, but last_insert_rowid works in every
+    version and costs no extra query. }
   Result := sqlite3_last_insert_rowid(FDb);
 end;
 

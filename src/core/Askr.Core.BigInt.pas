@@ -9,8 +9,8 @@
   A product of two 32-bit numbers fits in a UInt64 with room to spare —
   even with two carries added:
 
-  $FFFFFFFF * $FFFFFFFF + $FFFFFFFF + $FFFFFFFF
-  = $FFFFFFFFFFFFFFFF
+    $FFFFFFFF * $FFFFFFFF + $FFFFFFFF + $FFFFFFFF
+      = $FFFFFFFFFFFFFFFF
 
   that is, just inside. With 64-bit limbs every product would have to be
   128 bits, and that type does not exist in Free Pascal. The price is

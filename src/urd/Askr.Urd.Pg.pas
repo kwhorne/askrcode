@@ -1,26 +1,29 @@
-{ Askr.Urd.Pg — Postgres bak TDbConnection, over libpq.
+{ Askr.Urd.Pg — Postgres behind TDbConnection, over libpq.
 
-  To valg som følger av PRD-ens prinsipper og ikke er frie å endre senere:
+  Two choices that follow from the PRD's principles and are not free to
+  change later:
 
-  Biblioteket lastes med dlopen ved første bruk, ikke på byggetid. Da starter
-  binæren på en maskin uten Postgres installert — og det må den, ellers kan
-  ikke desktop-varianten med bare SQLite eksistere, og «kopier én binærfil til
-  serveren» blir en løgn. Prisen er at en manglende libpq oppdages ved første
-  spørring, så feilmeldingen sier hva den lette etter.
+  The library is loaded with dlopen at first use, not at build time. Then
+  the binary starts on a machine with no Postgres installed — and it has
+  to, or the desktop variant with only SQLite cannot exist, and "copy one
+  binary to the server" becomes a lie. The price is that a missing libpq
+  is discovered at the first query, so the error message says what it
+  looked for.
 
-  Resultatet kopieres inn i arenaen, og PGresult frigjøres før Exec
-  returnerer. Alternativet var å utsette PQclear til Arena.Reset via Defer,
-  men da ville radene pekt inn i minne libpq eier, og hver regel om levetid
-  måtte forklares to ganger. Én memcpy per resultatsett er billig ved siden av
-  nettverket.
+  The result is copied into the arena, and the PGresult is freed before
+  Exec returns. The alternative was deferring PQclear to Arena.Reset via
+  Defer, but then the rows would point into memory libpq owns, and every
+  rule about lifetime would have to be explained twice. One memcpy per
+  result set is cheap beside the network.
 
-  Forbindelsen er ikke et arena-objekt. Den lever på heapen på tvers av
-  requests, slik PRD-ens første regel krever.
+  The connection is not an arena object. It lives on the heap across
+  requests, as the PRD's first rule requires.
 
-  ExecParams går over prepared statements med en cache per forbindelse.
-  Statementene er navngitt askr_N og forberedes med PQprepare — altså på
-  protokollnivå, ikke med SQL-setningen PREPARE. Forskjellen betyr noe:
-  protokollnivåets statements hører til sesjonen og overlever rollback. }
+  ExecParams goes through prepared statements with a cache per connection.
+  The statements are named askr_N and prepared with PQprepare — that is,
+  at the protocol level, not with the SQL statement PREPARE. The
+  difference matters: protocol-level statements belong to the session and
+  survive a rollback. }
 unit Askr.Urd.Pg;
 
 {$mode Delphi}{$H+}
@@ -37,7 +40,7 @@ type
   private
     FConn: Pointer;
     FDsn: string;
-    FCache: TStringList;     { sql -> løpenummer i Objects }
+    FCache: TStringList;     { sql -> sequence number in Objects }
     FCacheLimit: Integer;
     FStmtSeq: Integer;
     FPrepared: Int64;
@@ -47,16 +50,16 @@ type
     function Run(A: TArena; const Sql: string;
       const Params: array of TDbParam): TDbResult;
     procedure Simple(const Sql: string);
-    { Navnet på det forberedte statementet for denne spørringen, forberedt
-      om nødvendig. Tom streng når cachen er slått av, og da går spørringen
-      over PQexecParams som før. }
+    { The name of the prepared statement for this query, prepared if
+      necessary. An empty string when the cache is off, and then the query
+      goes over PQexecParams as before. }
     function PreparedName(const Sql: string): string;
     procedure DropCached(const Sql: string);
     function BuildParams(A: TArena; const Params: array of TDbParam): PPAnsiChar;
   public
-    { Dsn er en libpq-conninfo eller URI:
-        'postgresql://askr:askr@127.0.0.1:5433/askr_dev'
-        'host=127.0.0.1 port=5433 dbname=askr_dev user=askr' }
+    { Dsn is a libpq conninfo string or a URI:
+      'postgresql://askr:askr@127.0.0.1:5433/askr_dev'
+      'host=127.0.0.1 port=5433 dbname=askr_dev user=askr' }
     constructor Create(const ADsn: string);
     destructor Destroy; override;
 
@@ -72,34 +75,34 @@ type
     procedure Rollback; override;
     procedure AppendPlaceholder(var B: TStrBuilder; Index: Integer); override;
 
-    { PostgreSQL 17.2 gir 170002. }
+    { PostgreSQL 17.2 gives 170002. }
     function ServerVersion: Integer;
 
-    { DEALLOCATE ALL og tøm cachen. }
+    { DEALLOCATE ALL and empty the cache. }
     procedure FlushStatementCache;
 
     property Dsn: string read FDsn;
-    { Where_ mange statements som er forberedt mot serveren, og hvor mange kall
-      som slapp unna med et cachet. }
+    { How many statements are prepared against the server, and how many
+      calls got away with a cached one. }
     property PreparedCount: Int64 read FPrepared;
     property CacheHits: Int64 read FCacheHits;
-    { 0 slår cachen av, og da går hver spørring over PQexecParams som før.
-      Standard er 64. }
+    { 0 turns the cache off, and then every query goes over PQexecParams as
+      before. The default is 64. }
     property CacheLimit: Integer read FCacheLimit write FCacheLimit;
   end;
 
 type
-  { Kalles for hver NOTICE og WARNING serveren sender. Er ingen satt,
-    forkastes de. }
+  { Called for every NOTICE and WARNING the server sends. With none set
+    they are discarded. }
   TPgNoticeHandler = procedure(const Message_: string);
 
-{ Without dette skriver libpq sin standardbehandler rett til stderr, midt i
-  det programmet selv holder på å skrive ut. }
+{ Without this, libpq's default handler writes straight to stderr, in
+  the middle of whatever the program is printing. }
 procedure SetPgNoticeHandler(Handler: TPgNoticeHandler);
 
-{ True når libpq lot seg laste. Kaster ikke. }
+{ True when libpq could be loaded. Does not raise. }
 function PgAvailable: Boolean;
-{ Navnet på biblioteket som faktisk ble lastet, til diagnostikk. }
+{ The name of the library that was actually loaded, for diagnostics. }
 function PgLibraryName: string;
 
 implementation
@@ -180,7 +183,8 @@ var
 function LibraryCandidates: TStringArray;
 begin
 {$IFDEF DARWIN}
-  { Homebrews libpq er keg-only og ligger ikke i standard søkesti. }
+  { Homebrew's libpq is keg-only and is not on the default search
+    path. }
   Result := [
     'libpq.5.dylib',
     'libpq.dylib',
@@ -340,8 +344,8 @@ end;
 
 destructor TPgConnection.Destroy;
 begin
-  { Ingen DEALLOCATE: forbindelsen lukkes, og da forsvinner sesjonens
-    forberedte statements av seg selv. }
+  { No DEALLOCATE: the connection is closing, and then the session's
+    prepared statements go away by themselves. }
   FreeAndNil(FCache);
   if FConn <> nil then
   begin
@@ -409,7 +413,7 @@ begin
           Result.SetCell(R, C, StrEmpty, True)
         else
         begin
-          { PQgetlength er antall bytes, ikke tegn — riktig for UTF-8. }
+          { PQgetlength is a byte count, not characters — right for UTF-8. }
           Len := PQgetlength(Res, R, C);
           Result.SetCell(R, C,
             StrDup(A, StrRef(PByte(PQgetvalue(Res, R, C)), Len)), False);
@@ -423,7 +427,7 @@ begin
   end;
 end;
 
-{ SQLSTATE fra et resultat, uten å frigjøre det. }
+{ The SQLSTATE from a result, without freeing it. }
 function ResultState(Res: Pointer): string;
 var
   P: PAnsiChar;
@@ -444,9 +448,9 @@ begin
   FCache.Clear;
   if FConn = nil then
     Exit;
-  { DEALLOCATE ALL feiler i en avbrutt transaksjon. Da er det ikke noe å
-    gjøre uansett — navnene gjenbrukes aldri, så et statement vi mistet
-    oversikten over kan ikke kollidere med et nytt. }
+  { DEALLOCATE ALL fails in an aborted transaction. There is nothing to
+    be done about it anyway — the names are never reused, so a statement
+    we lost track of cannot collide with a new one. }
   Res := PQexec(FConn, 'DEALLOCATE ALL');
   if Res <> nil then
     PQclear(Res);
@@ -481,8 +485,8 @@ begin
 
   Inc(FStmtSeq);
   Result := 'askr_' + IntToStr(FStmtSeq);
-  { NParams = 0 lar serveren utlede parametertypene fra spørringen, akkurat
-    som PQexecParams med nil i ParamTypes gjør. }
+  { NParams = 0 lets the server infer the parameter types from the query,
+    exactly as PQexecParams with nil in ParamTypes does. }
   Res := PQprepare(FConn, PAnsiChar(AnsiString(Result)),
     PAnsiChar(AnsiString(Sql)), 0, nil);
   if Res = nil then
@@ -495,8 +499,8 @@ begin
   FCache.AddObject(Sql, TObject(PtrInt(FStmtSeq)));
 end;
 
-{ Peker- og strengtabellen til libpq. Lever bare under kallet, så kalleren
-  spoler arenaen tilbake etterpå. }
+{ The pointer and string tables for libpq. They live only for the
+  duration of the call, so the caller rewinds the arena afterwards. }
 function TPgConnection.BuildParams(A: TArena;
   const Params: array of TDbParam): PPAnsiChar;
 var
@@ -511,8 +515,8 @@ begin
       Result[I] := nil;
       Continue;
     end;
-    { libpq leser tekstparametre som nullterminerte C-strenger, så TStr
-      må få en kopi med terminator. }
+    { libpq reads text parameters as null-terminated C strings, so a TStr
+      has to get a copy with a terminator. }
     Buf := PByte(A.Alloc(PtrUInt(Params[I].Value.Len) + 1));
     if Params[I].Value.Len > 0 then
       Move(Params[I].Value.Data^, Buf^, Params[I].Value.Len);
@@ -535,8 +539,9 @@ begin
     Res := PQexec(FConn, PAnsiChar(AnsiString(Sql)))
   else
   begin
-    { Parametrene allokeres FØR merket. Ligger de etter, skriver de neste
-      allokeringene over verdiene mens libpq leser dem. }
+    { The parameters are allocated BEFORE the mark. If they sit after it,
+      the next allocations overwrite the values while libpq is reading
+      them. }
     Mark := A.Mark;
     try
       Values := BuildParams(A, Params);
@@ -548,16 +553,16 @@ begin
       begin
         Res := PQexecPrepared(FConn, PAnsiChar(AnsiString(Name_)), N,
           Values, nil, nil, 0);
-        { SQL-setningen PREPARE er transaksjonell, men **PQprepare er ikke
-          det**: den sender en Parse-melding i den utvidede protokollen, og
-          slike statements hører til sesjonen. De overlever rollback, så
-          cachen trenger ikke vite om transaksjoner i det hele tatt.
+        { The SQL statement PREPARE is transactional, but **PQprepare is
+          not**: it sends a Parse message in the extended protocol, and
+          such statements belong to the session. They survive a rollback,
+          so the cache does not need to know about transactions at all.
 
-          Utdatert kan den likevel bli — noe annet i appen kan ha kjørt
-          DEALLOCATE ALL, eller forbindelsen kan ha blitt tilbakestilt. Da
-          svarer serveren 26000, invalid_sql_statement_name. Det er ikke noe
-          å melde feil om: statementet kastes ut, forberedes på nytt og
-          kjøres én gang til. }
+          It can still go stale — something else in the app may have run
+          DEALLOCATE ALL, or the connection may have been reset. Then the
+          server answers 26000, invalid_sql_statement_name. That is
+          nothing to report as an error: the statement is thrown out,
+          prepared again and run once more. }
         if (Res <> nil) and (PQresultStatus(Res) = PgresFatalError) and
            (ResultState(Res) = '26000') then
         begin
@@ -580,11 +585,11 @@ begin
   if (Status <> PgresTuplesOk) and (Status <> PgresCommandOk) and
      (Status <> PgresEmptyQuery) then
   begin
-    { Et cachet statement kan være forberedt mot en tabell som siden er
-      endret. Det kastes ut, slik at neste forsøk forbereder på nytt i
-      stedet for å feile om igjen. DEALLOCATE gjøres ikke her: er vi i en
-      avbrutt transaksjon, ville den feilet også. Navnene gjenbrukes aldri,
-      så et glemt statement kan ikke kollidere med et nytt. }
+    { A cached statement may have been prepared against a table that has
+      since changed. It is thrown out, so the next attempt prepares again
+      rather than failing again. DEALLOCATE is not done here: in an
+      aborted transaction it would fail too. The names are never reused,
+      so a forgotten statement cannot collide with a new one. }
     if N > 0 then
       DropCached(Sql);
     RaiseFor(Res, Sql);
@@ -592,7 +597,8 @@ begin
   try
     Result := Materialize(A, Res);
   finally
-    { Alt er kopiert; libpq eier ingenting av det kalleren får. }
+    { Everything has been copied; libpq owns nothing of what the caller
+      gets. }
     PQclear(Res);
   end;
 end;
@@ -640,7 +646,8 @@ procedure TPgConnection.Simple(const Sql: string);
 var
   A: TArena;
 begin
-  { Egen arena: en transaksjonsgrense skal ikke ligge i requestens. }
+  { Its own arena: a transaction boundary must not live in the
+    request's. }
   A := TArena.Create(4096);
   try
     Run(A, Sql, []);

@@ -1,19 +1,20 @@
-{ Askr.Urd.Driver — grensesnittet alle databasedrivere ligger bak.
+{ Askr.Urd.Driver — the interface every database driver sits behind.
 
-  Det finnes tre dialekter, og de er ulike på tre punkter som lekker helt opp
-  i query builderen hvis de ikke stoppes her:
+  There are three dialects, and they differ on three points that leak all
+  the way up into the query builder unless they are stopped here:
 
-    * Plassholdere er $1, $2 i Postgres og ? i MySQL og SQLite.
-    * Identifikatorer siteres med " i Postgres og SQLite, med ` i MySQL.
-    * RETURNING finnes i Postgres og SQLite, men ikke i MySQL, som må hente
-      LAST_INSERT_ID() etterpå.
+    * Placeholders are $1, $2 in Postgres and ? in MySQL and SQLite.
+    * Identifiers are quoted with " in Postgres and SQLite, with ` in
+      MySQL.
+    * RETURNING exists in Postgres and SQLite but not in MySQL, which has
+      to fetch LAST_INSERT_ID() afterwards.
 
-  Derfor er «sett inn og gi meg id-en» én operasjon på driveren — InsertGetId
-  — og ikke noe query builderen setter sammen selv. Det er den avgjørelsen som
-  er lett nå og vond om seks uker.
+  So "insert and give me the id" is one operation on the driver —
+  InsertGetId — and not something the query builder assembles itself. That
+  is the decision that is easy now and painful in six weeks.
 
-  Et resultatsett eier ingenting fra driverbiblioteket. Alt kopieres inn i
-  arenaen før Exec returnerer. }
+  A result set owns nothing from the driver library. Everything is copied
+  into the arena before Exec returns. }
 unit Askr.Urd.Driver;
 
 {$mode Delphi}{$H+}
@@ -32,15 +33,16 @@ type
     FSqlState: string;
   public
     constructor Create(const AMessage: string; const ASqlState: string = '');
-    { Femtegns SQLSTATE fra serveren, tom når feilen er lokal. '23505' er
-      unik-brudd i Postgres. Se også IsUniqueViolation. }
+    { The five-character SQLSTATE from the server, empty when the error is
+      local. '23505' is a unique violation in Postgres. See also
+      IsUniqueViolation. }
     property SqlState: string read FSqlState;
     function IsUniqueViolation: Boolean;
     function IsForeignKeyViolation: Boolean;
   end;
 
-  { Driverbiblioteket finnes ikke på maskinen. Eget navn fordi dette er et
-    driftsproblem, ikke en spørringsfeil. }
+  { The driver library is not on the machine. Its own name because this is
+    an operations problem, not a query error. }
   EDbUnavailable = class(EDbError);
 
   PDbParam = ^TDbParam;
@@ -55,8 +57,8 @@ type
     IsNull: Boolean;
   end;
 
-  { Ferdig lest resultatsett i arenaen. Driveren fyller det med Allocate,
-    SetFieldName og SetCell; alle andre bare leser. }
+  { A fully read result set in the arena. The driver fills it with
+    Allocate, SetFieldName and SetCell; everyone else only reads. }
   TDbResult = class(TArenaObject)
   private
     FRowCount: Integer;
@@ -83,7 +85,8 @@ type
 
     property RowCount: Integer read FRowCount;
     property FieldCount: Integer read FFieldCount;
-    { Rader berørt av INSERT, UPDATE eller DELETE. -1 når det ikke gjelder. }
+    { Rows affected by an INSERT, UPDATE or DELETE. -1 when it does not
+      apply. }
     property AffectedRows: Int64 read FAffected;
   end;
 
@@ -98,9 +101,9 @@ type
     function ExecParams(A: TArena; const Sql: string;
       const Params: array of TDbParam): TDbResult; virtual; abstract;
 
-    { Sql skal være en komplett INSERT uten RETURNING. Driveren legger til det
-      dialekten trenger for å få id-en tilbake. Returnerer 0 når tabellen ikke
-      har en autogenerert nøkkel. }
+    { Sql is to be a complete INSERT without RETURNING. The driver adds
+      whatever the dialect needs to get the id back. Returns 0 when the
+      table has no generated key. }
     function InsertGetId(A: TArena; const Sql: string;
       const Params: array of TDbParam; const IdColumn: string): Int64;
       virtual; abstract;
@@ -111,7 +114,7 @@ type
 
     { Plassholder nummer Index, 1-basert. }
     procedure AppendPlaceholder(var B: TStrBuilder; Index: Integer); virtual;
-    { Sitert identifikator. Doble anførselstegn inni navnet dobles. }
+    { A quoted identifier. Double quotes inside the name are doubled. }
     procedure AppendIdent(var B: TStrBuilder; const AName: TStr); virtual;
     procedure AppendIdentStr(var B: TStrBuilder; const AName: string);
 
@@ -121,15 +124,15 @@ type
 
   TDbConnectionFactory = function(const Dsn: string): TDbConnection;
 
-{ Drivere registrerer seg selv i sin initialization-seksjon, slik at det å ta
-  med en unit i uses er alt som skal til for å få dialekten. }
+{ Drivers register themselves in their initialization section, so having
+  a unit in uses is all it takes to get the dialect. }
 procedure RegisterDbDriver(const Scheme: string; Factory: TDbConnectionFactory);
 function OpenDbConnection(const Dsn: string): TDbConnection;
 function DsnScheme(const Dsn: string): string;
 function RegisteredDrivers: string;
 
-{ Parametre. Verdien må leve til spørringen er kjørt, så alt som lager en ny
-  streng tar arenaen eksplisitt. }
+{ Parameters. The value has to live until the query has run, so anything
+  making a new string takes the arena explicitly. }
 function DbParam(const Value: TStr): TDbParam; overload;
 function DbParam(A: TArena; const Value: string): TDbParam; overload;
 function DbParam(A: TArena; Value: Int64): TDbParam; overload;
@@ -138,22 +141,23 @@ function DbParam(A: TArena; Value: Boolean): TDbParam; overload;
 function DbParamDateTime(A: TArena; Value: TDateTime): TDbParam;
 function DbNull: TDbParam;
 
-{ Locale-uavhengig formatering. CurrToStr og FloatToStr bruker systemets
-  desimalskilletegn, og et komma i en SQL-parameter er en feil som først
-  dukker opp på en maskin med norsk locale. }
+{ Locale-independent formatting. CurrToStr and FloatToStr use the
+  system's decimal separator, and a comma in a SQL parameter is a bug that
+  only shows up on a machine with a Norwegian locale. }
 function CurrencyToSql(Value: Currency): string;
 function FloatToSql(Value: Double): string;
 function DateTimeToSql(Value: TDateTime): string;
 
-{ Den andre veien: tekst fra databasen til Pascal-verdier, uten å gå om
-  StrToFloat og systemets desimalskilletegn. All_ returnerer False på søppel
-  i stedet for å kaste, fordi kalleren vet hvilken kolonne det gjaldt. }
+{ The other direction: text from the database to Pascal values, without
+  going through StrToFloat and the system's decimal separator. All of them
+  return False on rubbish rather than raising, because the caller knows
+  which column it was. }
 function SqlToInt64(const S: TStr; out V: Int64): Boolean;
 function SqlToCurrency(const S: TStr; out V: Currency): Boolean;
 function SqlToFloat(const S: TStr; out V: Double): Boolean;
 function SqlToBool(const S: TStr; out V: Boolean): Boolean;
-{ Tåler 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', ISO-T mellom dato og tid,
-  brøkdels sekunder og etterfølgende tidssone. }
+{ Tolerates 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', an ISO T between date
+  and time, fractional seconds and a trailing time zone. }
 function SqlToDateTime(const S: TStr; out V: TDateTime): Boolean;
 
 implementation
@@ -346,7 +350,7 @@ function DsnScheme(const Dsn: string): string;
 var
   P: Integer;
 begin
-  { Både 'postgresql://host/db' og 'sqlite:fil.db' skal treffe. }
+  { Both 'postgresql://host/db' and 'sqlite:file.db' have to match. }
   P := Pos(':', Dsn);
   if P <= 1 then
     Exit('');
@@ -429,7 +433,7 @@ end;
 
 function DbParam(A: TArena; Value: Boolean): TDbParam;
 begin
-  { 1 og 0 er det eneste alle tre dialektene tolker likt. }
+  { 1 and 0 are the only thing all three dialects read the same way. }
   if Value then
     Result := DbParam(A, '1')
   else
@@ -453,8 +457,9 @@ var
   Neg: Boolean;
   Whole, Frac: Int64;
 begin
-  { Currency er en Int64 skalert med 10000. Vi formaterer for hånd i stedet
-    for å gå om FloatToStr, som følger systemets desimalskilletegn. }
+  { Currency is an Int64 scaled by 10000. We format by hand rather than
+    going through FloatToStr, which follows the system's decimal
+    separator. }
   Scaled := PInt64(@Value)^;
   Neg := Scaled < 0;
   if Neg then
@@ -473,7 +478,8 @@ begin
   FS := DefaultFormatSettings;
   FS.DecimalSeparator := '.';
   FS.ThousandSeparator := #0;
-  { 17 signifikante siffer er nok til å få nøyaktig samme double tilbake. }
+  { 17 significant digits is enough to get exactly the same double
+    back. }
   Result := FloatToStrF(Value, ffGeneral, 17, 0, FS);
 end;
 
@@ -491,9 +497,10 @@ begin
   Result := S.ToInt64(V);
 end;
 
-{ Parts_ opp i heltallsdel og opptil Decimals desimaler, uten flyttall
-  underveis. Det som er igjen av desimaler forkastes, slik databasen selv
-  ville gjort ved lagring i en skalert kolonne. }
+{ Splits into an integer part and up to Decimals decimals, with no
+  floating point on the way. Whatever decimals are left over are
+  discarded, as the database itself would do when storing into a scaled
+  column. }
 function SplitDecimal(const S: TStr; Decimals: Integer;
   out Scaled: Int64): Boolean;
 var
@@ -536,7 +543,7 @@ begin
           Scaled := Scaled * 10 + Int64(D - Ord('0'));
           Inc(Taken);
         end;
-        { More desimaler enn vi har plass til forkastes. }
+        { More decimals than we have room for are discarded. }
       end
       else
         Scaled := Scaled * 10 + Int64(D - Ord('0'));
@@ -563,7 +570,7 @@ var
   Scaled: Int64;
 begin
   V := 0;
-  { Currency er en Int64 skalert med 10000. }
+  { Currency is an Int64 scaled by 10000. }
   Result := SplitDecimal(S, 4, Scaled);
   if Result then
     PInt64(@V)^ := Scaled;
@@ -573,8 +580,8 @@ function SqlToFloat(const S: TStr; out V: Double): Boolean;
 var
   FS: TFormatSettings;
 begin
-  { Egne innstillinger, ikke systemets — en norsk locale ville tolket
-    '1234.50' som 123450. }
+  { Our own settings, not the system's — a Norwegian locale would read
+    '1234.50' as 123450. }
   FS := DefaultFormatSettings;
   FS.DecimalSeparator := '.';
   FS.ThousandSeparator := #0;
@@ -586,7 +593,8 @@ begin
   V := False;
   if S.Len = 0 then
     Exit(False);
-  { Postgres sier t/f, MySQL og SQLite 1/0, og JSON-veien kan si true/false. }
+  { Postgres says t/f, MySQL and SQLite 1/0, and the JSON route can say
+    true/false. }
   if S.SameTextStr('t') or S.SameTextStr('true') or S.EqualsStr('1') or
      S.SameTextStr('y') or S.SameTextStr('yes') then
   begin
@@ -653,8 +661,8 @@ begin
   if not TryEncodeTime(Word(H), Word(Mi), Word(Se), 0, Tm) then
     Exit(False);
 
-  { Brøkdels sekunder og tidssone ignoreres med vilje. Tidssonehåndtering
-    hører hjemme i modellaget, ikke i en tekstparser. }
+  { Fractional seconds and the time zone are ignored deliberately. Time
+    zone handling belongs in the model layer, not in a text parser. }
   I := 19;
   if (I < S.Len) and ((S.Data + I)^ = Ord('.')) then
   begin

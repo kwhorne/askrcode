@@ -1,12 +1,14 @@
-{ Askr.Urd.Json — modeller til JSON, via den samme RTTI-en Urd mapper med.
+{ Askr.Urd.Json — models to JSON, through the same RTTI Urd maps with.
 
-  En modell serialiseres med kolonnenavnene, ikke property-navnene. Det er
-  snake_case i JSON og PascalCase i Pascal, som er konvensjonen på begge
-  sider og det en Svelte-utvikler forventer å se i props.
+  A model is serialised with the column names, not the property names.
+  That is snake_case in JSON and PascalCase in Pascal, which is the
+  convention on both sides and what a Svelte developer expects to see in
+  props.
 
-  Relasjoner som er lastet blir nøstet med, under samme navn i snake_case. En relasjon som ikke er lastet
-  utelates helt — ikke satt til null. Forskjellen er viktig: null betyr «ingen
-  ordre», mens fravær betyr «ikke spurt om». }
+  Loaded relations are nested along, under the same name in snake_case. A
+  relation that is not loaded is left out entirely — not set to null. The
+  difference matters: null means "no orders", while absence means "did not
+  ask". }
 unit Askr.Urd.Json;
 
 {$mode Delphi}{$H+}
@@ -17,9 +19,9 @@ uses
   SysUtils, TypInfo, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
   Askr.Urd.Driver, Askr.Urd.Model;
 
-{ Skriver modellen som et JSON-objekt på gjeldende posisjon i W. }
+{ Writes the model as a JSON object at the current position in W. }
 procedure WriteModel(var W: TJsonWriter; M: TModel);
-{ Skriver lista som en JSON-array. }
+{ Writes the list as a JSON array. }
 procedure WriteModelList(var W: TJsonWriter; L: TModelListBase);
 
 implementation
@@ -39,7 +41,7 @@ begin
     ckBoolean:
       W.Bool(GetOrdProp(M, Col.Prop) <> 0);
     ckDateTime:
-      { ISO 8601, som er det JavaScript forstår uten hjelp. }
+      { ISO 8601, which is what JavaScript understands unaided. }
       W.Str(DateTimeToSql(GetFloatProp(M, Col.Prop)));
     ckEnum:
       W.Int(GetOrdProp(M, Col.Prop));
@@ -73,10 +75,10 @@ begin
       Continue;
     Child := TObject(Slot^);
     if Child = nil then
-      { Ikke lastet. Utelates, slik at frontend kan skille det fra tomt. }
+      { Not loaded. Left out, so the frontend can tell it from empty. }
       Continue;
-    { Samme konvensjon som kolonnene: snake_case ut, PascalCase inn.
-      Relasjonen heter Orders i Pascal og orders i JSON. }
+    { The same convention as the columns: snake_case out, PascalCase in.
+      The relation is called Orders in Pascal and orders in JSON. }
     W.Key(SnakeCase(Rel.Name));
     if Child is TModelListBase then
       WriteModelList(W, TModelListBase(Child))

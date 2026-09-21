@@ -8,11 +8,11 @@
 
   Two formats:
 
-  * **text** — for a terminal window during development:
-  `2026-09-20T08:11:12.345Z INFO  request  method=GET path=/ status=200`
-  * **json** — one line per event, for production, where something else
-  is going to read them. Each line is a JSON object with ts, level,
-  msg and the fields.
+    * **text** — for a terminal window during development:
+      `2026-09-20T08:11:12.345Z INFO  request  method=GET path=/ status=200`
+    * **json** — one line per event, for production, where something else
+      is going to read them. Each line is a JSON object with ts, level,
+      msg and the fields.
 
   (An example of the JSON line cannot go here: braces inside a Pascal
   comment open a nested comment.)
@@ -58,8 +58,8 @@ function LogLevel: TLogLevel;
 { True when something at this level would actually be written. Use it to
   skip expensive formatting:
 
-  if LogEnabled(llDebug) then
-  LogDebug(BuildExpensiveMessage);
+      if LogEnabled(llDebug) then
+        LogDebug(BuildExpensiveMessage);
 
   LogDebug checks the level itself, but its arguments have already been
   worked out by the time it is called. }
@@ -91,7 +91,7 @@ function LogLevelName(L: TLogLevel): string;
   values whatever `array of const` accepts — integers, strings, booleans,
   floats.
 
-  LogInfo('order placed', ['id', Order.Id, 'total', Order.Total]);
+      LogInfo('order placed', ['id', Order.Id, 'total', Order.Total]);
 
   A key with no value at the end gets an empty value. A log line must
   never be able to bring down what logged it. }

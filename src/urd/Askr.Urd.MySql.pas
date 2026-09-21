@@ -1,31 +1,32 @@
-{ Askr.Urd.MySql — MySQL- og MariaDB-driver.
+{ Askr.Urd.MySql — the MySQL and MariaDB driver.
 
-  Bindingen går mot **MariaDB Connector/C** (libmariadb). Den er
-  ABI-kompatibel med libmysqlclient, ligger i Debian som libmariadb3 og på
-  Homebrew som mariadb-connector-c, og snakker med både MySQL og MariaDB.
-  Én binding, to servere. Verifisert mot MySQL 8.4 med caching_sha2_password.
+  The binding goes against **MariaDB Connector/C** (libmariadb). It is
+  ABI-compatible with libmysqlclient, is in Debian as libmariadb3 and on
+  Homebrew as mariadb-connector-c, and talks to both MySQL and MariaDB.
+  One binding, two servers. Verified against MySQL 8.4 with
+  caching_sha2_password.
 
-  To utførelsesveier, med vilje:
+  Two execution paths, deliberately:
 
-    * Exec uten parametre går over **tekstprotokollen** (mysql_real_query).
-      Migrasjoner og DDL havner her, og MySQL lar seg ikke prepare på alt av
-      det.
-    * ExecParams går over **prepared statements**, med en cache per
-      forbindelse. Parametrene sendes da som parametre hele veien til
-      serveren, ikke som tekst limt inn i spørringen.
+    * Exec without parameters goes over the **text protocol**
+      (mysql_real_query). Migrations and DDL end up here, and MySQL will
+      not let you prepare all of it.
+    * ExecParams goes over **prepared statements**, with a cache per
+      connection. The parameters are then sent as parameters all the way
+      to the server, not as text pasted into the query.
 
-  Cachen ligger på forbindelsen fordi et prepared statement gjør det: det er
-  serverens tilstand for akkurat denne sesjonen. En cache delt mellom
-  forbindelser ville pekt på håndtak i feil sesjon.
+  The cache lives on the connection because a prepared statement does: it
+  is the server's state for this particular session. A cache shared
+  between connections would point at handles in the wrong session.
 
-  Resultatene leses som tekst også over binærprotokollen: alle kolonner
-  bindes som MYSQL_TYPE_STRING, og klienten konverterer. Det holder
-  TDbResult likt på tvers av de tre driverne, som er hele poenget med
-  abstraksjonen.
+  Results are read as text over the binary protocol too: every column is
+  bound as MYSQL_TYPE_STRING and the client converts. That keeps
+  TDbResult the same across all three drivers, which is the whole point of
+  the abstraction.
 
-  MYSQL_BIND er en C-struct denne koden må treffe på byten. Layouten er
-  verifisert mot headeren med offsetof, ikke husket — se
-  MYSQL_BIND_SIZE-sjekken i initialization. }
+  MYSQL_BIND is a C struct this code has to match byte for byte. The
+  layout is verified against the header with offsetof, not remembered —
+  see the MYSQL_BIND_SIZE check in initialization. }
 unit Askr.Urd.MySql;
 
 {$mode Delphi}{$H+}
@@ -47,34 +48,35 @@ type
     FPrepared: Int64;
     FCacheHits: Int64;
 
-    { Klientbiblioteket har tilstand per tråd. Poolen kan gi en forbindelse
-      til en annen tråd enn den som åpnet den, så den må settes opp der. }
+    { The client library has per-thread state. The pool may give a
+      connection to a thread other than the one that opened it, so it has
+      to be set up there. }
     procedure EnsureThread;
     procedure RaiseConn(const Sql: string);
-    { Bygger unntaket uten å kaste det, slik at feilkoden kan leses av
-      statementet før noe lukker det. }
+    { Builds the exception without raising it, so the error code can be
+      read off the statement before anything closes it. }
     function StmtError(Stmt: Pointer; const Sql: string): EDbError;
     procedure RaiseStmt(Stmt: Pointer; const Sql: string);
     procedure Simple(const Sql: string);
-    { Cachet sier om statementet ligger i cachen. Gjør det ikke det, eier
-      kalleren det og må lukke det. }
+    { Cached says whether the statement is in the cache. If it is not, the
+      caller owns it and has to close it. }
     function Prepared(const Sql: string; out Cachet: Boolean): Pointer;
     procedure DropCached(const Sql: string);
     function RunText(A: TArena; const Sql: string): TDbResult;
     function RunPrepared(A: TArena; const Sql: string;
       const Params: array of TDbParam): TDbResult;
   public
-    { Dsn er enten en URI:
+    { Dsn is either a URI:
 
-        mysql://bruker:passord@vert:3306/database
-        mysql://bruker@/var/run/mysqld/mysqld.sock/database
+        mysql://user:password@host:3306/database
+        mysql://user@/var/run/mysqld/mysqld.sock/database
 
-      eller nøkkel=verdi atskilt med semikolon:
+      or key=value separated by semicolons:
 
         mysql:host=127.0.0.1;port=3308;user=askr;password=askr;db=askr_dev
 
-      Tegnsettet er utf8mb4 med mindre charset= sier noe annet. MySQLs
-      «utf8» er ikke UTF-8, og standarden her skal ikke være en felle. }
+      The character set is utf8mb4 unless charset= says otherwise. MySQL's
+      "utf8" is not UTF-8, and the default here must not be a trap. }
     constructor Create(const ADsn: string);
     destructor Destroy; override;
 
@@ -89,17 +91,18 @@ type
     procedure Commit; override;
     procedure Rollback; override;
 
-    { Tømmer statement-cachen. Nødvendig etter DDL som endrer en tabell et
-      cachet statement rører: serveren merker det, men et statement som
-      allerede er forberedt peker på den gamle formen. }
+    { Empties the statement cache. Necessary after DDL that changes a table
+      a cached statement touches: the server notices, but a statement
+      already prepared points at the old shape. }
     procedure FlushStatementCache;
 
     property Dsn: string read FDsn;
-    { Where_ mange statements som er forberedt mot serveren, og hvor mange kall
-      som slapp unna med et cachet. To_ testene og til å se at cachen virker. }
+    { How many statements are prepared against the server, and how many
+      calls got away with a cached one. For the tests, and for seeing that
+      the cache works. }
     property PreparedCount: Int64 read FPrepared;
     property CacheHits: Int64 read FCacheHits;
-    { 0 slår cachen av. Standard er 64. }
+    { 0 turns the cache off. The default is 64. }
     property CacheLimit: Integer read FCacheLimit write FCacheLimit;
   end;
 
@@ -127,9 +130,10 @@ const
   MYSQL_NO_DATA        = 100;
   MYSQL_DATA_TRUNCATED = 101;
 
-  { Feilkoder som må oversettes til SQLSTATE-ene resten av Urd bruker.
-    MySQLs egen SQLSTATE duger ikke: både unik-brudd og fremmednøkkelbrudd
-    rapporteres som '23000'. Errno skiller dem. }
+  { Error codes that have to be translated to the SQLSTATEs the rest of
+    Urd uses. MySQL's own SQLSTATE will not do: both a unique violation
+    and a foreign key violation are reported as '23000'. The errno
+    separates them. }
   ER_DUP_ENTRY            = 1062;
   ER_DUP_ENTRY_WITH_KEY   = 1586;
   ER_ROW_IS_REFERENCED_2  = 1451;
@@ -139,9 +143,9 @@ const
 
 type
   PMysqlBind = ^TMysqlBind;
-  { Verifisert mot libmariadb: 112 bytes, feltene på 0, 8, 16, 24, 32, 40,
-    48, 56, 64, 72, 80, 88, 92, 96, 100, 101, 102, 103, 104. Naturlig
-    justering i Pascal treffer det samme. }
+  { Verified against libmariadb: 112 bytes, the fields at 0, 8, 16, 24,
+    32, 40, 48, 56, 64, 72, 80, 88, 92, 96, 100, 101, 102, 103, 104.
+    Natural alignment in Pascal hits the same. }
   TMysqlBind = record
     Length_: PPtrUInt;          { 0 }
     IsNull: PByte;              { 8 }
@@ -375,9 +379,9 @@ begin
   Result := string(mysql_get_client_info());
 end;
 
-{ Oversetter MySQLs errno til SQLSTATE-ene resten av Urd kjenner. MySQL sier
-  '23000' om både unik-brudd og fremmednøkkelbrudd, så SQLSTATE alene kan
-  ikke brukes til å skille dem. }
+{ Translates MySQL's errno into the SQLSTATEs the rest of Urd knows.
+  MySQL says '23000' for both a unique violation and a foreign key
+  violation, so the SQLSTATE alone cannot tell them apart. }
 function StateFor(Errno: LongWord; const Native: string): string;
 begin
   case Errno of
@@ -508,7 +512,7 @@ begin
     Exit;
   end;
 
-  { Nøkkel=verdi-form. }
+  { The key=value form. }
   Pairs := TStringList.Create;
   try
     Pairs.Delimiter := ';';
@@ -571,9 +575,9 @@ begin
   BChar := AnsiString(Info.Charset);
   mysql_options(FMysql, MYSQL_SET_CHARSET_NAME, PAnsiChar(BChar));
 
-  { CLIENT_FOUND_ROWS gjør at UPDATE rapporterer rader som traff, ikke rader
-    som faktisk endret seg. Without det melder «lagre uten endringer» 0 rader,
-    og kallende kode tror raden er borte. }
+  { CLIENT_FOUND_ROWS makes UPDATE report rows that matched rather than
+    rows that actually changed. Without it, "save with no changes"
+    reports 0 rows and the calling code believes the row is gone. }
   if mysql_real_connect(FMysql,
        NilOrPChar(Info.Host, BHost), NilOrPChar(Info.User, BUser),
        NilOrPChar(Info.Password, BPass), NilOrPChar(Info.Db, BDb),
@@ -608,15 +612,17 @@ begin
   inherited Destroy;
 end;
 
-{ mysql_thread_init må kalles én gang i hver tråd som rører biblioteket.
-  Without det virker enkle spørringer tilsynelatende, men konverteringen av
-  resultater over prepared-protokollen bruker trådlokale buffere som ikke
-  finnes — og verdiene kommer tomme tilbake uten at noe melder feil.
+{ mysql_thread_init has to be called once in every thread that touches
+  the library. Without it, simple queries appear to work, but the
+  conversion of results over the prepared protocol uses thread-local
+  buffers that do not exist — and the values come back empty with nothing
+  reporting an error.
 
-  Flagget er en threadvar, så hver tråd gjør det bare første gang. Den
-  tilhørende mysql_thread_end kalles aldri: det finnes ingen bærbar måte å
-  henge seg på at en tråd avslutter, og prisen er én liten trådlokal
-  allokering per tråd i en prosess som uansett har langlevde workere. }
+  The flag is a threadvar, so each thread only does it the first time. The
+  matching mysql_thread_end is never called: there is no portable way to
+  hook onto a thread finishing, and the price is one small thread-local
+  allocation per thread in a process that has long-lived workers
+  anyway. }
 threadvar
   GThreadKlar: Boolean;
 
@@ -677,8 +683,8 @@ begin
   EnsureThread;
   if mysql_real_query(FMysql, PAnsiChar(AnsiString(Sql)), PtrUInt(Length(Sql))) <> 0 then
     RaiseConn(Sql);
-  { Selv en setning uten resultat må hentes og frigjøres, ellers står
-    forbindelsen igjen «ute av synk» for neste spørring. }
+  { Even a statement with no result has to be fetched and freed, or the
+    connection is left "out of sync" for the next query. }
   Res := mysql_store_result(FMysql);
   if Res <> nil then
     mysql_free_result(Res);
@@ -739,11 +745,11 @@ begin
 
   if FCacheLimit > 0 then
   begin
-    { Grensen er en grense, ikke en LRU. Et prepared statement koster
-      serverminne, og en app med ubegrenset mange ulike spørringer skal ikke
-      kunne spise det opp. Faller cachen over, tømmes den helt — enklere enn
-      en gjenbruksrekkefølge, og treffer sjelden i praksis fordi spørringene
-      i en app er et endelig sett. }
+    { The limit is a limit, not an LRU. A prepared statement costs server
+      memory, and an app with unboundedly many different queries must not be
+      able to eat it. If the cache goes over, it is emptied entirely —
+      simpler than a reuse order, and it rarely happens in practice because
+      the queries in an app are a finite set. }
     if FCache.Count >= FCacheLimit then
       FlushStatementCache;
     FCache.AddObject(Sql, TObject(Stmt));
@@ -771,8 +777,8 @@ begin
   Res := mysql_store_result(FMysql);
   if Res = nil then
   begin
-    { Ingen resultatsett. Enten en INSERT/UPDATE/DELETE, eller en feil —
-      field_count skiller dem. }
+    { No result set. Either an INSERT/UPDATE/DELETE, or an error —
+      field_count separates them. }
     if mysql_field_count(FMysql) <> 0 then
       RaiseConn(Sql);
     Prev := UseArena(A);
@@ -826,9 +832,9 @@ begin
       Result.Allocate(RowCount, Cols);
       for I := 0 to Cols - 1 do
       begin
-        { MYSQL_FIELD har name som aller første felt i både MariaDB og MySQL.
-          Bare det leses, slik at resten av structen — som er ulik mellom de
-          to — aldri blir en avhengighet. }
+        { MYSQL_FIELD has name as its very first field in both MariaDB and
+          MySQL. Only that is read, so the rest of the struct — which differs
+          between the two — never becomes a dependency. }
         Fld := mysql_fetch_field_direct(Res, LongWord(I));
         if Fld <> nil then
           Result.SetFieldName(I, StrDup(A, string(PPAnsiChar(Fld)^)))
@@ -873,13 +879,14 @@ const
 begin
   EnsureThread;
   Stmt := Prepared(Sql, Cachet);
-  { Et cachet statement eies av cachen og lukkes ved utkasting eller ved
-    Destroy. Et ucachet eies av dette kallet. }
+  { A cached statement is owned by the cache and closed on eviction or at
+    Destroy. An uncached one is owned by this call. }
   MustClose := not Cachet;
   try
 
-  { Parametrene må ligge i minne som overlever execute. De allokeres derfor
-    før merket, jf. samme fallgruve som i Pg-driveren. }
+  { The parameters have to live in memory that survives execute. They are
+    therefore allocated before the mark, the same pitfall as in the Pg
+    driver. }
   Binds := nil;
   if Length(Params) > 0 then
   begin
@@ -908,17 +915,18 @@ begin
 
     if mysql_stmt_execute(Stmt) <> 0 then
     begin
-    { Feilen må leses FØR statementet kastes ut av cachen: DropCached kaller
-      mysql_stmt_close, og etter det er errno og sqlstate frigjort minne.
-      Gjorde man det i motsatt rekkefølge, ble hvert eneste unik-brudd
-      rapportert som SQLSTATE 00000 — altså «ingen feil».
+    { The error has to be read BEFORE the statement is evicted from the
+      cache: DropCached calls mysql_stmt_close, and after that errno and
+      sqlstate are freed memory. Done the other way round, every single
+      unique violation was reported as SQLSTATE 00000 — that is, "no error".
 
-      Statementet kastes ut fordi et cachet statement kan være forberedt mot
-      en tabell som siden er endret; neste forsøk skal forberede på nytt. }
+      The statement is evicted because a cached statement may have been
+      prepared against a table that has since changed; the next attempt
+      should prepare afresh. }
       Err := StmtError(Stmt, Sql);
-      { DropCached lukker selv. Lukkes det så én gang til i finally, er det
-        en dobbeltfrigjøring — og den viste seg som en access violation i
-        unik-brudd-testen, ikke som noe som lignet årsaken. }
+      { DropCached closes it itself. Closing it once more in the finally is
+        a double free — and it showed up as an access violation in the
+        unique-violation test, not as anything resembling the cause. }
       if Cachet then
         DropCached(Sql)
       else
@@ -947,19 +955,20 @@ begin
     if mysql_stmt_store_result(Stmt) <> 0 then
       RaiseStmt(Stmt, Sql);
 
-    { Hver kolonne får et lite fast buffer, og bare det som ikke får plass
-      hentes en gang til.
+    { Every column gets a small fixed buffer, and only what does not fit is
+      fetched a second time.
 
-      Fristelsen er å binde med tomt buffer og la Lens fortelle lengden i
-      første runde. Det virker for alt serveren sender som tekst — VARCHAR,
-      TEXT, DECIMAL, og heltall — men **ikke for flyttall**: en DOUBLE kommer
-      binært over prepared-protokollen, og uten et buffer å konvertere inn i
-      setter klienten lengden til null. Resultatet ble tomme verdier for
-      hver eneste flyttallskolonne, uten en feil noe sted.
+      The temptation is to bind with an empty buffer and let Lens report the
+      length on the first pass. That works for everything the server sends
+      as text — VARCHAR, TEXT, DECIMAL and integers — but **not for
+      floats**: a DOUBLE arrives in binary over the prepared protocol, and
+      without a buffer to convert into, the client sets the length to zero.
+      The result was empty values for every single floating-point column,
+      with no error anywhere.
 
-      With_ et buffer på 192 bytes får tall, datoer og korte strenger plass med
-      én gang, og lengre tekst tas i andre runde der Lens nå er til å stole
-      på fordi konverteringen faktisk har skjedd. }
+      With a 192-byte buffer, numbers, dates and short strings fit at once,
+      and longer text is taken on a second pass where Lens is now
+      trustworthy because the conversion has actually happened. }
     Outs := PMysqlBind(A.AllocZero(PtrUInt(Cols) * SizeOf(TMysqlBind)));
     Lens := PPtrUInt(A.AllocZero(PtrUInt(Cols) * SizeOf(PtrUInt)));
     Nulls := PByte(A.AllocZero(PtrUInt(Cols)));
@@ -989,7 +998,8 @@ begin
           RaiseStmt(Stmt, Sql);
         Break;
       end;
-      { MYSQL_DATA_TRUNCATED er forventet her — bufferne er med vilje tomme. }
+      { MYSQL_DATA_TRUNCATED is expected here — the buffers are deliberately
+        empty. }
       Cells := PDbCell(A.AllocZero(PtrUInt(Cols) * SizeOf(TDbCell)));
       for I := 0 to Cols - 1 do
       begin
@@ -1007,8 +1017,9 @@ begin
         end;
         if Lens[I] <= SmallBuf then
         begin
-          { Verdien ligger allerede i det faste bufferet, men det gjenbrukes
-            av neste rad — derfor kopi inn i arenaen, ikke en peker til det. }
+          { The value is already in the fixed buffer, but that is reused by the
+            next row — hence a copy into the arena rather than a pointer to
+            it. }
           Cells[I].Value := StrDup(A,
             StrRef(Small + PtrUInt(I) * SmallBuf, Integer(Lens[I])));
           Continue;
@@ -1019,8 +1030,8 @@ begin
         if mysql_stmt_fetch_column(Stmt, @Outs[I], LongWord(I), 0) <> 0 then
           RaiseStmt(Stmt, Sql);
         Cells[I].Value := StrRef(Buf, Integer(Lens[I]));
-        { Tilbake til det faste bufferet, ellers skriver neste rad over
-          verdien som nettopp ble lagt i arenaen. }
+        { Back to the fixed buffer, or the next row overwrites the value just
+          placed in the arena. }
         Outs[I].Buffer := Small + PtrUInt(I) * SmallBuf;
         Outs[I].BufferLength := SmallBuf;
       end;
@@ -1061,14 +1072,15 @@ begin
     end;
     finally
       mysql_free_result(Meta);
-      { Resultatet må frigjøres på serveren før statementet kan brukes igjen.
-        Without dette gir neste execute «commands out of sync». }
+      { The result has to be freed on the server before the statement can be
+        used again. Without this the next execute gives "commands out of
+        sync". }
       mysql_stmt_free_result(Stmt);
     end;
   finally
-    { Et statement som ikke havnet i cachen eies av dette kallet. Without denne
-      lukkingen lekker CacheLimit := 0 ett statement per spørring — både i
-      klienten og på serveren. }
+    { A statement that did not end up in the cache is owned by this call.
+      Without this close, CacheLimit := 0 leaks one statement per query —
+      both in the client and on the server. }
     if MustClose then
       mysql_stmt_close(Stmt);
   end;
@@ -1091,9 +1103,10 @@ end;
 function TMySqlConnection.InsertGetId(A: TArena; const Sql: string;
   const Params: array of TDbParam; const IdColumn: string): Int64;
 begin
-  { MySQL har ikke RETURNING. LAST_INSERT_ID leses fra forbindelsen etterpå,
-    og gjelder den siste INSERT-en på nettopp denne forbindelsen — derfor er
-    det trygt selv med en pool, så lenge ingen deler en forbindelse. }
+  { MySQL has no RETURNING. LAST_INSERT_ID is read from the connection
+    afterwards, and applies to the last INSERT on this particular
+    connection — so it is safe even with a pool, as long as nobody shares
+    a connection. }
   if Length(Params) = 0 then
   begin
     RunText(A, Sql);
@@ -1144,8 +1157,9 @@ end;
 
 initialization
   GLock := TCriticalSection.Create;
-  { Layouten er verifisert med offsetof mot libmariadbs header. Endrer noen
-    recorden, skal det smelle her og ikke i en tilfeldig kolonne. }
+  { The layout is verified with offsetof against libmariadb's header. If
+    anyone changes the record, it should blow up here and not in a random
+    column. }
   Assert(SizeOf(TMysqlBind) = 112, 'TMysqlBind must be 112 bytes');
   RegisterDbDriver('mysql', MakeMySql);
   RegisterDbDriver('mariadb', MakeMySql);

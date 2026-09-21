@@ -6,15 +6,15 @@
 
   Three rules, and they are not negotiable:
 
-  * **Real environment variables win.** If `DATABASE_URL` is set in the
-  environment it is used, whatever `.env` says. That is how production
-  sets values without the file existing, and how everyone else does
-  it.
-  * **Values are never logged.** An error message names the key that was
-  missing, never what it held. `EnvOrFail` is written to be safe to
-  leave in a stack trace.
-  * **`.env` is not committed.** `askr new` puts it in .gitignore and
-  writes a `.env.example` beside it.
+    * **Real environment variables win.** If `DATABASE_URL` is set in the
+      environment it is used, whatever `.env` says. That is how production
+      sets values without the file existing, and how everyone else does
+      it.
+    * **Values are never logged.** An error message names the key that was
+      missing, never what it held. `EnvOrFail` is written to be safe to
+      leave in a stack trace.
+    * **`.env` is not committed.** `askr new` puts it in .gitignore and
+      writes a `.env.example` beside it.
 
   The file is read into the process's own store rather than set with
   `setenv`. That is deliberate: FPC's RTL keeps its own copy of the
@@ -93,9 +93,9 @@ var
 { The value after = on a .env line.
 
   Three forms, as in every other .env reader:
-  KEY=raw value          — trimmed, and # after a space is a comment
-  KEY="with escapes"     — \n, \t, \" and \\ are interpreted
-  KEY='entirely literal' — nothing is interpreted }
+    KEY=raw value          — trimmed, and # after a space is a comment
+    KEY="with escapes"     — \n, \t, \" and \\ are interpreted
+    KEY='entirely literal' — nothing is interpreted }
 function ParseValue(const Raw: string): string;
 var
   S: string;

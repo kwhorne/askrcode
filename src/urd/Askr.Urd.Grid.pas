@@ -1,10 +1,10 @@
-{ Askr.Urd.Grid — serversiden av datagriden.
+{ Askr.Urd.Grid — the server side of the data grid.
 
-  Dette er halvparten Lauf ikke kan ha, og som ingen ren frontend kan gjøre:
-  sortering, søk og paginering skjer i databasen, ikke i nettleseren. En
-  grid som henter hundre tusen rader for å sortere dem i JavaScript er feil
-  svar for Askr — databasen står der allerede, den har indeksene, og den er
-  raskere enn nettverket.
+  This is the half Lauf cannot have, and that no pure frontend can do:
+  sorting, searching and pagination happen in the database, not in the
+  browser. A grid that fetches a hundred thousand rows to sort them in
+  JavaScript is the wrong answer for Askr — the database is already there,
+  it has the indexes, and it is faster than the network.
 
       function TCustomerController.Index(Req: TRequest): TResponse;
       var
@@ -22,21 +22,21 @@
            'grid', G]);
       end;
 
-  **Sorteringskolonnen kommer fra en URL, og den når aldri SQL-en.**
-  `TQuery.OrderBy` tar en typet `TCol`, ikke en streng, så en kolonne som
-  ikke er registrert med `Sortable` finnes rett og slett ikke å sortere på.
-  Det er ikke en sjekk vi har husket å skrive; det er en konsekvens av at
-  datalaget er typet. En grid som setter sammen «ORDER BY » + parameteren er
-  den klassiske injeksjonen, og den formen lar seg ikke skrive her.
+  **The sort column comes from a URL, and it never reaches the SQL.**
+  `TQuery.OrderBy` takes a typed `TCol`, not a string, so a column not
+  registered with `Sortable` simply does not exist to sort by. That is not
+  a check we remembered to write; it is a consequence of the data layer
+  being typed. A grid that concatenates "ORDER BY " + the parameter is the
+  classic injection, and that shape cannot be written here.
 
-  Totalen telles med `Count`, som bygger sin egen `SELECT count(*)` og ser
-  bort fra limit og offset. Den må kjøres før sidene, ellers teller man
-  siden i stedet for treffene.
+  The total is counted with `Count`, which builds its own `SELECT
+  count(*)` and ignores limit and offset. It has to run before the page,
+  or you count the page instead of the matches.
 
-  Det som *ikke* ligger her, med vilje: kolonnefiltre per felt. De krever en
-  operator per type og en måte å uttrykke «og/eller» på, og det er et eget
-  spørsmål om hvor mye av et spørrespråk en URL skal bære. Fritekstsøk over
-  navngitte kolonner dekker det de fleste lister trenger. }
+  What is deliberately *not* here: per-field column filters. They need an
+  operator per type and a way to express "and/or", and that is a separate
+  question about how much of a query language a URL should carry.
+  Free-text search over named columns covers what most lists need. }
 unit Askr.Urd.Grid;
 
 {$mode Delphi}{$H+}
@@ -52,9 +52,9 @@ uses
 type
   EGridError = class(Exception);
 
-  { Typen bare velger riktig OrderBy-overlast. TCol<T> er den samme recorden
-    uansett T, så navnet og tabellen lagres, og kinden sier hvilken vei
-    kallet skal gå når sorteringen settes på. }
+  { The type only picks the right OrderBy overload. TCol<T> is the same
+    record whatever T is, so the name and the table are stored and the
+    kind says which way the call should go when the sort is applied. }
   TGridColKind = (gkInt, gkStr, gkCurrency, gkFloat, gkBool, gkDateTime);
 
   TGridCol = record
@@ -75,10 +75,10 @@ type
     FPage: Integer;
     FPerPage: Integer;
     FMaxPerPage: Integer;
-    { Det klienten ba om, holdt for seg. Slås sammen med standarden og
-      taket først i EffectivePer, slik at rekkefølgen på Read og PerPage
-      ikke betyr noe. Et API der kallrekkefølgen stille endrer oppførselen
-      er en felle, og den traff med én gang. }
+    { What the client asked for, kept separate. Merged with the default and
+      the cap only in EffectivePer, so the order of Read and PerPage does
+      not matter. An API where the call order silently changes behaviour
+      is a trap, and it caught us immediately. }
     FClientPer: Integer;
     FQuery: string;
     FTotal: Int64;
@@ -92,15 +92,15 @@ type
   public
     constructor Create;
 
-    { Inngangen, av samme grunn som TQuery.New: en nøstet spesialisering
-      som typeargument — Arena.New<TGrid<TCustomer>> — leses som en
-      skiftoperator og lar seg ikke skrive. }
+    { The entry point, for the same reason as TQuery.New: a nested
+      specialisation as a type argument — Arena.New<TGrid<TCustomer>> —
+      reads as a shift operator and cannot be written. }
     class function New: TGrid<M>;
 
-    { Leser sort, dir, page, per og q fra spørrestrengen. }
+    { Reads sort, dir, page, per and q from the query string. }
     function Read(Req: TRequest): TGrid<M>;
 
-    { Hvitelisten. En kolonne som ikke står her kan ikke sorteres på. }
+    { The whitelist. A column not listed here cannot be sorted by. }
     function Sortable(const Key: string; const Col: TColInt64): TGrid<M>; overload;
     function Sortable(const Key: string; const Col: TColStr): TGrid<M>; overload;
     function Sortable(const Key: string; const Col: TColCurrency): TGrid<M>; overload;
@@ -108,22 +108,23 @@ type
     function Sortable(const Key: string; const Col: TColBool): TGrid<M>; overload;
     function Sortable(const Key: string; const Col: TColDateTime): TGrid<M>; overload;
 
-    { Fritekstsøk. ILike mot hver kolonne, med OR mellom dem. }
+    { Free-text search. ILike against each column, with OR between them. }
     function Searchable(const Cols: array of TColStr): TGrid<M>;
 
     function DefaultSort(const Key: string; Dir: TSqlDir = Asc): TGrid<M>;
-    { Standard sidestørrelse, og taket klienten kan be om. Without et tak kan
-      hvem som helst be om per=1000000 og be databasen om alt. }
+    { The default page size, and the cap a client may ask for. Without a cap
+      anyone can ask for per=1000000 and ask the database for
+      everything. }
     function PerPage(N: Integer; Max: Integer = 200): TGrid<M>;
 
-    { Teller totalen, legger på søk og sortering, og henter siden.
-      Spørringen kommer fra kalleren, slik at den kan ha sine egne Where —
-      en grid over «mine ordre» er fortsatt en grid. }
+    { Counts the total, applies search and sorting, and fetches the page.
+      The query comes from the caller, so it can carry its own Where — a
+      grid over "my orders" is still a grid. }
     function Rows(Q: TQuery<M>): TModelList<M>;
 
-    { Legges i payloaden som en egen prop. Frontend leser den for å vite
-      hvilken kolonne som er sortert, hvilken side den står på og hvor
-      mange treff det er. }
+    { Goes into the payload as a prop of its own. The frontend reads it to
+      know which column is sorted, which page it is on and how many
+      matches there are. }
     procedure WriteJson(var W: TJsonWriter); override;
 
     property Total: Int64 read FTotal;
@@ -134,9 +135,10 @@ type
 
 implementation
 
-{ Kolonnenavnene fra Norn er ShortString. Sammenligningen mot nøkkelen fra
-  URL-en er på vår egen Key, ikke på kolonnenavnet — en app skal kunne kalle
-  kolonnen noe annet utad enn den heter i databasen. }
+{ The column names from Norn are ShortStrings. The comparison against the
+  key from the URL is on our own Key, not on the column name — an app must
+  be able to call a column something else on the outside than it is called
+  in the database. }
 
 class function TGrid<M>.New: TGrid<M>;
 begin
@@ -287,8 +289,8 @@ begin
   if S.Len > 0 then
   begin
     N := StrToIntDef(S.ToString, 0);
-    { Taket gjelder også det klienten ber om. Without det er per=1000000 en
-      måte å be databasen om hele tabellen på. }
+    { The cap applies to what the client asks for as well. Without it
+      per=1000000 is a way to ask the database for the whole table. }
     if N > 0 then
       FClientPer := N;
   end;
@@ -300,9 +302,9 @@ function TGrid<M>.EffectiveSort: string;
 var
   C: TGridCol;
 begin
-  { En ukjent kolonne faller tilbake til standarden i stillhet. Alternativet
-    — en feilmelding — gjør at en gammel bokmerket URL velter siden, og
-    sorteringen er ikke noe å feile på. }
+  { An unknown column falls back to the default silently. The alternative
+    — an error — means an old bookmarked URL brings the page down, and
+    sorting is not something to fail on. }
   if (FSort <> '') and Find(FSort, C) then
     Exit(FSort);
   Result := FDefaultSort;
@@ -334,9 +336,9 @@ begin
   if Q = nil then
     raise EGridError.Create('Grid.Rows needs a query');
 
-  { Søket først, slik at det er med i tellingen. WhereAnyLike setter OR
-    mellom kolonnene og parentes rundt gruppa, slik at et Where kalleren
-    allerede hadde lagt på fortsatt gjelder. }
+  { The search first, so it is included in the count. WhereAnyLike puts OR
+    between the columns and a parenthesis around the group, so a Where the
+    caller had already added still applies. }
   if (FQuery <> '') and (Length(FSearch) > 0) then
   begin
     SetLength(SokeKol, Length(FSearch));
@@ -348,8 +350,9 @@ begin
     Q.WhereAnyLike(SokeKol, FQuery);
   end;
 
-  { Count ser bort fra limit og offset og må kjøres før siden hentes —
-    ellers teller man raden på siden i stedet for treffene. }
+  { Count ignores limit and offset and has to run before the page is
+    fetched — otherwise you count the row on the page instead of the
+    matches. }
   FTotal := Q.Count;
   FRan := True;
 
@@ -386,15 +389,15 @@ begin
       gkBool:
         begin
           ColB.Name := C.Name; ColB.Table := C.Table;
-          { TQuery har ingen OrderBy for bool — et boolsk felt er sjelden en
-            meningsfull sortering, og heller enn å finne på en oversettelse
-            lar vi den stå usortert. }
+          { TQuery has no OrderBy for bool — a boolean field is rarely a
+            meaningful sort, and rather than invent a translation we leave
+            it unsorted. }
         end;
     end;
   end;
 
-  { En side utenfor området gir tom liste, ikke en feil. Det skjer når noen
-    sletter rader mens du står på siste side. }
+  { A page outside the range gives an empty list, not an error. That
+    happens when somebody deletes rows while you are on the last page. }
   Result := Q.Paginate(FPage, EffectivePer);
 end;
 
@@ -413,8 +416,8 @@ begin
   W.Field('page', Int64(FPage));
   W.Field('per', Int64(EffectivePer));
   W.Field('q', FQuery);
-  { Has_ ikke Rows kjørt, er totalen ikke målt — og da skal den ikke stå der
-    som om den var det. }
+  { If Rows has not run, the total has not been measured — and then it
+    must not sit there as if it had. }
   if FRan then
   begin
     W.Field('total', FTotal);

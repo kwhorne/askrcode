@@ -107,7 +107,7 @@ const
 { Hashes a password. The result is a PHC string carrying the algorithm,
   the iteration count and the salt:
 
-  $pbkdf2-sha256$i=600000$<salt>$<hash>
+      $pbkdf2-sha256$i=600000$<salt>$<hash>
 
   The whole string is stored in the database. That is what lets the
   parameters change without a migration. }

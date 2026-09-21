@@ -14,7 +14,7 @@
   for one sign-in. P-256 was chosen with a Solinas prime precisely to
   avoid that:
 
-  p = 2^256 - 2^224 + 2^192 + 2^96 - 1
+    p = 2^256 - 2^224 + 2^192 + 2^96 - 1
 
   The reduction then becomes nine rearrangements of 32-bit words, added
   and subtracted. The formulas are in FIPS 186-4, appendix D.2.3, and are

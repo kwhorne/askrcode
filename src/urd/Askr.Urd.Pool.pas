@@ -1,21 +1,23 @@
-{ Askr.Urd.Pool — forbindelser som lånes ut og kommer tilbake av seg selv.
+{ Askr.Urd.Pool — connections that are lent out and come back by
+  themselves.
 
-  Poolen ligger på heapen og overlever requests. Det følger av PRD-ens første
-  regel: verdier som skal leve lenger enn requesten må ikke ligge i
-  request-arenaen.
+  The pool lives on the heap and outlives requests. That follows from the
+  PRD's first rule: values that must live longer than the request must not
+  live in the request arena.
 
-  Lease er poenget. En kontroller skriver
+  Lease is the point. A controller writes
 
       C := Pool.Lease(Req.Arena);
 
-  og er ferdig med det. Forbindelsen leveres tilbake når verten kaller
-  Arena.Reset, gjennom Defer-mekanismen. Ingen try/finally, ingen glemte
-  retur. To Lease på samme arena og samme pool gir den samme forbindelsen, så
-  flere spørringer i én request deler transaksjon og tilstand.
+  and is done with it. The connection is handed back when the host calls
+  Arena.Reset, through the Defer mechanism. No try/finally, no forgotten
+  returns. Two Lease calls on the same arena and the same pool give the
+  same connection, so several queries in one request share a transaction
+  and its state.
 
-  En forbindelse som kommer tilbake midt i en transaksjon rulles tilbake før
-  den gjenbrukes. Alternativet — å la neste request arve en åpen transaksjon —
-  er en feilkilde ingen finner igjen. }
+  A connection that comes back mid-transaction is rolled back before it is
+  reused. The alternative — letting the next request inherit an open
+  transaction — is a source of bugs nobody ever traces back. }
 unit Askr.Urd.Pool;
 
 {$mode Delphi}{$H+}
@@ -47,22 +49,23 @@ type
     constructor Create(const ADsn: string; AMax: Integer = 8);
     destructor Destroy; override;
 
-    { Blokkerer til en forbindelse er ledig eller tiden er ute. Kalleren er
-      ansvarlig for Release. Foretrekk Lease. }
+    { Blocks until a connection is free or the time runs out. The caller is
+      responsible for Release. Prefer Lease. }
     function Acquire(TimeoutMs: Integer = 5000): TDbConnection;
     procedure Release(C: TDbConnection);
 
-    { Låner ut for resten av requesten. Leveres tilbake ved Arena.Reset. }
+    { Lends one out for the rest of the request. Returned at
+      Arena.Reset. }
     function Lease(A: TArena): TDbConnection;
 
-    { Åpner MaxConnections forbindelser med en gang, slik at første request
-      ikke betaler for oppkoblingen. Kaster hvis databasen ikke svarer. }
+    { Opens MaxConnections connections up front, so the first request does
+      not pay for connecting. Raises if the database does not answer. }
     procedure Warmup;
 
     property Dsn: string read FDsn;
     property MaxConnections: Integer read FMax;
     property IdleCount: Integer read FIdleCount;
-    { Åpne forbindelser totalt, ledige og utlånte. }
+    { Open connections in total, free and lent out. }
     property LiveCount: Integer read FLive;
     property AcquiredTotal: QWord read FAcquired;
     property CreatedTotal: QWord read FCreated;
@@ -80,8 +83,8 @@ type
   end;
 
 const
-  { Nok til at én request kan snakke med flere databaser. Trengs det flere,
-    er det et designproblem i appen, ikke i poolen. }
+  { Enough for one request to talk to several databases. If more are
+    needed, that is a design problem in the app, not in the pool. }
   MaxLeasesPerThread = 4;
 
 threadvar
@@ -121,8 +124,8 @@ begin
   S := PLeaseSlot(Data);
   P := S^.Pool;
   C := S^.Conn;
-  { Slippes først, slik at et Release som kaster ikke etterlater en slot som
-    peker på en forbindelse ingen eier. }
+  { Released first, so a Release that raises does not leave a slot
+    pointing at a connection nobody owns. }
   S^.Arena := nil;
   S^.Pool := nil;
   S^.Conn := nil;
@@ -140,7 +143,8 @@ begin
   FDsn := ADsn;
   FMax := AMax;
   FLock := TCriticalSection.Create;
-  { Auto-reset: én retur skal vekke én ventende tråd, ikke alle. }
+  { Auto-reset: one return should wake one waiting thread, not all of
+    them. }
   FSlot := TEvent.Create(nil, False, False, '');
   SetLength(FIdle, FMax);
 end;
@@ -176,7 +180,7 @@ begin
     FIdle[FIdleCount] := nil;
     if Result.IsAlive then
       Exit;
-    { Død forbindelse — kast den og prøv neste. }
+    { A dead connection — throw it away and try the next. }
     Result.Free;
     Dec(FLive);
     Inc(FDiscarded);
@@ -218,8 +222,8 @@ begin
       end;
       if FLive < FMax then
       begin
-        { Plassen reserveres før vi slipper låsen, ellers kan flere tråder
-          åpne forbi grensen samtidig. }
+        { The slot is reserved before we drop the lock, or several threads
+          can open past the limit at the same time. }
         Inc(FLive);
         MayOpen := True;
       end;
@@ -270,7 +274,7 @@ begin
   if C = nil then
     Exit;
 
-  { En åpen transaksjon skal ikke arves av neste request. }
+  { An open transaction must not be inherited by the next request. }
   if C.InTransaction then
   begin
     try
@@ -303,8 +307,8 @@ begin
   finally
     FLock.Release;
   end;
-  { Frigjøres utenfor låsen — en destructor kan ta tid, og libpq lukker en
-    socket her. }
+  { Freed outside the lock — a destructor can take time, and libpq
+    closes a socket here. }
   if not Keep then
     C.Free;
   FSlot.SetEvent;
@@ -317,8 +321,8 @@ begin
   if A = nil then
     raise EDbPoolError.Create('Lease without an arena');
 
-  { Samme arena og samme pool skal gi samme forbindelse, slik at flere
-    spørringer i én request deler transaksjon. }
+  { The same arena and the same pool should give the same connection, so
+    several queries in one request share a transaction. }
   Result := FindLease(A, Self);
   if Result <> nil then
     Exit;

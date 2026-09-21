@@ -1,8 +1,8 @@
-{ Askr.Urd.Model — modeller, skjema og RTTI-mapping.
+{ Askr.Urd.Model — models, schema and RTTI mapping.
 
-  En modell er en vanlig klasse. published-seksjonen er ikke pynt: det er der
-  Free Pascal legger RTTI, og det er nøkkelen til at Urd kan mappe felter uten
-  kodegenerering.
+  A model is an ordinary class. The published section is not decoration:
+  it is where Free Pascal puts RTTI, and it is the key to Urd mapping
+  fields without code generation.
 
       type
         TCustomer = class(TModel)
@@ -13,13 +13,14 @@
           class procedure Describe(S: TSchema); override;
         end;
 
-  Konvensjonene er de vanlige og kan overstyres i Describe: klassenavnet uten
-  T, snake_case og flertall blir tabellnavn, property-navn i snake_case blir
-  kolonnenavn, og «id» er primærnøkkel.
+  The conventions are the usual ones and can be overridden in Describe:
+  the class name without the T, snake_cased and pluralised, becomes the
+  table name; property names in snake_case become column names; and "id"
+  is the primary key.
 
-  Modeller er arena-objekter. At de kan ha string-properties uten å lekke
-  skyldes finaliseringen i Askr.Core.Arena: klasser med felter kompilatoren
-  håndterer får en Defer som kjører ved Reset. }
+  Models are arena objects. That they can have string properties without
+  leaking is down to the finalisation in Askr.Core.Arena: classes with
+  fields the compiler manages get a Defer that runs at Reset. }
 unit Askr.Urd.Model;
 
 {$mode Delphi}{$H+}
@@ -35,11 +36,12 @@ type
   TModel = class;
   TModelClass = class of TModel;
 
-  { Ikke-generisk base for TModelList<M>.
+  { A non-generic base for TModelList<M>.
 
-    Finnes for at serialisering og eager loading skal kunne behandle en liste
-    uten å kjenne elementtypen. Without den måtte hver konsument spesialiseres
-    per modell, og det er nettopp den boilerplaten generics skulle fjerne. }
+    It exists so serialisation and eager loading can handle a list without
+    knowing the element type. Without it every consumer would have to be
+    specialised per model, and that is exactly the boilerplate generics
+    were supposed to remove. }
   TModelListBase = class(TArenaObject)
   protected
     FItems: PPointer;
@@ -47,12 +49,12 @@ type
     FCapacity: Integer;
     procedure AddPointer(P: Pointer);
   public
-    { Legger til uten å kjenne elementtypen. Brukes av eager loading, som
-      bygger lista før den vet hvilken statisk type den får. }
+    { Adds without knowing the element type. Used by eager loading, which
+      builds the list before it knows what static type it will get. }
     procedure AddModel(AModel: TModel);
     function Count: Integer;
-    { Elementet som TModel. Den generiske underklassen gir samme element
-      med riktig statisk type. }
+    { The element as a TModel. The generic subclass gives the same element
+      with the right static type. }
     function Item(Index: Integer): TModel;
     function IsEmpty: Boolean;
   end;
@@ -67,7 +69,7 @@ type
     ColumnName: string;
     Prop: PPropInfo;
     Kind: TColumnKind;
-    { False for en autogenerert primærnøkkel: den settes av databasen. }
+    { False for a generated primary key: the database sets it. }
     Insertable: Boolean;
   end;
 
@@ -77,9 +79,10 @@ type
     Name: string;
     Kind: TRelationKind;
     Target: TModelClass;
-    { Kolonnen på «mange»-siden som peker tilbake. }
+    { The column on the "many" side that points back. }
     ForeignKey: string;
-    { Kolonnen på «én»-siden det pekes til, normalt primærnøkkelen. }
+    { The column on the "one" side being pointed at, normally the primary
+      key. }
     LocalKey: string;
   end;
 
@@ -113,9 +116,10 @@ type
     property Columns[Index: Integer]: TColumnInfo read GetColumn;
     property Relations[Index: Integer]: TRelationInfo read GetRelation;
 
-    { Skjemabyggeren i Norn kan skrive created_at og updated_at, men fram
-      til nå rørte ikke modellen dem: databasens DEFAULT satte created_at
-      ved INSERT, og updated_at ble stående på den verdien for alltid. }
+    { The schema builder in Norn can write created_at and updated_at, but
+      until now the model did not touch them: the database's DEFAULT set
+      created_at at INSERT, and updated_at stayed at that value
+      forever. }
     property HasTimestamps: Boolean read FHasTimestamps;
     property CreatedAtColumn: string read FCreatedAtColumn;
     property UpdatedAtColumn: string read FUpdatedAtColumn;
@@ -123,35 +127,37 @@ type
     property DeletedAtColumn: string read FDeletedAtColumn;
   end;
 
-  { Gis til Describe. Alt her overstyrer konvensjonene. }
+  { Handed to Describe. Everything here overrides the conventions. }
   TSchema = class
   private
     FMeta: TModelMeta;
   public
     constructor Create(AMeta: TModelMeta);
     procedure Table(const AName: string);
-    { AutoIncrement = False når appen setter nøkkelen selv, f.eks. en UUID. }
+    { AutoIncrement = False when the app sets the key itself, a UUID for
+      instance. }
     procedure PrimaryKey(const AName: string; AAutoIncrement: Boolean = True);
     { Overstyrer kolonnenavnet for en property. }
     procedure Column(const APropName, AColumnName: string);
-    { Property-en mappes ikke mot noen kolonne. }
+    { The property is not mapped to any column. }
     procedure Ignore(const APropName: string);
 
-    { Modellen setter created_at ved INSERT og updated_at ved begge deler.
+    { The model sets created_at at INSERT and updated_at at both.
 
-      Kolonnene må finnes som published TDateTime-properties på modellen —
-      CreatedAt og UpdatedAt etter konvensjonen. Gjør de ikke det, kaster
-      Describe med en gang i stedet for at tidsstemplene stille lar være å
-      bli satt. }
+      The columns have to exist as published TDateTime properties on the
+      model — CreatedAt and UpdatedAt by convention. If they do not,
+      Describe raises immediately rather than letting the timestamps
+      quietly fail to be set. }
     procedure Timestamps(const ACreatedAt: string = 'created_at';
       const AUpdatedAt: string = 'updated_at');
 
-    { Delete setter deleted_at i stedet for å slette raden, og spørringer
-      utelater de slettede med mindre noen ber om dem.
+    { Delete sets deleted_at instead of deleting the row, and queries leave
+      the deleted ones out unless somebody asks for them.
 
-      Poenget er ikke å gjøre sletting reversibel for moro skyld: det er at
-      en rad andre rader peker på ikke skal forsvinne under dem. Kolonnen
-      må finnes som en published TDateTime-property, normalt DeletedAt. }
+      The point is not to make deletion reversible for fun: it is that a
+      row other rows point at must not vanish from under them. The column
+      has to exist as a published TDateTime property, normally
+      DeletedAt. }
     procedure SoftDeletes(const AColumn: string = 'deleted_at');
     procedure HasMany(const AName: string; ATarget: TModelClass;
       const AForeignKey: string; const ALocalKey: string = '');
@@ -168,7 +174,8 @@ type
     Message: string;
   end;
 
-  { Feilene fra én validering. Ligger i arenaen og forsvinner med requesten. }
+  { The errors from one validation. Lives in the arena and goes away with
+    the request. }
   TErrors = class(TArenaObject)
   private
     FItems: array of TErrorEntry;
@@ -179,16 +186,16 @@ type
     function Field(Index: Integer): string;
     function Message(Index: Integer): string;
     function Has(const AField: string): Boolean;
-    { Første melding for feltet, eller tom streng. }
+    { The first message for the field, or an empty string. }
     function First(const AField: string): string;
-    { Skriver feilene som et JSON-objekt: felt til melding. Det er formen
-      Inertia forventer i props.errors. }
+    { Writes the errors as a JSON object: field to message. That is the
+      shape Inertia expects in props.errors. }
     procedure WriteJson(var W: TJsonWriter);
   end;
 
   TValidator = class;
 
-  { Kjeden av regler for ett felt. Hver regel returnerer Self. }
+  { The chain of rules for one field. Each rule returns Self. }
   TFieldRules = class
   private
     FValidator: TValidator;
@@ -211,10 +218,11 @@ type
     function Max(V: Currency): TFieldRules;
     function Between(Lo, Hi: Currency): TFieldRules;
     function OneOf(const Values: array of string): TFieldRules;
-    { Samme verdi som et annet felt — passord og bekreftelse. }
+    { The same value as another field — a password and its
+      confirmation. }
     function SameAs(const OtherProp: string): TFieldRules;
-    { Ingen annen rad i tabellen har denne verdien. Bruker den omgivende
-      forbindelsen, og hopper over raden selv når modellen er lagret. }
+    { No other row in the table has this value. Uses the ambient
+      connection, and skips the row itself when the model is stored. }
     function UniqueIn(const ATable: string; const AColumn: string = ''): TFieldRules;
     { Overstyrer meldingen til regelen rett foran. }
     function Says(const AMessage: string): TFieldRules;
@@ -235,22 +243,23 @@ type
     property Model: TModel read FModel;
   end;
 
-  { $M+ er det som gir modellene lov til å ha en published-seksjon i det hele
-    tatt, og som får Free Pascal til å legge RTTI der. Without dette ville hele
-    mappingen krevd kodegenerering. }
+  { $M+ is what lets models have a published section at all, and what
+    makes Free Pascal put RTTI there. Without it the whole mapping would
+    need code generation. }
   {$M+}
   TModel = class(TArenaObject)
   private
     FPersisted: Boolean;
     FErrors: TErrors;
   public
-    { Overstyres av modellen for å endre tabellnavn, kolonner og relasjoner. }
+    { Overridden by the model to change the table name, the columns and the
+      relations. }
     class procedure Describe(S: TSchema); virtual;
-    { Bygges én gang per klasse og caches. }
+    { Built once per class and cached. }
     class function Meta: TModelMeta;
 
-    { Fyller feltene fra én rad. Kolonner som ikke finnes i resultatet røres
-      ikke, slik at en SELECT med færre kolonner virker. }
+    { Fills the fields from one row. Columns not present in the result are
+      left alone, so a SELECT with fewer columns works. }
     procedure Hydrate(R: TDbResult; Row: Integer);
 
     function PrimaryKeyValue: Int64;
@@ -258,39 +267,43 @@ type
 
     { Reglene for modellen, slik PRD-en skriver dem:
 
-        procedure TCustomer.Rules(V: TValidator);
-        begin
-          V.Field('Name').Required.MaxLen(120);
-        end; }
+      procedure TCustomer.Rules(V: TValidator);
+      begin
+        V.Field('Name').Required.MaxLen(120);
+      end; }
     procedure Rules(V: TValidator); virtual;
-    { Kjører Rules. False når noe feilet; feilene ligger da i Errors. }
+    { Runs Rules. False when something failed; the errors are then in
+      Errors. }
     function Validate: Boolean;
     function Errors: TErrors;
 
-    { INSERT når raden er ny, ellers UPDATE. Bruker den omgivende
-      forbindelsen når ingen er oppgitt. }
+    { INSERT when the row is new, otherwise UPDATE. Uses the ambient
+      connection when none is given. }
     procedure Save(Conn: TDbConnection = nil);
-    { Sletter raden — eller setter deleted_at når modellen har SoftDeletes. }
+    { Deletes the row — or sets deleted_at when the model has
+      SoftDeletes. }
     procedure Delete(Conn: TDbConnection = nil);
-    { Sletter raden for godt, også når modellen har SoftDeletes. }
+    { Deletes the row for good, even when the model has SoftDeletes. }
     procedure ForceDelete(Conn: TDbConnection = nil);
-    { Tar en myktslettet rad tilbake. Kaster når modellen ikke har
-      SoftDeletes — å kalle Restore der er en misforståelse, ikke en no-op. }
+    { Brings a soft-deleted row back. Raises when the model has no
+      SoftDeletes — calling Restore there is a misunderstanding, not a
+      no-op. }
     procedure Restore(Conn: TDbConnection = nil);
-    { True når deleted_at er satt. False for en modell uten SoftDeletes. }
+    { True when deleted_at is set. False for a model without
+      SoftDeletes. }
     function IsTrashed: Boolean;
 
-    { Hendelser. Virtuelle metoder, ikke observers registrert i runtime:
-      kompilatoren ser dem, og det finnes ingen refleksjon å gå gjennom.
+    { Events. Virtual methods, not observers registered at runtime: the
+      compiler sees them, and there is no reflection to go through.
 
-      Kjøres i denne rekkefølgen:
+      They run in this order:
         Save:    BeforeSave, BeforeInsert|BeforeUpdate, SQL,
                  AfterInsert|AfterUpdate, AfterSave
         Delete:  BeforeDelete, SQL, AfterDelete
 
-      For å avbryte: kast. Det er den ene måten i Pascal som ikke kan
-      overses av kallstedet, og en Save som stille lot være å lagre ville
-      vært verre enn en exception. }
+      To cancel: raise. That is the one way in Pascal the call site
+      cannot overlook, and a Save that quietly failed to save would be
+      worse than an exception. }
     procedure BeforeSave; virtual;
     procedure AfterSave; virtual;
     procedure BeforeInsert; virtual;
@@ -300,18 +313,20 @@ type
     procedure BeforeDelete; virtual;
     procedure AfterDelete; virtual;
 
-    { True når raden finnes i databasen — satt av Hydrate og av Save. }
+    { True when the row exists in the database — set by Hydrate and by
+      Save. }
     property Persisted: Boolean read FPersisted write FPersisted;
   end;
   {$M-}
 
-{ Omgivende forbindelse for gjeldende tråd, etter samme mønster som
-  UseArena. Verten setter den ved starten av en request, slik at
-  Model.Save kan skrives uten argumenter. }
+{ The ambient connection for the current thread, following the same
+  pattern as UseArena. The host sets it at the start of a request, so
+  Model.Save can be written without arguments. }
 function CurrentDb: TDbConnection;
 function UseDb(C: TDbConnection): TDbConnection;
 
-{ Konvensjonene, eksponert fordi Norn skal bruke de samme i steg 3. }
+{ The conventions, exposed because Norn uses the same ones in step
+  3. }
 function SnakeCase(const S: string): string;
 function Pluralize(const S: string): string;
 function TableNameFor(AClass: TClass): string;
@@ -402,8 +417,9 @@ begin
   begin
     if IsUpper(S[I]) and (I > 1) then
     begin
-      { Skille foran en stor bokstav som følger en liten — CreatedAt — og
-        foran den siste i en forkortelse — HTTPCode blir http_code. }
+      { Break before a capital following a lower-case letter — CreatedAt —
+        and before the last one in an abbreviation — HTTPCode becomes
+        http_code. }
       NeedsUnderscore := IsLowerOrDigit(S[I - 1]) or
         ((I < N) and IsUpper(S[I - 1]) and not IsUpper(S[I + 1]) and
          (S[I + 1] <> '_'));
@@ -443,7 +459,8 @@ var
   N: string;
 begin
   N := AClass.ClassName;
-  { Ledende T foran stor bokstav er Pascal-konvensjon, ikke en del av navnet. }
+  { A leading T before a capital is Pascal convention, not part of the
+    name. }
   if (Length(N) > 1) and (N[1] = 'T') and IsUpper(N[2]) then
     N := Copy(N, 2, Length(N) - 1);
   Result := Pluralize(SnakeCase(N));
@@ -548,9 +565,9 @@ begin
   SetLength(FMeta.FColumns, Length(FMeta.FColumns) - 1);
 end;
 
-{ Felles for Timestamps og SoftDeletes: kolonnen må finnes som en mappet
-  TDateTime-property. Without sjekken ville feltet stille latt være å bli satt,
-  og det ville sett ut som at tidsstemplene virket. }
+{ Common to Timestamps and SoftDeletes: the column has to exist as a
+  mapped TDateTime property. Without the check the field would quietly
+  fail to be set, and it would look as if the timestamps worked. }
 procedure RequireDateTimeColumn(Meta: TModelMeta; const AColumn, AWhat: string);
 var
   I: Integer;
@@ -620,15 +637,15 @@ procedure TSchema.BelongsTo(const AName: string; ATarget: TModelClass;
 var
   Owner: string;
 begin
-  { På eiersiden peker fremmednøkkelen ut fra denne modellen, og LocalKey er
-    kolonnen i måltabellen. }
+  { On the owning side the foreign key points out of this model, and
+    LocalKey is the column in the target table. }
   Owner := AOwnerKey;
   if Owner = '' then
     Owner := ATarget.Meta.PrimaryKey;
   AddRelation(FMeta, rkBelongsTo, AName, ATarget, AForeignKey, Owner);
 end;
 
-{ Bygging av meta }
+{ Building the meta }
 
 function ColumnKindOf(Prop: PPropInfo; out Kind: TColumnKind): Boolean;
 var
@@ -657,7 +674,8 @@ begin
           Kind := ckFloat;
       end;
   else
-    { Klasser, records, sett og arrays mappes ikke. De er ikke kolonner. }
+    { Classes, records, sets and arrays are not mapped. They are not
+      columns. }
     Kind := ckString;
     Exit(False);
   end;
@@ -705,7 +723,8 @@ begin
     S.Free;
   end;
 
-  { After_ Describe, fordi primærnøkkelen kan ha blitt endret der. }
+  { After Describe, because the primary key may have been changed
+    there. }
   PkIndex := Result.PrimaryKeyIndex;
   if (PkIndex >= 0) and Result.FAutoIncrement then
     Result.FColumns[PkIndex].Insertable := False;
@@ -725,8 +744,8 @@ begin
     GMetaLock.Release;
   end;
 
-  { Bygges utenfor låsen: Describe er brukerkode og kan slå opp meta for
-    andre modeller, noe som ville låst seg selv. }
+  { Built outside the lock: Describe is user code and may look up the
+    meta for other models, which would deadlock against itself. }
   M := BuildMeta(TModelClass(Self));
 
   GMetaLock.Acquire;
@@ -734,7 +753,7 @@ begin
     for I := 0 to High(GMetas) do
       if GMetas[I].FModelClass = TModelClass(Self) then
       begin
-        { En annen tråd rakk det først. }
+        { Another thread got there first. }
         M.Free;
         Exit(GMetas[I]);
       end;
@@ -748,7 +767,7 @@ end;
 
 class procedure TModel.Describe(S: TSchema);
 begin
-  { Konvensjonene holder. Modeller som trenger noe annet overstyrer. }
+  { The conventions hold. Models needing something else override. }
 end;
 
 { TErrors }
@@ -811,7 +830,7 @@ begin
   W.BeginObject;
   for I := 0 to High(FItems) do
   begin
-    { Første melding per felt vinner, som i Laravel. }
+    { The first message per field wins, as in Laravel. }
     Seen := False;
     for J := 0 to I - 1 do
       if SameText(FItems[J].Field, FItems[I].Field) then
@@ -830,8 +849,8 @@ end;
 
 procedure TFieldRules.Fail(const AMessage: string);
 begin
-  { Bare første feil per felt rapporteres. Ellers får brukeren fem meldinger
-    om det samme tomme feltet. }
+  { Only the first error per field is reported. Otherwise the user gets
+    five messages about the same empty field. }
   if FFailed then
     Exit;
   FFailed := True;
@@ -911,8 +930,9 @@ begin
     Fail(Format('%s can be at most %d characters', [FColumn, N]));
 end;
 
-{ Bevisst romslig. En streng validering av e-post avviser gyldige adresser,
-  og den eneste måten å vite om en adresse virker er å sende til den. }
+{ Deliberately loose. A strict email validation refuses valid
+  addresses, and the only way to know whether an address works is to send
+  to it. }
 function LooksLikeEmail(const S: string): Boolean;
 var
   At, Dot, I: Integer;
@@ -949,7 +969,7 @@ begin
     Fail(FColumn + ' is not a valid email address');
 end;
 
-{ CurrencyToSql gir 0.0000. I en feilmelding til en bruker er det 0. }
+{ CurrencyToSql gives 0.0000. In a message to a user that is 0. }
 function Lesbart(V: Currency): string;
 begin
   Result := CurrencyToSql(V);
@@ -1062,7 +1082,7 @@ begin
     C.AppendIdentStr(B, Col);
     B.Append(' = ');
     C.AppendPlaceholder(B, 1);
-    { En lagret rad skal ikke kollidere med seg selv. }
+    { A stored row must not collide with itself. }
     if FValidator.Model.Persisted and (Pk <> 0) then
     begin
       B.Append(' AND ');
@@ -1092,7 +1112,7 @@ begin
   Result := Self;
   if not FFailed then
     Exit;
-  { Erstatter den sist lagte meldingen for dette feltet. }
+  { Replaces the most recently added message for this field. }
   for I := FValidator.Errors.Count - 1 downto 0 do
     if FValidator.Errors.FItems[I].Field = FColumn then
     begin
@@ -1148,10 +1168,10 @@ end;
 
 procedure TModel.Rules(V: TValidator);
 begin
-  { Ingen regler med mindre modellen sier noe annet. }
+  { No rules unless the model says otherwise. }
 end;
 
-{ Hendelsene. Tomme her; modellen overstyrer det den trenger. }
+{ The events. Empty here; the model overrides what it needs. }
 procedure TModel.BeforeSave; begin end;
 procedure TModel.AfterSave; begin end;
 procedure TModel.BeforeInsert; begin end;
@@ -1296,14 +1316,14 @@ begin
     ckBoolean:
       Result := DbParam(A, GetOrdProp(Model, Col.Prop) <> 0);
     ckDateTime:
-      { En TDateTime på null betyr «ikke satt». Pascal har ingen null, og
-        0 er 30. desember 1899 — en dato ingen mener. Før dette havnet den
-        i databasen som en ekte verdi, og en nullbar kolonne ble aldri
-        NULL. Det er nettopp det soft deletes hviler på: deleted_at IS NULL
-        er forskjellen på slettet og ikke.
+      { A TDateTime of zero means "not set". Pascal has no null, and 0 is
+        30 December 1899 — a date nobody means. Before this it went into
+        the database as a real value, and a nullable column was never
+        NULL. That is exactly what soft deletes rest on: deleted_at IS
+        NULL is the difference between deleted and not.
 
-        Er kolonnen NOT NULL, gir dette en constraint-feil i stedet for en
-        stille gal dato. Det er den riktige veien å feile. }
+        If the column is NOT NULL this gives a constraint error instead of
+        a silently wrong date. That is the right way to fail. }
       if GetFloatProp(Model, Col.Prop) = 0 then
         Result := DbNull
       else
@@ -1311,8 +1331,9 @@ begin
     ckEnum:
       Result := DbParam(A, Int64(GetOrdProp(Model, Col.Prop)));
   end;
-  { Ingen else: alle TColumnKind er dekket. Kommer det en ny, blir det en
-    advarsel om uinitialisert resultat i stedet for en stille DbNull. }
+  { No else: every TColumnKind is covered. If a new one arrives it
+    becomes a warning about an uninitialised result rather than a silent
+    DbNull. }
 end;
 
 function RequireDb(Conn: TDbConnection): TDbConnection;
@@ -1347,8 +1368,8 @@ begin
     raise EModelError.Create('Save requires the model to live in an arena');
 
   PkIdx := M.PrimaryKeyIndex;
-  { Leses før SQL-en kjører: INSERT setter FPersisted, og etterpå ser alt
-    ut som en oppdatering. }
+  { Read before the SQL runs: INSERT sets FPersisted, and afterwards
+    everything looks like an update. }
   WasNew := not FPersisted;
 
   BeforeSave;
@@ -1357,17 +1378,17 @@ begin
   else
     BeforeInsert;
 
-  { Tidsstemplene settes her, ikke av databasens DEFAULT. Før dette ble
-    created_at satt av DEFAULT og updated_at aldri rørt igjen — en rad som
-    var oppdatert ti ganger så like fersk ut som da den ble laget. }
+  { The timestamps are set here, not by the database's DEFAULT. Before
+    this, created_at was set by DEFAULT and updated_at never touched again
+    — a row updated ten times looked as fresh as when it was made. }
   if M.HasTimestamps then
   begin
     Now_ := UtcNow;
     if not FPersisted then
     begin
       TsIdx := M.IndexOfColumn(M.CreatedAtColumn);
-      { Bare når den ikke alt er satt: en import som bevarer opprinnelige
-        tidspunkter skal ikke få dem overskrevet. }
+      { Only when it is not already set: an import preserving original
+        times must not have them overwritten. }
       if (TsIdx >= 0) and (GetFloatProp(Self, M.Columns[TsIdx].Prop) = 0) then
         SetFloatProp(Self, M.Columns[TsIdx].Prop, Now_);
     end;
@@ -1457,7 +1478,7 @@ begin
       C.ExecParams(A, Sql, Params);
     end;
   finally
-    { SQL-teksten og parametrene trengs ikke etter kallet. }
+    { The SQL text and the parameters are not needed after the call. }
     A.Rewind(Mark);
   end;
 
@@ -1468,8 +1489,8 @@ begin
   AfterSave;
 end;
 
-{ Felles for Delete, ForceDelete og Restore: sett en TDateTime-kolonne og
-  skriv raden. All_ tre er «oppdater én kolonne på én rad». }
+{ Common to Delete, ForceDelete and Restore: set a TDateTime column and
+  write the row. All three are "update one column on one row". }
 procedure SetDateAndSave(Model: TModel; C: TDbConnection; A: TArena;
   M: TModelMeta; ColIdx, PkIdx: Integer; Value_: TDateTime);
 var
@@ -1557,8 +1578,8 @@ begin
   if (PkIdx < 0) or (PartIdx < 0) then
     raise EModelError.CreateFmt('%s cannot be restored',
       [M.ModelClass.ClassName]);
-  { 0 er «ikke satt» for en TDateTime her, og ParamFor skriver NULL for
-    den. Det er samme regel som resten av datolaget bruker. }
+  { 0 is "not set" for a TDateTime here, and ParamFor writes NULL for it.
+    That is the same rule the rest of the date layer uses. }
   SetDateAndSave(Self, C, A, M, PartIdx, PkIdx, 0);
 end;
 
@@ -1588,8 +1609,8 @@ begin
 
   BeforeDelete;
   SetDateAndSave(Self, C, A, M, PartIdx, PkIdx, UtcNow);
-  { Raden finnes fortsatt. Persisted blir stående, slik at en påfølgende
-    Save oppdaterer den og ikke setter inn en ny. }
+  { The row still exists. Persisted stays set, so a following Save
+    updates it rather than inserting a new one. }
   AfterDelete;
 end;
 

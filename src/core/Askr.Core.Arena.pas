@@ -9,16 +9,16 @@
 
   The rules a user has to understand:
 
-  * Values that must outlive the request must not live in the request
-  arena. Such APIs take their own allocator.
-  * Background jobs never borrow the request's arena; they get their
-  own.
-  * A Pascal string is refcounted by the compiler and lives on the heap.
-  It is safe, but it is not freed by Reset. Use TStr from
-  Askr.Core.Text for strings that are to live in the arena.
-  * Destructors are never called on arena objects. Anything owning an
-  external resource (a file handle, a socket) has to be handled
-  explicitly.
+    * Values that must outlive the request must not live in the request
+      arena. Such APIs take their own allocator.
+    * Background jobs never borrow the request's arena; they get their
+      own.
+    * A Pascal string is refcounted by the compiler and lives on the heap.
+      It is safe, but it is not freed by Reset. Use TStr from
+      Askr.Core.Text for strings that are to live in the arena.
+    * Destructors are never called on arena objects. Anything owning an
+      external resource (a file handle, a socket) has to be handled
+      explicitly.
   }
 unit Askr.Core.Arena;
 
