@@ -12,6 +12,23 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Fixed
+
+- **`TQuery.WhereAnyLike` was not in the documentation at all**, and
+  `docs/queries.md` said the opposite of the truth: "`OR` groups are not in
+  the builder". They are — that one method is the only `OR` in the query
+  builder, `Askr.Urd.Grid` uses it for every search box, and a reader was
+  being told to drop to raw SQL for something already there.
+
+  It is now written up with its signature, the parenthesis around the group,
+  what `CaseSensitive` does per dialect, and that empty text adds no clause.
+  `docs/lauf.md` links `Searchable` to it.
+
+  Found by asking the MCP server. `docs_search` answered "no match", which
+  was the correct answer and the useful one: the name really was absent.
+
 ## 0.10.0 — 2026-09-21
 
 ### Added

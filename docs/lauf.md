@@ -194,6 +194,11 @@ write: `OrderBy` takes a typed column, not a string, so a key that was never
 registered has nothing to sort by. `'ORDER BY ' + param` cannot be written
 here.
 
+`Searchable` becomes a single
+[`WhereAnyLike`](queries.md#searching-several-columns-at-once) over the
+columns you list — one expression with `OR` between them, in a parenthesis,
+and nothing at all when the box is empty.
+
 Leave the `grid` prop off and the component sorts and pages the array itself.
 That is fine for a few thousand rows and wrong beyond it — at that point you
 are pulling a table across the network to do what the database just did.

@@ -46,8 +46,32 @@ Overloads exist for `Int64`, `string`, `Currency`, `Double`, `Boolean` and
 .WhereNotNull(Customers.ConfirmedAt)
 ```
 
-Terms are combined with `AND`. `OR` groups are not in the builder; use
-`Exec` with your own SQL for those.
+Terms are combined with `AND`.
+
+### Searching several columns at once
+
+```pascal
+.WhereAnyLike([Customers.Name, Customers.Email], Req.Query('q'))
+```
+
+`WhereAnyLike(Cols, Text, CaseSensitive = False)` is free-text search over
+several columns: one expression, `OR` between the columns, wrapped in a
+parenthesis so a `Where` that came before it binds to the whole group and
+not to the first column alone. `Text` is matched as `%Text%`.
+
+It takes `TColStr` columns only, and it is **the only `OR` in the query
+builder**. That is deliberate and narrow — one operator, one expression, no
+nesting — because a general grouping language is a bigger question than a
+list needs. For anything past that, use `Exec` with your own SQL.
+
+`CaseSensitive` defaults to False, which emits `ILIKE` on Postgres and
+`LIKE` everywhere else. That is not a shortcut: SQLite has no `ILIKE` at
+all, and its `LIKE` is already case-insensitive — but only for ASCII, so
+`é` and `É` stay different. MySQL follows the collation of the column.
+
+**Empty text, or an empty column list, adds no clause at all.** A search box
+nobody has typed into returns the unfiltered list rather than nothing, which
+is what `Askr.Urd.Grid` relies on.
 
 ## Ordering, limits, paging
 
