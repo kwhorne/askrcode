@@ -31,6 +31,29 @@ with the zero-major caveat that minor releases may break things until
   framework path that is not a checkout, and with no project at all. It runs
   as part of `./askr test`.
 
+- **`askr mcp:install`**, wiring `askr mcp` into Claude Code, Cursor or
+  VS Code. Without an argument it writes `.mcp.json` and names the others.
+
+  **A file that already exists is never rewritten.** It is read; either an
+  `askr` server is already configured, or the lines to add are printed.
+  These files carry comments, ordering and formatting that a
+  parse-and-rewrite loses, and some are JSONC, which Askr's JSON parser
+  does not read. The last time this repository edited a file a user owns —
+  a `package.json`, by finding a colon — it matched the wrong one, replaced
+  the whole dependencies object with a string, and reported success.
+
+- **`askr new` writes an `AGENTS.md`.** What a coding agent reads before it
+  starts: the MCP tools, and the handful of facts where being wrong is
+  quiet rather than loud.
+
+  **It says as little as it can.** Everything about the framework is behind
+  `docs_search` and `docs_read`, which serve the documentation of the exact
+  version the project pins. A copy in `AGENTS.md` would be frozen at the
+  day the project was created, in a file the user owns, and the two would
+  disagree the first time Askr is upgraded with nothing to say which was
+  right. A gate holds the one thing that does drift: every registered tool
+  is named in the file, and the file names no tool that does not exist.
+
 - **The `test` tool.** Builds and runs the project's suite and returns what
   it said.
 

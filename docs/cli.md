@@ -222,9 +222,24 @@ askr mcp
 JSON-RPC 2.0 over stdio, for coding agents. Point a client at the command;
 it takes no arguments and needs no port.
 
-```json
-{ "mcpServers": { "askr": { "command": "askr", "args": ["mcp"] } } }
+```sh
+askr mcp:install            # Claude Code, into .mcp.json
+askr mcp:install cursor     # .cursor/mcp.json
+askr mcp:install vscode     # .vscode/mcp.json
 ```
+
+**A configuration file that already exists is never rewritten.** It is read;
+either an `askr` server is already there, or the lines to add are printed
+and you add them. These files carry comments, ordering and formatting that
+a parse-and-rewrite loses, and some of them are JSONC, which Askr's parser
+does not read at all. Four lines to paste cannot destroy anything.
+
+`askr new` also writes an **`AGENTS.md`**, which is what a coding agent
+reads before it starts. It is deliberately short: it names the tools and
+the few things that are quiet when you get them wrong, and leaves the
+framework itself to `docs_search` and `docs_read`. A copy of the
+documentation there would be frozen at the day the project was created and
+would start lying the first time Askr is upgraded.
 
 | Tool | What it does |
 |---|---|

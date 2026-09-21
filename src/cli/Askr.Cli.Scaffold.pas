@@ -218,6 +218,109 @@ end;
 
 { --------------------------------------------------------- askr new -- }
 
+{ AGENTS.md, for the coding agents that read it.
+
+  **It says as little as it can get away with**, and that is the design.
+  Everything about the framework itself is behind `docs_search` and
+  `docs_read`, which serve the documentation of the exact version this
+  project pins. Restating any of it here would put a second copy in a file
+  the user owns, frozen at the moment the project was scaffolded, and the
+  two would disagree the first time the project is upgraded — with nothing
+  to say which one was right.
+
+  So what is here is only what an agent needs before it knows to ask: that
+  there is somewhere to ask, and the handful of facts where being wrong is
+  silent rather than loud. }
+procedure WriteAgentsFile(const Root, Name: string);
+var
+  L: TStringList;
+
+  procedure A(const S: string);
+  begin
+    L.Add(S);
+  end;
+
+begin
+  L := TStringList.Create;
+  try
+    A('# ' + Name);
+    A('');
+    A('An [Askr](https://askrcode.com) application: Free Pascal, one');
+    A('binary, no sidecars.');
+    A('');
+    A('## Ask the framework, do not guess at it');
+    A('');
+    A('Askr ships an MCP server. Start it with `askr mcp`, or wire it in');
+    A('with `askr mcp:install`.');
+    A('');
+    A('| Tool | Use it to |');
+    A('|---|---|');
+    A('| `build` | Compile. Diagnostics come back as `file:line:column`. |');
+    A('| `test` | Run the suite. It stops one that hangs. |');
+    A('| `routes` | The routing table, in the order requests match. |');
+    A('| `schema` | What the database actually contains. |');
+    A('| `config` | Every key and the layer it came from. |');
+    A('| `docs_search` | Find an API name. The search is exact, never fuzzy. |');
+    A('| `docs_read` | Read a page, or one section of it. |');
+    A('');
+    A('`docs_search` and `docs_read` serve the documentation of the exact');
+    A('Askr version this project pins, so they are right about the');
+    A('framework in front of you. **This file deliberately does not repeat');
+    A('them.** A copy here would be frozen at the day the project was');
+    A('created, and would start lying the first time Askr is upgraded.');
+    A('');
+    A('No match from `docs_search` means the name does not exist. It will');
+    A('not offer you the nearest thing that does.');
+    A('');
+    A('## What is different here from most stacks');
+    A('');
+    A('These are the ones where being wrong is quiet. Everything else,');
+    A('ask the docs.');
+    A('');
+    A('**A wrong column name is a compile error, not a runtime surprise.**');
+    A('`askr schema` generates typed constants from the real database, and');
+    A('`Where(Customers.Email, Eq, 42)` will not compile. So run `build`');
+    A('after editing rather than reasoning about whether it is right — it');
+    A('is the cheapest check in this stack, and it is exhaustive.');
+    A('');
+    A('**Memory is an arena per request.** Anything created while serving');
+    A('a request is freed in one operation when the request ends. Do not');
+    A('call `Free` on it: that is a no-op, and writing it says you believe');
+    A('a model of the memory that is not the one in use.');
+    A('');
+    A('**A migration file must be named after the unit inside it**, and');
+    A('must sit under a directory listed in `units` in `askr.toml`. fpc');
+    A('finds no unit whose file is named something else, and a unit that');
+    A('nothing references is never linked in — so a migration in the wrong');
+    A('place does not fail, it simply never runs.');
+    A('');
+    A('**`.env` is not committed, and its values are not output.** The');
+    A('`config` tool shows which keys exist and where each resolved from,');
+    A('and never what any of them contains. Do not work around that by');
+    A('reading the file and quoting it back.');
+    A('');
+    A('## Commands');
+    A('');
+    A('```sh');
+    A('askr serve                 # dev server, rebuilds on change');
+    A('askr build                 # compile');
+    A('askr test                  # build and run the suite');
+    A('askr migrate               # run pending migrations');
+    A('askr schema                # typed columns from the database');
+    A('askr routes                # the routing table');
+    A('askr about                 # what this app is configured with');
+    A('askr list                  # everything this binary answers to');
+    A('```');
+    A('');
+    A('`askr` reads `askr.toml` in the project root. The framework version');
+    A('is pinned there; `askr install` fetches it and `askr.lock` records');
+    A('the exact commit.');
+    Emit(Root + '/AGENTS.md', L.Text);
+  finally
+    L.Free;
+  end;
+end;
+
 procedure NewProject(const ParentDir, Name: string;
   WithAuth: Boolean);
 var
@@ -671,6 +774,8 @@ begin
   { storage/ exists from the start, so that a log transport or a file
     upload does not fail on a missing directory. }
   Emit(Root + '/storage/.gitkeep', '');
+
+  WriteAgentsFile(Root, Name);
 
   Emit(Root + '/.gitignore',
     '.build/' + #10 +

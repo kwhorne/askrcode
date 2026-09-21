@@ -760,18 +760,34 @@ TOML
   # the one not on it yet.
   SENTINEL=hunter2-SECRET-PW
   app="$BUILD/mcpapp"
-  rm -rf "$app"
   mkdir -p "$app"
+  # The removal happens in the same container as the scaffold, not on the
+  # host first. Docker Desktop's mount cache does not always invalidate a
+  # host-side delete before the next container looks -- the container then
+  # still sees shop/, and `askr new` refuses because the directory is
+  # there. Same fault as the one capture.sh works around from the other
+  # side, where a host-side write read as empty inside the container.
+  #
+  # Not silenced into `set -e` either. Everything below depends on the
+  # scaffold having worked, and a gate that dies at the header line with
+  # no message is the failure mode this whole file exists to avoid.
   if have_local_fpc; then
-    ( cd "$app" && "$BIN/askr" new shop --no-auth >/dev/null 2>&1 )
-    sed -i.bak "s|^path = .*|path = \"$ROOT\"|" "$app/shop/askr.toml"
+    scaffold=$( ( rm -rf "$app/shop" && cd "$app" &&
+      "$BIN/askr" new shop --no-auth ) 2>&1 ) || true
   else
     ensure_image
-    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work \
-      -w "/work/${app#$ROOT/}" "$IMAGE" \
-      "/work/${BIN#$ROOT/}/askr" new shop --no-auth >/dev/null 2>&1
-    sed -i.bak "s|^path = .*|path = \"/work\"|" "$app/shop/askr.toml"
+    scaffold=$(docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work \
+      -w "/work/${app#$ROOT/}" "$IMAGE" sh -c \
+      "rm -rf shop && /work/${BIN#$ROOT/}/askr new shop --no-auth" 2>&1) || true
   fi
+  if [ ! -f "$app/shop/askr.toml" ]; then
+    echo "  FAIL  askr new scaffolded a project"
+    printf '%s\n' "$scaffold" | sed 's/^/        /'
+    fail=1
+    return 1
+  fi
+  if have_local_fpc; then fwp="$ROOT"; else fwp=/work; fi
+  sed -i.bak "s|^path = .*|path = \"$fwp\"|" "$app/shop/askr.toml"
   rm -f "$app/shop/askr.toml.bak"
   cat > "$app/shop/.env" <<ENV
 APP_ENV=local
@@ -922,6 +938,110 @@ LPR
   out=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck/ok" "$testframes" 2>/dev/null || true)
   check_id 1 "no test file is a tool error"      "$out" '"isError":true'
   check_id 1 "and it says where it looked"       "$out" 'tests/app_tests.lpr'
+
+  echo
+  echo "- what askr new leaves for an agent"
+  # The scaffolded project from the scenario above already has AGENTS.md.
+  ag="$app/shop/AGENTS.md"
+  if [ -f "$ag" ]; then
+    echo "  ok    askr new writes AGENTS.md"
+  else
+    echo "  FAIL  askr new writes AGENTS.md"
+    fail=1
+  fi
+
+  # The drift that actually happens: a tool is added, renamed or removed
+  # and the file that tells an agent what to reach for is not touched.
+  # Both directions, because either one alone leaves half of it rotting.
+  registered=$(run_mcp_in "${app#$ROOT/}/shop" \
+      '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' 2>/dev/null \
+    | tr ',' '\n' | sed -n 's/.*"name":"\([a-z_]*\)".*/\1/p' | sort -u)
+  listed=$(sed -n 's/^| `\([a-z_]*\)` |.*/\1/p' "$ag" | sort -u)
+
+  # A loop, not comm with process substitution: this script runs under sh.
+  missing=""
+  for t in $registered; do
+    printf '%s\n' "$listed" | grep -qx "$t" || missing="$missing $t"
+  done
+  extra=""
+  for t in $listed; do
+    printf '%s\n' "$registered" | grep -qx "$t" || extra="$extra $t"
+  done
+  if [ -z "$missing" ] && [ -n "$registered" ]; then
+    echo "  ok    every registered tool is named in AGENTS.md"
+  else
+    echo "  FAIL  every registered tool is named in AGENTS.md"
+    echo "        not named: $missing"
+    fail=1
+  fi
+  if [ -z "$extra" ]; then
+    echo "  ok    and AGENTS.md names no tool that does not exist"
+  else
+    echo "  FAIL  and AGENTS.md names no tool that does not exist"
+    echo "        no such tool: $extra"
+    fail=1
+  fi
+
+  echo
+  echo "- askr mcp:install"
+  ins() {  # $@ = arguments
+    if have_local_fpc; then
+      ( cd "$app/shop" && "$BIN/askr" mcp:install "$@" 2>&1 )
+    else
+      docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work \
+        -w "/work/${app#$ROOT/}/shop" "$IMAGE" \
+        "/work/${BIN#$ROOT/}/askr" mcp:install "$@" 2>&1
+    fi
+  }
+  rm -f "$app/shop/.mcp.json"
+  out=$(ins || true)
+  check "it writes the file"        "$out" 'Wrote .mcp.json'
+  check "and names the others"      "$out" 'cursor'
+  cfg=$(cat "$app/shop/.mcp.json" 2>/dev/null || true)
+  check "with a command a client can run" "$cfg" '"command": "askr"'
+  check "and mcpServers, not servers"     "$cfg" '"mcpServers"'
+
+  out=$(ins || true)
+  check "a second run changes nothing" "$out" 'already has an askr server'
+
+  # The file belongs to the user. It carries comments, ordering and
+  # formatting that a parse-and-rewrite loses -- and half of these files
+  # are JSONC, which our parser does not read at all. The last time this
+  # repository edited a file a user owns, it replaced the wrong thing and
+  # reported success.
+  printf '// a comment, which is legal here\n{\n  "mcpServers": {}\n}\n' \
+    > "$app/shop/.mcp.json"
+  before=$(cksum < "$app/shop/.mcp.json")
+  out=$(ins || true)
+  after=$(cksum < "$app/shop/.mcp.json")
+  check "an existing file is not rewritten" "$out" 'yours to edit'
+  check "and says what to add"              "$out" '"askr": { "command"'
+  if [ "$before" = "$after" ]; then
+    echo "  ok    and is left byte for byte as it was"
+  else
+    echo "  FAIL  and is left byte for byte as it was"
+    fail=1
+  fi
+
+  # The exit code and the absence of a file, not only the message. A
+  # mutation that printed the complaint and then fell back to the default
+  # client passed a check that looked only at the text.
+  rm -f "$app/shop/.cursor/mcp.json"
+  out=$(ins emacs) && rc=0 || rc=$?
+  check "an unknown client is refused"  "$out" 'no client called'
+  check "and the known ones are listed" "$out" '.vscode/mcp.json'
+  if [ "$rc" -ne 0 ]; then
+    echo "  ok    and it exits non-zero"
+  else
+    echo "  FAIL  and it exits non-zero"
+    fail=1
+  fi
+  if [ ! -f "$app/shop/.cursor/mcp.json" ]; then
+    echo "  ok    having written nothing"
+  else
+    echo "  FAIL  having written nothing"
+    fail=1
+  fi
 
   echo
   echo "- with no project at all"

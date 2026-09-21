@@ -17,7 +17,7 @@ uses
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
   Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
-  Askr.Core.Arena, Askr.Core.Json;
+  Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
   ved siden av binæren. En fpcupdeluxe-installasjon legger den ved binæren,
@@ -209,6 +209,7 @@ begin
   Si('  askr config [--values]   show the effective configuration');
   Si('  askr test                build and run the app test suite');
   Si('  askr mcp                 MCP server for AI agents, over stdio');
+  Si('  askr mcp:install [client]  wire it into claude|cursor|vscode');
   Si('  askr version');
   Si('');
   Si('Commands read askr.toml in the project root.');
@@ -1383,6 +1384,150 @@ const
     'why, which is the part that stops an agent from looking for ' +
     'something that was never built.';
 
+{ Wires `askr mcp` into an agent client's configuration.
+
+  THE FILE IS THE USER'S, AND IS NOT REWRITTEN
+
+  When it is not there, it is written. When it is there, it is read and
+  left alone: either an askr server is already configured, and there is
+  nothing to do, or the lines to add are printed and the user adds them.
+
+  That is not caution for its own sake. The last time this repository
+  edited a file a user owns — a `package.json`, by finding a colon — it
+  matched the wrong one, replaced the whole dependencies object with a
+  string, and said it had succeeded. These files carry comments, ordering
+  and formatting that a parse-and-rewrite loses, and half of them are
+  JSONC, which our parser does not read at all. Printing four lines is
+  worse ergonomics and cannot destroy anything. }
+type
+  TMcpClient = record
+    Key: string;        { what the user types }
+    Label_: string;     { what it is called }
+    Path_: string;      { relative to the project root }
+    Holder: string;     { the object the servers live under }
+    Entry: string;      { the server entry itself }
+  end;
+
+const
+  { VS Code uses `servers` and wants an explicit transport; the others use
+    `mcpServers` and infer stdio from `command`. Copied from each client's
+    own documentation rather than assumed to be one format. }
+  McpClients: array[0..2] of TMcpClient = (
+    (Key: 'claude'; Label_: 'Claude Code'; Path_: '.mcp.json';
+     Holder: 'mcpServers';
+     Entry: '"askr": { "command": "askr", "args": ["mcp"] }'),
+    (Key: 'cursor'; Label_: 'Cursor'; Path_: '.cursor/mcp.json';
+     Holder: 'mcpServers';
+     Entry: '"askr": { "command": "askr", "args": ["mcp"] }'),
+    (Key: 'vscode'; Label_: 'VS Code'; Path_: '.vscode/mcp.json';
+     Holder: 'servers';
+     Entry: '"askr": { "type": "stdio", "command": "askr", "args": ["mcp"] }'));
+
+{ True when the file already configures a server called askr. Read-only:
+  the file is parsed and thrown away. }
+function AlreadyHasAskr(const Path_, Holder: string): Boolean;
+var
+  A: TArena;
+  L: TStringList;
+  Root, Servers: PJsonValue;
+  ErrAt: SizeInt;
+begin
+  Result := False;
+  Root := nil;
+  A := TArena.Create(64 * 1024);
+  L := TStringList.Create;
+  try
+    try
+      L.LoadFromFile(Path_);
+    except
+      Exit;
+    end;
+    if not JsonParse(A, StrDup(A, L.Text), Root, ErrAt) then
+      { A file we cannot read is a file we must not touch — it may be
+        JSONC, which every one of these clients accepts and our parser
+        does not. Saying "add this yourself" is right either way. }
+      Exit;
+    Servers := JsonMember(Root, Holder);
+    Result := (Servers <> nil) and (JsonMember(Servers, 'askr') <> nil);
+  finally
+    L.Free;
+    A.Free;
+  end;
+end;
+
+procedure CmdMcpInstall(P: TProject);
+var
+  I, Idx: Integer;
+  Want, Path_, Dir: string;
+  L: TStringList;
+begin
+  Want := LowerCase(ParamStr(2));
+  Idx := 0;                       { Claude Code, unless told otherwise }
+  if Want <> '' then
+  begin
+    Idx := -1;
+    for I := Low(McpClients) to High(McpClients) do
+      if McpClients[I].Key = Want then
+        Idx := I;
+    if Idx < 0 then
+    begin
+      Si('askr: no client called "' + Want + '".');
+      Si('');
+      for I := Low(McpClients) to High(McpClients) do
+        Si(Format('  %-8s  %-12s  %s',
+          [McpClients[I].Key, McpClients[I].Label_, McpClients[I].Path_]));
+      Halt(1);
+    end;
+  end;
+
+  Path_ := IncludeTrailingPathDelimiter(P.Root) + McpClients[Idx].Path_;
+
+  if FileExists(Path_) then
+  begin
+    if AlreadyHasAskr(Path_, McpClients[Idx].Holder) then
+    begin
+      Si(McpClients[Idx].Label_ + ' already has an askr server: ' +
+        McpClients[Idx].Path_);
+      Exit;
+    end;
+    { Not rewritten. See the note on this type. }
+    Si(McpClients[Idx].Path_ + ' exists and is yours to edit.');
+    Si('Add this under "' + McpClients[Idx].Holder + '":');
+    Si('');
+    Si('  ' + McpClients[Idx].Entry);
+    Si('');
+    Exit;
+  end;
+
+  Dir := ExtractFileDir(Path_);
+  if (Dir <> '') and not DirectoryExists(Dir) then
+    ForceDirectories(Dir);
+
+  L := TStringList.Create;
+  try
+    L.Add('{');
+    L.Add('  "' + McpClients[Idx].Holder + '": {');
+    L.Add('    ' + McpClients[Idx].Entry);
+    L.Add('  }');
+    L.Add('}');
+    L.SaveToFile(Path_);
+  finally
+    L.Free;
+  end;
+
+  Si('Wrote ' + McpClients[Idx].Path_ + ' for ' + McpClients[Idx].Label_ + '.');
+  Si('Restart the client, and it will start `askr mcp` for this project.');
+  if Want = '' then
+  begin
+    Si('');
+    Si('Other clients:');
+    for I := Low(McpClients) to High(McpClients) do
+      if I <> Idx then
+        Si(Format('  askr mcp:install %-8s  %s',
+          [McpClients[I].Key, McpClients[I].Label_]));
+  end;
+end;
+
 var
   Kommando: string;
   P: TProject;
@@ -1444,6 +1589,17 @@ begin
     Everything from here on is a JSON-RPC message. The server answers the
     handshake wherever it is started; a tool that needs the project says so
     through the protocol, which is the only place a client can read it. }
+  if Kommando = 'mcp:install' then
+  begin
+    P := FindProject;
+    try
+      CmdMcpInstall(P);
+    finally
+      P.Free;
+    end;
+    Exit;
+  end;
+
   if Kommando = 'mcp' then
   begin
     RegisterMcpTool('build', BuildDescription, BuildSchema, @McpToolBuild);

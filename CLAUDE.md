@@ -79,6 +79,47 @@ ingen. Trengs den, er det `dup2` på deskriptoren — og et scenario som viser
 at den virker. Et verktøy som kjører noe ut, skal fange barnets utdata: det
 trenger teksten til svaret uansett.
 
+**`AGENTS.md` fra stillaset sier så lite den kan slippe unna med.** Alt om
+rammeverket ligger bak `docs_search` og `docs_read`, som serverer docs for
+nøyaktig den versjonen prosjektet pinner. En kopi i `AGENTS.md` ville vært
+frosset den dagen prosjektet ble laget, i en fil brukeren eier, og de to
+ville vært uenige første gang Askr oppgraderes — uten noe som sier hvem som
+har rett. Det som står der er bare det en agent trenger før den vet at den
+kan spørre, pluss de få tingene der det å ta feil er stille.
+
+Porten holder det ene som faktisk driver: **hvert registrert verktøy er
+nevnt i fila, og fila nevner ikke et verktøy som ikke finnes.** Begge
+retninger, for én alene lar halvparten råtne.
+
+**`askr mcp:install` skriver aldri over en fil som finnes.** Den leser den:
+enten står det en askr-server der alt, eller så skrives linjene man skal
+legge til ut. Filene bærer kommentarer, rekkefølge og formatering som en
+parse-og-skriv-om mister, og noen av dem er JSONC, som parseren vår ikke
+leser i det hele tatt. Forrige gang dette repoet redigerte en fil brukeren
+eier — en `package.json`, ved å finne et kolon — traff det feil, erstattet
+hele dependencies-objektet med en streng, og meldte suksess.
+
+**En assert på meldingen er ikke en assert på oppførselen.** «Ukjent klient
+avvises» sjekket teksten, og en mutasjon som skrev klagen og så falt tilbake
+til standardklienten gikk rett gjennom. Den sjekker nå exitkoden og at ingen
+fil ble skrevet.
+
+**Docker Desktops mount-cache gjelder også sletting.** Verten gjorde
+`rm -rf`, containeren så fortsatt katalogen, og `askr new` nektet fordi den
+var der — porten døde da stille på en echo-linje. Samme feil som
+`capture.sh` omgår fra den andre siden, der en skriving på verten leste som
+tom inne i containeren. La containeren gjøre begge deler i samme kall.
+
+**Et steg som alt under avhenger av, må ikke stå i `set -e` uten melding.**
+Stillaset i porten var `>/dev/null 2>&1` uten `|| true`, og da det feilet
+forsvant hele kjøringen uten et ord. Samme regel som den om at en port som
+feiler uten å si hvorfor er verre enn ingen.
+
+**Fang mutasjonskjøringer til fil, ikke gjennom en grep-kjede.** Flere av
+kjøringene her skrev ingenting fordi utskriften ble spist av rørledningen,
+og resultatet så ut som «ikke fanget». `cmd > /tmp/x 2>&1; grep ... /tmp/x`.
+Og bekreft at lappen traff før du tror på resultatet — det er samme familie.
+
 **`test`-verktøyet stopper en suite som henger; `askr test` gjør det ikke.**
 Forskjellen mellom de to stiene er én ting, og det er ikke logikken — det er
 hvem som ser på. Et menneske foran en terminal ser en suite stå stille og
