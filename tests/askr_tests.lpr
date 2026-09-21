@@ -1,8 +1,8 @@
-{ Testsuite for Askr fase 1, steg 1: arena og HTTP-vert.
+{ Test suite for Askr phase 1, step 1: the arena and the HTTP host.
 
-  Kjøres med `./askr test` eller direkte. Exit-kode 1 ved feil, slik at CI
-  kan bruke den uten videre. Testrammeverket i PRD-en (Askr.Testing) kommer i
-  fase 2; dette er med vilje bare nok til å holde steg 1 ærlig. }
+  Run with `./askr test`, or directly. Exit code 1 on failure, so CI can
+  use it as is. The test framework from the PRD (Askr.Testing) arrives in
+  phase 2; this is deliberately only enough to keep step 1 honest. }
 program AskrTests;
 
 {$mode Delphi}{$H+}
@@ -62,8 +62,8 @@ begin
   begin
     Inc(Failed);
     WriteLn('    FEIL ', Name);
-    WriteLn('         forventet: ', Expected);
-    WriteLn('         fikk:      ', Actual);
+    WriteLn('         expected: ', Expected);
+    WriteLn('         got:      ', Actual);
   end;
 end;
 
@@ -77,7 +77,7 @@ begin
   else
   begin
     Inc(Failed);
-    WriteLn('    FEIL ', Name, ' — forventet ', Expected, ', fikk ', Actual);
+    WriteLn('    FEIL ', Name, ' — expected ', Expected, ', got ', Actual);
   end;
 end;
 
@@ -95,7 +95,7 @@ constructor TThing.Create(AValue: Integer);
 begin
   inherited Create;
   Value := AValue;
-  Name := 'ting';
+  Name := 'thing';
 end;
 
 procedure TestArena;
@@ -115,18 +115,19 @@ begin
   try
     P1 := A.Alloc(10);
     P2 := A.Alloc(10);
-    Check(P1 <> nil, 'Alloc gir minne');
+    Check(P1 <> nil, 'Alloc gives memory');
     CheckEqI(PtrUInt(P2) - PtrUInt(P1), ArenaAlignment,
-      'allokeringer er alignet til ' + IntToStr(ArenaAlignment));
-    CheckEqI(A.BytesLive, 2 * ArenaAlignment, 'BytesLive teller utdelt minne');
+      'allocations are aligned to ' + IntToStr(ArenaAlignment));
+    CheckEqI(A.BytesLive, 2 * ArenaAlignment, 'BytesLive counts handed-out memory');
 
     A.Reset;
-    CheckEqI(A.BytesLive, 0, 'Reset nullstiller BytesLive');
+    CheckEqI(A.BytesLive, 0, 'Reset clears BytesLive');
     P3 := A.Alloc(10);
-    Check(P3 = P1, 'Reset gjenbruker de samme adressene');
-    CheckEqI(A.ResetCount, 1, 'ResetCount teller requests');
+    Check(P3 = P1, 'Reset reuses the same addresses');
+    CheckEqI(A.ResetCount, 1, 'ResetCount counts requests');
 
-    { Kjernepåstanden i PRD-en: arenaen slutter å be OS om mer minne. }
+    { The core claim in the PRD: the arena stops asking the OS for more
+      memory. }
     for I := 1 to 50 do
     begin
       A.Reset;
@@ -141,39 +142,41 @@ begin
       A.Alloc(500);
     end;
     Reserved2 := A.BytesReserved;
-    CheckEqI(Reserved2, Reserved1, 'BytesReserved flater ut etter oppvarming');
+    CheckEqI(Reserved2, Reserved1, 'BytesReserved levels off after warm-up');
 
     A.Reset;
     P1 := A.Alloc(1024 * 1024);
-    Check(P1 <> nil, 'stor allokering får egen blokk');
+    Check(P1 <> nil, 'a large allocation gets its own block');
     A.Trim;
-    CheckEqI(A.BlockCount, 1, 'Trim frigir alt unntatt første blokk');
+    CheckEqI(A.BlockCount, 1, 'Trim releases everything but the first block');
 
     A.Reset;
     Resets := A.ResetCount;
     M := A.Mark;
     A.Alloc(64);
     A.Rewind(M);
-    CheckEqI(A.BytesLive, M.Live, 'Rewind spoler tilbake til merket');
-    CheckEqI(A.ResetCount, Resets, 'Rewind teller ikke som request-grense');
+    CheckEqI(A.BytesLive, M.Live, 'Rewind rewinds to the mark');
+    CheckEqI(A.ResetCount, Resets, 'Rewind does not count as a request boundary');
 
-    { Objekter i arenaen: constructor kjører, destructor gjør det aldri. }
+    { Objects in the arena: the constructor runs, the destructor never
+      does. }
     A.Reset;
     Prev := UseArena(A);
     try
       T := TThing.Create(42);
-      CheckEqI(T.Value, 42, 'constructor kjører på arena-objekt');
-      Check(T.IsArenaAllocated, 'objektet vet at det ligger i arenaen');
-      Check(A.BytesLive >= T.InstanceSize, 'objektet ble allokert i arenaen');
-      T.Free;   { skal være en no-op }
-      CheckEqI(T.Value, 42, 'Free på arena-objekt rører ikke minnet');
+      CheckEqI(T.Value, 42, 'the constructor runs on an arena object');
+      Check(T.IsArenaAllocated, 'the object knows it is in the arena');
+      Check(A.BytesLive >= T.InstanceSize, 'the object was allocated in the arena');
+      T.Free;   { this is a no-op }
+      CheckEqI(T.Value, 42, 'Free on an arena object does not touch the memory');
     finally
       UseArena(Prev);
     end;
 
-    { Without omgivende arena skal klassen oppføre seg som en vanlig TObject. }
+    { Without a surrounding arena the class is to behave like an ordinary
+      TObject. }
     T := TThing.Create(7);
-    Check(not T.IsArenaAllocated, 'uten arena faller TArenaObject til heapen');
+    Check(not T.IsArenaAllocated, 'without an arena TArenaObject falls to the heap');
     T.Free;
   finally
     A.Free;
@@ -183,56 +186,56 @@ end;
 { ------------------------------------------------------------ arena New<T> -- }
 
 type
-  TDyr = class(TArenaObject)
+  TAnimal = class(TArenaObject)
   private
-    FLyd: string;
+    FSound: string;
   public
     Bein: Integer;
     constructor Create;
-    function Lyd: string; virtual;
+    function Sound: string; virtual;
     function Klassenavn: string;
   end;
 
-  TKatt = class(TDyr)
+  TCat = class(TAnimal)
   public
     constructor Create;
-    function Lyd: string; override;
+    function Sound: string; override;
   end;
 
-constructor TDyr.Create;
+constructor TAnimal.Create;
 begin
   inherited Create;
   Bein := 4;
-  FLyd := 'udefinert';
+  FSound := 'undefined';
 end;
 
-function TDyr.Lyd: string;
+function TAnimal.Sound: string;
 begin
-  Result := FLyd;
+  Result := FSound;
 end;
 
-function TDyr.Klassenavn: string;
+function TAnimal.Klassenavn: string;
 begin
   Result := ClassName;
 end;
 
-constructor TKatt.Create;
+constructor TCat.Create;
 begin
   inherited Create;
-  FLyd := 'mjau';
+  FSound := 'meow';
 end;
 
-function TKatt.Lyd: string;
+function TCat.Sound: string;
 begin
-  Result := 'Katt sier ' + FLyd;
+  Result := 'Cat says ' + FSound;
 end;
 
 procedure TestArenaNew;
 var
   A, B: TArena;
   Prev: TArena;
-  K: TKatt;
-  D: TDyr;
+  K: TCat;
+  D: TAnimal;
   Adresse1, Adresse2: Pointer;
   Reservert: PtrUInt;
   I, J: Integer;
@@ -244,76 +247,79 @@ begin
   A := TArena.Create(64 * 1024);
   B := TArena.Create(4096);
   try
-    K := A.New<TKatt>;
-    Check(K <> nil, 'New<T> gir et objekt');
-    Check(A.Owns(Pointer(K)), 'objektet ligger i arenaens eget minne');
-    Check(not B.Owns(Pointer(K)), 'og ikke i en annen arena');
-    Check(K.IsArenaAllocated, 'objektet vet selv at det er arena-allokert');
-    Check(K.Arena = A, 'det peker på riktig arena');
+    K := A.New<TCat>;
+    Check(K <> nil, 'New<T> gives an object');
+    Check(A.Owns(Pointer(K)), 'the object is in the arena''s own memory');
+    Check(not B.Owns(Pointer(K)), 'and not in another arena');
+    Check(K.IsArenaAllocated, 'the object knows it is arena-allocated');
+    Check(K.Arena = A, 'it points at the right arena');
 
-    { Constructoren må ha kjørt — både egen og arvet. }
-    CheckEqI(K.Bein, 4, 'arvet constructor kjørte');
-    CheckEqS(K.Lyd, 'Katt sier mjau', 'egen constructor kjørte');
+    { The constructor has to have run — both its own and the inherited
+      one. }
+    CheckEqI(K.Bein, 4, 'the inherited constructor ran');
+    CheckEqS(K.Sound, 'Cat says meow', 'its own constructor ran');
 
-    { VMT-en må være riktig satt, ellers er objektet bare bytes. }
-    CheckEqS(K.Klassenavn, 'TKatt', 'ClassName virker (VMT er på plass)');
-    Check(K is TDyr, 'is-operatoren virker');
-    Check(K.InheritsFrom(TDyr), 'arvekjeden er intakt');
+    { The VMT has to be set correctly, or the object is only bytes. }
+    CheckEqS(K.Klassenavn, 'TCat', 'ClassName works (the VMT is in place)');
+    Check(K is TAnimal, 'the is operator works');
+    Check(K.InheritsFrom(TAnimal), 'the inheritance chain is intact');
 
-    { Virtuelt kall gjennom basetypen må treffe overstyringen. }
+    { A virtual call through the base type has to reach the override. }
     D := K;
-    CheckEqS(D.Lyd, 'Katt sier mjau', 'virtuell dispatch gjennom basetypen');
+    CheckEqS(D.Sound, 'Cat says meow', 'virtual dispatch through the base type');
 
-    { New<T> skal treffe sin egen arena selv om en annen er omgivende. }
+    { New<T> is to hit its own arena even when another one surrounds
+      it. }
     Prev := UseArena(B);
     try
-      K := A.New<TKatt>;
-      Check(A.Owns(Pointer(K)), 'New<T> ignorerer omgivende arena');
-      Check(not B.Owns(Pointer(K)), 'og forurenser ikke den omgivende');
-      CheckEqS(K.Lyd, 'Katt sier mjau', 'objektet virker likevel');
+      K := A.New<TCat>;
+      Check(A.Owns(Pointer(K)), 'New<T> ignores the surrounding arena');
+      Check(not B.Owns(Pointer(K)), 'and does not pollute the surrounding one');
+      CheckEqS(K.Sound, 'Cat says meow', 'the object works anyway');
     finally
       UseArena(Prev);
     end;
-    CheckEqI(B.BytesLive, 0, 'den omgivende arenaen ble ikke rørt');
+    CheckEqI(B.BytesLive, 0, 'the surrounding arena was not touched');
 
-    { Reset skal gjenbruke det samme minnet. }
+    { Reset is to reuse the same memory. }
     A.Reset;
-    K := A.New<TKatt>;
+    K := A.New<TCat>;
     Adresse1 := Pointer(K);
     A.Reset;
-    K := A.New<TKatt>;
+    K := A.New<TCat>;
     Adresse2 := Pointer(K);
-    Check(Adresse1 = Adresse2, 'Reset gjenbruker den samme adressen');
-    CheckEqS(K.Lyd, 'Katt sier mjau', 'objektet er fullt brukbart etter Reset');
+    Check(Adresse1 = Adresse2, 'Reset reuses the same address');
+    CheckEqS(K.Sound, 'Cat says meow', 'the object is fully usable after Reset');
 
-    { String-feltet i objektet må frigjøres av Reset, ikke lekke. }
-    K.FLyd := 'en lyd lang nok til aa ligge paa heapen og ikke i datasegmentet';
+    { The string field in the object has to be released by Reset, not
+      leak. }
+    K.FSound := 'a sound long enough to live on the heap and not in the data segment';
     A.Reset;
-    CheckEqI(Length(K.FLyd), 0, 'string-feltet ble finalisert av Reset');
+    CheckEqI(Length(K.FSound), 0, 'the string field was finalized by Reset');
 
-    { Mange objekter: ingen skal overlappe, og arenaen skal flate ut. }
+    { Many objects: none is to overlap, and the arena is to level off. }
     A.Reset;
     Previous := nil;
     AllUnique := True;
     for I := 1 to 10000 do
     begin
-      K := A.New<TKatt>;
+      K := A.New<TCat>;
       if Pointer(K) = Previous then
         AllUnique := False;
       Previous := Pointer(K);
       if K.Bein <> 4 then
         AllUnique := False;
     end;
-    Check(AllUnique, '10 000 objekter fikk hver sin adresse og riktig innhold');
+    Check(AllUnique, '10,000 objects each got their own address and the right content');
     Reservert := A.BytesReserved;
     for I := 1 to 10 do
     begin
       A.Reset;
       for J := 1 to 10000 do
-        A.New<TKatt>;
+        A.New<TCat>;
     end;
     CheckEqI(A.BytesReserved, Reservert,
-      'arenaen vokste ikke over ti runder med 10 000 objekter');
+      'the arena did not grow over ten rounds of 10,000 objects');
   finally
     A.Free;
     B.Free;
@@ -330,7 +336,7 @@ type
     Number: Integer;
   end;
 
-  { Only ShortString og tall — ingenting å finalisere. }
+  { Only ShortString and numbers — nothing to finalize. }
   TWithoutString = class(TArenaObject)
   public
     Kort: string[16];
@@ -345,20 +351,21 @@ var
   U: TWithoutString;
   Used: PtrUInt;
 begin
-  Group('Arena — finalisering av string-felt');
+  Group('Arena — finalizing a string field');
 
   Check(ClassNeedsFinalization(TWithString),
-    'klasse med string trenger finalisering');
-  { TKatt deklarerer ingen managed felter selv, men arver ett fra TDyr.
-    Egen init-tabell er tom, så sjekken må gå opp arvekjeden. }
-  Check(ClassNeedsFinalization(TKatt),
-    'underklasse som arver et string-felt trenger det også');
+    'a class with a string needs finalization');
+  { TCat declares no managed fields of its own but inherits one from
+    TAnimal. Its own init table is empty, so the check has to walk up the
+    inheritance chain. }
+  Check(ClassNeedsFinalization(TCat),
+    'a subclass inheriting a string field needs it too');
   Check(not ClassNeedsFinalization(TWithoutString),
-    'klasse med bare ShortString gjør ikke det');
+    'a class with only ShortString does not');
   Check(not ClassNeedsFinalization(TRequest),
-    'TRequest betaler ingenting for mekanismen');
+    'TRequest pays nothing for the mechanism');
   Check(not ClassNeedsFinalization(TResponse),
-    'TResponse heller ikke');
+    'nor does TResponse');
 
   A := TArena.Create(8192);
   Prev := UseArena(A);
@@ -367,18 +374,19 @@ begin
     U.Number := 1;
     Used := A.BytesLive;
     Check(Used <= U.InstanceSize + ArenaAlignment,
-      'objekt uten managed felter koster ingen defer-node');
+      'an object with no managed fields costs no defer node');
 
     M := TWithString.Create;
-    { Ren ASCII, slik at Length teller det samme som antall tegn. }
-    M.Name := 'en streng lang nok til aa havne paa heapen og ikke i datasegmentet';
-    CheckEqI(Length(M.Name), 66, 'strengen ble satt');
+    { Plain ASCII, so that Length counts the same as the number of
+      characters. }
+    M.Name := 'a string long enough to land on the heap and not in the data segment';
+    CheckEqI(Length(M.Name), 68, 'the string was set');
 
     A.Reset;
-    { After_ Reset er minnet gjenbrukbart. At strengen faktisk ble frigjort
-      vises ved at refcounten falt — vi leser den ikke direkte, men
-      finaliseringen nullstiller feltet. }
-    CheckEqI(Length(M.Name), 0, 'Reset finaliserte string-feltet');
+    { After Reset the memory is reusable. That the string was actually
+      released is shown by the refcount falling — we do not read it
+      directly, but the finalization clears the field. }
+    CheckEqI(Length(M.Name), 0, 'Reset finalized the string field');
   finally
     UseArena(Prev);
     A.Free;
@@ -397,7 +405,7 @@ procedure SporC(Data: Pointer); begin DeferSpor := DeferSpor + 'c'; end;
 procedure SporKaster(Data: Pointer);
 begin
   DeferSpor := DeferSpor + 'x';
-  raise Exception.Create('opprydning som svikter');
+  raise Exception.Create('a cleanup that fails');
 end;
 
 procedure TestArenaDefer;
@@ -412,44 +420,45 @@ begin
     DeferSpor := '';
     A.Defer(SporA, nil);
     A.Defer(SporB, nil);
-    CheckEqS(DeferSpor, '', 'ingenting kjører før Reset');
+    CheckEqS(DeferSpor, '', 'nothing runs before Reset');
     A.Reset;
-    CheckEqS(DeferSpor, 'ba', 'opprydning kjører i motsatt rekkefølge');
+    CheckEqS(DeferSpor, 'ba', 'cleanup runs in reverse order');
 
     DeferSpor := '';
     A.Reset;
-    CheckEqS(DeferSpor, '', 'en opprydning kjører bare én gang');
+    CheckEqS(DeferSpor, '', 'a cleanup runs only once');
 
-    { Rewind rydder bare det som ble registrert etter merket. }
+    { Rewind cleans up only what was registered after the mark. }
     DeferSpor := '';
     A.Defer(SporA, nil);
     M := A.Mark;
     A.Defer(SporB, nil);
     A.Defer(SporC, nil);
     A.Rewind(M);
-    CheckEqS(DeferSpor, 'cb', 'Rewind rydder ned til merket');
+    CheckEqS(DeferSpor, 'cb', 'Rewind cleans down to the mark');
     A.Reset;
-    CheckEqS(DeferSpor, 'cba', 'resten venter på Reset');
+    CheckEqS(DeferSpor, 'cba', 'the rest waits for Reset');
 
-    { En opprydning som kaster skal ikke stoppe de andre. }
+    { A cleanup that raises must not stop the others. }
     DeferSpor := '';
     A.Defer(SporA, nil);
     A.Defer(SporKaster, nil);
     A.Defer(SporB, nil);
     A.Reset;
-    CheckEqS(DeferSpor, 'bxa', 'en opprydning som kaster stopper ikke Reset');
-    CheckEqI(A.BytesLive, 0, 'arenaen ble likevel nullstilt');
+    CheckEqS(DeferSpor, 'bxa', 'a cleanup that raises does not stop Reset');
+    CheckEqI(A.BytesLive, 0, 'the arena was reset anyway');
   finally
     A.Free;
   end;
 
-  { Destroy må rydde det som står igjen — nodene ligger i arenaen selv. }
+  { Destroy has to clean up what is left — the nodes are in the arena
+    themselves. }
   DeferSpor := '';
   A := TArena.Create(4096);
   A.Defer(SporA, nil);
   A.Defer(SporB, nil);
   A.Free;
-  CheckEqS(DeferSpor, 'ba', 'Destroy rydder det som står igjen');
+  CheckEqS(DeferSpor, 'ba', 'Destroy cleans up what is left');
 end;
 
 { ----------------------------------------------------------------- tekst -- }
@@ -465,30 +474,30 @@ begin
   Group('Text_');
   A := TArena.Create(4096);
   try
-    S := Str('Hallo, verden');
-    CheckEqI(S.Len, 13, 'Str tar lengden fra strengen');
-    CheckEqS(S.ToString, 'Hallo, verden', 'ToString kopierer ut igjen');
-    Check(S.EqualsStr('Hallo, verden'), 'EqualsStr er eksakt');
-    Check(not S.EqualsStr('hallo, verden'), 'EqualsStr skiller store og små');
-    Check(S.SameTextStr('HALLO, VERDEN'), 'SameText ignorerer ASCII-kasus');
-    Check(S.StartsWithStr('Hallo'), 'StartsWithStr');
+    S := Str('Hello, world');
+    CheckEqI(S.Len, 12, 'Str takes the length from the string');
+    CheckEqS(S.ToString, 'Hello, world', 'ToString copies back out');
+    Check(S.EqualsStr('Hello, world'), 'EqualsStr is exact');
+    Check(not S.EqualsStr('hello, world'), 'EqualsStr distinguishes upper and lower case');
+    Check(S.SameTextStr('HELLO, WORLD'), 'SameText ignores ASCII case');
+    Check(S.StartsWithStr('Hello'), 'StartsWithStr');
     CheckEqI(S.IndexOfByte(Ord(',')), 5, 'IndexOfByte');
-    CheckEqS(S.Slice(7).ToString, 'verden', 'Slice til enden');
-    CheckEqS(S.Slice(0, 5).ToString, 'Hallo', 'Slice med lengde');
-    CheckEqS(Str('  tekst  ').TrimSpace.ToString, 'tekst', 'TrimSpace');
+    CheckEqS(S.Slice(7).ToString, 'world', 'Slice til enden');
+    CheckEqS(S.Slice(0, 5).ToString, 'Hello', 'Slice with a length');
+    CheckEqS(Str('  text  ').TrimSpace.ToString, 'text', 'TrimSpace');
 
-    Check(S.SplitAt(Ord(','), L, R), 'SplitAt finner skilletegnet');
-    CheckEqS(L.ToString, 'Hallo', 'SplitAt venstre');
-    CheckEqS(R.TrimSpace.ToString, 'verden', 'SplitAt høyre');
-    Check(not Str('uten').SplitAt(Ord(','), L, R), 'SplitAt uten treff');
-    CheckEqS(L.ToString, 'uten', 'SplitAt uten treff gir hele strengen');
+    Check(S.SplitAt(Ord(','), L, R), 'SplitAt finds the separator');
+    CheckEqS(L.ToString, 'Hello', 'SplitAt left');
+    CheckEqS(R.TrimSpace.ToString, 'world', 'SplitAt right');
+    Check(not Str('uten').SplitAt(Ord(','), L, R), 'SplitAt with no match');
+    CheckEqS(L.ToString, 'uten', 'SplitAt with no match gives the whole string');
 
-    Check(Str('12345').ToInt64(V) and (V = 12345), 'ToInt64 positiv');
-    Check(Str('-42').ToInt64(V) and (V = -42), 'ToInt64 negativ');
-    Check(not Str('12a').ToInt64(V), 'ToInt64 avviser søppel');
-    Check(not Str('').ToInt64(V), 'ToInt64 avviser tom streng');
+    Check(Str('12345').ToInt64(V) and (V = 12345), 'ToInt64 positive');
+    Check(Str('-42').ToInt64(V) and (V = -42), 'ToInt64 negative');
+    Check(not Str('12a').ToInt64(V), 'ToInt64 rejects rubbish');
+    Check(not Str('').ToInt64(V), 'ToInt64 rejects an empty string');
     Check(not Str('99999999999999999999').ToInt64(V),
-      'ToInt64 avviser overflow i stedet for å pakke rundt');
+      'ToInt64 rejects overflow instead of wrapping');
     CheckEqI(Str('nei').ToIntDef(7), 7, 'ToIntDef');
 
     B.Init(A, 16);
@@ -497,15 +506,15 @@ begin
     B.AppendInt(-1);
     B.AppendInt(Low(Int64));
     CheckEqS(B.ToString, 'a0-1-9223372036854775808',
-      'AppendInt takler Low(Int64)');
+      'AppendInt handles Low(Int64)');
 
     { Vekst skal bevare innholdet. }
     B.Init(A, 16);
     for I := 1 to 100 do
       B.Append('0123456789');
-    CheckEqI(B.Len, 1000, 'StrBuilder vokser');
-    Check(B.Capacity >= 1000, 'kapasiteten fulgte med');
-    CheckEqS(B.ToStr.Slice(990).ToString, '0123456789', 'innholdet overlevde vekst');
+    CheckEqI(B.Len, 1000, 'StrBuilder grows');
+    Check(B.Capacity >= 1000, 'the capacity followed');
+    CheckEqS(B.ToStr.Slice(990).ToString, '0123456789', 'the content survived the growth');
 
     CheckEqS(StrDup(A, Str('kopi')).ToString, 'kopi', 'StrDup');
     CheckEqS(StrCat(A, Str('ab'), Str('cd')).ToString, 'abcd', 'StrCat');
@@ -521,29 +530,29 @@ var
   A: TArena;
   V: TStr;
 begin
-  Group('HTTP-typer');
+  Group('HTTP types');
   A := TArena.Create(4096);
   try
     Check(MethodFromStr(Str('GET')) = hmGet, 'GET');
     Check(MethodFromStr(Str('DELETE')) = hmDelete, 'DELETE');
     Check(MethodFromStr(Str('get')) = hmUnknown, 'metoder er case-sensitive');
-    Check(MethodFromStr(Str('BREW')) = hmUnknown, 'ukjent metode');
+    Check(MethodFromStr(Str('BREW')) = hmUnknown, 'an unknown method');
     CheckEqS(StatusText(422), 'Unprocessable Content', 'StatusText');
 
-    CheckEqS(UrlDecode(A, Str('a%20b')).ToString, 'a b', 'prosentdekoding');
-    CheckEqS(UrlDecode(A, Str('a+b')).ToString, 'a+b', 'pluss er ikke mellomrom i sti');
-    CheckEqS(UrlDecode(A, Str('a+b'), True).ToString, 'a b', 'pluss er mellomrom i query');
-    CheckEqS(UrlDecode(A, Str('%C3%A6')).ToString, 'æ', 'utf-8 gjennom dekoding');
-    CheckEqS(UrlDecode(A, Str('100%')).ToString, '100%', 'ufullstendig %-sekvens beholdes');
-    CheckEqS(UrlDecode(A, Str('%zz')).ToString, '%zz', 'ugyldig hex beholdes');
+    CheckEqS(UrlDecode(A, Str('a%20b')).ToString, 'a b', 'percent decoding');
+    CheckEqS(UrlDecode(A, Str('a+b')).ToString, 'a+b', 'plus is not a space in a path');
+    CheckEqS(UrlDecode(A, Str('a+b'), True).ToString, 'a b', 'plus is a space in a query');
+    CheckEqS(UrlDecode(A, Str('%C3%A6')).ToString, 'æ', 'utf-8 through decoding');
+    CheckEqS(UrlDecode(A, Str('100%')).ToString, '100%', 'an incomplete % sequence is kept');
+    CheckEqS(UrlDecode(A, Str('%zz')).ToString, '%zz', 'invalid hex is kept');
 
     Check(QueryValue(A, Str('a=1&name=Knut&b=2'), 'name', V) and V.EqualsStr('Knut'),
-      'QueryValue finner verdi');
+      'QueryValue finds a value');
     Check(QueryValue(A, Str('tom=&x=1'), 'tom', V) and V.IsEmpty,
-      'QueryValue med tom verdi');
-    Check(not QueryValue(A, Str('a=1'), 'b', V), 'QueryValue uten treff');
+      'QueryValue with an empty value');
+    Check(not QueryValue(A, Str('a=1'), 'b', V), 'QueryValue with no match');
     Check(QueryValue(A, Str('q=a%20b'), 'q', V) and V.EqualsStr('a b'),
-      'QueryValue dekoder');
+      'QueryValue decodes');
   finally
     A.Free;
   end;
@@ -566,10 +575,11 @@ end;
 
 { ------------------------------------------------------------- multipart -- }
 
-{ Bygger en multipart-kropp. Skrevet ut for hånd med eksplisitte CRLF-er,
-  fordi det er nettopp CRLF-ene rundt grensene testen handler om. }
-{ FileUtil hører til Lazarus, ikke til FPCs RTL. Ryddingen skrives derfor
-  ut for hånd. }
+{ Builds a multipart body. Written out by hand with explicit CRLFs,
+  because it is precisely the CRLFs around the boundaries that the test is
+  about. }
+{ FileUtil belongs to Lazarus, not to FPC's RTL. The cleanup is therefore
+  written out by hand. }
 procedure RemoveDir_(const Dir: string);
 var
   R: TSearchRec;
@@ -631,109 +641,110 @@ begin
     Body_ :=
       MpPart(G, 'form-data; name="title"', '', 'Årsrapport') +
       MpPart(G, 'form-data; name="_token"', '', 'abc123') +
-      MpPart(G, 'form-data; name="doc"; filename="rapport.pdf"',
-        'application/pdf', '%PDF-1.4 innhold') +
+      MpPart(G, 'form-data; name="doc"; filename="report.pdf"',
+        'application/pdf', '%PDF-1.4 content') +
       '--' + G + '--' + #13#10;
 
     St := ParseWithBody(A, 'POST /upload HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    Check(St = psOk, 'requesten parser');
-    Check(Req.IsMultipart, 'gjenkjent som multipart');
+    Check(St = psOk, 'the request parses');
+    Check(Req.IsMultipart, 'recognised as multipart');
     Check(Req.Multipart.Ok, 'kroppen lot seg dele');
 
-    { Vanlige felter skal fortsatt virke. Et skjema med en fil i skal ikke
-      gjøre resten av feltene utilgjengelige — og CSRF-tokenet ligger i ett
-      av dem. }
+    { Ordinary fields are to keep working. A form with a file in it must
+      not make the rest of the fields unreachable — and the CSRF token is
+      in one of them. }
     CheckEqS(Req.Form('title').ToString, 'Årsrapport',
-      'tekstfelt leses med Form');
+      'a text field is read with Form');
     CheckEqS(Req.Form('_token').ToString, 'abc123',
-      'CSRF-tokenet finnes i en multipart');
-    Check(Req.HasForm('title'), 'HasForm finner feltet');
-    Check(not Req.HasForm('finnes-ikke'), 'og ikke et som mangler');
+      'the CSRF token is there in a multipart');
+    Check(Req.HasForm('title'), 'HasForm finds the field');
+    Check(not Req.HasForm('does-not-exist'), 'and not one that is missing');
 
     F := Req.Upload('doc');
-    Check(not F.IsEmpty, 'fila kom med');
-    CheckEqS(F.ClientName.ToString, 'rapport.pdf', 'filnavnet fra klienten');
+    Check(not F.IsEmpty, 'the file came along');
+    CheckEqS(F.ClientName.ToString, 'report.pdf', 'the file name from the client');
     CheckEqS(F.ContentType.ToString, 'application/pdf', 'content-type');
-    CheckEqS(F.Content.ToString, '%PDF-1.4 innhold', 'innholdet er intakt');
-    CheckEqI(F.Size, Length('%PDF-1.4 innhold'), 'størrelsen stemmer');
+    CheckEqS(F.Content.ToString, '%PDF-1.4 content', 'the content is intact');
+    CheckEqI(F.Size, Length('%PDF-1.4 content'), 'the size is right');
 
-    { Innholdet skal være et utsnitt inn i kroppen, ikke en kopi. Det er
-      hele grunnen til at parseren er skrevet slik. }
+    { The content is to be a slice into the body, not a copy. That is the
+      whole reason the parser is written the way it is. }
     Check((PtrUInt(F.Content.Data) >= PtrUInt(Req.Body.Data)) and
           (PtrUInt(F.Content.Data) < PtrUInt(Req.Body.Data) + Req.Body.Len),
-      'innholdet peker inn i kroppen, uten kopi');
+      'the content points into the body, with no copy');
 
-    Check(Req.Upload('finnes-ikke').IsEmpty, 'et felt som ikke finnes er tomt');
+    Check(Req.Upload('does-not-exist').IsEmpty, 'a field that does not exist is empty');
 
-    { ---- grenser som er lette å bomme på ---- }
+    { ---- boundaries that are easy to get wrong ---- }
     A.Reset;
-    { Binært innhold med CRLF og med noe som ligner grensen inni. Kutter
-      parseren på feil sted, blir fila ødelagt uten at noe sier fra. }
-    Bin := 'AB'#13#10'--ikke-grensen'#13#10#0#1#2#255'CD';
+    { Binary content with CRLFs and with something that looks like the
+      boundary inside it. Cut in the wrong place and the file is corrupt
+      with nothing to say so. }
+    Bin := 'AB'#13#10'--not-the-boundary'#13#10#0#1#2#255'CD';
     Body_ := MpPart(G, 'form-data; name="f"; filename="a.bin"',
       'application/octet-stream', Bin) + '--' + G + '--' + #13#10;
     St := ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    Check(St = psOk, 'binær kropp parser');
+    Check(St = psOk, 'a binary body parses');
     F := Req.Upload('f');
-    CheckEqI(F.Size, Length(Bin), 'binært innhold beholder hver byte');
+    CheckEqI(F.Size, Length(Bin), 'binary content keeps every byte');
     Check(CompareByte(F.Content.Data^, Bin[1], Length(Bin)) = 0,
-      'også nullbyte og noe som ligner grensen');
+      'a zero byte too, and something that looks like the boundary');
 
     A.Reset;
-    { Grensen i anførselstegn, som noen klienter sender. }
+    { The boundary in quotes, as some clients send it. }
     Body_ := MpPart(G, 'form-data; name="a"', '', 'x') + '--' + G + '--'#13#10;
     St := ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary="' + G + '"', Body_, Req);
-    CheckEqS(Req.Form('a').ToString, 'x', 'grense i anførselstegn');
+    CheckEqS(Req.Form('a').ToString, 'x', 'a boundary in quotes');
 
     A.Reset;
     { More filer under samme navn: <input type="file" multiple>. }
     Body_ :=
-      MpPart(G, 'form-data; name="bilder"; filename="en.png"', 'image/png', '1') +
-      MpPart(G, 'form-data; name="bilder"; filename="to.png"', 'image/png', '22') +
-      MpPart(G, 'form-data; name="annet"; filename="tre.txt"', 'text/plain', '333') +
+      MpPart(G, 'form-data; name="images"; filename="one.png"', 'image/png', '1') +
+      MpPart(G, 'form-data; name="images"; filename="two.png"', 'image/png', '22') +
+      MpPart(G, 'form-data; name="other"; filename="three.txt"', 'text/plain', '333') +
       '--' + G + '--'#13#10;
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    More := Req.Uploads('bilder');
-    CheckEqI(Length(More), 2, 'to filer under samme navn');
-    CheckEqS(More[1].ClientName.ToString, 'to.png', 'rekkefølgen holder');
-    CheckEqI(Length(Req.Uploads('annet')), 1, 'og én under et annet');
+    More := Req.Uploads('images');
+    CheckEqI(Length(More), 2, 'two files under the same name');
+    CheckEqS(More[1].ClientName.ToString, 'two.png', 'the order holds');
+    CheckEqI(Length(Req.Uploads('other')), 1, 'and one under another');
 
     A.Reset;
-    { Et filfelt brukeren ikke fylte ut: tomt filnavn, null bytes. Det skal
-      ikke se ut som en opplasting. }
-    Body_ := MpPart(G, 'form-data; name="valgfri"; filename=""', '', '') +
+    { A file field the user did not fill in: an empty file name, zero
+      bytes. It must not look like an upload. }
+    Body_ := MpPart(G, 'form-data; name="optional"; filename=""', '', '') +
       '--' + G + '--'#13#10;
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    Check(Req.Upload('valgfri').IsEmpty, 'et tomt filfelt er ikke en fil');
+    Check(Req.Upload('optional').IsEmpty, 'an empty file field is not a file');
 
     A.Reset;
-    { Ødelagte kropper skal gi Ok = False, ikke en exception og ikke en
-      halv fil. }
+    { Broken bodies are to give Ok = False, not an exception and not half a
+      file. }
     Body_ := MpPart(G, 'form-data; name="a"', '', 'x');  { uten avsluttende grense }
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    Check(not Req.Multipart.Ok, 'kropp uten avsluttende grense avvises');
+    Check(not Req.Multipart.Ok, 'a body with no closing boundary is rejected');
 
     A.Reset;
-    Body_ := 'ingenting som ligner';
+    Body_ := 'nothing that resembles it';
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    Check(not Req.Multipart.Ok, 'søppel avvises');
+    Check(not Req.Multipart.Ok, 'rubbish is rejected');
 
     A.Reset;
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data', '', Req);
-    Check(not Req.Multipart.Ok, 'multipart uten boundary avvises');
-    Check(Req.Multipart.Error = mpNoBoundary, 'og sier hvorfor');
+    Check(not Req.Multipart.Ok, 'multipart without a boundary is rejected');
+    Check(Req.Multipart.Error = mpNoBoundary, 'and says why');
 
     A.Reset;
-    { For mange deler. Grensen er mot en kropp som er liten, men som koster
-      i parsing og allokering. }
+    { Too many parts. The limit is against a body that is small but costs
+      in parsing and allocation. }
     Body_ := '';
     for I := 1 to MaxMultipartParts + 5 do
       Body_ := Body_ + MpPart(G, 'form-data; name="f' + IntToStr(I) + '"',
@@ -741,64 +752,64 @@ begin
     Body_ := Body_ + '--' + G + '--'#13#10;
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
-    Check(Req.Multipart.Error = mpTooManyParts, 'for mange deler avvises');
+    Check(Req.Multipart.Error = mpTooManyParts, 'too many parts are rejected');
   finally
     A.Free;
   end;
 
-  { ---- filnavn fra klienten er ikke til å stole på ---- }
-  Group('Multipart: filnavn');
-  CheckEqS(SanitizeFileName('bilde.jpg'), 'bilde.jpg', 'et vanlig navn står');
+  { ---- a file name from the client cannot be trusted ---- }
+  Group('Multipart: file names');
+  CheckEqS(SanitizeFileName('image.jpg'), 'image.jpg', 'an ordinary name stands');
   CheckEqS(SanitizeFileName('../../etc/passwd'), 'passwd',
-    'katalogtraversering fjernes');
+    'directory traversal is removed');
   CheckEqS(SanitizeFileName('..\..\windows\system32\cmd.exe'), 'cmd.exe',
-    'også med omvendt skråstrek');
-  CheckEqS(SanitizeFileName('C:\Users\x\rapport.pdf'), 'rapport.pdf',
-    'og med stasjonsbokstav');
+    'with a backslash too');
+  CheckEqS(SanitizeFileName('C:\Users\x\report.pdf'), 'report.pdf',
+    'and with a drive letter');
   CheckEqS(SanitizeFileName('.bashrc'), 'bashrc',
-    'ledende punktum fjernes');
-  CheckEqS(SanitizeFileName('..'), 'upload', 'bare punktum blir upload');
-  CheckEqS(SanitizeFileName(''), 'upload', 'tomt navn blir upload');
+    'a leading full stop is removed');
+  CheckEqS(SanitizeFileName('..'), 'upload', 'only a full stop becomes upload');
+  CheckEqS(SanitizeFileName(''), 'upload', 'an empty name becomes upload');
   CheckEqS(SanitizeFileName('a b;rm -rf *.txt'), 'a_b_rm_-rf__.txt',
-    'skalltegn blir understrek');
-  { Skråstreken er en katalogskille, ikke et tegn i navnet — også når den
-    står midt i noe som ser ut som et navn. }
+    'shell characters become underscores');
+  { The slash is a directory separator, not a character in the name — also
+    when it sits in the middle of something that looks like a name. }
   CheckEqS(SanitizeFileName('a b;rm -rf /.txt'), 'txt',
-    'alt før siste skråstrek er en sti og forsvinner');
+    'everything before the last slash is a path and goes away');
   Check(Length(SanitizeFileName(StringOfChar('a', 400))) <= 200,
-    'navnet kortes av');
+    'the name is truncated');
 
   { ---- lagring ---- }
-  Group('Multipart: lagring');
+  Group('Multipart: storing');
   A := TArena.Create(16 * 1024);
   Folder := '.build/upload-test';
   try
-    Body_ := MpPart(G, 'form-data; name="f"; filename="../../onde.TXT"',
+    Body_ := MpPart(G, 'form-data; name="f"; filename="../../evil.TXT"',
       'text/plain', 'hei') + '--' + G + '--'#13#10;
     ParseWithBody(A, 'POST /u HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Type: multipart/form-data; boundary=' + G, Body_, Req);
     F := Req.Upload('f');
-    CheckEqS(F.SafeName, 'onde.TXT', 'SafeName rydder navnet');
-    CheckEqS(F.Extension, '.txt', 'endelsen er i små bokstaver');
+    CheckEqS(F.SafeName, 'evil.TXT', 'SafeName cleans the name');
+    CheckEqS(F.Extension, '.txt', 'the extension is lower case');
 
     Path_ := F.StoreIn(Folder);
-    Check(Path_ <> '', 'StoreIn skrev fila');
-    Check(FileExists(Path_), 'og den finnes');
-    { Klientens navn skal ikke nå filsystemet i det hele tatt. }
-    Check(Pos('onde', Path_) = 0, 'klientens navn brukes ikke som filnavn');
-    Check(Pos(Folder, Path_) = 1, 'og fila havnet i katalogen vi ba om');
-    CheckEqS(ExtractFileExt(Path_), '.txt', 'men endelsen er med');
+    Check(Path_ <> '', 'StoreIn wrote the file');
+    Check(FileExists(Path_), 'and it is there');
+    { The client's name must not reach the file system at all. }
+    Check(Pos('evil', Path_) = 0, 'the client''s name is not used as the file name');
+    Check(Pos(Folder, Path_) = 1, 'and the file landed in the directory we asked for');
+    CheckEqS(ExtractFileExt(Path_), '.txt', 'but the extension is there');
 
     L := TStringList.Create;
     try
       L.LoadFromFile(Path_);
-      CheckEqS(Trim(L.Text), 'hei', 'innholdet kom uendret på disk');
+      CheckEqS(Trim(L.Text), 'hei', 'the content reached disk unchanged');
     finally
       L.Free;
     end;
 
-    { To lagringer av samme fil skal ikke skrive over hverandre. }
-    Check(F.StoreIn(Folder) <> Path_, 'to lagringer gir to filer');
+    { Two saves of the same file must not overwrite each other. }
+    Check(F.StoreIn(Folder) <> Path_, 'two saves give two files');
   finally
     A.Free;
     RemoveDir_(Folder);
@@ -814,57 +825,57 @@ begin
   Group('Request-parsing');
   A := TArena.Create(8192);
   try
-    St := ParseIn(A, 'GET /customers?side=2&q=a%20b HTTP/1.1'#13#10 +
-                     'Host: askrcode.no'#13#10 +
+    St := ParseIn(A, 'GET /customers?page=2&q=a%20b HTTP/1.1'#13#10 +
+                     'Host: askrcode.test'#13#10 +
                      'X-Tom:'#13#10 +
                      'Accept:  application/json  ', Req);
     Check(St = psOk, 'enkel GET parser');
-    Check(Req.Method = hmGet, 'metode');
-    CheckEqS(Req.Path.ToString, '/customers', 'sti');
-    CheckEqS(Req.QueryString.ToString, 'side=2&q=a%20b', 'query string');
+    Check(Req.Method = hmGet, 'the method');
+    CheckEqS(Req.Path.ToString, '/customers', 'the path');
+    CheckEqS(Req.QueryString.ToString, 'page=2&q=a%20b', 'query string');
     CheckEqI(Req.VersionMinor, 1, 'HTTP/1.1');
-    CheckEqI(Req.HeaderCount, 3, 'headere telt');
-    CheckEqS(Req.Header('host').ToString, 'askrcode.no', 'header-oppslag');
-    CheckEqS(Req.Header('HOST').ToString, 'askrcode.no', 'header-oppslag ignorerer kasus');
+    CheckEqI(Req.HeaderCount, 3, 'headers counted');
+    CheckEqS(Req.Header('host').ToString, 'askrcode.test', 'header lookup');
+    CheckEqS(Req.Header('HOST').ToString, 'askrcode.test', 'header lookup ignores case');
     CheckEqS(Req.Header('accept').ToString, 'application/json',
-      'header-verdi trimmes');
+      'a header value is trimmed');
     Check(Req.Header('x-tom').IsEmpty, 'tom header-verdi');
-    Check(Req.HasHeader('x-tom'), 'tom header finnes likevel');
-    CheckEqS(Req.Query('side').ToString, '2', 'query-parameter');
+    Check(Req.HasHeader('x-tom'), 'an empty header is still there');
+    CheckEqS(Req.Query('page').ToString, '2', 'a query parameter');
     CheckEqS(Req.Query('q').ToString, 'a b', 'query-parameter dekodes');
     Check(Req.KeepAlive, 'HTTP/1.1 er keep-alive som standard');
 
     A.Reset;
     St := ParseIn(A, 'GET /a%2Fb/%C3%A6 HTTP/1.1'#13#10'Host: x', Req);
-    Check(St = psOk, 'prosentkodet sti');
-    CheckEqS(Req.Path.ToString, '/a/b/æ', 'stien dekodes');
-    CheckEqS(Req.RawPath.ToString, '/a%2Fb/%C3%A6', 'rå sti beholdes');
+    Check(St = psOk, 'a percent-encoded path');
+    CheckEqS(Req.Path.ToString, '/a/b/æ', 'the path is decoded');
+    CheckEqS(Req.RawPath.ToString, '/a%2Fb/%C3%A6', 'a raw path is kept');
 
     A.Reset;
-    St := ParseIn(A, 'GET http://askrcode.no/sti?x=1 HTTP/1.1'#13#10'Host: x', Req);
+    St := ParseIn(A, 'GET http://askrcode.test/path?x=1 HTTP/1.1'#13#10'Host: x', Req);
     Check(St = psOk, 'absolute-form target');
-    CheckEqS(Req.Path.ToString, '/sti', 'absolute-form gir sti');
+    CheckEqS(Req.Path.ToString, '/path', 'absolute-form gives a path');
     CheckEqS(Req.QueryString.ToString, 'x=1', 'absolute-form gir query');
 
     A.Reset;
-    St := ParseIn(A, 'GET /sti#frag HTTP/1.1'#13#10'Host: x', Req);
+    St := ParseIn(A, 'GET /path#frag HTTP/1.1'#13#10'Host: x', Req);
     Check(St = psOk, 'fragment i target');
-    CheckEqS(Req.Path.ToString, '/sti', 'fragment fjernes');
+    CheckEqS(Req.Path.ToString, '/path', 'the fragment is removed');
 
     A.Reset;
     St := ParseIn(A, 'POST /skjema HTTP/1.1'#13#10 +
                      'Host: x'#13#10 +
                      'Content-Type: application/x-www-form-urlencoded'#13#10 +
                      'Content-Length: 19', Req);
-    Check(St = psOk, 'POST med kropp');
+    Check(St = psOk, 'POST with a body');
     CheckEqI(Req.ContentLength, 19, 'Content-Length');
     Req.SetBody(StrDup(A, 'name=Knut&alder=40'));
-    CheckEqS(Req.Form('name').ToString, 'Knut', 'Form leser fra kroppen');
+    CheckEqS(Req.Form('name').ToString, 'Knut', 'Form reads from the body');
 
     A.Reset;
     St := ParseIn(A, 'GET /kort HTTP/1.0'#13#10, Req);
-    Check(St = psOk, 'HTTP/1.0 uten Host er greit');
-    Check(not Req.KeepAlive, 'HTTP/1.0 lukker som standard');
+    Check(St = psOk, 'HTTP/1.0 without Host is fine');
+    Check(not Req.KeepAlive, 'HTTP/1.0 closes by default');
 
     A.Reset;
     St := ParseIn(A, 'GET /kort HTTP/1.0'#13#10'Connection: keep-alive', Req);
@@ -877,36 +888,36 @@ begin
     { Avvisninger. }
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/1.1', Req) = psBadRequest,
-      'HTTP/1.1 uten Host avvises');
+      'HTTP/1.1 without Host is rejected');
     A.Reset;
     Check(ParseIn(A, 'GET /'#13#10'Host: x', Req) = psBadRequest,
-      'request-linje uten versjon avvises');
+      'a request line without a version is rejected');
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/2.0'#13#10'Host: x', Req) = psUnsupportedVersion,
-      'HTTP/2 over klartekst avvises');
+      'HTTP/2 over cleartext is rejected');
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Length: 5'#13#10'Content-Length: 6', Req) = psBadRequest,
-      'to ulike Content-Length avvises');
+      'two different Content-Lengths are rejected');
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/1.1'#13#10'Host: x'#13#10 +
       'Transfer-Encoding: chunked', Req) = psNotImplemented,
-      'chunked avvises eksplisitt');
+      'chunked is rejected explicitly');
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/1.1'#13#10'Host: x'#13#10 +
       'X-Fold: a'#13#10' b', Req) = psBadRequest,
       'obsolete line folding avvises');
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/1.1'#13#10'Host : x', Req) = psBadRequest,
-      'mellomrom foran kolon avvises');
+      'a space before the colon is rejected');
     A.Reset;
     Check(ParseIn(A, 'GET / HTTP/1.1'#13#10'Host: x'#13#10 +
       'Content-Length: -1', Req) = psBadRequest,
-      'negativ Content-Length avvises');
+      'a negative Content-Length is rejected');
     A.Reset;
     Req := nil;
     Check(ParseIn(A, 'GET sti HTTP/1.1'#13#10'Host: x', Req) = psBadRequest,
-      'target uten skråstrek avvises');
+      'a target without a slash is rejected');
   finally
     A.Free;
   end;
@@ -950,12 +961,12 @@ begin
   Prev := UseArena(A);
   try
     Raw := Serialize(A, RespondText('hei'), False, False);
-    Check(Pos('HTTP/1.1 200 OK'#13#10, Raw) = 1, 'statuslinje');
+    Check(Pos('HTTP/1.1 200 OK'#13#10, Raw) = 1, 'the status line');
     Check(Pos('Content-Length: 3'#13#10, Raw) > 0, 'Content-Length');
     Check(Pos('Content-Type: text/plain; charset=utf-8'#13#10, Raw) > 0, 'Content-Type');
     Check(Pos('Connection: keep-alive'#13#10, Raw) > 0, 'Connection: keep-alive');
     Check(Pos('Date: '#13#10, Raw) = 0, 'Date er ikke tom');
-    Check(Copy(Raw, Length(Raw) - 2, 3) = 'hei', 'kroppen sist');
+    Check(Copy(Raw, Length(Raw) - 2, 3) = 'hei', 'the body last');
 
     A.Reset;
     Raw := Serialize(A, RespondText('hei'), True, False);
@@ -964,12 +975,12 @@ begin
     A.Reset;
     Raw := Serialize(A, RespondText('hei'), False, True);
     Check(Pos('Content-Length: 3'#13#10, Raw) > 0, 'HEAD beholder Content-Length');
-    Check(Copy(Raw, Length(Raw) - 3, 4) = #13#10#13#10, 'HEAD utelater kroppen');
+    Check(Copy(Raw, Length(Raw) - 3, 4) = #13#10#13#10, 'HEAD leaves out the body');
 
     A.Reset;
     Raw := Serialize(A, NoContent, False, False);
     Check(Pos('HTTP/1.1 204 No Content', Raw) = 1, '204');
-    Check(Pos('Content-Length', Raw) = 0, '204 har ikke Content-Length');
+    Check(Pos('Content-Length', Raw) = 0, '204 has no Content-Length');
 
     A.Reset;
     Raw := Serialize(A, Redirect('/customers', 303), False, False);
@@ -980,8 +991,8 @@ begin
     Res := Respond(200).WithHeader('X-A', 'en').WithHeader('X-A', 'to');
     Raw := Serialize(A, Res, False, False);
     CheckEqI(Res.HeaderCount, 1, 'samme header to ganger gir én');
-    Check(Pos('X-A: to'#13#10, Raw) > 0, 'siste verdi vinner');
-    CheckEqI(CountOf(Raw, 'X-A:'), 1, 'headeren skrives bare én gang');
+    Check(Pos('X-A: to'#13#10, Raw) > 0, 'the last value wins');
+    CheckEqI(CountOf(Raw, 'X-A:'), 1, 'the header is written only once');
 
     A.Reset;
     Res := Respond(200);
@@ -991,9 +1002,9 @@ begin
        .WithHeader('X-7', '7').WithHeader('X-8', '8').WithHeader('X-9', '9')
        .WithHeader('X-10', '10');
     Raw := Serialize(A, Res, False, False);
-    CheckEqI(Res.HeaderCount, 10, 'header-tabellen vokser');
-    Check(Pos('X-1: 1'#13#10, Raw) > 0, 'første header overlevde vekst');
-    Check(Pos('X-10: 10'#13#10, Raw) > 0, 'siste header etter vekst');
+    CheckEqI(Res.HeaderCount, 10, 'the header table grows');
+    Check(Pos('X-1: 1'#13#10, Raw) > 0, 'the first header survived the growth');
+    Check(Pos('X-10: 10'#13#10, Raw) > 0, 'the last header after the growth');
   finally
     UseArena(Prev);
     A.Free;
@@ -1007,13 +1018,13 @@ var
   A: TArena;
   B: TStrBuilder;
 begin
-  Group('Klokke');
+  Group('Clock');
   A := TArena.Create(4096);
   try
     B.Init(A, 64);
     AppendHttpDate(B, 784111777);
     CheckEqS(B.ToString, 'Sun, 06 Nov 1994 08:49:37 GMT',
-      'RFC 9110-dato (eksempelet fra spesifikasjonen)');
+      'an RFC 9110 date (the example from the specification)');
 
     B.Init(A, 64);
     AppendHttpDate(B, 0);
@@ -1021,19 +1032,20 @@ begin
 
     B.Init(A, 64);
     AppendHttpDate(B, 951782400);
-    CheckEqS(B.ToString, 'Tue, 29 Feb 2000 00:00:00 GMT', 'skuddår 2000');
+    CheckEqS(B.ToString, 'Tue, 29 Feb 2000 00:00:00 GMT', 'leap year 2000');
 
     B.Init(A, 64);
     AppendHttpDate(B, 1709164800);
-    CheckEqS(B.ToString, 'Thu, 29 Feb 2024 00:00:00 GMT', 'skuddår 2024');
+    CheckEqS(B.ToString, 'Thu, 29 Feb 2024 00:00:00 GMT', 'leap year 2024');
 
-    { Andre kall treffer trådcachen og må gi samme svar. }
+    { The second call hits the thread cache and has to give the same
+      answer. }
     B.Init(A, 64);
     AppendHttpDate(B, 1709164800);
-    CheckEqS(B.ToString, 'Thu, 29 Feb 2024 00:00:00 GMT', 'cachet dato er lik');
+    CheckEqS(B.ToString, 'Thu, 29 Feb 2024 00:00:00 GMT', 'the cached date is the same');
 
-    Check(UnixNow > 1700000000, 'UnixNow er i vår tid');
-    Check(MonotonicMs > 0, 'MonotonicMs teller');
+    Check(UnixNow > 1700000000, 'UnixNow is in our era');
+    Check(MonotonicMs > 0, 'MonotonicMs counts');
   finally
     A.Free;
   end;
@@ -1041,13 +1053,13 @@ end;
 
 { ------------------------------------------------------------------ json -- }
 
-procedure TestJsonSkriv;
+procedure TestJsonWrite;
 var
   A: TArena;
   W: TJsonWriter;
   Value_: Currency;
 begin
-  Group('JSON — skriving');
+  Group('JSON — writing');
   A := TArena.Create(8192);
   try
     W.Init(A, 256);
@@ -1070,8 +1082,8 @@ begin
     CheckEqS(W.ToString,
       '{"name":"Knut","alder":40,"active":true,"email":null,' +
       '"tall":[1,2,3],"nested":{"a":1}}',
-      'objekt, array og nesting');
-    CheckEqI(W.Depth, 0, 'alle nivåer lukket');
+      'object, array and nesting');
+    CheckEqI(W.Depth, 0, 'every level closed');
 
     W.Init(A, 64);
     W.BeginArray;
@@ -1081,97 +1093,98 @@ begin
     W.Init(A, 64);
     W.BeginObject;
     W.EndObject;
-    CheckEqS(W.ToString, '{}', 'tomt objekt');
+    CheckEqS(W.ToString, '{}', 'an empty object');
 
     W.Init(A, 128);
-    W.Str('anførsel " og bakstrek \ og linjeskift' + #10 + 'og tab' + #9);
+    W.Str('a quote " and a backslash \ and a line break' + #10 + 'and a tab' + #9);
     CheckEqS(W.ToString,
-      '"anførsel \" og bakstrek \\ og linjeskift\nog tab\t"',
-      'escaping av de vanlige');
+      '"a quote \" and a backslash \\ and a line break\nand a tab\t"',
+      'escaping the usual ones');
 
     W.Init(A, 64);
-    W.Str('styretegn' + #1 + #31);
-    CheckEqS(W.ToString, '"styretegn\u0001\u001f"', 'styretegn kodes som \u');
+    W.Str('control characters' + #1 + #31);
+    CheckEqS(W.ToString, '"control characters\u0001\u001f"',
+      'control characters are encoded as \u');
 
     W.Init(A, 64);
     W.Str('æøå — 日本');
-    CheckEqS(W.ToString, '"æøå — 日本"', 'UTF-8 slipper gjennom uendret');
+    CheckEqS(W.ToString, '"æøå — 日本"', 'UTF-8 passes through unchanged');
 
-    { Currency må aldri få desimalkomma, uansett locale. }
+    { Currency must never get a decimal comma, whatever the locale. }
     Value_ := 1234.5;
     W.Init(A, 64);
     W.Money(Value_);
-    CheckEqS(W.ToString, '1234.5', 'Currency med desimaler');
+    CheckEqS(W.ToString, '1234.5', 'Currency with decimals');
     Value_ := 1234;
     W.Init(A, 64);
     W.Money(Value_);
-    CheckEqS(W.ToString, '1234', 'Currency uten desimaler');
+    CheckEqS(W.ToString, '1234', 'Currency without decimals');
     Value_ := -0.05;
     W.Init(A, 64);
     W.Money(Value_);
-    CheckEqS(W.ToString, '-0.05', 'negativ Currency');
+    CheckEqS(W.ToString, '-0.05', 'negative Currency');
 
     W.Init(A, 64);
     W.Num(1.5);
-    CheckEqS(W.ToString, '1.5', 'Double bruker punktum');
+    CheckEqS(W.ToString, '1.5', 'Double uses a full stop');
 
     W.Init(A, 64);
-    W.Raw(Str('{"ferdig":1}'));
-    CheckEqS(W.ToString, '{"ferdig":1}',
-      'ferdig kodet JSON settes inn som det er');
+    W.Raw(Str('{"done":1}'));
+    CheckEqS(W.ToString, '{"done":1}',
+      'already encoded JSON is inserted as is');
 
     CheckEqS(HtmlAttrEscape(A, Str('<b>&"x"')).ToString,
-      '&lt;b&gt;&amp;&quot;x&quot;', 'HTML-attributtescaping');
+      '&lt;b&gt;&amp;&quot;x&quot;', 'HTML attribute escaping');
   finally
     A.Free;
   end;
 end;
 
-procedure TestJsonLes;
+procedure TestJsonRead;
 var
   A: TArena;
   V, M: PJsonValue;
   ErrPos: SizeInt;
 begin
-  Group('JSON — lesing');
+  Group('JSON — reading');
   A := TArena.Create(8192);
   try
     Check(JsonParse(A, Str('{"a":1,"b":"to","c":true,"d":null,"e":[1,2]}'),
       V, ErrPos), 'parser et objekt');
     Check(V^.Kind = jkObject, 'rot er objekt');
-    CheckEqI(V^.Count, 5, 'fem medlemmer');
+    CheckEqI(V^.Count, 5, 'five members');
     CheckEqI(JsonAsInt(JsonMember(V, 'a')), 1, 'tall');
     CheckEqS(JsonAsString(JsonMember(V, 'b')), 'to', 'streng');
     Check(JsonAsBool(JsonMember(V, 'c')), 'boolean');
     Check(JsonIsNull(JsonMember(V, 'd')), 'null');
     M := JsonMember(V, 'e');
     Check(M^.Kind = jkArray, 'array');
-    CheckEqI(M^.Count, 2, 'to elementer');
-    CheckEqI(JsonAsInt(JsonAt(M, 1)), 2, 'element etter indeks');
-    Check(JsonMember(V, 'finnes-ikke') = nil, 'ukjent nøkkel gir nil');
+    CheckEqI(M^.Count, 2, 'two elements');
+    CheckEqI(JsonAsInt(JsonAt(M, 1)), 2, 'an element by index');
+    Check(JsonMember(V, 'does-not-exist') = nil, 'an unknown key gives nil');
 
-    Check(JsonParse(A, Str('"med \" og \\ og \n"'), V, ErrPos),
+    Check(JsonParse(A, Str('"with \" and \\ and \n"'), V, ErrPos),
       'escapes i streng');
-    CheckEqS(JsonAsString(V), 'med " og \ og ' + #10, 'escapes avkodet');
+    CheckEqS(JsonAsString(V), 'with " and \ and ' + #10, 'escapes decoded');
 
     Check(JsonParse(A, Str('"æøå"'), V, ErrPos), 'u-escapes');
-    CheckEqS(JsonAsString(V), 'æøå', 'u-escapes blir UTF-8');
+    CheckEqS(JsonAsString(V), 'æøå', 'u-escapes become UTF-8');
 
-    Check(JsonParse(A, Str('"😀"'), V, ErrPos), 'surrogatpar');
-    CheckEqI(Length(JsonAsString(V)), 4, 'emoji er fire bytes i UTF-8');
+    Check(JsonParse(A, Str('"😀"'), V, ErrPos), 'a surrogate pair');
+    CheckEqI(Length(JsonAsString(V)), 4, 'an emoji is four bytes in UTF-8');
 
     Check(JsonParse(A, Str('  [ 1 , 2 ]  '), V, ErrPos), 'whitespace');
-    CheckEqI(V^.Count, 2, 'to elementer tross mellomrom');
+    CheckEqI(V^.Count, 2, 'two elements despite the whitespace');
 
-    Check(JsonParse(A, Str('-12.5e3'), V, ErrPos), 'tall med eksponent');
-    CheckEqS(JsonAsStr(V).ToString, '-12.5e3', 'tallet beholdes som tekst');
+    Check(JsonParse(A, Str('-12.5e3'), V, ErrPos), 'a number with an exponent');
+    CheckEqS(JsonAsStr(V).ToString, '-12.5e3', 'the number is kept as text');
 
     Check(not JsonParse(A, Str('{"a":}'), V, ErrPos),
-      'manglende verdi avvises');
+      'a missing value is rejected');
     Check(not JsonParse(A, Str('{"a":1'), V, ErrPos),
-      'uavsluttet objekt avvises');
-    Check(not JsonParse(A, Str('[1,2] tull'), V, ErrPos),
-      'søppel etter avvises');
+      'an unterminated object is rejected');
+    Check(not JsonParse(A, Str('[1,2] nonsense'), V, ErrPos),
+      'trailing rubbish is rejected');
     Check(not JsonParse(A, Str(''), V, ErrPos), 'tom streng avvises');
   finally
     A.Free;
@@ -1180,7 +1193,7 @@ end;
 
 { --------------------------------------------------------------- inertia -- }
 
-function LagRequest(A: TArena; const Head: string): TRequest;
+function MakeRequest(A: TArena; const Head: string): TRequest;
 var
   Prev: TArena;
 begin
@@ -1219,171 +1232,175 @@ begin
     TInertia.SetVersion('abc123');
 
     { Without X-Inertia: hele HTML-skallet. }
-    Req := LagRequest(A, 'GET /customers?side=2 HTTP/1.1'#13#10'Host: test');
+    Req := MakeRequest(A, 'GET /customers?page=2 HTTP/1.1'#13#10'Host: test');
     UseRequest(Req);
-    { Propverdien inneholder med vilje noe som ville avsluttet script-blokka
-      hvis escapingen ikke virket. }
+    { The prop value deliberately contains something that would have ended
+      the script block if the escaping did not work. }
     R := Inertia('Customers/Index',
-      ['antall', Int64(3), 'ondsinnet', '</script><img src=x onerror=alert(1)>']);
+      ['count', Int64(3), 'malicious', '</script><img src=x onerror=alert(1)>']);
     Raw := Reply(A, R);
-    Check(Pos('text/html', Raw) > 0, 'vanlig request gir HTML');
+    Check(Pos('text/html', Raw) > 0, 'an ordinary request gives HTML');
     Check(Pos('</script><img', Raw) = 0,
-      'en propverdi kan ikke bryte ut av script-blokka');
+      'a prop value cannot break out of the script block');
     { Only < og / escapes; > er ufarlig alene. }
     Check(Pos('\u003c\/script>', Raw) > 0,
-      'den er escapet til \u003c og \/ i stedet');
+      'it is escaped to \u003c and \/ instead');
     Check(Pos('<script data-page="app" type="application/json">', Raw) > 0,
       'Inertia 3 legger payloaden i et script-element');
-    Check(Pos('<div id="app"></div>', Raw) > 0, 'tom monteringsdiv');
+    Check(Pos('<div id="app"></div>', Raw) > 0, 'an empty mount div');
 
-    { En side uten tittel er et alvorlig tilgjengelighetsbrudd, og det
-      gjaldt hver eneste Inertia-side til dette kom på plass. Oppdaget ved
-      å kjøre axe mot et nettsted bygget med rammeverket. }
-    Check(Pos('<title>', Raw) > 0, 'skallet har en tittel');
-    Check(Pos('<title></title>', Raw) = 0, 'og den er ikke tom');
-    { lang må ikke være hardkodet norsk i et internasjonalt rammeverk. }
-    Check(Pos('lang="en"', Raw) > 0, 'og lang er en, ikke no');
+    { A page without a title is a serious accessibility violation, and it
+      applied to every single Inertia page until this arrived. Found by
+      running axe against a site built with the framework. }
+    Check(Pos('<title>', Raw) > 0, 'the shell has a title');
+    Check(Pos('<title></title>', Raw) = 0, 'and it is not empty');
+    { lang must not be hard-coded Norwegian in an international
+      framework. }
+    Check(Pos('lang="en"', Raw) > 0, 'and lang is en, not no');
 
     TInertia.SetTitle('Ada & <Co>');
-    Raw := Reply(A, Inertia('Customers/Index', ['antall', Int64(1)]));
+    Raw := Reply(A, Inertia('Customers/Index', ['count', Int64(1)]));
     Check(Pos('<title>Ada &amp; &lt;Co&gt;</title>', Raw) > 0,
-      'tittelen escapes — den er brukerkontrollert');
+      'the title is escaped — it is user-controlled');
     TInertia.SetTitle('Askr');
     Check(Pos('"component":"Customers\/Index"', Raw) > 0,
-      'skråstrek er escapet også i vanlige verdier');
-    Check(Pos('Vary: X-Inertia', Raw) > 0, 'Vary settes også på HTML');
+      'a slash is escaped in ordinary values too');
+    Check(Pos('Vary: X-Inertia', Raw) > 0, 'Vary is set on HTML too');
 
     { With_ X-Inertia: ren JSON. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers?side=2 HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers?page=2 HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true');
     UseRequest(Req);
-    R := Inertia('Customers/Index', ['antall', Int64(3)]);
+    R := Inertia('Customers/Index', ['count', Int64(3)]);
     Body := R.Body.ToString;
     Raw := Reply(A, R);
-    Check(Pos('X-Inertia: true', Raw) > 0, 'X-Inertia settes på svaret');
+    Check(Pos('X-Inertia: true', Raw) > 0, 'X-Inertia is set on the reply');
     Check(Pos('application/json', Raw) > 0, 'Content-Type er JSON');
     CheckEqS(Body,
-      '{"component":"Customers/Index","props":{"antall":3},' +
-      '"url":"/customers?side=2","version":"abc123",' +
+      '{"component":"Customers/Index","props":{"count":3},' +
+      '"url":"/customers?page=2","version":"abc123",' +
       '"clearHistory":false,"encryptHistory":false}',
       'payloaden er standard Inertia 3');
 
-    { Versjonsavvik: klienten skal laste på nytt, ikke få en ubrukelig payload. }
+    { A version mismatch: the client is to reload, not get a useless
+      payload. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10'X-Inertia-Version: gammel');
     UseRequest(Req);
-    R := Inertia('Customers/Index', ['antall', Int64(3)]);
-    CheckEqI(R.StatusCode, 409, 'versjonsavvik gir 409');
+    R := Inertia('Customers/Index', ['count', Int64(3)]);
+    CheckEqI(R.StatusCode, 409, 'a version mismatch gives 409');
     Check(Pos('X-Inertia-Location: /customers', Reply(A, R)) > 0,
-      'og peker klienten på adressen igjen');
+      'and points the client at the address again');
 
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10'X-Inertia-Version: abc123');
     UseRequest(Req);
-    R := Inertia('Customers/Index', ['antall', Int64(3)]);
-    CheckEqI(R.StatusCode, 200, 'riktig versjon slipper gjennom');
+    R := Inertia('Customers/Index', ['count', Int64(3)]);
+    CheckEqI(R.StatusCode, 200, 'the right version passes');
 
-    { Delvis oppdatering: bare det klienten ba om. }
+    { A partial reload: only what the client asked for. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10 +
       'X-Inertia-Partial-Component: Customers/Index'#13#10 +
       'X-Inertia-Partial-Data: customers');
     UseRequest(Req);
     R := Inertia('Customers/Index',
-      ['customers', 'liste', 'statistikk', 'tung', 'meny', 'ting']);
-    Check(Pos('"props":{"customers":"liste"}', R.Body.ToString) > 0,
-      'bare den etterspurte propen er med');
-    Check(Pos('statistikk', R.Body.ToString) = 0, 'resten er utelatt');
+      ['customers', 'list', 'statistics', 'heavy', 'menu', 'thing']);
+    Check(Pos('"props":{"customers":"list"}', R.Body.ToString) > 0,
+      'only the requested prop is there');
+    Check(Pos('statistics', R.Body.ToString) = 0, 'the rest is left out');
 
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10 +
       'X-Inertia-Partial-Component: Customers/Index'#13#10 +
-      'X-Inertia-Partial-Except: statistikk');
+      'X-Inertia-Partial-Except: statistics');
     UseRequest(Req);
-    R := Inertia('Customers/Index', ['customers', 'liste', 'statistikk', 'tung']);
-    Check(Pos('statistikk', R.Body.ToString) = 0, 'Except utelater propen');
-    Check(Pos('customers', R.Body.ToString) > 0, 'resten er med');
+    R := Inertia('Customers/Index', ['customers', 'list', 'statistics', 'heavy']);
+    Check(Pos('statistics', R.Body.ToString) = 0, 'Except leaves the prop out');
+    Check(Pos('customers', R.Body.ToString) > 0, 'the rest is there');
 
     { Delvis oppdatering for en annen komponent er en vanlig navigering. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10 +
       'X-Inertia-Partial-Component: Orders/Index'#13#10 +
       'X-Inertia-Partial-Data: order');
     UseRequest(Req);
-    R := Inertia('Customers/Index', ['customers', 'liste']);
+    R := Inertia('Customers/Index', ['customers', 'list']);
     Check(Pos('customers', R.Body.ToString) > 0,
-      'partial for en annen komponent gir full payload');
+      'a partial for another component gives the full payload');
 
-    { Inertia 3: props klienten allerede har som «once» skal ikke sendes. }
+    { Inertia 3: props the client already holds as "once" must not be
+      sent. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10 +
-      'X-Inertia-Except-Once-Props: meny');
+      'X-Inertia-Except-Once-Props: menu');
     UseRequest(Req);
-    R := Inertia('Customers/Index', ['customers', 'liste', 'meny', 'ting']);
-    Check(Pos('meny', R.Body.ToString) = 0,
-      'once-prop klienten har fra før utelates');
-    Check(Pos('customers', R.Body.ToString) > 0, 'resten er med');
+    R := Inertia('Customers/Index', ['customers', 'list', 'menu', 'thing']);
+    Check(Pos('menu', R.Body.ToString) = 0,
+      'a once prop the client already has is left out');
+    Check(Pos('customers', R.Body.ToString) > 0, 'the rest is there');
 
-    { Utsatte props: ikke med i første svar, men oppført i deferredProps. }
+    { Deferred props: not in the first reply, but listed in
+      deferredProps. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true');
     UseRequest(Req);
     R := Inertia('Customers/Index',
-      ['customers', 'liste', 'statistikk', 'tung'], ['statistikk']);
-    Check(Pos('"customers":"liste"', R.Body.ToString) > 0, 'vanlig prop er med');
-    Check(Pos('"statistikk":"tung"', R.Body.ToString) = 0,
-      'utsatt prop er ikke med i verdiene');
-    Check(Pos('"deferredProps":{"default":["statistikk"]}', R.Body.ToString) > 0,
-      'men den er oppført som utsatt');
+      ['customers', 'list', 'statistics', 'heavy'], ['statistics']);
+    Check(Pos('"customers":"list"', R.Body.ToString) > 0, 'an ordinary prop is there');
+    Check(Pos('"statistics":"heavy"', R.Body.ToString) = 0,
+      'a deferred prop is not among the values');
+    Check(Pos('"deferredProps":{"default":["statistics"]}', R.Body.ToString) > 0,
+      'but it is listed as deferred');
 
-    { Når klienten ber om den, kommer den. }
+    { When the client asks for it, it arrives. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: test'#13#10 +
       'X-Inertia: true'#13#10 +
       'X-Inertia-Partial-Component: Customers/Index'#13#10 +
-      'X-Inertia-Partial-Data: statistikk');
+      'X-Inertia-Partial-Data: statistics');
     UseRequest(Req);
     R := Inertia('Customers/Index',
-      ['customers', 'liste', 'statistikk', 'tung'], ['statistikk']);
-    Check(Pos('"statistikk":"tung"', R.Body.ToString) > 0,
-      'utsatt prop hentes i egen runde');
+      ['customers', 'list', 'statistics', 'heavy'], ['statistics']);
+    Check(Pos('"statistics":"heavy"', R.Body.ToString) > 0,
+      'a deferred prop is fetched in its own round');
     Check(Pos('deferredProps', R.Body.ToString) = 0,
-      'og oppføres ikke som utsatt lenger');
+      'and is no longer listed as deferred');
 
-    { Omdirigering: 303 etter PUT, PATCH og DELETE. }
+    { Redirect: 303 after PUT, PATCH and DELETE. }
     A.Reset;
-    Req := LagRequest(A, 'POST /customers HTTP/1.1'#13#10'Host: test');
+    Req := MakeRequest(A, 'POST /customers HTTP/1.1'#13#10'Host: test');
     UseRequest(Req);
-    CheckEqI(InertiaRedirect('/customers').StatusCode, 302, 'POST gir 302');
+    CheckEqI(InertiaRedirect('/customers').StatusCode, 302, 'POST gives 302');
 
     A.Reset;
-    Req := LagRequest(A, 'PUT /customers/1 HTTP/1.1'#13#10'Host: test');
+    Req := MakeRequest(A, 'PUT /customers/1 HTTP/1.1'#13#10'Host: test');
     UseRequest(Req);
-    CheckEqI(InertiaRedirect('/customers').StatusCode, 303, 'PUT gir 303');
+    CheckEqI(InertiaRedirect('/customers').StatusCode, 303, 'PUT gives 303');
 
     A.Reset;
-    Req := LagRequest(A, 'DELETE /customers/1 HTTP/1.1'#13#10'Host: test');
+    Req := MakeRequest(A, 'DELETE /customers/1 HTTP/1.1'#13#10'Host: test');
     UseRequest(Req);
-    CheckEqI(InertiaRedirect('/customers').StatusCode, 303, 'DELETE gir 303');
+    CheckEqI(InertiaRedirect('/customers').StatusCode, 303, 'DELETE gives 303');
 
-    { Props må komme i par. }
+    { Props have to come in pairs. }
     A.Reset;
-    Req := LagRequest(A, 'GET / HTTP/1.1'#13#10'Host: test');
+    Req := MakeRequest(A, 'GET / HTTP/1.1'#13#10'Host: test');
     UseRequest(Req);
     try
       Inertia('X', ['bare-name']);
-      Check(False, 'ujevnt antall props skulle kastet');
+      Check(False, 'an odd number of props should have raised');
     except
       on E: EInertiaError do
-        Check(True, 'ujevnt antall props avvises');
+        Check(True, 'an odd number of props is rejected');
     end;
   finally
     UseRequest(PrevR);
@@ -1395,54 +1412,54 @@ end;
 { ----------------------------------------------------------------- ruter -- }
 
 type
-  TRuteSpor = class
+  TRouteTrace = class
   public
-    Truffet: string;
+    Matched: string;
     function Index(Req: TRequest): TResponse;
     function Vis(Req: TRequest): TResponse;
-    function Ny(Req: TRequest): TResponse;
+    function New_(Req: TRequest): TResponse;
     function Save(Req: TRequest): TResponse;
-    function Fil(Req: TRequest): TResponse;
+    function File_(Req: TRequest): TResponse;
     function Stop_(Req: TRequest): TResponse;
     function SlippGjennom(Req: TRequest): TResponse;
   end;
 
-function TRuteSpor.Index(Req: TRequest): TResponse;
+function TRouteTrace.Index(Req: TRequest): TResponse;
 begin
-  Truffet := 'index';
+  Matched := 'index';
   Result := RespondText('index');
 end;
 
-function TRuteSpor.Vis(Req: TRequest): TResponse;
+function TRouteTrace.Vis(Req: TRequest): TResponse;
 begin
-  Truffet := 'vis:' + Req.Param('id').ToString;
-  Result := RespondText(Truffet);
+  Matched := 'vis:' + Req.Param('id').ToString;
+  Result := RespondText(Matched);
 end;
 
-function TRuteSpor.Ny(Req: TRequest): TResponse;
+function TRouteTrace.New_(Req: TRequest): TResponse;
 begin
-  Truffet := 'new';
+  Matched := 'new';
   Result := RespondText('new');
 end;
 
-function TRuteSpor.Save(Req: TRequest): TResponse;
+function TRouteTrace.Save(Req: TRequest): TResponse;
 begin
-  Truffet := 'lagre';
+  Matched := 'lagre';
   Result := RespondText('lagre');
 end;
 
-function TRuteSpor.Fil(Req: TRequest): TResponse;
+function TRouteTrace.File_(Req: TRequest): TResponse;
 begin
-  Truffet := 'fil:' + Req.Param('sti').ToString;
-  Result := RespondText(Truffet);
+  Matched := 'file:' + Req.Param('path').ToString;
+  Result := RespondText(Matched);
 end;
 
-function TRuteSpor.Stop_(Req: TRequest): TResponse;
+function TRouteTrace.Stop_(Req: TRequest): TResponse;
 begin
-  Result := RespondText('stoppet av middleware', 403);
+  Result := RespondText('stopped by middleware', 403);
 end;
 
-function TRuteSpor.SlippGjennom(Req: TRequest): TResponse;
+function TRouteTrace.SlippGjennom(Req: TRequest): TResponse;
 begin
   Result := nil;
 end;
@@ -1452,77 +1469,77 @@ var
   A: TArena;
   PrevA: TArena;
   R: TRouter;
-  Spor: TRuteSpor;
+  Spor: TRouteTrace;
   Req: TRequest;
   Reply_: TResponse;
   Lines: TStringList;
 begin
-  Group('Ruter');
+  Group('Router');
   A := TArena.Create(32 * 1024);
   PrevA := UseArena(A);
-  Spor := TRuteSpor.Create;
+  Spor := TRouteTrace.Create;
   R := TRouter.Create;
   try
     R.Get('/customers', Spor.Index);
     R.Get('/customers/:id', Spor.Vis);
-    R.Get('/customers/new', Spor.Ny);
+    R.Get('/customers/new', Spor.New_);
     R.Post('/customers', Spor.Save);
-    R.Get('/files/*sti', Spor.Fil);
+    R.Get('/files/*path', Spor.File_);
     R.AsName('files');
 
-    Req := LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
-    CheckEqS(Spor.Truffet, 'index', 'fast rute treffer');
-    CheckEqI(Reply_.StatusCode, 200, 'og svarer 200');
+    CheckEqS(Spor.Matched, 'index', 'a fixed route matches');
+    CheckEqI(Reply_.StatusCode, 200, 'and answers 200');
 
     A.Reset;
-    Req := LagRequest(A, 'GET /customers/42 HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /customers/42 HTTP/1.1'#13#10'Host: t');
     R.Handle(Req);
-    CheckEqS(Spor.Truffet, 'vis:42', 'parameter fanges');
+    CheckEqS(Spor.Matched, 'vis:42', 'a parameter is captured');
     CheckEqI(Req.IntParam('id'), 42, 'IntParam');
 
-    { Denne er hele poenget med sorteringen: /customers/new er registrert
-      etter /customers/:id, men skal likevel vinne. }
+    { This is the whole point of the sorting: /customers/new is registered
+      after /customers/:id, but is to win anyway. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers/new HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /customers/new HTTP/1.1'#13#10'Host: t');
     R.Handle(Req);
-    CheckEqS(Spor.Truffet, 'new', 'fast segment slår parameter uansett rekkefølge');
+    CheckEqS(Spor.Matched, 'new', 'a fixed segment beats a parameter whatever the order');
 
     A.Reset;
-    Req := LagRequest(A, 'GET /files/bilder/logo.png HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /files/images/logo.png HTTP/1.1'#13#10'Host: t');
     R.Handle(Req);
-    CheckEqS(Spor.Truffet, 'fil:bilder/logo.png', 'wildcard fanger resten');
+    CheckEqS(Spor.Matched, 'file:images/logo.png', 'a wildcard captures the rest');
 
     A.Reset;
-    Req := LagRequest(A, 'POST /customers HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'POST /customers HTTP/1.1'#13#10'Host: t');
     R.Handle(Req);
-    CheckEqS(Spor.Truffet, 'lagre', 'metoden skiller rutene');
+    CheckEqS(Spor.Matched, 'lagre', 'the method separates the routes');
 
     A.Reset;
-    Req := LagRequest(A, 'HEAD /customers HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'HEAD /customers HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
-    CheckEqI(Reply_.StatusCode, 200, 'HEAD treffer GET-ruten');
+    CheckEqI(Reply_.StatusCode, 200, 'HEAD hits the GET route');
 
     A.Reset;
-    Req := LagRequest(A, 'DELETE /customers HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'DELETE /customers HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
-    CheckEqI(Reply_.StatusCode, 405, 'kjent sti, ukjent metode gir 405');
+    CheckEqI(Reply_.StatusCode, 405, 'a known path with an unknown method gives 405');
 
     A.Reset;
-    Req := LagRequest(A, 'GET /finnes-ikke HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /does-not-exist HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
-    CheckEqI(Reply_.StatusCode, 404, 'ukjent sti gir 404');
+    CheckEqI(Reply_.StatusCode, 404, 'an unknown path gives 404');
 
     A.Reset;
-    Req := LagRequest(A, 'GET /customers/42/order HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /customers/42/order HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
-    CheckEqI(Reply_.StatusCode, 404, 'for mange segmenter treffer ikke');
+    CheckEqI(Reply_.StatusCode, 404, 'too many segments do not match');
 
     Lines := TStringList.Create;
     try
       R.Describe(Lines);
       CheckEqI(Lines.Count, 5, 'Describe lister alle rutene');
-      Check(Pos('(files)', Lines.Text) > 0, 'navngitt rute vises med name');
+      Check(Pos('(files)', Lines.Text) > 0, 'a named route is shown with its name');
     finally
       Lines.Free;
     end;
@@ -1533,20 +1550,20 @@ begin
     A.Free;
   end;
 
-  { Middleware stopper før handleren. }
+  { Middleware stops before the handler. }
   A := TArena.Create(8192);
   PrevA := UseArena(A);
-  Spor := TRuteSpor.Create;
+  Spor := TRouteTrace.Create;
   R := TRouter.Create;
   try
-    Spor.Truffet := '';
+    Spor.Matched := '';
     R.Use(Spor.SlippGjennom);
     R.Use(Spor.Stop_);
     R.Get('/', Spor.Index);
-    Req := LagRequest(A, 'GET / HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET / HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
-    CheckEqI(Reply_.StatusCode, 403, 'middleware kan stoppe requesten');
-    CheckEqS(Spor.Truffet, '', 'og handleren kjørte aldri');
+    CheckEqI(Reply_.StatusCode, 403, 'middleware can stop the request');
+    CheckEqS(Spor.Matched, '', 'and the handler never ran');
   finally
     R.Free;
     Spor.Free;
@@ -1587,7 +1604,7 @@ procedure TTestCustomer.Rules(V: TValidator);
 begin
   V.Field('Name').Required.MaxLen(10);
   V.Field('Email').Required.Email;
-  V.Field('EmailAgain').SameAs('Email').Says('E-postene er ulike');
+  V.Field('EmailAgain').SameAs('Email').Says('The emails do not match');
   V.Field('Balance').Min(0).Max(1000);
   V.Field('Status').OneOf(['new', 'active', 'blocked']);
 end;
@@ -1599,7 +1616,7 @@ var
   K: TTestCustomer;
   W: TJsonWriter;
 begin
-  Group('Validering');
+  Group('Validation');
   A := TArena.Create(32 * 1024);
   PrevA := UseArena(A);
   try
@@ -1610,8 +1627,8 @@ begin
     K.EmailAgain := 'kh@gets.no';
     K.Balance := 500;
     K.Status := 'active';
-    Check(K.Validate, 'gyldig modell passerer');
-    Check(K.Errors.IsEmpty, 'ingen feil');
+    Check(K.Validate, 'a valid model passes');
+    Check(K.Errors.IsEmpty, 'no errors');
 
     { Tomt navn. }
     A.Reset;
@@ -1619,26 +1636,26 @@ begin
     K.Email := 'kh@gets.no';
     K.EmailAgain := 'kh@gets.no';
     K.Status := 'new';
-    Check(not K.Validate, 'tomt påkrevd felt feiler');
-    Check(K.Errors.Has('name'), 'feilen er nøklet på kolonnenavnet');
+    Check(not K.Validate, 'an empty required field fails');
+    Check(K.Errors.Has('name'), 'the error is keyed on the column name');
     Check(not K.Errors.Has('email_again'),
-      'felter uten feil står ikke oppført');
-    CheckEqS(K.Errors.First('name'), 'name is required', 'meldingen');
+      'fields without errors are not listed');
+    CheckEqS(K.Errors.First('name'), 'name is required', 'the message');
 
-    { Only første feil per felt. }
+    { Only the first error per field. }
     A.Reset;
     K := A.New<TTestCustomer>;
-    K.Name := 'et altfor langt name som ikke passer';
+    K.Name := 'a far too long name that does not fit';
     K.Email := 'ikke-en-email';
-    K.EmailAgain := 'noe-annet';
+    K.EmailAgain := 'something-else';
     K.Status := 'new';
-    Check(not K.Validate, 'flere feil');
+    Check(not K.Validate, 'several errors');
     CheckEqI(K.Errors.Count, 3, 'én feil per felt, ikke flere');
     CheckEqS(K.Errors.First('name'), 'name can be at most 10 characters', 'MaxLen');
     CheckEqS(K.Errors.First('email'), 'email is not a valid email address',
       'Email');
-    CheckEqS(K.Errors.First('email_again'), 'E-postene er ulike',
-      'Says overstyrer meldingen');
+    CheckEqS(K.Errors.First('email_again'), 'The emails do not match',
+      'Says overrides the message');
 
     { Tallgrenser. }
     A.Reset;
@@ -1648,8 +1665,8 @@ begin
     K.EmailAgain := 'kh@gets.no';
     K.Balance := 2000;
     K.Status := 'active';
-    Check(not K.Validate, 'over maksgrensen feiler');
-    Check(Pos('greater than', K.Errors.First('balance')) > 0, 'Max-melding');
+    Check(not K.Validate, 'over the maximum it fails');
+    Check(Pos('greater than', K.Errors.First('balance')) > 0, 'the Max message');
 
     A.Reset;
     K := A.New<TTestCustomer>;
@@ -1657,11 +1674,11 @@ begin
     K.Email := 'kh@gets.no';
     K.EmailAgain := 'kh@gets.no';
     K.Balance := 100;
-    K.Status := 'ukjent';
-    Check(not K.Validate, 'verdi utenfor OneOf feiler');
+    K.Status := 'unknown';
+    Check(not K.Validate, 'a value outside OneOf fails');
     Check(K.Errors.Has('status'), 'OneOf');
 
-    { E-postvalidering er bevisst romslig, men ikke tom. }
+    { Email validation is deliberately generous, but not empty. }
     A.Reset;
     K := A.New<TTestCustomer>;
     K.Name := 'Knut';
@@ -1670,14 +1687,14 @@ begin
     K.Status := 'new';
     K.Email := 'a@b.no';
     K.EmailAgain := 'a@b.no';
-    Check(K.Validate, 'kort men gyldig adresse');
+    Check(K.Validate, 'a short but valid address');
     A.Reset;
     K := A.New<TTestCustomer>;
     K.Name := 'Knut';
     K.Status := 'new';
     K.Email := 'a@b';
     K.EmailAgain := 'a@b';
-    Check(not K.Validate, 'adresse uten punktum i domenet avvises');
+    Check(not K.Validate, 'an address with no full stop in the domain is rejected');
 
     { Feilene som JSON — formen Inertia forventer i props.errors. }
     A.Reset;
@@ -1687,8 +1704,8 @@ begin
     W.Init(A, 256);
     K.Errors.WriteJson(W);
     Check(Pos('"name":"name is required"', W.ToString) > 0,
-      'WriteJson gir felt til melding');
-    Check(Pos('"email"', W.ToString) > 0, 'flere felter med');
+      'WriteJson gives field to message');
+    Check(Pos('"email"', W.ToString) > 0, 'several fields included');
   finally
     UseArena(PrevA);
     A.Free;
@@ -1734,7 +1751,7 @@ begin
     Check(K.Balance = 1234.5, 'Currency fra JSON');
     CheckEqS(K.Status, 'active', 'status fra JSON');
 
-    { Primærnøkkelen fylles aldri, uansett hva klienten sender. }
+    { The primary key is never filled, whatever the client sends. }
     A.Reset;
     Req := MakeRequestWithBody(A,
       'POST /customers HTTP/1.1'#13#10'Host: t'#13#10 +
@@ -1743,8 +1760,8 @@ begin
     K := A.New<TTestCustomer>;
     K.Id := 7;
     Req.FillInto(K);
-    CheckEqI(K.Id, 7, 'id kan ikke settes fra en request');
-    CheckEqS(K.Name, 'Forsøk', 'men resten fylles');
+    CheckEqI(K.Id, 7, 'id cannot be set from a request');
+    CheckEqS(K.Name, 'Forsøk', 'but the rest is filled');
 
     { Skjemakropp. }
     A.Reset;
@@ -1755,31 +1772,31 @@ begin
       'name=Ada+Lovelace&email=ada%40gets.no&balance=99.95');
     K := A.New<TTestCustomer>;
     Req.FillInto(K);
-    CheckEqS(K.Name, 'Ada Lovelace', 'pluss blir mellomrom i skjema');
-    CheckEqS(K.Email, 'ada@gets.no', 'prosentkoding dekodes');
+    CheckEqS(K.Name, 'Ada Lovelace', 'plus becomes a space in a form');
+    CheckEqS(K.Email, 'ada@gets.no', 'percent encoding is decoded');
     Check(K.Balance = 99.95, 'Currency fra skjema');
 
     { Query-streng. }
     A.Reset;
-    Req := LagRequest(A, 'GET /customers?name=Grace&balance=5 HTTP/1.1'#13#10'Host: t');
+    Req := MakeRequest(A, 'GET /customers?name=Grace&balance=5 HTTP/1.1'#13#10'Host: t');
     K := A.New<TTestCustomer>;
     Req.FillInto(K);
     CheckEqS(K.Name, 'Grace', 'fra query');
     Check(K.Balance = 5, 'tall fra query');
 
-    { Delvis: felter som ikke er sendt røres ikke. }
+    { Partial: fields that were not sent are left alone. }
     A.Reset;
     Req := MakeRequestWithBody(A,
       'PATCH /customers/1 HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/json'#13#10'Content-Length: 20',
       '{"balance":42}');
     K := A.New<TTestCustomer>;
-    K.Name := 'Uendret';
-    K.Email := 'uendret@gets.no';
+    K.Name := 'Unchanged';
+    K.Email := 'unchanged@example.com';
     Req.FillInto(K);
-    Check(K.Balance = 42, 'sendt felt oppdateres');
-    CheckEqS(K.Name, 'Uendret', 'usendt felt står urørt');
-    CheckEqS(K.Email, 'uendret@gets.no', 'og det andre også');
+    Check(K.Balance = 42, 'a sent field is updated');
+    CheckEqS(K.Name, 'Unchanged', 'a field that was not sent is untouched');
+    CheckEqS(K.Email, 'unchanged@example.com', 'and the second one too');
 
     { Input og HasInput. }
     A.Reset;
@@ -1787,12 +1804,12 @@ begin
       'POST /x HTTP/1.1'#13#10'Host: t'#13#10 +
       'Content-Type: application/json'#13#10'Content-Length: 40',
       '{"a":"en","b":2,"c":true,"d":null}');
-    Check(Req.HasInput('a'), 'HasInput finner feltet');
-    Check(not Req.HasInput('z'), 'og ikke et som mangler');
-    CheckEqS(Req.Input('a').ToString, 'en', 'Input gir strengen');
+    Check(Req.HasInput('a'), 'HasInput finds the field');
+    Check(not Req.HasInput('z'), 'and not one that is missing');
+    CheckEqS(Req.Input('a').ToString, 'en', 'Input gives the string');
     CheckEqI(Req.InputInt('b'), 2, 'InputInt');
     Check(Req.InputBool('c'), 'InputBool');
-    Check(not Req.InputBool('z', False), 'standardverdi når feltet mangler');
+    Check(not Req.InputBool('z', False), 'a default when the field is missing');
   finally
     UseArena(PrevA);
     A.Free;
@@ -1807,7 +1824,7 @@ var
 begin
   A := S.ToSql;
   if (Index < 0) or (Index > High(A)) then
-    Exit('(ingen setning ' + IntToStr(Index) + ')');
+    Exit('(no statement ' + IntToStr(Index) + ')');
   Result := A[Index];
 end;
 
@@ -1821,7 +1838,7 @@ var
   S: TSchemaBuilder;
   Cur: Currency;
 begin
-  Group('Norn — skjemabygger');
+  Group('Norn — the schema builder');
 
   S := TSchemaBuilder.Create(sdPostgres);
   try
@@ -1834,17 +1851,17 @@ begin
       Timestamps;
       Index(['created_at']);
     end;
-    CheckEqI(SqlCount(S), 2, 'CREATE TABLE pluss én indeks');
+    CheckEqI(SqlCount(S), 2, 'CREATE TABLE plus one index');
     CheckEqS(Sql(S, 0),
       'CREATE TABLE "customers" ("id" BIGSERIAL PRIMARY KEY, ' +
       '"name" VARCHAR(120) NOT NULL, "email" VARCHAR(255) NOT NULL UNIQUE, ' +
       '"balance" NUMERIC(12,2) NOT NULL DEFAULT 0, ' +
       '"created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, ' +
       '"updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)',
-      'PRD-ens migrasjon gir denne SQL-en');
+      'the PRD''s migration gives this SQL');
     CheckEqS(Sql(S, 1),
       'CREATE INDEX "customers_created_at_idx" ON "customers" ("created_at")',
-      'indeksen får utledet name');
+      'the index gets a derived name');
   finally
     S.Free;
   end;
@@ -1858,10 +1875,10 @@ begin
       Bool('flag').Default(True);
       Timestamp('at');
     end;
-    Check(Pos('`t`', Sql(S, 0)) > 0, 'MySQL siterer med backtick');
-    Check(Pos('BIGINT AUTO_INCREMENT', Sql(S, 0)) > 0, 'MySQL-autonøkkel');
-    Check(Pos('TINYINT(1)', Sql(S, 0)) > 0, 'MySQL har ikke BOOLEAN');
-    Check(Pos('DATETIME', Sql(S, 0)) > 0, 'MySQL-tidsstempel');
+    Check(Pos('`t`', Sql(S, 0)) > 0, 'MySQL quotes with a backtick');
+    Check(Pos('BIGINT AUTO_INCREMENT', Sql(S, 0)) > 0, 'the MySQL auto key');
+    Check(Pos('TINYINT(1)', Sql(S, 0)) > 0, 'MySQL has no BOOLEAN');
+    Check(Pos('DATETIME', Sql(S, 0)) > 0, 'a MySQL timestamp');
   finally
     S.Free;
   end;
@@ -1875,26 +1892,27 @@ begin
       Timestamp('at');
     end;
     Check(Pos('"id" INTEGER PRIMARY KEY', Sql(S, 0)) > 0,
-      'SQLite bruker INTEGER som autonøkkel');
-    { SQLite har ingen datotype og lagrer tekst uansett. Men den erklærte
-      typen er det introspeksjonen leser, og med TEXT kunne den ikke skille
-      en dato fra en hvilken som helst streng — da typet askr schema
-      created_at som string mot SQLite og som TDateTime mot Postgres, av
-      samme migrasjon. DATETIME gir NUMERIC-affinitet, og en ISO-tekst lar
-      seg ikke konvertere tapsfritt til et tall, så lagringen er uendret. }
+      'SQLite uses INTEGER as the auto key');
+    { SQLite has no date type and stores text anyway. But the declared
+      type is what the introspection reads, and with TEXT it could not tell
+      a date from any other string — then askr schema typed created_at as
+      string against SQLite and as TDateTime against Postgres, from the
+      same migration. DATETIME gives NUMERIC affinity, and an ISO text
+      cannot be converted losslessly to a number, so the storage is
+      unchanged. }
     Check(Pos('"at" DATETIME', Sql(S, 0)) > 0,
-      'SQLite erklærer DATETIME, slik at introspeksjonen ser hva det er');
+      'SQLite declares DATETIME, so the introspection sees what it is');
   finally
     S.Free;
   end;
 
-  { Fremmednøkkel, ALTER og DROP. }
+  { A foreign key, ALTER and DROP. }
   S := TSchemaBuilder.Create(sdPostgres);
   try
     with S.Create('orders') do
       ForeignKey('customer_id', 'customers');
     Check(Pos('REFERENCES "customers"("id") ON DELETE CASCADE', Sql(S, 0)) > 0,
-      'fremmednøkkel med ON DELETE');
+      'a foreign key with ON DELETE');
   finally
     S.Free;
   end;
@@ -1904,21 +1922,21 @@ begin
     with S.Alter('customers') do
     begin
       Bool('active').Default(True);
-      DropColumn('gammel');
+      DropColumn('old');
     end;
     CheckEqS(Sql(S, 0),
       'ALTER TABLE "customers" ADD COLUMN "active" BOOLEAN NOT NULL DEFAULT true',
       'ALTER ADD COLUMN');
     CheckEqS(Sql(S, 1),
-      'ALTER TABLE "customers" DROP COLUMN "gammel"', 'ALTER DROP COLUMN');
+      'ALTER TABLE "customers" DROP COLUMN "old"', 'ALTER DROP COLUMN');
   finally
     S.Free;
   end;
 
   S := TSchemaBuilder.Create(sdPostgres);
   try
-    S.Drop('gammel');
-    CheckEqS(Sql(S, 0), 'DROP TABLE IF EXISTS "gammel"', 'DROP TABLE');
+    S.Drop('old');
+    CheckEqS(Sql(S, 0), 'DROP TABLE IF EXISTS "old"', 'DROP TABLE');
   finally
     S.Free;
   end;
@@ -1934,46 +1952,46 @@ begin
       Cur := 1.5;
       Numeric('d', 8, 4).Default(Cur);
     end;
-    Check(Pos('"a" TEXT DEFAULT', Sql(S, 0)) = 0, 'nullable gir ikke NOT NULL');
+    Check(Pos('"a" TEXT DEFAULT', Sql(S, 0)) = 0, 'nullable does not give NOT NULL');
     Check(Pos('"b" TEXT NOT NULL DEFAULT ''hei''', Sql(S, 0)) > 0,
-      'tekstverdi siteres');
-    Check(Pos('''med''''fnutt''', Sql(S, 0)) > 0, 'fnutt i verdien dobles');
+      'a text value is quoted');
+    Check(Pos('''med''''fnutt''', Sql(S, 0)) > 0, 'a quote in the value is doubled');
     Check(Pos('"d" NUMERIC(8,4) NOT NULL DEFAULT 1.5000', Sql(S, 0)) > 0,
-      'Currency formateres uten locale');
+      'Currency is formatted without a locale');
   finally
     S.Free;
   end;
 end;
 
-procedure TestNornNavn;
+procedure TestNornNaming;
 begin
-  Group('Norn — navnekonvensjoner');
+  Group('Norn — naming conventions');
 
-  CheckEqS(PascalCase('customers'), 'Customers', 'enkelt name');
+  CheckEqS(PascalCase('customers'), 'Customers', 'a simple name');
   CheckEqS(PascalCase('order_lines'), 'OrderLines', 'snake_case');
-  CheckEqS(PascalCase('created_at'), 'CreatedAt', 'kolonnenavn');
-  CheckEqS(PascalCase('id'), 'Id', 'kort name');
-  CheckEqS(TableTypeName('customers'), 'TCustomersColumns', 'typenavn');
-  CheckEqS(TableConstName('order_lines'), 'OrderLines', 'konstantnavn');
-  CheckEqS(MemberName('created_at'), 'CreatedAt', 'medlemsnavn');
-  { Et kolonnenavn som kolliderer med et reservert ord må escapes. }
-  CheckEqS(MemberName('type'), 'Type_', 'reservert ord får understrek');
-  CheckEqS(MemberName('end'), 'End_', 'end likeså');
-  CheckEqS(MemberName('name'), 'Name', 'name er ikke reservert');
+  CheckEqS(PascalCase('created_at'), 'CreatedAt', 'column names');
+  CheckEqS(PascalCase('id'), 'Id', 'a short name');
+  CheckEqS(TableTypeName('customers'), 'TCustomersColumns', 'the type name');
+  CheckEqS(TableConstName('order_lines'), 'OrderLines', 'the constant name');
+  CheckEqS(MemberName('created_at'), 'CreatedAt', 'the member name');
+  { A column name that collides with a reserved word has to be escaped. }
+  CheckEqS(MemberName('type'), 'Type_', 'a reserved word gets an underscore');
+  CheckEqS(MemberName('end'), 'End_', 'end likewise');
+  CheckEqS(MemberName('name'), 'Name', 'name is not reserved');
 
   CheckEqS(ColAliasFor('bigint', 0), 'TColInt64', 'bigint');
   CheckEqS(ColAliasFor('integer', 0), 'TColInt64', 'integer');
   CheckEqS(ColAliasFor('text', 0), 'TColStr', 'text');
   CheckEqS(ColAliasFor('character varying', 0), 'TColStr', 'varchar');
   CheckEqS(ColAliasFor('boolean', 0), 'TColBool', 'boolean');
-  CheckEqS(ColAliasFor('numeric', 2), 'TColCurrency', 'numeric med to desimaler');
+  CheckEqS(ColAliasFor('numeric', 2), 'TColCurrency', 'numeric with two decimals');
   CheckEqS(ColAliasFor('numeric', 8), 'TColFloat',
-    'flere desimaler enn Currency takler blir flyttall');
+    'more decimals than Currency handles become a float');
   CheckEqS(ColAliasFor('double precision', 0), 'TColFloat', 'double');
   CheckEqS(ColAliasFor('timestamp with time zone', 0), 'TColDateTime',
     'timestamptz');
   CheckEqS(ColAliasFor('date', 0), 'TColDateTime', 'date');
-  CheckEqS(ColAliasFor('jsonb', 0), 'TColStr', 'jsonb behandles som tekst');
+  CheckEqS(ColAliasFor('jsonb', 0), 'TColStr', 'jsonb is treated as text');
 
   CheckEqS(PascalTypeFor('numeric', 2), 'Currency', 'Pascal-type for penger');
   CheckEqS(PascalTypeFor('bigint', 0), 'Int64', 'Pascal-type for bigint');
@@ -1998,61 +2016,62 @@ begin
   A := TArena.Create(16 * 1024);
   B := TArena.Create(16 * 1024);
   try
-    C.Put('a', 'verdi a');
-    Check(C.Get(A, 'a', V), 'Get finner det som ble lagt inn');
-    CheckEqS(V.ToString, 'verdi a', 'riktig verdi');
-    Check(not C.Get(A, 'finnes-ikke', V), 'ukjent nøkkel gir False');
+    C.Put('a', 'value a');
+    Check(C.Get(A, 'a', V), 'Get finds what was put in');
+    CheckEqS(V.ToString, 'value a', 'the right value');
+    Check(not C.Get(A, 'does-not-exist', V), 'an unknown key gives False');
     Check(C.Has('a'), 'Has');
     CheckEqI(C.Count, 1, 'én post');
 
-    { Dette er selve spørsmålet. Verdien legges inn fra en arena, arenaen
-      nullstilles og skrives full av noe annet, og verdien må fortsatt
-      stemme. Without kopien i Put ville den vært søppel her. }
+    { This is the question itself. The value is put in from an arena, the
+      arena is reset and written full of something else, and the value has
+      to still be right. Without the copy in Put it would be rubbish
+      here. }
     A.Reset;
     V := StrDup(A, 'fra request-arenaen');
     C.Put('fra-arena', V);
     A.Reset;
     Fill := PByte(A.Alloc(8192));
     FillChar(Fill^, 8192, Ord('X'));
-    Check(C.Get(B, 'fra-arena', V), 'posten finnes etter Reset');
+    Check(C.Get(B, 'fra-arena', V), 'the entry is there after Reset');
     CheckEqS(V.ToString, 'fra request-arenaen',
-      'Put kopierte ut av arenaen — verdien overlevde');
+      'Put copied out of the arena — the value survived');
 
-    { Og motsatt vei: det Get ga tilbake ligger i kallerens arena, ikke i
-      cachen. Da kan cachen kaste ut posten uten å etterlate en dinglende
-      peker. }
+    { And the other way: what Get gave back is in the caller's arena, not
+      in the cache. Then the cache can evict the entry without leaving a
+      dangling pointer. }
     C.Forget('fra-arena');
     CheckEqS(V.ToString, 'fra request-arenaen',
-      'verdien lever videre etter at posten ble slettet');
-    Check(not C.Has('fra-arena'), 'og posten er faktisk borte');
+      'the value lives on after the entry was evicted');
+    Check(not C.Has('fra-arena'), 'and the entry really is gone');
 
-    { Utløp. }
-    C.Put('kort', 'lever kort', 1);
-    Check(C.Has('kort'), 'finnes med en gang');
-    C.Put('lang', 'lever lenge', 3600);
-    Check(C.Has('lang'), 'lang TTL');
+    { Expiry. }
+    C.Put('kort', 'lives briefly', 1);
+    Check(C.Has('kort'), 'is there at once');
+    C.Put('lang', 'lives long', 3600);
+    Check(C.Has('lang'), 'a long TTL');
 
-    { LRU: fyll sharden til den kaster ut. }
+    { LRU: fill the shard until it evicts. }
     C.Flush;
     for I := 1 to 2000 do
       C.Put('n' + IntToStr(I), 'v' + IntToStr(I));
-    Check(C.Count <= 256, 'cachen holder seg innenfor grensen');
-    Check(C.Evictions > 0, 'og kastet ut det den måtte');
+    Check(C.Count <= 256, 'the cache stays within its limit');
+    Check(C.Evictions > 0, 'and evicted what it had to');
     Found := 0;
     for I := 1990 to 2000 do
       if C.Get(A, 'n' + IntToStr(I), V) then
         Inc(Found);
-    Check(Found >= 8, 'de sist skrevne er stort sett beholdt');
+    Check(Found >= 8, 'the most recently written are mostly kept');
 
     C.Flush;
-    CheckEqI(C.Count, 0, 'Flush tømmer');
+    CheckEqI(C.Count, 0, 'Flush empties it');
 
     { Strengformen for oppstartskode og bakgrunnsjobber. }
-    C.Put('s', 'tekst');
-    Check(C.Get('s', S) and (S = 'tekst'), 'strengformen virker');
+    C.Put('s', 'text');
+    Check(C.Get('s', S) and (S = 'text'), 'the string form works');
 
-    Check(C.Hits > 0, 'treff telles');
-    Check(C.Misses > 0, 'bom telles');
+    Check(C.Hits > 0, 'hits are counted');
+    Check(C.Misses > 0, 'misses are counted');
   finally
     A.Free;
     B.Free;
@@ -2060,7 +2079,7 @@ begin
   end;
 end;
 
-{ -------------------------------------------------------------------- kø -- }
+{ ----------------------------------------------------------------- queue -- }
 
 var
   QSum: LongInt = 0;
@@ -2069,7 +2088,7 @@ var
   QFeilmeldinger: LongInt = 0;
   QLock: TRTLCriticalSection;
 
-procedure JobbTell(const Ctx: TJobContext);
+procedure JobCount(const Ctx: TJobContext);
 var
   N: Int64;
 begin
@@ -2077,7 +2096,7 @@ begin
     InterLockedExchangeAdd(QSum, LongInt(N));
 end;
 
-procedure JobbHusk(const Ctx: TJobContext);
+procedure JobRemember(const Ctx: TJobContext);
 begin
   EnterCriticalSection(QLock);
   try
@@ -2087,31 +2106,31 @@ begin
   end;
 end;
 
-{ Feiler de to første gangene, lykkes på tredje. }
-procedure JobbFlakete(const Ctx: TJobContext);
+{ Fails the first two times, succeeds on the third. }
+procedure JobFlaky(const Ctx: TJobContext);
 begin
   InterLockedIncrement(QAttempts);
   if Ctx.Attempt < 3 then
-    raise Exception.Create('ikke ennå');
+    raise Exception.Create('not yet');
 end;
 
-procedure JobbAlltidFeil(const Ctx: TJobContext);
+procedure JobAlwaysFails(const Ctx: TJobContext);
 begin
-  raise Exception.Create('alltid');
+  raise Exception.Create('always');
 end;
 
-procedure TellFeil(const JobName, Message_: string);
+procedure CountFail(const JobName, Message_: string);
 begin
   InterLockedIncrement(QFeilmeldinger);
 end;
 
-{ Bruker arenaen sin som en kontroller ville gjort. }
-procedure JobbBrukerArena(const Ctx: TJobContext);
+{ Uses its arena the way a controller would. }
+procedure JobUsesArena(const Ctx: TJobContext);
 var
   B: TStrBuilder;
 begin
   B.Init(Ctx.Arena, 128);
-  B.Append('jobb:');
+  B.Append('job:');
   B.Append(Ctx.Payload);
   EnterCriticalSection(QLock);
   try
@@ -2128,7 +2147,7 @@ var
   MlSlugFromHook: string;
 
 type
-  { En modell med tidsstempler, soft deletes og hendelser. }
+  { A model with timestamps, soft deletes and events. }
   TMlPost = class(TModel)
   private
     FId: Int64;
@@ -2156,8 +2175,8 @@ type
     procedure AfterDelete; override;
   end;
 
-  { Samme tabell, men uten tidsstempler og soft deletes — til å vise at
-    det som skal kaste, kaster. }
+  { The same table, but without timestamps and soft deletes — to show that
+    what is meant to raise, raises. }
   TMlBar = class(TModel)
   private
     FId: Int64;
@@ -2181,12 +2200,12 @@ begin
   S.Table('ml_posts');
 end;
 
-{ Hendelsene noterer seg selv, slik at rekkefølgen kan hevdes om. }
+{ The events record themselves, so that the order can be asserted. }
 procedure TMlPost.BeforeSave;
 begin
   MlHendelser := MlHendelser + 'BS,';
-  { En hendelse skal kunne endre modellen før den skrives. Det er det
-    vanligste de brukes til: utlede et felt av et annet. }
+  { An event is to be able to change the model before it is written. That
+    is the most common use: deriving one field from another. }
   if FSlug = '' then
     FSlug := LowerCase(StringReplace(FTitle, ' ', '-', [rfReplaceAll]));
   MlSlugFromHook := FSlug;
@@ -2200,14 +2219,13 @@ procedure TMlPost.AfterUpdate;  begin MlHendelser := MlHendelser + 'AU,'; end;
 procedure TMlPost.BeforeDelete; begin MlHendelser := MlHendelser + 'BD,'; end;
 procedure TMlPost.AfterDelete;  begin MlHendelser := MlHendelser + 'AD,'; end;
 
-{ «Query scopes» krever ingenting av rammeverket i Pascal: en scope er en
-  funksjon som returnerer en spørring. Den er typet, kompilatoren ser den,
-  og den kan kjedes videre som alt annet.
+{ "Query scopes" require nothing of the framework in Pascal: a scope is
+  a function that returns a query. It is typed, the compiler sees it, and
+  it can be chained like everything else.
 
-  Den står som en frittstående funksjon og ikke som en klassemetode på
-  TMlPost, fordi en metode som returnerer TQuery<TMlPost> ville
-  fremoverreferert klassen sin egen type. Det er den samme grensen som
-  gjelder TModelList<M>. }
+  It stands as a standalone function and not as a class method on TMlPost,
+  because a method returning TQuery<TMlPost> would forward-reference its
+  own class type. That is the same limit that applies to TModelList<M>. }
 function NyestePoster(Count_: Integer): TQuery<TMlPost>;
 begin
   Result := TQuery<TMlPost>.New
@@ -2215,8 +2233,8 @@ begin
     .Limit(Count_);
 end;
 
-{ Rader i tabellen uten hensyn til deleted_at — poenget er å se at en
-  myktslettet rad fortsatt finnes. }
+{ Rows in the table regardless of deleted_at — the point is to see that
+  a soft-deleted row is still there. }
 function MlRawCount(C: TDbConnection; A: TArena): Int64;
 var
   R: TDbResult;
@@ -2240,10 +2258,10 @@ var
   Tab: TDbTable;
   Err: string;
 begin
-  Group('Modell: tidsstempler, soft deletes, hendelser');
+  Group('Model: timestamps, soft deletes, events');
   if not SqliteAvailable then
   begin
-    Check(False, 'libsqlite3 lot seg laste');
+    Check(False, 'libsqlite3 loaded');
     Exit;
   end;
 
@@ -2273,88 +2291,90 @@ begin
     { ---- tidsstempler ---- }
     MlHendelser := '';
     P := A.New<TMlPost>;
-    P.Title := 'Første post';
+    P.Title := 'First post';
     P.Save;
     Made := P.CreatedAt;
-    Check(Made > 0, 'created_at ble satt ved INSERT');
-    Check(P.UpdatedAt > 0, 'updated_at også');
-    { UTC, ikke lokaltid: to servere i hver sin sone skal skrive det samme
-      for det samme øyeblikket. Toleransen er ett minutt. }
+    Check(Made > 0, 'created_at was set on INSERT');
+    Check(P.UpdatedAt > 0, 'updated_at too');
+    { UTC, not local time: two servers in different zones are to write the
+      same thing for the same moment. The tolerance is one minute. }
     Check(Abs(P.CreatedAt - UtcNow) < 1 / (24 * 60),
-      'og de er i UTC, ikke lokaltid');
+      'and they are in UTC, not local time');
 
-    { Hendelsene i riktig rekkefølge, og BeforeSave rakk å endre modellen. }
-    CheckEqS(MlHendelser, 'BS,BI,AI,AS,', 'hendelsene ved INSERT');
-    CheckEqS(P.Slug, 'første-post', 'BeforeSave fikk endre modellen');
+    { The events in the right order, and BeforeSave got to change the
+      model. }
+    CheckEqS(MlHendelser, 'BS,BI,AI,AS,', 'the events on INSERT');
+    CheckEqS(P.Slug, 'first-post', 'BeforeSave got to change the model');
 
     Sleep(1100);
     MlHendelser := '';
-    P.Title := 'Endret';
+    P.Title := 'Changed';
     P.Save;
     Oppdatert := P.UpdatedAt;
-    CheckEqS(MlHendelser, 'BS,BU,AU,AS,', 'hendelsene ved UPDATE');
-    Check(P.CreatedAt = Made, 'created_at røres ikke ved UPDATE');
-    Check(Oppdatert > Made, 'men updated_at flyttes');
+    CheckEqS(MlHendelser, 'BS,BU,AU,AS,', 'the events on UPDATE');
+    Check(P.CreatedAt = Made, 'created_at is left alone on UPDATE');
+    Check(Oppdatert > Made, 'but updated_at moves');
 
-    { En import som bevarer opprinnelige tidspunkter skal ikke få dem
-      overskrevet. }
+    { An import that preserves original timestamps must not have them
+      overwritten. }
     P := A.New<TMlPost>;
-    P.Title := 'Importert';
+    P.Title := 'Imported';
     P.CreatedAt := EncodeDate(2020, 1, 1);
     P.Save;
     Check(Abs(P.CreatedAt - EncodeDate(2020, 1, 1)) < 0.0001,
-      'en created_at som alt er satt beholdes');
+      'a created_at that is already set is kept');
 
     { ---- soft deletes ---- }
     CheckEqI(TQuery<TMlPost>.New.Count, 2, 'to poster synlige');
-    CheckEqI(MlRawCount(C, A), 2, 'og to rader i tabellen');
+    CheckEqI(MlRawCount(C, A), 2, 'and two rows in the table');
 
     MlHendelser := '';
     P.Delete;
-    CheckEqS(MlHendelser, 'BD,AD,', 'hendelsene ved DELETE');
+    CheckEqS(MlHendelser, 'BD,AD,', 'the events on DELETE');
     Check(P.IsTrashed, 'modellen vet at den er slettet');
-    { Dette er hele poenget: raden er der, men spørringene ser den ikke. }
-    CheckEqI(MlRawCount(C, A), 2, 'raden ligger fortsatt i tabellen');
-    CheckEqI(TQuery<TMlPost>.New.Count, 1, 'men spørringen ser den ikke');
+    { This is the whole point: the row is there, but the queries do not see
+      it. }
+    CheckEqI(MlRawCount(C, A), 2, 'the row is still in the table');
+    CheckEqI(TQuery<TMlPost>.New.Count, 1, 'but the query does not see it');
     CheckEqI(TQuery<TMlPost>.New.WithTrashed.Count, 2,
-      'WithTrashed tar den med');
+      'WithTrashed includes it');
     CheckEqI(TQuery<TMlPost>.New.OnlyTrashed.Count, 1,
-      'OnlyTrashed viser bare den');
+      'OnlyTrashed shows only that one');
 
-    { Et filter skal virke sammen med soft-delete-leddet, ikke i stedet
-      for det. }
+    { A filter is to work together with the soft-delete clause, not instead
+      of it. }
     CheckEqI(TQuery<TMlPost>.New
-      .Where(ColStr('ml_posts', 'title'), Eq, 'Importert').Count, 0,
-      'et filter kombineres med soft-delete-leddet');
+      .Where(ColStr('ml_posts', 'title'), Eq, 'Imported').Count, 0,
+      'a filter combines with the soft-delete clause');
     CheckEqI(TQuery<TMlPost>.New.WithTrashed
-      .Where(ColStr('ml_posts', 'title'), Eq, 'Importert').Count, 1,
-      'og med WithTrashed finner det raden');
+      .Where(ColStr('ml_posts', 'title'), Eq, 'Imported').Count, 1,
+      'and with WithTrashed it finds the row');
 
     P.Restore;
-    Check(not P.IsTrashed, 'Restore tok den tilbake');
-    CheckEqI(TQuery<TMlPost>.New.Count, 2, 'og den er synlig igjen');
+    Check(not P.IsTrashed, 'Restore brought it back');
+    CheckEqI(TQuery<TMlPost>.New.Count, 2, 'and it is visible again');
 
-    { ---- på spørringsnivå ---- }
+    { ---- at the query level ---- }
     CheckEqI(TQuery<TMlPost>.New.DeleteAll, 2,
-      'DeleteAll sletter mykt når modellen har soft deletes');
-    CheckEqI(MlRawCount(C, A), 2, 'radene er der fortsatt');
-    CheckEqI(TQuery<TMlPost>.New.Count, 0, 'men ingen er synlige');
-    CheckEqI(TQuery<TMlPost>.New.RestoreAll, 2, 'RestoreAll tar dem tilbake');
+      'DeleteAll deletes softly when the model has soft deletes');
+    CheckEqI(MlRawCount(C, A), 2, 'the rows are still there');
+    CheckEqI(TQuery<TMlPost>.New.Count, 0, 'but none is visible');
+    CheckEqI(TQuery<TMlPost>.New.RestoreAll, 2, 'RestoreAll brings them back');
     CheckEqI(TQuery<TMlPost>.New.Count, 2, 'og de er synlige');
 
     CheckEqI(TQuery<TMlPost>.New.ForceDeleteAll, 2,
-      'ForceDeleteAll sletter for godt');
+      'ForceDeleteAll deletes for good');
     CheckEqI(MlRawCount(C, A), 0, 'og da er tabellen tom');
 
-    { ForceDelete på én modell. }
+    { ForceDelete on a single model. }
     P := A.New<TMlPost>;
     P.Title := 'Skal bort';
     P.Save;
     CheckEqI(MlRawCount(C, A), 1, 'én rad');
     P.ForceDelete;
-    CheckEqI(MlRawCount(C, A), 0, 'ForceDelete fjernet den');
+    CheckEqI(MlRawCount(C, A), 0, 'ForceDelete removed it');
 
-    { ---- det som skal kaste ---- }
+    { ---- what is meant to raise ---- }
     Err := '';
     try
       TMlBar.Meta;
@@ -2362,56 +2382,57 @@ begin
       P.Title := 'x';
       P.Save;
       TQuery<TMlBar>.New.Count;
-      { En modell uten SoftDeletes har ingenting å gjenopprette. }
+      { A model without SoftDeletes has nothing to restore. }
       A.New<TMlBar>.Restore;
     except
       on E: EModelError do Err := E.Message;
     end;
     Check(Pos('no soft deletes', Err) > 0,
-      'Restore uten SoftDeletes kaster, og sier hva som mangler');
+      'Restore without SoftDeletes raises, and says what is missing');
 
-    { En modell uten deleted_at ser alle rader — soft-delete-leddet legges
-      bare på når modellen faktisk har det. }
+    { A model without deleted_at sees every row — the soft-delete clause is
+      added only when the model actually has it. }
     CheckEqI(TQuery<TMlBar>.New.Count, 1,
-      'en modell uten soft deletes filtrerer ingenting');
+      'a model without soft deletes filters nothing');
 
     Items := TQuery<TMlPost>.New.Get;
-    CheckEqI(Items.Count, 1, 'Get virker med soft-delete-leddet på');
+    CheckEqI(Items.Count, 1, 'Get works with the soft-delete clause on');
 
     { ---- tidsstempler overlever rundturen ---- }
-    { Det som virkelig betyr noe med DATETIME i SQLite: at
-      introspeksjonen ser en dato, og at verdien kommer tilbake som en
-      dato. Without begge deler er den erklærte typen bare pynt. }
+    { What actually matters about DATETIME in SQLite: that the
+      introspection sees a date, and that the value comes back as a date.
+      Without both, the declared type is only decoration. }
     Schema_ := IntrospectSchema(C);
     try
       Tab := Schema_.Table('ml_posts');
-      Check(Tab <> nil, 'tabellen ble introspisert');
+      Check(Tab <> nil, 'the table was introspected');
       CheckEqS(PascalTypeFor(
         Tab.Column(Tab.IndexOfColumn('created_at')).SqlType,
         Tab.Column(Tab.IndexOfColumn('created_at')).Scale), 'TDateTime',
-        'created_at introspiseres som TDateTime, ikke string');
+        'created_at is introspected as TDateTime, not string');
     finally
       Schema_.Free;
     end;
 
     P := TQuery<TMlPost>.New.WithTrashed.Get[0];
     Check(P.CreatedAt > EncodeDate(2020, 1, 1),
-      'og verdien kom tilbake som en ekte dato fra databasen');
+      'and the value came back as a real date from the database');
 
     { ---- query scopes ---- }
     P := A.New<TMlPost>;
     P.Title := 'Nyere';
-    { created_at settes eksplisitt. SQL-tidsstempelet har sekundoppløsning,
-      og to rader laget i samme sekund har ingen definert rekkefølge — da
-      ville testen vært grønn eller rød etter hvor raskt maskinen var. }
+    { created_at is set explicitly. The SQL timestamp has second
+      resolution, and two rows made in the same second have no defined
+      order — the test would then be green or red depending on how fast the
+      machine was. }
     P.CreatedAt := UtcNow + 1;
     P.Save;
     Items := NyestePoster(1).Get;
-    CheckEqI(Items.Count, 1, 'en scope er bare en funksjon som gir en query');
-    CheckEqS(Items[0].Title, 'Nyere', 'og den kan sorteres og begrenses');
-    { En scope kan kjedes videre, og soft-delete-leddet blir med. }
+    CheckEqI(Items.Count, 1, 'a scope is only a function that gives a query');
+    CheckEqS(Items[0].Title, 'Nyere', 'and it can be sorted and limited');
+    { A scope can be chained on, and the soft-delete clause comes along. }
     CheckEqI(NyestePoster(10).WithTrashed.Count, 2,
-      'og den kjedes videre som alt annet');
+      'and it chains on like everything else');
   finally
     UseDb(PrevDb);
     C.Free;
@@ -2429,120 +2450,122 @@ var
   Fill: PByte;
   Frist: Integer;
 begin
-  Group('Kø');
+  Group('Queue');
   InitCriticalSection(QLock);
   A := TArena.Create(16 * 1024);
   Q := TQueue.Create(3, 3);
   try
-    Q.Handle('tell', @JobbTell);
-    Q.Handle('husk', @JobbHusk);
-    Q.Handle('flakete', @JobbFlakete);
-    Q.Handle('alltid-feil', @JobbAlltidFeil);
-    Q.Handle('arena', @JobbBrukerArena);
-    Q.OnError := @TellFeil;
+    Q.Handle('tell', @JobCount);
+    Q.Handle('husk', @JobRemember);
+    Q.Handle('flaky', @JobFlaky);
+    Q.Handle('always-fails', @JobAlwaysFails);
+    Q.Handle('arena', @JobUsesArena);
+    Q.OnError := @CountFail;
     Q.Start;
 
-    { Hundre jobber fra hovedtråden, tre workere. }
+    { A hundred jobs from the main thread, three workers. }
     QSum := 0;
     for I := 1 to 100 do
       Q.Push('tell', IntToStr(I));
-    Check(Q.WaitUntilEmpty(5000), 'køen ble tom');
+    Check(Q.WaitUntilEmpty(5000), 'the queue drained');
     Sleep(50);
-    CheckEqI(QSum, 5050, 'alle hundre jobbene kjørte, og bare én gang hver');
-    CheckEqI(Q.Processed, 100, 'Processed teller riktig');
+    CheckEqI(QSum, 5050, 'all hundred jobs ran, and only once each');
+    CheckEqI(Q.Processed, 100, 'Processed counts correctly');
 
-    { Det samme spørsmålet som for cachen, men verre: jobben kjører etter at
-      requesten er borte. Payloaden legges i en arena, arenaen nullstilles og
-      skrives over, og jobben må likevel se riktig innhold. }
+    { The same question as for the cache, but worse: the job runs after the
+      request is gone. The payload is put in an arena, the arena is reset
+      and written over, and the job still has to see the right content. }
     A.Reset;
-    V := StrDup(A, 'payload fra requesten');
+    V := StrDup(A, 'a payload from the request');
     QLast := '';
     Q.Push('husk', V);
     A.Reset;
     Fill := PByte(A.Alloc(8192));
     FillChar(Fill^, 8192, Ord('Z'));
-    Check(Q.WaitUntilEmpty(5000), 'jobben ble tatt');
+    Check(Q.WaitUntilEmpty(5000), 'the job was taken');
     Sleep(80);
     EnterCriticalSection(QLock);
     try
-      CheckEqS(QLast, 'payload fra requesten',
-        'Push kopierte ut av arenaen — payloaden overlevde');
+      CheckEqS(QLast, 'a payload from the request',
+        'Push copied out of the arena — the payload survived');
     finally
       LeaveCriticalSection(QLock);
     end;
 
-    { Handleren får payloaden i sin egen arena og kan bruke den som vanlig. }
+    { The handler gets the payload in its own arena and can use it as
+      usual. }
     QLast := '';
-    Q.Push('arena', 'noe');
-    Check(Q.WaitUntilEmpty(5000), 'arena-jobben ble tatt');
+    Q.Push('arena', 'something');
+    Check(Q.WaitUntilEmpty(5000), 'the arena job was taken');
     Sleep(80);
     EnterCriticalSection(QLock);
     try
-      CheckEqS(QLast, 'jobb:noe', 'handleren brukte sin egen arena');
+      CheckEqS(QLast, 'job:something', 'the handler used its own arena');
     finally
       LeaveCriticalSection(QLock);
     end;
 
     { Forsinkelse. }
     QLast := '';
-    Q.Push('husk', 'forsinket', 1);
+    Q.Push('husk', 'delayed', 1);
     Sleep(200);
     EnterCriticalSection(QLock);
     try
-      CheckEqS(QLast, '', 'forsinket jobb kjører ikke med en gang');
+      CheckEqS(QLast, '', 'a delayed job does not run at once');
     finally
       LeaveCriticalSection(QLock);
     end;
-    Check(Q.WaitUntilEmpty(4000), 'men den kjører etter hvert');
+    Check(Q.WaitUntilEmpty(4000), 'but it runs in time');
     Sleep(80);
     EnterCriticalSection(QLock);
     try
-      CheckEqS(QLast, 'forsinket', 'og med riktig payload');
+      CheckEqS(QLast, 'delayed', 'and with the right payload');
     finally
       LeaveCriticalSection(QLock);
     end;
 
-    { Retry med backoff, så suksess. Samme grunn til å vente på tallet. }
+    { Retry with backoff, then success. The same reason to wait on the
+      number. }
     QAttempts := 0;
-    Q.Push('flakete', 'x');
-    Check(Q.WaitUntilEmpty(6000), 'flakete jobb ble ferdig');
+    Q.Push('flaky', 'x');
+    Check(Q.WaitUntilEmpty(6000), 'the flaky job finished');
     Frist := 0;
     while (QAttempts < 3) and (Frist < 5000) do
     begin
       Sleep(20);
       Inc(Frist, 20);
     end;
-    CheckEqI(QAttempts, 3, 'tre forsøk før den lyktes');
-    Check(Q.Retried >= 2, 'to av dem var retries');
+    CheckEqI(QAttempts, 3, 'three attempts before it succeeded');
+    Check(Q.Retried >= 2, 'two of them were retries');
 
-    { Gir opp etter MaxAttempts.
+    { Gives up after MaxAttempts.
 
-      WaitUntilEmpty sier bare at køen er tom nå, og en jobb som venter på
-      backoff mellom to forsøk er ikke i køen. Derfor ventes det på Failed
-      selv i stedet for på klokka: et fast Sleep her var nok på en rask
-      maskin og for kort i container. }
+      WaitUntilEmpty only says the queue is empty now, and a job waiting on
+      backoff between two attempts is not in the queue. So it waits on
+      Failed itself rather than on the clock: a fixed Sleep here was enough
+      on a fast machine and too short in a container. }
     QFeilmeldinger := 0;
-    Q.Push('alltid-feil', 'y');
-    Check(Q.WaitUntilEmpty(6000), 'den feilende jobben ga seg');
+    Q.Push('always-fails', 'y');
+    Check(Q.WaitUntilEmpty(6000), 'the failing job gave up');
     Frist := 0;
     while (Q.Failed < 1) and (Frist < 5000) do
     begin
       Sleep(20);
       Inc(Frist, 20);
     end;
-    CheckEqI(Q.Failed, 1, 'talt som feilet');
-    Check(QFeilmeldinger >= 3, 'OnError ble kalt for hvert forsøk');
+    CheckEqI(Q.Failed, 1, 'counted as failed');
+    Check(QFeilmeldinger >= 3, 'OnError was called for every attempt');
 
     { Unknown_ jobbnavn forkastes, ikke krasjer. }
-    Q.Push('finnes-ikke', 'z');
-    Check(Q.WaitUntilEmpty(3000), 'ukjent jobb forkastes');
+    Q.Push('does-not-exist', 'z');
+    Check(Q.WaitUntilEmpty(3000), 'an unknown job is discarded');
     Frist := 0;
     while (Q.Dropped < 1) and (Frist < 3000) do
     begin
       Sleep(20);
       Inc(Frist, 20);
     end;
-    Check(Q.Dropped >= 1, 'og telles');
+    Check(Q.Dropped >= 1, 'and is counted');
 
     Q.Stop(True);
   finally
@@ -2658,7 +2681,7 @@ var
   G: TGrid<TSqCustomer>;
   GW: TJsonWriter;
   GJson: string;
-  Feilet_: Boolean;
+  Failed_: Boolean;
   T0, Without, With_: Int64;
   Kr: Integer;
   Cur: Currency;
@@ -2667,22 +2690,22 @@ begin
 
   if not SqliteAvailable then
   begin
-    Check(False, 'libsqlite3 lot seg laste');
+    Check(False, 'libsqlite3 loaded');
     Exit;
   end;
-  Check(True, 'libsqlite3 lastet med dlopen');
-  Si2('sqlite-versjon', SqliteVersion);
+  Check(True, 'libsqlite3 loaded with dlopen');
+  Si2('the sqlite version', SqliteVersion);
 
   SetUpColumns;
   A := TArena.Create(64 * 1024);
   PrevA := UseArena(A);
-  { Ingen fil, ingen server: hele datalaget testes i minnet. }
+  { No file, no server: the whole data layer is tested in memory. }
   C := OpenDbConnection('sqlite::memory:');
   PrevDb := UseDb(C);
   try
     Check(C.Dialect = sdSqlite, 'dialekten er sqlite');
 
-    { Migrasjon gjennom den samme skjemabyggeren som Postgres bruker. }
+    { A migration through the same schema builder Postgres uses. }
     S := TSchemaBuilder.Create(C.Dialect);
     try
       with S.Create('sq_customers') do
@@ -2703,26 +2726,26 @@ begin
       Stmts := S.ToSql;
       for I := 0 to High(Stmts) do
         C.Exec(A, Stmts[I]);
-      CheckEqI(Length(Stmts), 3, 'to tabeller og én indeks');
+      CheckEqI(Length(Stmts), 3, 'two tables and one index');
     finally
       S.Free;
     end;
 
-    { Save, med autonøkkel fra last_insert_rowid. }
+    { Save, with the auto key from last_insert_rowid. }
     K := A.New<TSqCustomer>;
     K.Name := 'Ada';
     K.Email := 'ada@gets.no';
     K.Balance := 1234.5;
     K.Active := True;
     K.Save;
-    Check(K.Id > 0, 'INSERT ga primærnøkkel tilbake');
-    CheckEqI(K.Id, 1, 'første rad får id 1');
+    Check(K.Id > 0, 'INSERT gave the primary key back');
+    CheckEqI(K.Id, 1, 'the first row gets id 1');
 
     K.Balance := 99.95;
     K.Save;
     CheckEqI(TQuery<TSqCustomer>.New.Count, 1,
-      'andre Save ble UPDATE, ikke ny rad');
-    Check(TQuery<TSqCustomer>.New.Find(1).Balance = 99.95, 'verdien ble oppdatert');
+      'the second Save was an UPDATE, not a new row');
+    Check(TQuery<TSqCustomer>.New.Find(1).Balance = 99.95, 'the value was updated');
 
     for I := 2 to 5 do
     begin
@@ -2741,152 +2764,154 @@ begin
       end;
     end;
 
-    { Typede spørringer mot samme query builder som Postgres. }
-    CheckEqI(TQuery<TSqCustomer>.New.Count, 5, 'fem customers');
+    { Typed queries against the same query builder as Postgres. }
+    CheckEqI(TQuery<TSqCustomer>.New.Count, 5, 'five customers');
     Check(Pos('"sq_customers"."name"', TQuery<TSqCustomer>.New.ToSql) > 0,
-      'SQLite siterer med doble anførselstegn');
+      'SQLite quotes with double quotes');
     Check(Pos('?', TQuery<TSqCustomer>.New
       .Where(SqCustomers.Balance, GT, 150).ToSql) > 0,
-      'plassholderen er ?, ikke $1');
+      'the placeholder is ?, not $1');
 
     Items := TQuery<TSqCustomer>.New
       .Where(SqCustomers.Balance, GT, 150)
       .OrderBy(SqCustomers.Balance, Desc)
       .Get;
     CheckEqI(Items.Count, 4, 'fire over 150');
-    Check(Items[0].Balance = 500, 'sortert synkende');
-    CheckEqS(Items[0].Name, 'Customer 5', 'riktig rad hydrert');
-    Check(Items[0].Active = False, 'boolean hydrert fra INTEGER');
+    Check(Items[0].Balance = 500, 'sorted descending');
+    CheckEqS(Items[0].Name, 'Customer 5', 'the right row hydrated');
+    Check(Items[0].Active = False, 'boolean hydrated from INTEGER');
 
-    { OR-gruppe: fritekstsøk over flere kolonner.
+    { An OR group: free-text search across several columns.
 
-      Without den har TQuery bare AND, og «finn Ada i navn eller e-post» lar
-      seg ikke uttrykke. Parentesen er det som betyr noe: uten den binder
-      et Where som står fra før seg til bare det første leddet i gruppa, og
-      søket lekker rader. }
+      Without it TQuery has only AND, and "find Ada in the name or the
+      email" cannot be expressed. The parentheses are what matter: without
+      them a Where that is already there binds to only the first term in
+      the group, and the search leaks rows. }
     Sql := TQuery<TSqCustomer>.New
       .Where(SqCustomers.Balance, GT, 100)
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ada')
       .ToSql;
-    Check(Pos(' OR ', Sql) > 0, 'OR mellom søkekolonnene');
-    Check(Pos(' AND (', Sql) > 0, 'AND binder mot hele gruppa, ikke bare første ledd');
-    Check(Sql[Length(Sql)] = ')', 'og gruppa lukkes');
-    { SQLite har ingen ILIKE. LIKE der er ufølsom for ASCII fra før. }
-    Check(Pos('ILIKE', Sql) = 0, 'ILIKE oversettes bort utenfor Postgres');
+    Check(Pos(' OR ', Sql) > 0, 'OR between the search columns');
+    Check(Pos(' AND (', Sql) > 0, 'AND binds to the whole group, not only the first term');
+    Check(Sql[Length(Sql)] = ')', 'and the group is closed');
+    { SQLite has no ILIKE. LIKE there is already ASCII-insensitive. }
+    Check(Pos('ILIKE', Sql) = 0, 'ILIKE is translated away outside Postgres');
     Check(Pos(' LIKE ', Sql) > 0, 'til LIKE');
 
-    { Ett ledd i gruppa skal ikke få parentes den ikke trenger, og tom
-      tekst skal ikke legge på noe ledd i det hele tatt. }
+    { One term in the group must not get parentheses it does not need, and
+      empty text must not add a clause at all. }
     CheckEqS(TQuery<TSqCustomer>.New.WhereAnyLike([SqCustomers.Name], '').ToSql,
-      TQuery<TSqCustomer>.New.ToSql, 'tomt søk legger ikke på noe');
+      TQuery<TSqCustomer>.New.ToSql, 'an empty search adds nothing');
 
     Items := TQuery<TSqCustomer>.New
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ada')
       .Get;
-    CheckEqI(Items.Count, 1, 'søket treffer Ada på navnet');
+    CheckEqI(Items.Count, 1, 'the search matches Ada on the name');
 
-    { Treffer på e-post selv om navnet ikke inneholder søkeordet. Det er
-      hele poenget med OR-en. }
+    { Matches on the email even though the name does not contain the search
+      term. That is the whole point of the OR. }
     Items := TQuery<TSqCustomer>.New
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'customer3@')
       .Get;
-    CheckEqI(Items.Count, 1, 'og treffer på e-post når navnet ikke passer');
+    CheckEqI(Items.Count, 1, 'and matches on the email when the name does not');
 
-    { Ufølsom for store bokstaver, også utenfor Postgres. }
+    { Case-insensitive, outside Postgres too. }
     Items := TQuery<TSqCustomer>.New
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ADA')
       .Get;
-    CheckEqI(Items.Count, 1, 'søket bryr seg ikke om store bokstaver');
+    CheckEqI(Items.Count, 1, 'the search does not care about case');
 
-    { ---- TGrid: sortering, søk og paginering i databasen ---- }
+    { ---- TGrid: sorting, search and pagination in the database ---- }
     begin
-      { Tellingen leses fra databasen i stedet for å antas. Fiksturen over
-        endrer seg, og en test som hardkoder antallet ryker av grunner som
-        ikke har noe med griden å gjøre. }
+      { The count is read from the database rather than assumed. The
+        fixture above changes, and a test that hard-codes the number
+        breaks for reasons that have nothing to do with the grid. }
       Count_ := TQuery<TSqCustomer>.New.Count;
-      { Standardtilstand: ingen parametre i det hele tatt. }
+      { The default state: no parameters at all. }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
+      G.Read(MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name)
        .Sortable('balance', SqCustomers.Balance)
        .Searchable([SqCustomers.Name, SqCustomers.Email])
        .DefaultSort('name')
        .PerPage(2);
       Items := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqI(Items.Count, 2, 'griden gir én side');
+      CheckEqI(Items.Count, 2, 'the grid gives one page');
       CheckEqI(G.Total, Count_, 'men teller hele settet');
-      CheckEqS(Items[0].Name, 'Ada', 'standardsorteringen gjelder');
+      CheckEqS(Items[0].Name, 'Ada', 'the default sort applies');
 
       { Side to. }
-      Sql := Items[1].Name;   { siste rad på side én }
+      Sql := Items[1].Name;   { the last row on page one }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A, 'GET /c?page=2 HTTP/1.1'#13#10'Host: t'))
+      G.Read(MakeRequest(A, 'GET /c?page=2 HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2);
       Items := G.Rows(TQuery<TSqCustomer>.New);
-      Check(Items[0].Name > Sql, 'side to fortsetter der side én sluttet');
+      Check(Items[0].Name > Sql, 'page two continues where page one ended');
 
       { Sortering fra URL-en. }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A, 'GET /c?sort=balance&dir=desc HTTP/1.1'#13#10'Host: t'))
+      G.Read(MakeRequest(A, 'GET /c?sort=balance&dir=desc HTTP/1.1'#13#10'Host: t'))
        .Sortable('balance', SqCustomers.Balance).DefaultSort('balance').PerPage(10);
       Items := G.Rows(TQuery<TSqCustomer>.New);
-      Check(Items[0].Balance = 500, 'synkende på balance');
+      Check(Items[0].Balance = 500, 'descending on balance');
 
-      { **Kolonnen fra URL-en er hvitelistet.** En kolonne som ikke er
-        registrert faller tilbake til standarden i stedet for å havne i
-        SQL-en. Det er ikke en sjekk vi har skrevet — OrderBy tar en typet
-        TCol, så formen finnes ikke å skrive. Dette holder bare fast at
-        fallbacken virker. }
+      { **The column from the URL is allowlisted.** A column that is not
+        registered falls back to the default instead of reaching the SQL.
+        That is not a check we wrote — OrderBy takes a typed TCol, so the
+        shape does not exist to write. This only holds down that the
+        fallback works. }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A,
+      G.Read(MakeRequest(A,
         'GET /c?sort=email); DROP TABLE sq_customers;-- HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(10);
       Items := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqS(Items[0].Name, 'Ada', 'ukjent sorteringskolonne faller tilbake');
-      CheckEqI(TQuery<TSqCustomer>.New.Count, Count_, 'og tabellen står der fortsatt');
+      CheckEqS(Items[0].Name, 'Ada', 'an unknown sort column falls back');
+      CheckEqI(TQuery<TSqCustomer>.New.Count, Count_, 'and the table is still there');
 
-      { Søk over flere kolonner. }
+      { Search across several columns. }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A, 'GET /c?q=ada@ HTTP/1.1'#13#10'Host: t'))
+      G.Read(MakeRequest(A, 'GET /c?q=ada@ HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name)
        .Searchable([SqCustomers.Name, SqCustomers.Email])
        .DefaultSort('name').PerPage(10);
       Items := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqI(Items.Count, 1, 'søket treffer på e-post');
-      CheckEqI(G.Total, 1, 'og totalen teller treffene, ikke tabellen');
+      CheckEqI(Items.Count, 1, 'the search matches on the email');
+      CheckEqI(G.Total, 1, 'and the total counts the matches, not the table');
 
-      { Søket må gjelde sammen med kallerens eget Where, ikke i stedet for.
-        Det er parentesen rundt OR-gruppa som avgjør det. }
+      { The search has to apply together with the caller's own Where, not
+        instead of it. It is the parentheses around the OR group that
+        decide that. }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A, 'GET /c?q=customer HTTP/1.1'#13#10'Host: t'))
+      G.Read(MakeRequest(A, 'GET /c?q=customer HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name)
        .Searchable([SqCustomers.Name, SqCustomers.Email])
        .DefaultSort('name').PerPage(10);
       Items := G.Rows(TQuery<TSqCustomer>.New.Where(SqCustomers.Balance, GT, 300));
-      CheckEqI(Items.Count, 2, 'søk og eget Where gjelder samtidig');
+      CheckEqI(Items.Count, 2, 'the search and your own Where apply together');
 
-      { Taket på sidestørrelse. Without det er per=1000000 en måte å be om
-        hele tabellen på. }
+      { The cap on page size. Without it per=1000000 is a way of asking for
+        the whole table. }
       G := TGrid<TSqCustomer>.New;
-      G.Read(LagRequest(A, 'GET /c?per=100000 HTTP/1.1'#13#10'Host: t'))
+      G.Read(MakeRequest(A, 'GET /c?per=100000 HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2, 3);
       Items := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqI(Items.Count, 3, 'sidestørrelsen klemmes ned til taket');
+      CheckEqI(Items.Count, 3, 'the page size is clamped to the cap');
 
       { Payloaden frontend leser. }
       GW.Init(A, 256);
       G.WriteJson(GW);
       GJson := GW.ToString;
       Check(Pos('"total":' + IntToStr(Count_), GJson) > 0,
-        'grid-proppen bærer totalen');
+        'the grid prop carries the total');
       Check(Pos('"pages":', GJson) > 0, 'og antall sider');
-      Check(Pos('"per":3', GJson) > 0, 'og sidestørrelsen etter taket');
-      Check(Pos('"sort":"name"', GJson) > 0, 'og hvilken kolonne som er sortert');
+      Check(Pos('"per":3', GJson) > 0, 'and the page size after the cap');
+      Check(Pos('"sort":"name"', GJson) > 0, 'and which column is sorted');
     end;
 
-    { Ada er aktiv, og av Customer 2..5 er 2 og 4 det. Three til sammen. }
+    { Ada is active, and of Customer 2..5 so are 2 and 4. Three in
+      all. }
     CheckEqI(TQuery<TSqCustomer>.New.Where(SqCustomers.Active, Eq, True).Count, 3,
-      'boolean-filter mot INTEGER-kolonne');
+      'a boolean filter against an INTEGER column');
     CheckEqI(TQuery<TSqCustomer>.New.WhereIn(SqCustomers.Id, [1, 2, 3]).Count, 3,
       'WhereIn');
 
@@ -2897,48 +2922,49 @@ begin
       if Items[I].Order <> nil then
         Count_ := Count_ + Items[I].Order.Count;
     CheckEqI(Count_, 1 + 2 + 3 + 4, 'eager loading fordelte alle orders');
-    CheckEqI(Items[0].Order.Count, 0, 'første customer har ingen');
-    CheckEqI(Items[4].Order.Count, 4, 'siste har fire');
+    CheckEqI(Items[0].Order.Count, 0, 'the first customer has none');
+    CheckEqI(Items[4].Order.Count, 4, 'the last one has four');
 
     { Validering, inkludert UniqueIn mot SQLite. }
     K := A.New<TSqCustomer>;
-    K.Name := 'Duplikat';
+    K.Name := 'Duplicate';
     K.Email := 'ada@gets.no';
-    Check(not K.Validate, 'UniqueIn fanger duplikatet');
-    Check(K.Errors.Has('email'), 'feilen er på email');
+    Check(not K.Validate, 'UniqueIn catches the duplicate');
+    Check(K.Errors.Has('email'), 'the error is on email');
 
-    { Unik-brudd fra databasen oversettes til samme SQLSTATE som Postgres. }
+    { A unique violation from the database is translated to the same
+      SQLSTATE as Postgres. }
     try
       K.Save;
-      Check(False, 'unik-brudd skulle kastet');
+      Check(False, 'the unique violation should have raised');
     except
       on E: EDbError do
         Check(E.IsUniqueViolation,
-          'SQLITE_CONSTRAINT oversettes til 23505');
+          'SQLITE_CONSTRAINT is translated to 23505');
     end;
 
-    { Fremmednøkler håndheves bare med pragma satt. }
+    { Foreign keys are enforced only with the pragma set. }
     try
       O := A.New<TSqOrder>;
       O.CustomerId := 9999;
       O.Save;
-      Check(False, 'fremmednøkkel skulle kastet');
+      Check(False, 'the foreign key should have raised');
     except
       on E: EDbError do
-        Check(E.IsForeignKeyViolation, 'fremmednøkkel gir 23503');
+        Check(E.IsForeignKeyViolation, 'a foreign key gives 23503');
     end;
 
     { Transaksjon. }
     C.StartTransaction;
     K := A.New<TSqCustomer>;
-    K.Name := 'Rulles tilbake';
+    K.Name := 'Rolled back';
     K.Email := 'rull@gets.no';
     K.Save;
-    CheckEqI(TQuery<TSqCustomer>.New.Count, 6, 'synlig inne i transaksjonen');
+    CheckEqI(TQuery<TSqCustomer>.New.Count, 6, 'visible inside the transaction');
     C.Rollback;
     CheckEqI(TQuery<TSqCustomer>.New.Count, 5, 'ROLLBACK fjernet den');
 
-    { Arenaen skal flate ut som mot Postgres. }
+    { The arena is to level off as it does against Postgres. }
     for I := 1 to 50 do
     begin
       A.Reset;
@@ -2951,7 +2977,7 @@ begin
       TQuery<TSqCustomer>.New.Preload(['Order']).Get;
     end;
     CheckEqI(A.BytesReserved, Reservert,
-      'arenaen vokser ikke over 500 spørringer mot SQLite');
+      'the arena does not grow over 500 queries against SQLite');
 
     { ---- Currency arithmetic across compilers and architectures ---- }
     { A premise test, and it has been wrong twice.
@@ -3012,53 +3038,53 @@ begin
       C.ExecParams(A, 'SELECT name FROM sq_customers WHERE id = ?',
         [DbParam(A, Int64(1))]);
     CheckEqI(Sq.PreparedCount - ForPrep, 1,
-      'samme spørring forberedes én gang');
-    CheckEqI(Sq.CacheHits - ForHits, 19, 'resten traff cachen');
+      'the same query is prepared once');
+    CheckEqI(Sq.CacheHits - ForHits, 19, 'the rest hit the cache');
     CheckEqI(Sq.OpenStatements - ForApne, 1,
-      'og SQLite har nøyaktig ett statement åpent');
+      'and SQLite has exactly one statement open');
 
-    { Bindinger fra forrige kjøring må ikke henge igjen. Without
-      sqlite3_clear_bindings ville et kall med færre eller andre parametre
-      sett verdier fra forrige runde. }
+    { Bindings from the previous run must not linger. Without
+      sqlite3_clear_bindings a call with fewer or different parameters
+      would see values from the previous round. }
     A.Reset;
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name = ?',
       [DbParam(A, 'Ada')]);
     Count_ := Integer(R2.AsInt64(0, 0));
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name = ?',
-      [DbParam(A, 'finnes-ikke')]);
+      [DbParam(A, 'does-not-exist')]);
     CheckEqI(R2.AsInt64(0, 0), 0,
-      'gjenbrukt statement bruker de nye parametrene');
+      'a reused statement uses the new parameters');
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name = ?',
       [DbParam(A, 'Ada')]);
     CheckEqI(R2.AsInt64(0, 0), Count_,
-      'og gir samme svar som før når parameteren er den samme');
+      'and gives the same answer as before when the parameter is the same');
 
-    { NULL etter en ikke-NULL-verdi på samme statement. }
+    { NULL after a non-NULL value on the same statement. }
     R2 := C.ExecParams(A, 'SELECT count(*) FROM sq_customers WHERE name IS ?',
       [DbNull]);
-    Check(R2.RowCount = 1, 'NULL-parameter på et gjenbrukt statement');
+    Check(R2.RowCount = 1, 'a NULL parameter on a reused statement');
 
-    { En feil skal ikke ødelegge det cachede statementet. }
-    Feilet_ := False;
+    { An error must not damage the cached statement. }
+    Failed_ := False;
     try
       C.ExecParams(A, 'INSERT INTO sq_customers (id, name, email) VALUES (?, ?, ?)',
         [DbParam(A, Int64(1)), DbParam(A, 'Kopi'), DbParam(A, 'kopi@x.no')]);
     except
-      on E: EDbError do Feilet_ := True;
+      on E: EDbError do Failed_ := True;
     end;
-    Check(Feilet_, 'dobbel primærnøkkel gir feil');
+    Check(Failed_, 'a duplicate primary key raises');
     R2 := C.ExecParams(A, 'SELECT name FROM sq_customers WHERE id = ?',
       [DbParam(A, Int64(1))]);
     Check(R2.RowCount = 1, 'cachet statement virker etter en feil');
 
-    { prepare_v2 håndterer skjemaendringer selv — der MySQL må kaste
-      statementet ut av cachen, trenger SQLite det ikke. }
+    { prepare_v2 handles schema changes itself — where MySQL has to evict
+      the statement from the cache, SQLite does not need to. }
     C.Exec(A, 'ALTER TABLE sq_customers ADD COLUMN note TEXT');
     R2 := C.ExecParams(A, 'SELECT name FROM sq_customers WHERE id = ?',
       [DbParam(A, Int64(1))]);
     Check(R2.RowCount = 1, 'cachet statement overlever ALTER TABLE');
 
-    { Cachen av: forberedes hver gang, og ingenting blir liggende åpent. }
+    { The cache off: prepared every time, and nothing is left open. }
     Sq.FlushStatementCache;
     ForApne := Sq.OpenStatements;
     ForPrep := Sq.PreparedCount;
@@ -3066,24 +3092,26 @@ begin
     for I := 1 to 30 do
       C.ExecParams(A, 'SELECT email FROM sq_customers WHERE id = ?',
         [DbParam(A, Int64(1))]);
-    CheckEqI(Sq.PreparedCount - ForPrep, 30, 'cachen av: forberedes hver gang');
+    CheckEqI(Sq.PreparedCount - ForPrep, 30, 'the cache off: prepared every time');
     CheckEqI(Sq.OpenStatements - ForApne, 0,
-      'og ingen statements blir liggende åpne');
+      'and no statements are left open');
     Sq.CacheLimit := 64;
 
-    { Over grensen tømmes cachen, og antallet åpne følger med ned. }
+    { Past the limit the cache is emptied, and the number of open ones
+      follows it down. }
     Sq.FlushStatementCache;
     Sq.CacheLimit := 4;
     for I := 1 to 12 do
       C.ExecParams(A, Format('SELECT %d FROM sq_customers WHERE id = ?', [I]),
         [DbParam(A, Int64(1))]);
-    Check(Sq.OpenStatements <= 4, 'cachen holder seg innenfor grensen');
+    Check(Sq.OpenStatements <= 4, 'the cache stays within its limit');
     Sq.CacheLimit := 64;
     Sq.FlushStatementCache;
     CheckEqI(Sq.OpenStatements, 0, 'flush lukker alle');
 
-    { Et måltall, ikke en påstand. Tidsgrenser i en suite blir flakete på en
-      lastet maskin, men «cache» er tom tale uten et tall bak. }
+    { A measurement, not an assertion. Time limits in a suite go flaky on
+      a loaded machine, but "a cache" is empty talk without a number
+      behind it. }
     A.Reset;
     Sq.CacheLimit := 0;
     T0 := MonotonicMs;
@@ -3098,8 +3126,8 @@ begin
       C.ExecParams(A, 'SELECT name FROM sq_customers WHERE id = ?',
         [DbParam(A, Int64(1))]);
     With_ := MonotonicMs - T0;
-    Si2('2000 spørringer', Format('%d ms uten cache, %d ms med', [Without, With_]));
-    Check(With_ <= Without + (Without div 4) + 2, 'cachen gjorde det ikke tregere');
+    Si2('2000 queries', Format('%d ms without the cache, %d ms with', [Without, With_]));
+    Check(With_ <= Without + (Without div 4) + 2, 'the cache did not make it slower');
   finally
     UseDb(PrevDb);
     UseArena(PrevA);
@@ -3115,8 +3143,9 @@ type
     Sock: TSocket;
     function Connect(Port: Word): Boolean;
     procedure SendRaw(const S: string);
-    { Leser nøyaktig én respons, styrt av Content-Length. NoBody må settes
-      for svar på HEAD: de oppgir Content-Length uten å sende kroppen. }
+    { Reads exactly one response, driven by Content-Length. NoBody has to
+      be set for answers to HEAD: they give a Content-Length without sending
+      the body. }
     function ReadResponse(out Head, Body: string; NoBody: Boolean = False): Boolean;
     procedure Close;
   private
@@ -3143,7 +3172,7 @@ begin
     CloseSocket(Sock);
     Exit;
   end;
-  { Without dette blir en feil i verten til en testsuite som står i stampe. }
+  { Without this a fault in the host turns into a test suite that hangs. }
   TV.tv_sec := 3;
   TV.tv_usec := 0;
   fpSetSockOpt(Sock, SOL_SOCKET, SO_RCVTIMEO, @TV, SizeOf(TV));
@@ -3222,10 +3251,11 @@ type
     function Handle(Req: TRequest): TResponse;
   end;
 
-{ Størrelsen er hele poenget. Fila må få plass i arenablokka som alt er i
-  bruk av requesten — er den større, får den en ny blokk, og den veien
-  virker. Suiten kjører med 16 kB blokker, så 6000 byte lander på riktig
-  side: hodet og TRequest tar et par kB, og resten er ledig. }
+{ The size is the whole point. The file has to fit inside the arena
+  block that is already in use by the request — larger, and it gets a new
+  block, and that path works. The suite runs with 16 kB blocks, so 6000
+  bytes lands on the right side: the head and TRequest take a couple of kB,
+  and the rest is free. }
 const
   StaticSize = 6000;
 
@@ -3243,19 +3273,19 @@ begin
     Exit(Respond(200).WithContentType('text/plain').WithBody(Req.Body));
   if Req.Path.EqualsStr('/name') then
     Exit(RespondText(Req.Query('name').ToString));
-  if Req.Path.EqualsStr('/last-opp') then
+  if Req.Path.EqualsStr('/upload') then
   begin
     if not Req.Multipart.Ok then
       Exit(RespondText(Req.Multipart.ErrorText, 400));
     Exit(RespondText(Format('%s|%s|%d|%s',
-      [Req.Form('tittel').ToString,
-       Req.Upload('fil').ClientName.ToString,
-       Req.Upload('fil').Size,
-       Req.Upload('fil').Content.ToString])));
+      [Req.Form('title').ToString,
+       Req.Upload('file').ClientName.ToString,
+       Req.Upload('file').Size,
+       Req.Upload('file').Content.ToString])));
   end;
-  if Req.Path.EqualsStr('/sprekk') then
-    raise Exception.Create('med vilje');
-  Result := RespondText('borte', 404);
+  if Req.Path.EqualsStr('/boom') then
+    raise Exception.Create('on purpose');
+  Result := RespondText('gone', 404);
 end;
 
 procedure TestEndToEnd;
@@ -3269,11 +3299,12 @@ var
   I: Integer;
   Reserved1, Reserved2: PtrUInt;
   MpBody, MpContent: string;
-  StatiskFil: TStringList;
+  StaticFile: TStringList;
 begin
-  Group('Ende-til-ende over socket');
-  { Content_ med CRLF i, og med noe som ligner grensen. Går det hele veien
-    gjennom en socket uendret, holder rammeverket. }
+  Group('End to end over a socket');
+  { Content with CRLFs in it, and with something that looks like the
+    boundary. If it goes all the way through a socket unchanged, the
+    framework holds. }
   MpContent := 'linje1'#13#10'--XA'#13#10'linje2';
 
   Opts := DefaultServerOptions;
@@ -3281,16 +3312,16 @@ begin
   Opts.Workers := 2;
   Opts.ArenaBlockSize := 16 * 1024;
   H := TE2EHandler.Create;
-  { En fil på disk å servere. Katalogen er under .build, så den forsvinner
-    med resten når noen rydder. }
-  ForceDirectories('.build' + PathDelim + 'e2e-statisk' + PathDelim + 'statisk');
-  StatiskFil := TStringList.Create;
+  { A file on disk to serve. The directory is under .build, so it goes
+    away with the rest when somebody cleans up. }
+  ForceDirectories('.build' + PathDelim + 'e2e-statisk' + PathDelim + 'static');
+  StaticFile := TStringList.Create;
   try
-    StatiskFil.Text := StringOfChar('a', StaticSize - 1);
-    StatiskFil.SaveToFile('.build' + PathDelim + 'e2e-statisk' + PathDelim +
-      'statisk' + PathDelim + 'stor.css');
+    StaticFile.Text := StringOfChar('a', StaticSize - 1);
+    StaticFile.SaveToFile('.build' + PathDelim + 'e2e-statisk' + PathDelim +
+      'static' + PathDelim + 'big.css');
   finally
-    StatiskFil.Free;
+    StaticFile.Free;
   end;
   H.Statisk := TStaticFiles.Create('.build' + PathDelim + 'e2e-statisk');
 
@@ -3301,108 +3332,110 @@ begin
     Port := Server.BoundPort;
     Check(Port > 0, 'serveren valgte en port (bind til 0)');
 
-    Check(C.Connect(Port), 'klienten kobler til');
+    Check(C.Connect(Port), 'the client connects');
     C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
-    Check(C.ReadResponse(Head, Body), 'fikk svar');
-    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'GET / gir 200');
-    CheckEqS(Body, 'rot', 'riktig kropp');
+    Check(C.ReadResponse(Head, Body), 'got an answer');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'GET / gives 200');
+    CheckEqS(Body, 'rot', 'the right body');
 
     { Samme tilkobling igjen — keep-alive. }
     C.SendRaw('GET /name?name=Knut HTTP/1.1'#13#10'Host: test'#13#10#13#10);
-    Check(C.ReadResponse(Head, Body), 'andre request på samme tilkobling');
+    Check(C.ReadResponse(Head, Body), 'the second request on the same connection');
     CheckEqS(Body, 'Knut', 'keep-alive fungerer');
 
-    C.SendRaw('GET /finnes-ikke HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.SendRaw('GET /does-not-exist HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
     Check(Pos('HTTP/1.1 404 Not Found', Head) = 1, '404');
 
-    { En statisk fil som oppfølging på samme tilkobling.
+    { A static file as a follow-up on the same connection.
 
-      Dette er formen enhver nettleser bruker: hent siden, hent så css-en
-      og js-en over den samme tilkoblingen. Den krasjet med
-      EAccessViolation på et ekte nettsted bygget med rammeverket, og bare
-      når fila fikk plass i arenablokka som alt var i bruk — en stor fil
-      fikk en ny blokk og gikk fint, en liten fikk det ikke. Alene gikk
-      begge. }
+      This is the shape every browser uses: fetch the page, then fetch the
+      css and the js over the same connection. It crashed with an
+      EAccessViolation on a real site built with the framework, and only
+      when the file fit inside the arena block that was already in use — a
+      large file got a new block and was fine, a small one did not. Alone,
+      both were fine. }
     C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
-    Check(C.ReadResponse(Head, Body), 'side før den statiske fila');
-    C.SendRaw('GET /statisk/stor.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
-    Check(C.ReadResponse(Head, Body), 'fikk svar på den statiske fila');
+    Check(C.ReadResponse(Head, Body), 'the page before the static file');
+    C.SendRaw('GET /static/big.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'got an answer for the static file');
     Check(Pos('HTTP/1.1 200 OK', Head) = 1,
-      'statisk fil etter en side på samme tilkobling');
-    CheckEqI(Length(Body), StaticSize, 'og hele fila kom med');
-    Check(Pos('text/css', Head) > 0, 'med riktig innholdstype');
+      'a static file after a page on the same connection');
+    CheckEqI(Length(Body), StaticSize, 'and the whole file came along');
+    Check(Pos('text/css', Head) > 0, 'with the right content type');
 
-    { Og én gang til, for å vise at det ikke var én tilfeldig gang. }
+    { And once more, to show it was not a single lucky time. }
     C.SendRaw('GET /name?name=x HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    C.SendRaw('GET /statisk/stor.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.SendRaw('GET /static/big.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'og igjen');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'and again');
 
     C.SendRaw('HEAD / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body, True);
     Check(Pos('Content-Length: 3', Head) > 0, 'HEAD har Content-Length');
-    CheckEqS(Body, '', 'HEAD har ingen kropp');
+    CheckEqS(Body, '', 'HEAD has no body');
 
-    { En ekte opplasting over socketen. Alt annet om multipart testes mot
-      en kropp som allerede ligger i minnet; dette er den eneste testen der
-      bytene faktisk går gjennom lesebufferet og Content-Length. }
+    { A real upload over the socket. Everything else about multipart is
+      tested against a body that is already in memory; this is the only
+      test where the bytes actually go through the read buffer and
+      Content-Length. }
     MpBody :=
-      '--XB'#13#10'Content-Disposition: form-data; name="tittel"'#13#10#13#10 +
-      'Rapport'#13#10 +
-      '--XB'#13#10'Content-Disposition: form-data; name="fil"; ' +
+      '--XB'#13#10'Content-Disposition: form-data; name="title"'#13#10#13#10 +
+      'Report'#13#10 +
+      '--XB'#13#10'Content-Disposition: form-data; name="file"; ' +
       'filename="data.bin"'#13#10'Content-Type: application/octet-stream' +
       #13#10#13#10 + MpContent + #13#10 +
       '--XB--'#13#10;
-    C.SendRaw('POST /last-opp HTTP/1.1'#13#10'Host: test'#13#10 +
+    C.SendRaw('POST /upload HTTP/1.1'#13#10'Host: test'#13#10 +
       'Content-Type: multipart/form-data; boundary=XB'#13#10 +
       'Content-Length: ' + IntToStr(Length(MpBody)) + #13#10#13#10 + MpBody);
-    Check(C.ReadResponse(Head, Body), 'opplastingen ble besvart');
-    CheckEqS(Body, 'Rapport|data.bin|' + IntToStr(Length(MpContent)) + '|' +
-      MpContent, 'fil og felt kom hele gjennom socketen');
+    Check(C.ReadResponse(Head, Body), 'the upload was answered');
+    CheckEqS(Body, 'Report|data.bin|' + IntToStr(Length(MpContent)) + '|' +
+      MpContent, 'the file and the field came whole through the socket');
 
     C.SendRaw('POST /ekko HTTP/1.1'#13#10'Host: test'#13#10 +
-              'Content-Length: 11'#13#10#13#10'hallo arena');
+              'Content-Length: 11'#13#10#13#10'hello arena');
     C.ReadResponse(Head, Body);
-    CheckEqS(Body, 'hallo arena', 'POST-kropp leses');
+    CheckEqS(Body, 'hello arena', 'a POST body is read');
 
     { Pipelining: to requests i én skriving. }
     C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10 +
               'GET /name?name=to HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    CheckEqS(Body, 'rot', 'pipelining, første svar');
+    CheckEqS(Body, 'rot', 'pipelining, the first reply');
     C.ReadResponse(Head, Body);
-    CheckEqS(Body, 'to', 'pipelining, andre svar');
+    CheckEqS(Body, 'to', 'pipelining, the second reply');
 
-    { En exception i handleren skal koste requesten, ikke workeren. }
-    C.SendRaw('GET /sprekk HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    { An exception in the handler is to cost the request, not the
+      worker. }
+    C.SendRaw('GET /boom HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    Check(Pos('HTTP/1.1 500', Head) = 1, 'exception gir 500');
+    Check(Pos('HTTP/1.1 500', Head) = 1, 'an exception gives 500');
     C.Close;
 
-    Check(C.Connect(Port), 'serveren lever etter en exception');
+    Check(C.Connect(Port), 'the server survives an exception');
     C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    CheckEqS(Body, 'rot', 'ny tilkobling virker');
+    CheckEqS(Body, 'rot', 'a new connection works');
     C.Close;
 
     { Ugyldig request. }
-    Check(C.Connect(Port), 'kobler til for ugyldig request');
+    Check(C.Connect(Port), 'connects for the invalid request');
     C.SendRaw('GET / HTTP/1.1'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    Check(Pos('HTTP/1.1 400', Head) = 1, 'manglende Host gir 400');
+    Check(Pos('HTTP/1.1 400', Head) = 1, 'a missing Host gives 400');
     C.Close;
 
     Check(C.Connect(Port), 'kobler til for chunked');
     C.SendRaw('POST / HTTP/1.1'#13#10'Host: t'#13#10 +
               'Transfer-Encoding: chunked'#13#10#13#10);
     C.ReadResponse(Head, Body);
-    Check(Pos('HTTP/1.1 501', Head) = 1, 'chunked gir 501');
+    Check(Pos('HTTP/1.1 501', Head) = 1, 'chunked gives 501');
     C.Close;
 
-    { Arenaen skal flate ut under last, ikke vokse per request. }
-    Check(C.Connect(Port), 'kobler til for lasttest');
+    { The arena is to level off under load, not grow per request. }
+    Check(C.Connect(Port), 'connects for the load test');
     for I := 1 to 50 do
     begin
       C.SendRaw('GET /name?name=oppvarming HTTP/1.1'#13#10'Host: test'#13#10#13#10);
@@ -3417,12 +3450,13 @@ begin
       C.ReadResponse(Head, Body);
     end;
     Reserved2 := Server.TotalArenaReserved;
-    CheckEqI(Reserved2, Reserved1, 'arenaen vokser ikke under vedvarende last');
+    CheckEqI(Reserved2, Reserved1, 'the arena does not grow under sustained load');
     Check(Server.TotalArenaHighWater < 64 * 1024,
       'toppforbruket per request holder seg lite');
-    { 13 gyldige requests over, så 50 + 1 + 500 her. De to avviste (400 og
-      501) telles ikke, fordi de aldri nådde en handler. }
-    CheckEqI(Server.TotalRequests, 565, 'alle gyldige requests ble talt');
+    { 13 valid requests above, then 50 + 1 + 500 here. The two rejected
+      ones (400 and 501) are not counted, because they never reached a
+      handler. }
+    CheckEqI(Server.TotalRequests, 565, 'every valid request was counted');
     C.Close;
   finally
     Server.Free;
@@ -3431,11 +3465,11 @@ begin
 end;
 
 begin
-  { Denne suiten tester ikke loggen, og ende-til-ende-delen kaster med
-    vilje i /sprekk. Without dette havner en ERROR-linje midt i utskriften og
-    ser ut som en feil i testen. }
+  { This suite does not test the log, and the end-to-end part raises in
+    /boom on purpose. Without this an ERROR line lands in the middle of the
+    output and looks like a failure in the test. }
   SetLogLevel(llNone);
-  WriteLn('Askr — testsuite for fase 1, steg 1');
+  WriteLn('Askr — test suite for phase 1, step 1');
 
   TestArena;
   TestArenaNew;
@@ -3447,14 +3481,14 @@ begin
   TestMultipart;
   TestResponse;
   TestClock;
-  TestJsonSkriv;
-  TestJsonLes;
+  TestJsonWrite;
+  TestJsonRead;
   TestInertia;
   TestRuter;
   TestValidering;
   TestBinding;
   TestNornSchema;
-  TestNornNavn;
+  TestNornNaming;
   TestCache;
   TestModellLivskvalitet;
   TestQueue;
