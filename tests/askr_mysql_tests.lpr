@@ -347,7 +347,7 @@ var
   R: TDbResult;
   Id, Id2: Int64;
   Err, Text_: string;
-  V: Currency;
+  V, Money: Currency;
   D: TDateTime;
   B: Boolean;
   I: Integer;
@@ -370,10 +370,11 @@ begin
     Schema_(C, A);
 
     Start('innsetting og id');
+    Money := 1234.50;
     Id := C.InsertGetId(A,
       'INSERT INTO askr_customer (name, email, balance) VALUES (?, ?, ?)',
       [DbParam(A, 'Ada'), DbParam(A, 'ada@example.com'),
-       DbParam(A, Currency(1234.50))], 'id');
+       DbParam(A, Money)], 'id');
     Ok('fikk en id tilbake', Id > 0);
     Id2 := C.InsertGetId(A,
       'INSERT INTO askr_customer (name, email, balance) VALUES (?, ?, ?)',
@@ -480,8 +481,9 @@ begin
 
     Err := '';
     try
+      Money := 10;
       C.ExecParams(A, 'INSERT INTO askr_order (customer_id, amount) VALUES (?, ?)',
-        [DbParam(A, Int64(999999)), DbParam(A, Currency(10))]);
+        [DbParam(A, Int64(999999)), DbParam(A, Money)]);
     except
       on E: EDbError do
       begin
@@ -544,11 +546,17 @@ begin
     C.Exec(A, 'DELETE FROM askr_customer WHERE email LIKE ''bulk%''');
     C.StartTransaction;
     for I := 1 to 500 do
+    begin
+      { Assigned, never cast: Currency(I) is a reinterpretation of the
+        scaled Int64 on x86_64, not a conversion. }
+      Money := I;
+      Money := Money / 4;
       C.ExecParams(A,
         'INSERT INTO askr_customer (name, email, balance) VALUES (?, ?, ?)',
         [DbParam(A, 'Bulk ' + IntToStr(I)),
          DbParam(A, 'bulk' + IntToStr(I) + '@example.com'),
-         DbParam(A, Currency(I) / 4)]);
+         DbParam(A, Money)]);
+    end;
     C.Commit;
     R := C.ExecParams(A, 'SELECT id, name, balance FROM askr_customer ' +
       'WHERE email LIKE ? ORDER BY id', [DbParam(A, 'bulk%')]);

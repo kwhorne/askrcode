@@ -30,17 +30,19 @@ ikke det.
 Koden bygger og består alle testene på både 3.2.2 og 3.3.1 trunk. Hold det
 slik: det er den eneste måten å vite om en grense er borte eller bare flyttet.
 
-**Arkitektur er en akse til, og den er udekket.** Alt her kjører aarch64 —
-maskinen, og Docker-imaget på den maskinen. Første gang rammeverket ble
-bygget for x86_64 (en Ubuntu-server, 2026-09-21) feilet det med én gang:
-`Currency(GetFloatProp(...))` er en ulovlig typecast der, fordi `Extended`
-er 80 bit og en egen type, mens den på aarch64 er et alias for `Double`.
-Tre steder, alle udekket av 705 tester. Fikset i 0.9.1 med
-`PropAsCurrency`, som tilordner i stedet for å caste — **aldri cast inn i
-`Currency`, tilordn**, samme regel som multiplikasjonsfella under.
+**Arkitektur er en tredje akse, og `./askr test:amd64` er porten for den.**
+Den bygger og kjører hele suiten for x86_64 i container — `--platform
+linux/amd64`, eget `.build-amd64` fordi `.ppu`-filer er bundet til målet.
+På Apple Silicon går det gjennom Rosetta og tar 15 sekunder, så det er
+ingen grunn til å la være.
 
-Suiten kjører fortsatt bare aarch64. Det er en kjent hull, ikke en løst
-sak.
+Alt her kjørte aarch64 fram til 0.9.1: maskinen, og Docker-imaget på den.
+Første x86_64-bygg kompilerte ikke i det hele tatt, og da porten kom
+fant den fire steder til. Alle var samme sak: **aldri cast inn i
+`Currency`, tilordn.** Tabellen står under «Fallgruver», og den har vært
+feil i notatet to ganger.
+
+`./askr check` og `./askr pg`/`mysql` tar `ASKR_ARCH=amd64` på samme måte.
 
 `tools/probes/run.sh <fpc>` kjører generics-probene mot en gitt kompilator.
 Det er sju filer — seks grenser (p1–p6) og kallstedet (p7) som avhenger av
@@ -1106,14 +1108,32 @@ grunn; den slår av en reell typesjekk.
   på 3.2.2.** Det traff `.env`: en linje som `API_KEY=` forsvant på trunk og
   ble liggende på 3.2.2. Skriv `Key + '=' + Verdi` med `Add` eller direkte
   indeks i stedet. Getteren `ValueFromIndex` er trygg.
-* **`Currency(I) * <heltallsliteral>` gir ulikt svar på 3.2.2 og 3.3.1.**
-  Med `I = 7` gir `Currency(I) * 100` **700,00 på 3.2.2 og 0,07 på trunk** —
-  trunk regner i Currency sin skalerte int64-representasjon og reintepreterer
-  resultatet. Dette er penger, og det er stille: ingen advarsel, ingen feil.
-  Formene som er like på begge, og som koden skal bruke, er
-  `Currency(I * 100)`, `Currency(I) * 100.0` og tilordning til en
-  Currency-variabel først. Addisjon og divisjon er upåvirket. Premisstesten
-  i SQLite-delen av `askr_tests` holder dette fast.
+* **Aldri cast inn i `Currency`. Tilordn.** Regelen har ingen unntak, og
+  den har vært feil her to ganger.
+
+  `Currency` er en Int64 skalert med 10000. En typecast fra et heltall
+  reintepreterer de bitene i stedet for å konvertere verdien — og hvorvidt
+  den gjør det avhenger av både kompilator og arkitektur. Målt med `I = 7`:
+
+  | form | x86_64 | aarch64 3.2.2 | aarch64 trunk |
+  |---|---|---|---|
+  | `Currency(I)` | kompilerer ikke | 7,0000 | 7,0000 |
+  | `Currency(I * 100)` | **0,0700** | 700,0000 | 700,0000 |
+  | `Currency(10)` | **0,0010** | 10,0000 | 10,0000 |
+  | `Currency(I) * 100` | — | 700,00 | **0,07** |
+  | `Currency(1234.50)` | 1234,5000 | 1234,5000 | 1234,5000 |
+
+  Notatet sa tidligere at `Currency(I * 100)` og `Currency(I) * 100.0` var
+  de trygge formene. Det gjaldt bare på aarch64, og ingen visste det, fordi
+  ingenting her hadde vært bygget for noe annet. Bare tilordning er riktig
+  overalt:
+
+      Money := I * 100;    { 700,00 på alt }
+
+  `PropAsCurrency` i `Askr.Urd.Model` finnes for at rammeverkets egen
+  lesing av en published property skal gjøre det samme. Premisstesten i
+  SQLite-delen av `askr_tests` holder tabellen over fast, og
+  `./askr test:amd64` er det som fanger den andre kolonnen.
 
 ## Aritmetikk og kontroller
 

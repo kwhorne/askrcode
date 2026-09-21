@@ -1819,6 +1819,7 @@ end;
 procedure TestNornSchema;
 var
   S: TSchemaBuilder;
+  Cur: Currency;
 begin
   Group('Norn — skjemabygger');
 
@@ -1930,7 +1931,8 @@ begin
       Text('a').Nullable;
       Text('b').Default('hei');
       Text('c').Default('med''fnutt');
-      Numeric('d', 8, 4).Default(Currency(1.5));
+      Cur := 1.5;
+      Numeric('d', 8, 4).Default(Cur);
     end;
     Check(Pos('"a" TEXT DEFAULT', Sql(S, 0)) = 0, 'nullable gir ikke NOT NULL');
     Check(Pos('"b" TEXT NOT NULL DEFAULT ''hei''', Sql(S, 0)) > 0,
@@ -2659,6 +2661,7 @@ var
   Feilet_: Boolean;
   T0, Without, With_: Int64;
   Kr: Integer;
+  Cur: Currency;
 begin
   Group('SQLite');
 
@@ -2950,23 +2953,52 @@ begin
     CheckEqI(A.BytesReserved, Reservert,
       'arenaen vokser ikke over 500 spørringer mot SQLite');
 
-    { ---- Currency-aritmetikk på tvers av kompilatorer ---- }
-    { Premisstest. FPC 3.3.1 og 3.2.2 er uenige om én form:
-      Currency(I) * <heltallsliteral> gir I/100 på trunk og I*100 på 3.2.2.
-      Formene under er like på begge, og det er dem koden skal bruke.
-      Slutter de å være like, er det et funn og ikke en grunn til å myke
-      opp testen. }
-    { Sjekkes gjennom CurrencyToSql, altså det som faktisk havner i
-      databasen — og fordi enhver skalering med et heltall her ville vært
-      den samme fella testen handler om. }
+    { ---- Currency arithmetic across compilers and architectures ---- }
+    { A premise test, and it has been wrong twice.
+
+      First premise: FPC 3.3.1 and 3.2.2 disagree about one form.
+      Currency(I) * <integer literal> gives I/100 on trunk and I*100 on
+      3.2.2 — silently, on money.
+
+      Second premise, found when the framework was first compiled for
+      x86_64. A typecast into Currency does one of three things there,
+      and the difference is invisible at the call site — measured with
+      I = 7:
+
+                                  x86_64      aarch64
+        Currency(I)               refuses to compile
+        Currency(I * 100)         0.0700      700.0000
+        Currency(10)              0.0010       10.0000
+        Currency(1234.50)      1234.5000     1234.5000
+
+      An integer operand is reinterpreted as the scaled Int64 that
+      Currency is underneath, rather than converted. A real literal is
+      converted. The old version of this test used the first form and
+      therefore only ever built on aarch64.
+
+      So the rule has no exceptions worth teaching: **assign into
+      Currency, never cast into it.** Assignment is a defined conversion
+      on every compiler and every target. That is what the forms below
+      use, and it is what PropAsCurrency in Askr.Urd.Model exists for.
+
+      Checked through CurrencyToSql, which is what actually reaches the
+      database — and because any scaling by an integer here would be the
+      very trap the test is about. }
     Kr := 7;
-    CheckEqS(CurrencyToSql(Currency(Kr)), '7.0000', 'Currency(I) alene');
-    CheckEqS(CurrencyToSql(Currency(Kr * 100)), '700.0000',
-      'Currency(I * 100) — multiplikasjon før konvertering');
-    CheckEqS(CurrencyToSql(Currency(Kr) * 100.0), '700.0000',
-      'Currency(I) * flyttallsliteral');
-    CheckEqS(CurrencyToSql(Currency(Kr) / 4), '1.7500', 'Currency(I) / 4');
-    CheckEqS(CurrencyToSql(Currency(Kr) + 1), '8.0000', 'Currency(I) + 1');
+    Cur := Kr;
+    CheckEqS(CurrencyToSql(Cur), '7.0000', 'assignment from an integer');
+    Cur := Kr * 100;
+    CheckEqS(CurrencyToSql(Cur), '700.0000',
+      'multiplication before the conversion');
+    Cur := Kr;
+    Cur := Cur * 100;
+    CheckEqS(CurrencyToSql(Cur), '700.0000', 'Currency * integer literal');
+    Cur := Kr;
+    Cur := Cur / 4;
+    CheckEqS(CurrencyToSql(Cur), '1.7500', 'Currency / 4');
+    Cur := Kr;
+    Cur := Cur + 1;
+    CheckEqS(CurrencyToSql(Cur), '8.0000', 'Currency + 1');
 
     { ---- statement-cachen ---- }
     Sq := TSqliteConnection(C);

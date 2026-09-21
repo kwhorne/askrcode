@@ -14,6 +14,51 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **`./askr test:amd64` — the whole suite built and run for x86_64.**
+  Architecture is a third axis beside the two compiler versions, and it
+  was not covered: every build and every test run of this framework had
+  been aarch64, including the Docker image, because Docker on Apple
+  Silicon runs arm64 by default.
+
+  It is a container with `--platform linux/amd64` and its own
+  `.build-amd64`, since `.ppu` files are bound to the target. On Apple
+  Silicon it goes through Rosetta and takes 15 seconds. `check`, `pg` and
+  `mysql` take `ASKR_ARCH=amd64` the same way.
+
+### Fixed
+
+- **The rule for `Currency` was wrong in the docs, and the tests were
+  written to the wrong rule.** 0.9.1 fixed the framework's own three
+  sites; the new gate then found four more in the suites and one in
+  `examples/run`.
+
+  A typecast from an integer into `Currency` reinterprets the scaled
+  Int64 instead of converting, and whether it does so depends on the
+  compiler *and* the architecture. Measured with `I = 7`:
+
+  | form | x86_64 | aarch64 3.2.2 | aarch64 trunk |
+  |---|---|---|---|
+  | `Currency(I)` | does not compile | 7.0000 | 7.0000 |
+  | `Currency(I * 100)` | **0.0700** | 700.0000 | 700.0000 |
+  | `Currency(10)` | **0.0010** | 10.0000 | 10.0000 |
+  | `Currency(I) * 100` | — | 700.00 | **0.07** |
+  | `Currency(1234.50)` | 1234.5000 | 1234.5000 | 1234.5000 |
+
+  The docs had called `Currency(I * 100)` one of the safe forms. It was
+  safe on aarch64, which is all anyone had ever run. There is one rule
+  now and it has no exceptions: **assign, never cast.**
+
+  `examples/run/setupdb.lpr` was inserting 0.07 where it meant 700 on
+  x86_64. `./askr run:demo` prints the balances, and they are right on
+  both architectures now.
+
+- **`./askr run:demo` could not run without a local compiler.** It passed
+  an absolute host path to a binary running with `/work` as its working
+  directory, so in container mode it never got further than `Can't find
+  unit Shop.Gen`.
+
 ### Changed
 
 - **The install instructions no longer say `apt install fpc`.** That

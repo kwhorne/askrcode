@@ -12,6 +12,7 @@ var
   A: TArena;
   C: TDbConnection;
   I, J, Extra: Integer;
+  Money: Currency;
 begin
   { With_ et tall som argument legges det på så mange ekstra tabeller. Skjemaet
     en ekte app har er ikke to tabeller, og introspeksjonen kjører på hver
@@ -41,24 +42,31 @@ begin
       '  shipped TINYINT(1) NOT NULL DEFAULT 0)');
 
     for I := 1 to 12 do
+    begin
+      Money := I * 100;
       C.ExecParams(A,
         'INSERT INTO customers (name, email, balance, active, weight) ' +
         'VALUES (?, ?, ?, ?, ?)',
         [DbParam(A, 'Customer ' + IntToStr(I)),
          DbParam(A, 'k' + IntToStr(I) + '@example.com'),
-         { Currency(I) * 100 ville gitt 0,01 på FPC 3.3.1 og 100,00 på
-           3.2.2 — se CLAUDE.md. Multiplikasjonen gjøres derfor før
-           konverteringen. }
-         DbParam(A, Currency(I * 100)),
+         { Assigned, never cast. A typecast into Currency reinterprets
+           the scaled Int64 rather than converting: Currency(I * 100) is
+           0.07 on x86_64 and 700 on aarch64, and Currency(I) * 100 is
+           0.01 on FPC 3.3.1 and 100 on 3.2.2. See CLAUDE.md. }
+         DbParam(A, Money),
          DbParam(A, I mod 3 <> 0),
          DbParam(A, FloatToSql(60.5 + I))]);
+    end;
 
     for I := 1 to 20 do
+    begin
+      Money := I * 37;
       C.ExecParams(A,
         'INSERT INTO orders (customer_id, amount, shipped) VALUES (?, ?, ?)',
         [DbParam(A, Int64((I mod 12) + 1)),
-         DbParam(A, Currency(I * 37)),
+         DbParam(A, Money),
          DbParam(A, I mod 2 = 0)]);
+    end;
 
     for I := 1 to Extra do
     begin
@@ -69,9 +77,12 @@ begin
       C.Exec(A, Format(
         'CREATE INDEX tabell_%d_name_idx ON tabell_%d (name)', [I, I]));
       for J := 1 to 3 do
+      begin
+        Money := J;
         C.ExecParams(A, Format('INSERT INTO tabell_%d (name, verdi) ' +
           'VALUES (?, ?)', [I]),
-          [DbParam(A, 'rad'), DbParam(A, Currency(J))]);
+          [DbParam(A, 'rad'), DbParam(A, Money)]);
+      end;
     end;
 
     WriteLn(Format('setupdb: .build/run/shop.db klar (%d tabeller)',

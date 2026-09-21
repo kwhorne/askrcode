@@ -121,9 +121,11 @@ Worth copying, because the reasoning transfers:
 **End-to-end over real sockets** binds to port 0 and reads the port back, so
 suites run in parallel without colliding.
 
-**Premise tests** are stated as such. The `Currency(I) * 100` difference
-between compilers, and the arena levelling off, are held down by tests whose
-job is to fail loudly if the premise changes.
+**Premise tests** are stated as such. That a typecast into `Currency`
+answers differently per compiler *and* per architecture, and that the arena
+levels off, are held down by tests whose job is to fail loudly if the
+premise changes. The `Currency` one has been wrong twice, which is the
+argument for writing premises down rather than remembering them.
 
 **Mutation checks.** After writing a test for something important — session
 fixation, double-delivery in the queue — remove the code it guards and check

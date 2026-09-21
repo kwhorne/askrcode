@@ -12,10 +12,26 @@
 set -e
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
-BUILD="$ROOT/.build"
+
+# ASKR_ARCH=amd64 bygger og kjører alt for x86_64 i container, uansett hva
+# maskinen er. Det finnes fordi arkitektur er en ekte akse: første gang
+# rammeverket ble bygget for x86_64 kompilerte det ikke, og 705 tester på
+# aarch64 hadde ikke sagt fra. Se `./askr test:amd64`.
+#
+# .ppu-filer er bundet til målet, så de to byggene kan ikke dele katalog.
+if [ "$ASKR_ARCH" = "amd64" ]; then
+  BUILD="$ROOT/.build-amd64"
+  IMAGE=askr-fpc:bookworm-amd64
+  DOCKER_PLATFORM="--platform linux/amd64"
+  ASKR_FPC=""            # tving containeren, selv med fpc på PATH
+  ASKR_FORCE_DOCKER=1
+else
+  BUILD="$ROOT/.build"
+  IMAGE=askr-fpc:bookworm
+  DOCKER_PLATFORM=""
+fi
 UNITS="$BUILD/units"
 BIN="$BUILD/bin"
-IMAGE=askr-fpc:bookworm
 
 # Finner en lokal fpc. ASKR_FPC peker på en bestemt kompilator; ellers brukes
 # den som står på PATH. En fpcupdeluxe-installasjon legger fpc.cfg ved siden av
@@ -41,7 +57,7 @@ if [ -n "$LOCAL_FPC" ]; then
 fi
 
 have_local_fpc() {
-  [ -n "$LOCAL_FPC" ]
+  [ -z "$ASKR_FORCE_DOCKER" ] && [ -n "$LOCAL_FPC" ]
 }
 
 # -B    : bygg alt. Avhengighetssjekken mot .ppu-ene er ikke til å stole på
@@ -56,7 +72,8 @@ FPCFLAGS="-B -Sh -O2 -gl -vewn $DARWIN_FLAGS -Fu$ROOT/src/cli -Fu$ROOT/src/core 
 ensure_image() {
   if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "Bygger $IMAGE (én gang) ..."
-    docker build -f "$ROOT/tools/Dockerfile.fpc" -t "$IMAGE" "$ROOT/tools"
+    docker build $DOCKER_PLATFORM -f "$ROOT/tools/Dockerfile.fpc" \
+      -t "$IMAGE" "$ROOT/tools"
   fi
 }
 
@@ -68,7 +85,7 @@ fpc_run() {
     ( cd "$ROOT" && "$LOCAL_FPC" $FPCFLAGS "$@" )
   else
     ensure_image
-    docker run --rm -v "$ROOT":/work -w /work "$IMAGE" \
+    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
       fpc $(echo "$FPCFLAGS" | sed "s|$ROOT|/work|g") "$@"
   fi
   status=$?
@@ -86,8 +103,8 @@ bin_run_quiet() {
     "$BIN/$target" "$@"
   else
     ensure_image
-    docker run --rm -v "$ROOT":/work -w /work "$IMAGE" \
-      "/work/.build/bin/$target" "$@"
+    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+      "${BIN#$ROOT/}/$target" "$@"
   fi
 }
 
@@ -364,9 +381,9 @@ cmd_mysql() {
     ASKR_MYSQL_DSN="$MYSQL_DSN" "$BIN/askr_mysql_tests"
   else
     ensure_image
-    docker run --rm ${MYSQL_NET:+--network "$MYSQL_NET"} \
+    docker run --rm $DOCKER_PLATFORM ${MYSQL_NET:+--network "$MYSQL_NET"} \
       -e ASKR_MYSQL_DSN="$MYSQL_DSN" \
-      -v "$ROOT":/work -w /work "$IMAGE" /work/.build/bin/askr_mysql_tests
+      -v "$ROOT":/work -w /work "$IMAGE" "${BIN#$ROOT/}/askr_mysql_tests"
   fi
 }
 
@@ -385,8 +402,9 @@ cmd_pg() {
     ASKR_PG_DSN="$dsn" "$BIN/askr_pg_tests"
   else
     ensure_image
-    docker run --rm ${net:+--network "$net"} -e ASKR_PG_DSN="$dsn" \
-      -v "$ROOT":/work -w /work "$IMAGE" /work/.build/bin/askr_pg_tests
+    docker run --rm $DOCKER_PLATFORM ${net:+--network "$net"} \
+      -e ASKR_PG_DSN="$dsn" \
+      -v "$ROOT":/work -w /work "$IMAGE" "${BIN#$ROOT/}/askr_pg_tests"
   fi
 }
 
@@ -442,11 +460,16 @@ cmd_run_demo() {
   echo
   echo "— transpilering (comptime leser skjemaet her)"
   fpc_run examples/run/transpile.lpr
-  bin_run_quiet transpile examples/run/shop.run "$BUILD/run/Shop.Gen.pas" Shop.Gen
+  # Relativ sti, ikke absolutt: argumentet leses av en binær som i
+  # container-modus kjører med /work som arbeidskatalog, og en vertssti
+  # finnes ikke der. Målet kom aldri lenger enn til «Can't find unit
+  # Shop.Gen» uten en lokal fpc.
+  bin_run_quiet transpile examples/run/shop.run \
+    "${BUILD#$ROOT/}/run/Shop.Gen.pas" Shop.Gen
 
   echo
   echo "— generert Pascal gjennom fpc, og kjørt"
-  fpc_run -Fu.build/run examples/run/rundemo.lpr
+  fpc_run -Fu"${BUILD#$ROOT/}/run" examples/run/rundemo.lpr
   bin_run_quiet rundemo
 }
 
@@ -535,6 +558,7 @@ case "${1:-}" in
   db:up) shift; cmd_db_up "$@" ;;
   db:down) shift; cmd_db_down "$@" ;;
   test)  shift; cmd_test "$@" ;;
+  test:amd64) shift; ASKR_ARCH=amd64 exec "$0" test "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -551,6 +575,10 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
   ./askr build    bygg alle units og eksempelappen
   ./askr test     bygg og kjør testsuiten
   ./askr check    samme, med område- og overflytkontroll slått på
+  ./askr test:amd64
+                  samme suite bygget og kjørt for x86_64 i container.
+                  Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,
+                  og 705 tester på aarch64 sa ingenting
   ./askr tls:certs
                   lag selvsignerte sertifikater i .build/tls
   ./askr run [port]

@@ -239,15 +239,21 @@ still worth having.
 Not solved. Build on the platform you deploy to, or in a container that
 matches it — `tools/Dockerfile.fpc` is what the framework itself uses.
 
-**The architecture is a real axis, and it is not one Askr's own test suite
-covers.** Every build and every test run of this framework has been on
-aarch64. The first time it was compiled for x86_64 it did not build at all:
-`Currency(GetFloatProp(...))` is an illegal typecast there, because
-`Extended` is 80 bits and a type of its own, while on aarch64 it is an
-alias for `Double` and the same line compiles. Three sites, none of them
-caught by 705 tests. Fixed in 0.9.1.
+**The architecture is a real axis.** Every build and every test run of this
+framework was on aarch64 until 0.9.1, and the first x86_64 build did not
+compile: `Currency(GetFloatProp(...))` is an illegal typecast there,
+because `Extended` is 80 bits and a type of its own, while on aarch64 it is
+an alias for `Double`. Three sites, none of them caught by 705 tests.
 
-So if you deploy to an architecture you do not develop on, build there
-early rather than on the day you go live. Note also that Docker on an
-Apple Silicon machine runs arm64 images: a container is not by itself a
-different architecture.
+The compile error was the lucky half. The same difference also makes a
+typecast from an *integer* into `Currency` compile and silently produce the
+wrong number — `Currency(I * 100)` is 0.07 on x86_64 and 700 on aarch64.
+See [Money](database.md#money); the rule is to assign, never cast.
+
+`./askr test:amd64` now runs the whole suite built for x86_64 in a
+container, and that is what found the remaining cases. Note that Docker on
+an Apple Silicon machine runs arm64 images by default: a container is not
+by itself a second architecture, `--platform` is.
+
+If you deploy to an architecture you do not develop on, build there early
+rather than on the day you go live.

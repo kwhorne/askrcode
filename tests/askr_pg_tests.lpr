@@ -92,6 +92,7 @@ var
   R: TDbResult;
   Id: Int64;
   I: Integer;
+  Money: Currency;
   ForPrep, ForHits, ForServer: Int64;
   Err, Text_: string;
   V: Currency;
@@ -210,8 +211,9 @@ begin
 
     Start('verdier over prepared-veien');
     C.FlushStatementCache;
+    Money := 1234.50;
     C.ExecParams(A, 'UPDATE pg_customer SET balance = $1 WHERE id = $2',
-      [DbParam(A, Currency(1234.50)), DbParam(A, Id)]);
+      [DbParam(A, Money), DbParam(A, Id)]);
     R := C.ExecParams(A,
       'SELECT name, balance, active, created_at FROM pg_customer WHERE id = $1',
       [DbParam(A, Id)]);
@@ -240,11 +242,17 @@ begin
     C.StartTransaction;
     ForPrep := C.PreparedCount;
     for I := 1 to 500 do
+    begin
+      { Assigned, never cast: Currency(I) is a reinterpretation of the
+        scaled Int64 on x86_64, not a conversion. }
+      Money := I;
+      Money := Money / 4;
       C.ExecParams(A,
         'INSERT INTO pg_customer (name, email, balance) VALUES ($1, $2, $3)',
         [DbParam(A, 'Bulk ' + IntToStr(I)),
          DbParam(A, 'bulk' + IntToStr(I) + '@example.com'),
-         DbParam(A, Currency(I) / 4)]);
+         DbParam(A, Money)]);
+    end;
     C.Commit;
     LikeI('500 innsettinger, ett statement', 1, C.PreparedCount - ForPrep);
     R := C.ExecParams(A,
@@ -258,10 +266,11 @@ begin
     { Statementet ble forberedt inne i transaksjonen, og denne gangen
       committet — da skal det fortsatt finnes. }
     ForPrep := C.PreparedCount;
+    Money := 1;
     C.ExecParams(A,
       'INSERT INTO pg_customer (name, email, balance) VALUES ($1, $2, $3)',
       [DbParam(A, 'After_'), DbParam(A, 'etter@example.com'),
-       DbParam(A, Currency(1))]);
+       DbParam(A, Money)]);
     LikeI('commit beholder det forberedte statementet', 0,
       C.PreparedCount - ForPrep);
 

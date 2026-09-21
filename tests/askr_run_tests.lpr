@@ -58,11 +58,12 @@ begin
   end;
 end;
 
-procedure LagDatabase;
+procedure MakeDatabase;
 var
   A: TArena;
   C: TDbConnection;
   I: Integer;
+  Money: Currency;
 begin
   ForceDirectories('.build/run');
   Db := '.build/run/test.db';
@@ -78,16 +79,26 @@ begin
     C.Exec(A, 'CREATE TABLE orders (id INTEGER PRIMARY KEY, ' +
       'customer_id INTEGER NOT NULL REFERENCES customers(id), ' +
       'amount NUMERIC(12,2) NOT NULL)');
+    { Assigned, never cast. Currency(I * 100) compiles — Integer * Integer
+      is Int64 and Currency is an Int64 underneath — but on x86_64 it
+      reinterprets those bits instead of converting them, so 700 becomes
+      0.07. It said 700 here only because the machine was aarch64. }
     for I := 1 to 6 do
+    begin
+      Money := I * 100;
       C.ExecParams(A, 'INSERT INTO customers (name, email, balance, active, ' +
         'weight) VALUES (?, ?, ?, ?, ?)',
         [DbParam(A, 'Customer ' + IntToStr(I)),
          DbParam(A, 'c' + IntToStr(I) + '@example.com'),
-         DbParam(A, Currency(I * 100)), DbParam(A, I mod 3 <> 0),
+         DbParam(A, Money), DbParam(A, I mod 3 <> 0),
          DbParam(A, FloatToSql(60 + I))]);
+    end;
     for I := 1 to 10 do
+    begin
+      Money := I * 50;
       C.ExecParams(A, 'INSERT INTO orders (customer_id, amount) VALUES (?, ?)',
-        [DbParam(A, Int64((I mod 6) + 1)), DbParam(A, Currency(I * 50))]);
+        [DbParam(A, Int64((I mod 6) + 1)), DbParam(A, Money)]);
+    end;
   finally
     C.Free;
     A.Free;
@@ -153,7 +164,7 @@ var
   Message_: string;
 begin
   WriteLn('askr — Rún');
-  LagDatabase;
+  MakeDatabase;
 
   Start('generics');
   Message_ := Oversett(

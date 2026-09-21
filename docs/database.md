@@ -233,10 +233,25 @@ gets `SQLITE_BUSY` instead of waiting.
 
 Use `Currency`, not a float.
 
-> **`Currency(I) * <integer literal>` gives different answers on 3.2.2 and
-> 3.3.1.** With `I = 7`, `Currency(I) * 100` is **700.00 on 3.2.2 and 0.07
-> on trunk**. This is money, and it is silent: no warning, no error. The
-> forms that agree on both — and the ones the framework uses — are
-> `Currency(I * 100)`, `Currency(I) * 100.0`, and assigning to a `Currency`
-> variable first. Addition and division are unaffected. A premise test holds
-> this down.
+> **Never cast into `Currency`. Assign.**
+>
+> `Currency` is an Int64 scaled by 10000, and a typecast from an integer
+> reinterprets those bits instead of converting the value. Whether it does
+> so depends on the compiler *and* the architecture. Measured with `I = 7`:
+>
+> | form | x86_64 | aarch64 3.2.2 | aarch64 trunk |
+> |---|---|---|---|
+> | `Currency(I)` | does not compile | 7.0000 | 7.0000 |
+> | `Currency(I * 100)` | **0.0700** | 700.0000 | 700.0000 |
+> | `Currency(10)` | **0.0010** | 10.0000 | 10.0000 |
+> | `Currency(I) * 100` | — | 700.00 | **0.07** |
+> | `Currency(1234.50)` | 1234.5000 | 1234.5000 | 1234.5000 |
+>
+> This is money, and it is silent: no warning, no error. Assignment is a
+> defined conversion everywhere:
+>
+> ```pascal
+> Money := I * 100;     { 700.00 on all of them }
+> ```
+>
+> A premise test holds the table down, and it is run on both architectures.
