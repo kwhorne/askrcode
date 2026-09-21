@@ -17,7 +17,8 @@ wires it into `app.lpr`. You get eight routes:
 | `/forgot-password`, `/reset-password/:token` | Resetting a forgotten one |
 | `/dashboard` | Where signing in lands you |
 | `/settings/profile` | Name and email |
-| `/settings/security` | Change password, and where passkeys will go |
+| `/settings/security` | Change password, manage passkeys |
+| `/settings/passkeys`, `/login/passkey` | The WebAuthn ceremonies |
 
 `askr new` asks when it is run from a terminal. `--auth` and `--no-auth`
 answer for a script; without a terminal and without a flag the answer is no,
@@ -42,12 +43,10 @@ login form that dumps you on the welcome page. When you build the real
 thing in Inertia, point `/dashboard` at your own handler and delete these
 three.
 
-`/settings/security` has a **Passkeys** section that says it is not
-available yet and why, rather than showing a button that does nothing.
-WebAuthn needs ECDSA P-256 verification, a CBOR decoder and COSE key
-parsing, and the crypto here deliberately does not depend on OpenSSL — so
-all of it has to be written in Pascal first. Passwords and password
-changes work today.
+`/settings/security` lists your **passkeys**, with a button to add one
+and a link to remove each. `/login` gains *Sign in with a passkey*. It
+works out of the box on `localhost`; for production, set the RP ID and
+origin — see [Passkeys](webauthn.md).
 
 ### What you get, and why it looks like that
 

@@ -16,6 +16,36 @@ with the zero-major caveat that minor releases may break things until
 
 Nothing yet.
 
+## 0.6.3 — 2026-09-21
+
+`askr make auth` wires passkeys up. 0.6.2 could verify them; this one
+gives you the table, the routes and the browser half, so a generated
+project can register a passkey and sign in with it out of the box.
+
+### Added
+
+- **A `credentials` table**, a `TCredential` model, and five routes:
+  a challenge and a registration under `/settings/passkeys`, a delete,
+  and a challenge plus a sign-in under `/login/passkey`.
+- **`/settings/security` lists your passkeys**, with a button to add one
+  and a link to remove each. `/login` gained *Sign in with a passkey*.
+- **About thirty lines of inline JavaScript** for both ceremonies. Inline
+  for the same reason the rest of the auth scaffold is plain HTML: signing
+  in has to work before `npm install` has been run.
+- RP ID and origin default to the request, so `askr serve` works with no
+  configuration — WebAuthn treats localhost as a secure context. Override
+  them in production:
+
+  ```toml
+  [webauthn]
+  rp_id  = "example.com"
+  origin = "https://example.com"
+  ```
+
+- Sign-in refuses to say whether a credential exists. Unknown credential
+  and bad signature give the same answer, because anything else tells an
+  attacker which keys are registered here.
+
 ## 0.6.2 — 2026-09-20
 
 Passkeys, from the arithmetic up.

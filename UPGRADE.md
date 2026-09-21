@@ -8,6 +8,15 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.6.3
+
+**`askr make auth --force` now writes a third migration** and a
+`TCredential` model. On an existing project, rerunning the scaffold adds
+`App.Migrations.CreateCredentials` and you need `askr migrate` after it.
+
+Nothing else changes. Projects that do not rerun the scaffold are
+unaffected.
+
 ## 0.6.2
 
 Nothing in this release can break your code. It adds units; it changes

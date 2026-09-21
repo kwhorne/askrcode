@@ -80,9 +80,23 @@ Alle seks feiler fortsatt på trunk.
   dom**: de fleste plattformautentikatorer teller ikke i det hele tatt
   og sender alltid null. Å nekte innlogging på det ville stengt ute det
   vanligste utstyret.
-* **Stillaset wirer det ikke opp ennå.** Sikkerhetssida sier det rett
-  ut. Den sa før at Askr ikke hadde WebAuthn; det ble usant med 0.6.2
-  og måtte rettes i samme slengen.
+* **Stillaset wirer det opp fra 0.6.3.** Tabell, modell, fem ruter og
+  rundt tretti linjer JS. Fire feil på veien, alle funnet ved å kjøre en
+  virtuell autentikator over CDP — ingen av dem synlige ved lesing:
+  - **Versjonskollisjon.** `SkrivMigrasjoner` bruker selv T og T+1, så
+    min `+1` ga credentials samme versjon som password_resets.
+    Migratoren hoppet over den som alt kjørt, tabellen ble aldri laget,
+    og sikkerhetssida svarte 500.
+  - **`Label` er et reservert ord**, så propertyen het `Label_` — og Urd
+    snake_caser property-navnet, så kolonnen ble `label_` mens
+    migrasjonen sa `label`. Heter nå `Nickname`.
+  - **`/\\//g` i emittert JavaScript.** Pascal tolker ikke `\\`, så
+    `\\/` kom ut som to tegn, den andre skråstreken lukket regexen, og
+    `g` ble lest som en variabel. Feilmeldingen var «g is not defined»,
+    som peker ingen vei.
+  - **En IP kan ikke være RP ID.** `localhost` er gyldig, `127.0.0.1`
+    ikke. Nettleseren sier bare «This is an invalid domain». Serveren
+    sjekker det nå og sier hva man skal gjøre.
 
 ## Elliptiske kurver
 

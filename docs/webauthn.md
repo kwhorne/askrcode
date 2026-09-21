@@ -88,6 +88,37 @@ So `CloneWarning` is something you decide about. Refusing every sign-in
 where the counter stood still would lock out the most common hardware
 there is.
 
+## The scaffold does this for you
+
+```sh
+askr make auth        # or askr new shop --auth
+askr build && askr migrate
+```
+
+You get a `credentials` table, a `TCredential` model, and five routes: a
+challenge and a registration under `/settings/passkeys`, a delete, and a
+challenge plus a sign-in under `/login/passkey`. `/settings/security`
+lists the keys; `/login` gains *Sign in with a passkey*.
+
+RP ID and origin default to the request, so `askr serve` works with no
+configuration — a browser treats `localhost` as a secure context. Set
+them for production:
+
+```toml
+[webauthn]
+rp_id  = "example.com"
+origin = "https://example.com"
+```
+
+**An IP address cannot be an RP ID.** `localhost` is fine, `127.0.0.1` is
+not — that is a WebAuthn rule, and the browser's own message for it is
+"This is an invalid domain", which tells you nothing. The challenge route
+checks and says what to do instead.
+
+Sign-in gives the same answer for an unknown credential as for a bad
+signature. Anything else tells an attacker which keys are registered
+here.
+
 ## What is not here
 
 **Attestation is not verified.** The attestation statement says which
@@ -101,12 +132,7 @@ nobody assumes otherwise.
 **Only ES256 on P-256.** An RSA or Ed25519 credential is refused at
 registration rather than stored and hoped for.
 
-**No scaffolding yet.** `askr make auth` does not create the credentials
-table or the routes. You can build it today on top of these two functions;
-the ceremonies and the verification are done. The sign-in scaffold's
-security page says the same rather than implying more.
-
-**No browser-side helper.** The `navigator.credentials` calls, the
-base64url plumbing and the `PublicKeyCredentialCreationOptions` are yours
-to write. They are perhaps thirty lines of JavaScript, and wrapping them
-badly would be worse than leaving them.
+**No helper library for the browser half.** `askr make auth` writes the
+thirty-odd lines it needs, inline, and they are yours to edit. Wrapping
+`navigator.credentials` in a package would hide the one part you are most
+likely to want to change.
