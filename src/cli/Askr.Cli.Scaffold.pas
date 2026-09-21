@@ -1,9 +1,10 @@
-{ Askr.Cli.Scaffold — askr new og askr make.
+{ Askr.Cli.Scaffold — askr new and askr make.
 
-  Malene er små med vilje. Et stillas som genererer femten filer man ikke
-  forstår er verre enn ingen stillas: målet i PRD-en er en CRUD-app skrevet
-  fra bunnen på under en time av noen som ikke har skrevet Askr før, og da
-  må det som genereres være lesbart i sin helhet. }
+  The templates are small on purpose. Scaffolding that generates fifteen
+  files you do not understand is worse than no scaffolding: the goal in the
+  PRD is a CRUD app written from scratch in under an hour by somebody who
+  has not written Askr before, and then what is generated has to be
+  readable in its entirety. }
 unit Askr.Cli.Scaffold;
 
 {$mode Delphi}{$H+}
@@ -22,8 +23,9 @@ procedure LagSeeder(const Rot, Name: string);
 procedure MakeJob(const Rot, Name: string);
 procedure LagMiddleware(const Rot, Name: string);
 
-{ Eksponert fordi Askr.Cli.Auth skriver filer på samme måte, og fordi to
-  ulike måter å skrive en generert fil på ville gitt to ulike utskrifter. }
+{ Exposed because Askr.Cli.Auth writes files the same way, and because two
+  different ways of writing a generated file would have given two different
+  outputs. }
 procedure Emit(const Path_, Content_: string);
 function Tidsstempel: string;
 procedure UpdateIndex(const Rot, Folder, IndeksUnit, Prefiks: string);
@@ -31,9 +33,9 @@ procedure UpdateIndex(const Rot, Folder, IndeksUnit, Prefiks: string);
 implementation
 
 uses
-  { I implementation, ikke i interface: Askr.Cli.Auth bruker Emit og
-    UpdateIndex herfra, og Pascal tillater sirkelen bare når minst én
-    av dem står her. }
+  { In implementation, not in interface: Askr.Cli.Auth uses Emit and
+    UpdateIndex from here, and Pascal allows the circle only when at least
+    one of them is here. }
   Askr.Cli.Auth;
 
 const
@@ -49,8 +51,8 @@ begin
   L := TStringList.Create;
   try
     L.Text := Content_;
-    { TStringList legger på et linjeskift til slutt. Innholdet er skrevet
-      med #10 hele veien, og SaveToFile skal ikke oversette dem. }
+    { TStringList adds a line break at the end. The content is written with
+      #10 throughout, and SaveToFile is not to translate them. }
     L.TrailingLineBreak := False;
     L.SaveToFile(Path_);
   finally
@@ -101,9 +103,9 @@ begin
   end;
 end;
 
-{ Engelsk flertall, i den grad en tabell trenger det. Samme regler som
-  Askr.Urd.Model bruker, og de er med vilje enkle: en modell som heter noe
-  uregelmessig setter tabellnavnet selv i Describe. }
+{ English plurals, to the extent a table needs them. The same rules
+  Askr.Urd.Model uses, and they are deliberately simple: a model with an
+  irregular name sets the table name itself in Describe. }
 function Flertall(const S: string): string;
 var
   Sis: Char;
@@ -132,8 +134,9 @@ begin
   Result := Format('%.4d%.2d%.2d%.2d%.2d%.2d', [Y, M, D, H, Mi, Se]);
 end;
 
-{ Rammeverkets rot. ASKR_HOME først, så oppover fra denne katalogen — en
-  app laget inne i repoet skal finne det uten at noen setter noe. }
+{ The framework's root. ASKR_HOME first, then upwards from this directory
+  — an app made inside the repository is to find it without anybody setting
+  anything. }
 function AskrRot: string;
 var
   Dir, Prev: string;
@@ -155,16 +158,17 @@ begin
   Result := '';
 end;
 
-{ Samler alle App.Migrations.*-unitene i én som bare «uses» dem.
+{ Gathers all the App.Migrations.* units into one that merely "uses" them.
 
-  Hver migrasjon registrerer seg selv i sin egen initialization-seksjon,
-  slik driverne gjør. Men en unit ingen refererer blir aldri linket inn av
-  fpc, og da kjører ikke initialization. Indeksen finnes bare for å
-  referere dem.
+  Each migration registers itself in its own initialization section, the way
+  the drivers do. But a unit nobody references is never linked in by fpc,
+  and then initialization does not run. The index exists only to reference
+  them.
 
-  Den leses av katalogen og ikke av en liste vi holder i hodet: en fil lagt
-  til for hånd, eller en som er slettet, skal ikke kunne bli usynlig. Det er
-  samme regel som at Norn-codegen leser databasen og ikke migrasjonene. }
+  It is read from the directory and not from a list we keep in our heads: a
+  file added by hand, or one that has been deleted, must not be able to
+  become invisible. That is the same rule as Norn codegen reading the
+  database and not the migrations. }
 procedure UpdateIndex(const Rot, Folder, IndeksUnit, Prefiks: string);
 var
   R: TSearchRec;
@@ -226,9 +230,9 @@ begin
     Halt(1);
   end;
   Framework := AskrRot;
-  { Finnes en utsjekking ved siden av, peker prosjektet på den — det er
-    slik rammeverket utvikles. Ellers står bare versjonen, og `askr
-    install` henter den. }
+  { If there is a checkout alongside, the project points at it — that is
+    how the framework is developed. Otherwise only the version is there, and
+    `askr install` fetches it. }
   if Framework <> '' then
     Pin := 'path = "' + Framework + '"'
   else
@@ -237,9 +241,10 @@ begin
   WriteLn('Storage ', Name);
   WriteLn;
 
-  { Seksjonen står sist med vilje: i TOML hører alt etter en [seksjon] til
-    den, så en [app] i midten ville gjort units og askr til app.units og
-    app.askr — og byggingen ville sluttet å finne rammeverket. }
+  { The section comes last on purpose: in TOML everything after a
+    [section] belongs to it, so an [app] in the middle would have turned
+    units and askr into app.units and app.askr — and the build would have
+    stopped finding the framework. }
   Emit(Rot + '/askr.toml',
     'name = "' + Name + '"' + #10 +
     'main = "app.lpr"' + #10 +
@@ -301,20 +306,21 @@ begin
     '  Askr.Session, Askr.Csrf, Askr.Auth,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
-    { Denne linja er markøren `askr make auth` setter inn foran. Endrer
-      du den, må uses-linjene legges til for hånd — verktøyet sier fra. }
+    { This line is the marker `askr make auth` inserts in front of. If you
+      change it, the uses lines have to be added by hand — the tool says
+      so. }
     '  App.Http.HomeController;' + #10 + #10 +
     'var' + #10 +
     '  Server: TAskrServer;' + #10 +
     '  DbPool: TDbPool;' + #10 + #10 +
-    '{ Én forbindelse per request. Without dette har modellene og query' + #10 +
-    '  builderen ingen forbindelse å bruke, og det merkes først når noe' + #10 +
-    '  faktisk spør databasen.' + #10 +
+    '{ One connection per request. Without this the models and the query' + #10 +
+    '  builder have no connection to use, and it is not noticed until' + #10 +
+    '  something actually asks the database.' + #10 +
     '' + #10 +
-    '  Acquire og Release, ikke Lease: en leaset forbindelse leveres' + #10 +
-    '  tilbake når arenaen nullstilles, og det skjer først ved NESTE' + #10 +
-    '  request på denne workeren. With_ flere workere enn forbindelser i' + #10 +
-    '  poolen låser det seg. Her leveres den tilbake når svaret er laget. }' + #10 +
+    '  Acquire and Release, not Lease: a leased connection is handed back' + #10 +
+    '  when the arena is reset, and that does not happen until the NEXT' + #10 +
+    '  request on this worker. With more workers than connections in the' + #10 +
+    '  pool it deadlocks. Here it is handed back once the reply is made. }' + #10 +
     'function LeaseDb(Req: TRequest): TResponse;' + #10 +
     'begin' + #10 +
     '  UseDb(DbPool.Acquire);' + #10 +
@@ -324,8 +330,9 @@ begin
     'var' + #10 +
     '  C: TDbConnection;' + #10 +
     'begin' + #10 +
-    '  { Etterfiltre kjører også når middleware kortsluttet requesten, så' + #10 +
-    '    en statisk fil som aldri nådde LeaseDb er dekket av nil-sjekken. }' + #10 +
+    '  { After filters also run when middleware short-circuited the' + #10 +
+    '    request, so a static file that never reached LeaseDb is covered' + #10 +
+    '    by the nil check. }' + #10 +
     '  C := CurrentDb;' + #10 +
     '  UseDb(nil);' + #10 +
     '  if C <> nil then' + #10 +
@@ -363,9 +370,10 @@ begin
     '  { In development Vite serves the modules itself. For a production' + #10 +
     '    build, read public/build/.vite/manifest.json instead and set the' + #10 +
     '    tags from there — see examples/inertia in the framework. }' + #10 +
-    '  { Tittelen i HTML-skallet. Klienten setter vanligvis sin egen per' + #10 +
-    '    side med <svelte:head>; denne er den som star der til den gjor' + #10 +
-    '    det, og den som star der hvis den aldri gjor det. }' + #10 +
+    '  { The title in the HTML shell. The client usually sets its own' + #10 +
+    '    per page with <svelte:head>; this is the one that stands there' + #10 +
+    '    until it does, and the one that stands there if it never' + #10 +
+    '    does. }' + #10 +
     '  TInertia.SetTitle(' + Q + Name + Q + ');' + #10 + #10 +
     '  TInertia.SetHead(' + #10 +
     '    ' + Q + '<script type="module" ' + Q + ' +' + #10 +
@@ -379,15 +387,15 @@ begin
     '  { Static files first: they need neither session nor CSRF, and they' + #10 +
     '    short-circuit the request before any of it runs. }' + #10 +
     '  R.Use(Statisk.Serve);' + #10 +
-    '  { askr down / askr up. Står etter de statiske filene, slik at en' + #10 +
-    '    vedlikeholdsside med css fortsatt kan serveres. }' + #10 +
+    '  { askr down / askr up. It comes after the static files, so that a' + #10 +
+    '    maintenance page with css can still be served. }' + #10 +
     '  UseMaintenance(R);' + #10 + #10 +
-    '  { Databasen, hvis DATABASE_URL er satt. En app uten database skal' + #10 +
-    '    ikke nektes å starte. }' + #10 +
+    '  { The database, if DATABASE_URL is set. An app without a database' + #10 +
+    '    must not be refused a start. }' + #10 +
     '  if Cfg(' + Q + 'database.url' + Q + ') <> ' + Q + Q + ' then' + #10 +
     '  begin' + #10 +
-    '    { Minst én forbindelse per worker, ellers står de og venter på' + #10 +
-    '      hverandre. Opts.Workers = 0 betyr én per kjerne. }' + #10 +
+    '    { At least one connection per worker, or they stand waiting for' + #10 +
+    '      each other. Opts.Workers = 0 means one per core. }' + #10 +
     '    DbPool := TDbPool.Create(Cfg(' + Q + 'database.url' + Q + '),' + #10 +
     '      Max(8, Opts.Workers * 2));' + #10 +
     '    R.Use(@LeaseDb);' + #10 +
@@ -470,15 +478,16 @@ begin
     'end;' + #10 + #10 +
     'end.' + #10);
 
-  { Tomme indekser fra start, slik at app.lpr kompilerer før noen har laget
-    en eneste migrasjon. }
+  { Empty indexes from the start, so that app.lpr compiles before anybody
+    has made a single migration. }
   UpdateIndex(Rot, 'database', 'App.Migrations', 'App.Migrations.');
   UpdateIndex(Rot, 'database', 'App.Seeders', 'App.Seeders.');
 
-  { Lauf er frontendlaget i Askr, ikke en valgfri pakke ved siden av. To_
-    den er publisert på npm peker avhengigheten på rammeverkskatalogen —
-    samme sti som askr.toml allerede kjenner. Når den er publisert, byttes
-    denne linja mot et versjonsnummer og ingenting annet endrer seg. }
+  { Lauf is the frontend layer in Askr, not an optional package on the
+    side. Until it is published on npm the dependency points at the
+    framework directory — the same path askr.toml already knows. When it is
+    published, this line is swapped for a version number and nothing else
+    changes. }
   if Framework <> '' then
     LaufDep := '"file:' + IncludeTrailingPathDelimiter(Framework) + 'frontend/lauf"'
   else
@@ -511,12 +520,12 @@ begin
     'import { svelte } from ' + Q + '@sveltejs/vite-plugin-svelte' + Q + #10 +
     'import tailwindcss from ' + Q + '@tailwindcss/vite' + Q + #10 +
     #10 +
-    '// Lauf ligger som file:-avhengighet til den er publisert, altså en' + #10 +
-    '// symlink ut av dette treet, og har sine egne kopier av svelte og' + #10 +
-    '// @inertiajs for testing. Without dedupe løser Vite dem hver for seg, og' + #10 +
-    '// createInertiaApp setter opp en annen router enn <Form> importerer.' + #10 +
-    '// Feilen blir «Cannot read properties of undefined (reading visit)»,' + #10 +
-    '// langt fra årsaken.' + #10 +
+    '// Lauf sits as a file: dependency until it is published, that is, a' + #10 +
+    '// symlink out of this tree, and has its own copies of svelte and' + #10 +
+    '// @inertiajs for testing. Without dedupe Vite resolves them' + #10 +
+    '// separately, and createInertiaApp sets up a different router from' + #10 +
+    '// the one <Form> imports. The error is "Cannot read properties of' + #10 +
+    '// undefined (reading visit)", a long way from the cause.' + #10 +
     'export default defineConfig({' + #10 +
     '  plugins: [tailwindcss(), svelte()],' + #10 +
     '  resolve: {' + #10 +
@@ -533,15 +542,15 @@ begin
     '  },' + #10 +
     '})' + #10);
 
-  { Tailwind ser ikke inn i node_modules av seg selv. Without @source mangler
-    hver klasse Lauf bruker fra stilarket, og komponentene kommer ut uten
-    styling uten at noe sier hvorfor. }
+  { Tailwind does not look into node_modules by itself. Without @source
+    every class Lauf uses is missing from the stylesheet, and the components
+    come out without styling with nothing to say why. }
   Emit(Rot + '/frontend/src/app.css',
     '@import ' + Q + 'tailwindcss' + Q + ';' + #10 +
     '@import ' + Q + '@askrcode/lauf/theme.css' + Q + ';' + #10 +
     '@source ' + Q + '../node_modules/@askrcode/lauf/src' + Q + ';' + #10 + #10 +
-    '/* Tokenene er semantiske. Overstyr dem her for ditt eget uttrykk;' + #10 +
-    '   mørk modus følger med, fordi ingen komponent skriver dark:. */' + #10 +
+    '/* The tokens are semantic. Override them here for your own look;' + #10 +
+    '   dark mode follows along, because no component writes dark:. */' + #10 +
     'body {' + #10 +
     '  background: var(--color-surface);' + #10 +
     '  color: var(--color-fg);' + #10 +
@@ -553,9 +562,10 @@ begin
     '  import { Flash } from ' + Q + '@askrcode/lauf/inertia' + Q + #10 +
     '  let { children } = $props()' + #10 +
     '</script>' + #10 + #10 +
-    '<!-- Flash setter opp live-omradene en gang og gjor flash fra Askr om' + #10 +
-    '     til toasts. Den ma sta utenfor sidene, ellers byttes omradet ut' + #10 +
-    '     ved hver navigering og meldingen leses ikke opp. -->' + #10 +
+    '<!-- Flash sets up the live regions once and turns flash from Askr' + #10 +
+    '     into toasts. It has to sit outside the pages, or the region is' + #10 +
+    '     swapped out on every navigation and the message is not read' + #10 +
+    '     out. -->' + #10 +
     '<Flash />' + #10 + #10 +
     '<main class="mx-auto max-w-3xl px-4 pt-10 pb-16">' + #10 +
     '  {@render children?.()}' + #10 +
@@ -597,8 +607,8 @@ begin
     '  </Card>' + #10 +
     '</Layout>' + #10);
 
-  { .env holder hemmeligheter og sjekkes aldri inn. .env.example gjør det,
-    og er lista over hva en ny utvikler må fylle ut. }
+  { .env holds secrets and is never checked in. .env.example is, and is the
+    list of what a new developer has to fill in. }
   Emit(Rot + '/.env',
     '# Local settings. Never commit this file.' + #10 +
     '# Real environment variables always win over what is set here.' + #10 +
@@ -658,16 +668,16 @@ begin
     'RESEND_API_KEY=' + #10 +
     'ANTHROPIC_API_KEY=' + #10);
 
-  { storage/ finnes fra start, slik at en loggtransport eller en
-    filopplasting ikke feiler på en manglende katalog. }
+  { storage/ exists from the start, so that a log transport or a file
+    upload does not fail on a missing directory. }
   Emit(Rot + '/storage/.gitkeep', '');
 
   Emit(Rot + '/.gitignore',
     '.build/' + #10 +
     '.env' + #10 +
     'node_modules/' + #10 +
-    { Symlinken askr install lager inn i ~/.askr/pkg. Den peker paa en
-      sti som er ulik per maskin, og hoerer derfor ikke i git. }
+    { The symlink askr install makes into ~/.askr/pkg. It points at a path
+      that differs per machine, and so does not belong in git. }
     'frontend/.askr/' + #10 +
     'public/build/' + #10 +
     'storage/*' + #10 +
@@ -691,9 +701,9 @@ begin
   WriteLn('  (cd frontend && npm install)');
   WriteLn('  askr serve');
 
-  { Laufs ikoner genereres fra heroicons og sjekkes ikke inn. Er de ikke
-    laget, feiler byggingen med at @askrcode/lauf/icons/micro ikke finnes —
-    en feilmelding som ikke sier noe om hvorfor. }
+  { Lauf's icons are generated from heroicons and are not checked in. If
+    they have not been made, the build fails saying @askrcode/lauf/icons/micro
+    does not exist — an error message that says nothing about why. }
   if (Framework <> '') and
      not DirectoryExists(IncludeTrailingPathDelimiter(Framework) +
        'frontend/lauf/src/icons') then
@@ -797,9 +807,9 @@ begin
   if Copy(Table_, 1, 7) = 'create_' then
     Delete(Table_, 1, 7);
 
-  { Filnavnet må være unit-navnet. Fpc finner ingen unit som heter noe
-    annet enn fila si, og et tidsstempel foran ville gjort nettopp det.
-    Rekkefølgen kommer fra Version, ikke fra filnavnet. }
+  { The file name has to be the unit name. Fpc finds no unit called
+    anything other than its file, and a timestamp in front would have done
+    exactly that. The order comes from Version, not from the file name. }
   Emit(IncludeTrailingPathDelimiter(Rot) + 'database/App.Migrations.' +
     N + '.pas',
     'unit App.Migrations.' + N + ';' + #10 + #10 +

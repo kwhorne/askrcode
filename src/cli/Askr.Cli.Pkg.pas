@@ -1,21 +1,22 @@
-{ Askr.Cli.Pkg — versjoner, cache og lock.
+{ Askr.Cli.Pkg — versions, cache and lock.
 
-  Et prosjekt pinner en rammeverksversjon i askr.toml og den nøyaktige
-  commit-en i askr.lock. Kilden hentes til ~/.askr/pkg/askrcode@<versjon>
-  og deles mellom alle prosjekter på maskinen. En hel versjon er 2,2 MB
-  kilde som kompilerer på halvannet sekund, så det distribueres ingen
-  binærer: .ppu-filer er dessuten bundet til nøyaktig FPC-versjon og skal
-  ikke deles mellom prosjekter i det hele tatt.
+  A project pins a framework version in askr.toml and the exact commit in
+  askr.lock. The source is fetched to ~/.askr/pkg/askrcode@<version> and
+  shared between all projects on the machine. A whole version is 2.2 MB of
+  source that compiles in a second and a half, so no binaries are
+  distributed: .ppu files are moreover tied to an exact FPC version and
+  must not be shared between projects at all.
 
-  En utgivelse spenner over TO økosystemer — Pascal-kilden og
-  @askrcode/lauf på npm — og det er den virkelige grunnen til at dette
-  trenger en lock. Går de ut av takt, får du en DataGrid.svelte som ikke
-  passer Askr.Urd.Grid på serveren, og ingenting sier fra før en kolonne
-  slutter å sortere. Derfor eier lockfila begge, og `askr install`
-  skriver npm-versjonen inn i frontend/package.json.
+  A release spans TWO ecosystems — the Pascal source and @askrcode/lauf on
+  npm — and that is the real reason this needs a lock. If they drift apart
+  you get a DataGrid.svelte that does not fit Askr.Urd.Grid on the server,
+  and nothing says so until a column stops sorting. So the lock file owns
+  both, and `askr install` writes the npm version into
+  frontend/package.json.
 
-  `path` i askr.toml overstyrer alt. Det er for den som utvikler selve
-  rammeverket, og er samme rolle som `replace` i go.mod. }
+  `path` in askr.toml overrides everything. That is for whoever is
+  developing the framework itself, and is the same role as `replace` in
+  go.mod. }
 unit Askr.Cli.Pkg;
 
 {$mode Delphi}{$H+}
@@ -40,18 +41,18 @@ type
     Found: Boolean;
   end;
 
-  { Where_ rammeverket kom fra. Brukes i utskrift, slik at «askr version»
-    kan si om du kjører en pinnet versjon eller en lokal utsjekking —
-    forskjellen forklarer nesten alle «men det virket i går». }
+  { Where the framework came from. Used in output, so that "askr version"
+    can say whether you are running a pinned version or a local checkout —
+    the difference explains nearly every "but it worked yesterday". }
   TPkgOrigin = (poNone, poPath, poCache);
 
-{ ~/.askr/pkg, eller ASKR_CACHE når den er satt — CI vil ha den et sted
-  den kan mellomlagre.
+{ ~/.askr/pkg, or ASKR_CACHE when it is set — CI wants it somewhere it
+  can cache.
 
-  IKKE ASKR_HOME. Den betyr allerede rammeverkets utsjekking, og
-  byggskriptet ber folk sette den dit. Leste cachen den samme variabelen,
-  ville alle som fulgte instruksjonen fått pakkene skrevet inn i sin egen
-  utsjekking. }
+  NOT ASKR_HOME. That already means the framework's checkout, and the build
+  script tells people to set it there. If the cache read the same variable,
+  everybody who followed the instruction would have had the packages
+  written into their own checkout. }
 function CacheRoot: string;
 function CacheDirFor(const Version: string): string;
 
@@ -59,15 +60,15 @@ function LockPath(const Root: string): string;
 function ReadLock(const Root: string): TLock;
 procedure WriteLock(const Root: string; const L: TLock);
 
-{ Versjonen et tre faktisk er, lest ut av kilden — ikke ut av navnet på
-  katalogen. En cache-katalog kan være halvferdig etter en avbrutt
-  nedlasting, og da skal den ikke telle som installert. }
+{ The version a tree actually is, read out of the source — not out of the
+  name of the directory. A cache directory can be half finished after an
+  aborted download, and then it must not count as installed. }
 function TreeVersion(const Dir: string): string;
 function TreeLaufVersion(const Dir: string): string;
 function TreeIsComplete(const Dir: string): Boolean;
 
-{ Stien rammeverket skal bygges fra. Tom streng når den ikke kan løses;
-  Err sier da hva som mangler og hva man skal gjøre. }
+{ The path the framework is to be built from. An empty string when it
+  cannot be resolved; Err then says what is missing and what to do. }
 function ResolveFramework(P: TProject; out Origin: TPkgOrigin;
   out Err: string): string;
 
@@ -79,14 +80,14 @@ function Fetch(const Source, Version: string; out Commit, Err: string): Boolean;
 function CmdInstall(P: TProject): Integer;
 function CmdUpdate(P: TProject; const Target: string): Integer;
 function CmdOutdated(P: TProject): Integer;
-{ Kjører kommandoen med CLI-en som hører til den pinnede versjonen, når
-  den ikke er denne. Returnerer False når ingenting ble delegert.
+{ Runs the command with the CLI that belongs to the pinned version, when
+  that is not this one. Returns False when nothing was delegated.
 
-  Dette er ikke pynt. Lista over unit-kataloger (AskrUnits) er kompilert
-  inn i verktøyet, så et 0.6.0-verktøy som bygger mot 0.7.0 ikke ville
-  lagt en ny katalog på søkestien — og feilen hadde vært «unit not
-  found», som peker et helt annet sted enn årsaken. Samme rolle som
-  bundle exec og ./gradlew. }
+  This is not decoration. The list of unit directories (AskrUnits) is
+  compiled into the tool, so a 0.6.0 tool building against 0.7.0 would not
+  put a new directory on the search path — and the error would have been
+  "unit not found", which points somewhere entirely different from the
+  cause. The same role as bundle exec and ./gradlew. }
 function DelegateIfNeeded(P: TProject; out ExitKode: Integer): Boolean;
 
 function CmdVersionInfo(P: TProject): Integer;
@@ -103,9 +104,9 @@ end;
 
 { ------------------------------------------------------------ prosess -- }
 
-{ Kjører og fanger stdout. Git skriver framdrift til stderr, som får gå
-  til terminalen — en nedlasting som ser ut som ingenting er verre enn
-  støy. }
+{ Runs and captures stdout. Git writes progress to stderr, which is
+  allowed through to the terminal — a download that looks like nothing is
+  worse than noise. }
 function RunCapture(const Exe: string; const Args: array of string;
   const WorkDir: string; out Ut: string): Integer;
 var
@@ -154,8 +155,8 @@ begin
   end;
 end;
 
-{ Kjører med utdata rett til terminalen. For git clone og npm install,
-  der brukeren skal se hva som skjer. }
+{ Runs with the output going straight to the terminal. For git clone and
+  npm install, where the user is meant to see what happens. }
 function RunThrough(const Exe: string; const Args: array of string;
   const WorkDir: string): Integer;
 var
@@ -189,10 +190,10 @@ begin
   Result := RunCapture('/usr/bin/env', ['git', '--version'], '', Ut) = 0;
 end;
 
-{ Commit-en et tre faktisk står på. Without denne ble lockfila
-  meningsløs: CmdInstall falt tilbake til L.Commit når cachen alt var
-  full, og sammenlignet dermed verdien med seg selv. En tuklet lock gikk
-  rett gjennom og ble skrevet ut som om den var ekte. }
+{ The commit a tree actually stands on. Without this the lock file was
+  meaningless: CmdInstall fell back to L.Commit when the cache was already
+  full, and so compared the value with itself. A tampered lock went straight
+  through and was printed as though it were genuine. }
 function CommitOf(const Dir: string): string;
 var
   Ut: string;
@@ -241,8 +242,8 @@ begin
     Exit;
   L := TStringList.Create;
   try
-    { Samme TOML-parser som askr.toml og appen bruker. To parsere for
-      samme format er to måter å lese den samme fila feil på. }
+    { The same TOML parser askr.toml and the app use. Two parsers for the
+      same format are two ways of reading the same file wrong. }
     if not ParseTomlInto(LockPath(Root), L) then
       Exit;
     Result.Version := L.Values['version'];
@@ -278,9 +279,9 @@ end;
 
 { ------------------------------------------------------- lese et tre -- }
 
-{ Leser konstanten ut av kilden. Katalognavnet er ikke bevis: en avbrutt
-  nedlasting etterlater en katalog som heter riktig og inneholder halve
-  rammeverket. }
+{ Reads the constant out of the source. The directory name is not proof:
+  an aborted download leaves a directory with the right name containing half
+  the framework. }
 function TreeVersion(const Dir: string): string;
 var
   F: TStringList;
@@ -351,7 +352,7 @@ begin
             DirectoryExists(IncludeTrailingPathDelimiter(Dir) + 'cli');
 end;
 
-{ ------------------------------------------------------------- løsing -- }
+{ --------------------------------------------------------- resolving -- }
 
 function ResolveFramework(P: TProject; out Origin: TPkgOrigin;
   out Err: string): string;
@@ -363,8 +364,8 @@ begin
   Err := '';
   Origin := poNone;
 
-  { 1. En eksplisitt sti vinner alltid. Den som utvikler rammeverket skal
-       ikke måtte gi ut en versjon for å teste en endring. }
+  { 1. An explicit path always wins. Whoever is developing the framework
+    must not have to cut a release to test a change. }
   Dir := P.AskrPath;
   if Dir <> '' then
   begin
@@ -378,7 +379,7 @@ begin
     Exit(Dir);
   end;
 
-  { 2. Ellers den låste versjonen fra cachen. }
+  { 2. Otherwise the locked version from the cache. }
   L := ReadLock(P.Root);
   Onsket := L.Version;
   if Onsket = '' then
@@ -420,9 +421,9 @@ var
   N: Integer;
   Liste: TStringArray;
 begin
-  { Bygges lokalt og tilordnes til slutt. SetLength rett på Result gir
-    «function result variable of a managed type does not seem to be
-    initialized», og suitene her er advarselsfrie. }
+  { Built locally and assigned at the end. SetLength straight on Result
+    gives "function result variable of a managed type does not seem to be
+    initialized", and the suites here are warning free. }
   Liste := nil;
   SetLength(Liste, 0);
   Result := Liste;
@@ -448,9 +449,9 @@ begin
   Result := Liste;
 end;
 
-{ Taggene på fjernsiden, nyeste sist. Krever nett; en tom liste betyr
-  enten ingen tagger eller ingen forbindelse, og kallstedet skiller dem
-  ved hjelp av returverdien fra git. }
+{ The tags on the remote, newest last. Requires a network; an empty list
+  means either no tags or no connection, and the caller tells them apart
+  using the return value from git. }
 function RemoteVersions(const Source: string): TStringArray;
 var
   Ut, Line_, Tag: string;
@@ -480,8 +481,8 @@ begin
       if not ParseSemVer(Tag).Valid then
         Continue;
       SetLength(Liste, N + 1);
-      { 'v' fjernes her, slik at resten av koden aldri må vite om en
-        versjon kom fra en tag eller fra askr.toml. }
+      { The 'v' is removed here, so that the rest of the code never has to
+        know whether a version came from a tag or from askr.toml. }
       if (Tag <> '') and ((Tag[1] = 'v') or (Tag[1] = 'V')) then
         Liste[N] := Copy(Tag, 2, Length(Tag))
       else
@@ -492,8 +493,8 @@ begin
     L.Free;
   end;
 
-  { Innstikksortering. Lista er kort, og å dra inn en generisk sortering
-    for ti tagger er feil bytte. }
+  { Insertion sort. The list is short, and pulling in a generic sort for
+    ten tags is the wrong trade. }
   for J := 1 to High(Liste) do
   begin
     Tmp := Liste[J];
@@ -535,19 +536,20 @@ begin
   end;
 
   ForceDirectories(CacheRoot);
-  { Hentes til en midlertidig katalog og flyttes på plass til slutt. En
-    avbrutt nedlasting skal ikke etterlate noe som ser installert ut. }
+  { Fetched into a temporary directory and moved into place at the end. An
+    aborted download must not leave behind something that looks
+    installed. }
   Midl := Target + '.tmp';
   if DirectoryExists(Midl) then
     RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
 
   Si('  fetching Askr ' + Version + ' from ' + Source);
-  { Fanges i stedet for å slippes ut. En annotert tag får git til å
-    skrive «refs/tags/v0.6.0 <sha> is not a commit!» under --depth 1:
-    tag-objektet har sin egen sha, og klonen blir riktig likevel —
-    commit-en leses ut av utsjekkingen etterpå. Advarselen sier
-    ingenting en bruker kan gjøre noe med. Feiler klonen, vises alt,
-    for da er det nettopp utdataene man trenger. }
+  { Caught rather than let out. An annotated tag makes git write
+    "refs/tags/v0.6.0 <sha> is not a commit!" under --depth 1: the tag
+    object has its own sha, and the clone is right anyway — the commit is
+    read out of the checkout afterwards. The warning says nothing a user can
+    act on. If the clone fails, everything is shown, because then the output
+    is precisely what you need. }
   if RunCapture('/usr/bin/env',
        ['git', '-c', 'advice.detachedHead=false', 'clone', '--depth', '1',
         '--branch', 'v' + Version, '--quiet', Source, Midl], '', Klonelogg) <> 0 then
@@ -561,8 +563,9 @@ begin
     Exit;
   end;
 
-  { Treet må si at det ER versjonen vi ba om. En tag som peker på feil
-    kode er nettopp den feilen ingen oppdager før den er i produksjon. }
+  { The tree has to say that it IS the version we asked for. A tag that
+    points at the wrong code is exactly the bug nobody notices until it is
+    in production. }
   Fant := TreeVersion(Midl);
   if Fant <> Version then
   begin
@@ -588,16 +591,16 @@ begin
   Result := True;
 end;
 
-{ Peker frontend/.askr/lauf paa den installerte utgivelsen.
+{ Points frontend/.askr/lauf at the installed release.
 
-  Without den maa package.json baere en absolutt sti inn i DIN cache, og da
-  gir fila en diff som endrer seg per maskin. Symlinken er gitignorert
-  og lages av install, saa den committede stien er `file:./.askr/lauf`
-  og lik overalt.
+  Without it package.json has to carry an absolute path into YOUR cache, and
+  then the file gives a diff that changes per machine. The symlink is
+  gitignored and made by install, so the committed path is
+  `file:./.askr/lauf` and the same everywhere.
 
-  Returnerer stien som skal staa i package.json. Kan symlinken ikke
-  lages -- et filsystem uten dem, eller Windows -- faller den tilbake
-  til den absolutte stien, som virker like godt lokalt. }
+  Returns the path that is to go in package.json. If the symlink cannot be
+  made — a file system without them, or Windows — it falls back to the
+  absolute path, which works just as well locally. }
 function LaufPath(P: TProject; const Dir: string): string;
 var
   Folder, Link_, Target: string;
@@ -613,8 +616,8 @@ begin
     Exit;
 
 {$IFDEF UNIX}
-  { En gammel lenke kan peke paa forrige versjon. fpUnlink bryr seg ikke
-    om at den ikke finnes. }
+  { An old link can point at the previous version. fpUnlink does not mind
+    that it does not exist. }
   fpUnlink(PChar(Link_));
   if fpSymlink(PChar(Target), PChar(Link_)) = 0 then
     Result := 'file:./.askr/lauf';
@@ -623,19 +626,19 @@ end;
 
 { -------------------------------------------------- Lauf i takt med -- }
 
-{ Skriver @askrcode/lauf-versjonen inn i frontend/package.json.
+{ Writes the @askrcode/lauf version into frontend/package.json.
 
-  Bare selve verdien byttes. Første utgave tok Pos(':', Line_) — den
-  FØRSTE kolonen på linja — og på en kompakt package.json tilhører den
-  "dependencies", ikke "@askrcode/lauf". Resultatet var at hele
-  dependencies-objektet ble erstattet av én streng: @inertiajs/svelte
-  forsvant, og JSON-en ble ugyldig. Den skrev altså over en fil brukeren
-  eier, uten å si fra.
+  Only the value itself is swapped. The first version took Pos(':', Line_) —
+  the FIRST colon on the line — and on a compact package.json that one
+  belongs to "dependencies", not to "@askrcode/lauf". The result was that
+  the whole dependencies object was replaced by a single string:
+  @inertiajs/svelte disappeared, and the JSON became invalid. It therefore
+  overwrote a file the user owns, without saying so.
 
-  Nå finnes kolonen etter nøkkelen, og bare den siterte verdien etter
-  den byttes ut. Ser linja ikke ut som forventet, gjettes det ikke:
-  funksjonen sier hva som skal stå. Samme regel som InstallerRuter i
-  stillaset. }
+  Now the colon is found after the key, and only the quoted value after it
+  is replaced. If the line does not look as expected, nothing is guessed:
+  the function says what it should say. The same rule as InstallerRuter in
+  the scaffolding. }
 function SetLaufDependency(P: TProject; const LaufSpec: string;
   out Endret: Boolean): Boolean;
 const
@@ -646,9 +649,9 @@ var
   I, PN, A, V1, V2: Integer;
 begin
   Endret := False;
-  { FrontendDir er allerede absolutt. Å legge Root foran ga en sti som
-    aldri fantes, og da gjorde denne funksjonen ingenting og meldte
-    suksess. }
+  { FrontendDir is already absolute. Putting Root in front gave a path
+    that never existed, and then this function did nothing and reported
+    success. }
   if P.FrontendDir = '' then
     Exit(True);   { prosjektet har ingen frontend }
   Path_ := IncludeTrailingPathDelimiter(P.FrontendDir) + 'package.json';
@@ -668,16 +671,15 @@ begin
       if PN = 0 then
         Continue;
 
-      { Kolonen som hører til NØKKELEN, ikke den første på linja. }
+      { The colon that belongs to the KEY, not the first one on the line. }
       A := Pos(':', S, PN + Length(Key_));
       if A = 0 then
         Break;
 
-      (* Verdien maa vaere en sitert streng, og det maa sjekkes paa det
-         FOERSTE tegnet etter kolonen. Lette man bare etter neste
-         anfoerselstegn, traff man inn i et objekt: en verdi som selv er
-         et objekt med et version-felt ble da skrevet over i stedet for
-         avvist. *)
+      (* The value has to be a quoted string, and that has to be checked
+         on the FIRST character after the colon. Looking only for the next
+         quote reached into an object: a value that is itself an object
+         with a version field was then overwritten instead of rejected. *)
       V1 := A + 1;
       while (V1 <= Length(S)) and (S[V1] in [' ', #9]) do
         Inc(V1);
@@ -687,7 +689,7 @@ begin
       if V2 = 0 then
         Break;
 
-      { Anførselstegnene beholdes: LaufSpec er verdien uten dem. }
+      { The quotes are kept: LaufSpec is the value without them. }
       Ny := Copy(S, 1, V1) + LaufSpec + Copy(S, V2, Length(S));
       if Ny <> S then
       begin
@@ -709,9 +711,9 @@ begin
   Result := False;
 end;
 
-{ Setter [askr] version i askr.toml. Finner den ikke linja, gjetter den
-  ikke -- den sier hva som skal stå. Samme regel som InstallerRuter i
-  stillaset. }
+{ Sets [askr] version in askr.toml. If it does not find the line, it does
+  not guess — it says what should be there. The same rule as InstallerRuter
+  in the scaffolding. }
 function SetPinnedVersion(P: TProject; const Versjon: string): Boolean;
 var
   F: TStringList;
@@ -758,10 +760,10 @@ end;
 
 { --------------------------------------------- oppgraderingsnotater -- }
 
-{ Henter avsnittene i UPGRADE.md som gjelder strekningen From_..To_.
+{ Fetches the sections in UPGRADE.md that cover the stretch From_..To_.
 
-  Formatet er en H2 per versjon: `## 0.7.0`. Alt mellom en overskrift og
-  den neste hører til den versjonen. }
+  The format is one H2 per version: `## 0.7.0`. Everything between a heading
+  and the next belongs to that version. }
 function UpgradeNotes(const Dir, From_, To_: string): string;
 var
   F: TStringList;
@@ -783,8 +785,8 @@ begin
       if Pos('## ', S) = 1 then
       begin
         V := Trim(Copy(S, 4, Length(S)));
-        { With_ når versjonen er nyere enn den vi står på, og ikke nyere
-          enn den vi skal til. }
+        { Included when the version is newer than the one we are on, and not
+          newer than the one we are going to. }
         With_ := ParseSemVer(V).Valid and
                (CompareSemVer(V, From_) > 0) and
                (CompareSemVer(V, To_) <= 0);
@@ -834,8 +836,8 @@ begin
   if TreeIsComplete(Dir) then
   begin
     Si('Askr ' + Onsket + ' is already installed.');
-    { Leses ut av utsjekkingen, ikke ut av lockfila. Det er hele
-      poenget med sjekken under. }
+    { Read out of the checkout, not out of the lock file. That is the whole
+      point of the check below. }
     Commit := CommitOf(Dir);
   end
   else if not Fetch(P.AskrSource, Onsket, Commit, Err) then
@@ -844,9 +846,9 @@ begin
     Exit(1);
   end;
 
-  { Låst commit og det som faktisk ligger i cachen må stemme. Gjør de
-    ikke det, er enten taggen flyttet eller cachen rørt — begge deler
-    skal sies fra om, ikke overskrives i stillhet. }
+  { The locked commit and what is actually in the cache have to match. If
+    they do not, either the tag has moved or the cache has been touched —
+    both are to be reported, not overwritten in silence. }
   if (L.Found) and (L.Commit <> '') and (Commit <> '') and
      (L.Commit <> Commit) then
   begin
@@ -863,9 +865,9 @@ begin
   if Lauf = '' then
     Lauf := Onsket;
 
-  { Lauf er ikke publisert på npm ennå, så avhengigheten peker inn i den
-    versjonen vi nettopp installerte. When_ pakka er publisert, blir dette
-    versjonsnummeret og ingenting annet endrer seg. }
+  { Lauf is not published on npm yet, so the dependency points into the
+    version we just installed. When the package is published, this becomes
+    the version number and nothing else changes. }
   if not SetLaufDependency(P, LaufPath(P, Dir), Endret) then
     Result := 1;
 
@@ -922,8 +924,8 @@ begin
       Si('      (no tags, or no network)');
       Exit(1);
     end;
-    { askr.toml kan begrense hvor langt update får gå, med samme
-      skrivemåte som package.json: ^0.6.0 eller ~0.6.0. }
+    { askr.toml can limit how far update may go, with the same notation as
+      package.json: ^0.6.0 or ~0.6.0. }
     Spec := P.AskrWantedVersion;
     To_ := '';
     for I := High(Tags) downto 0 do
@@ -942,9 +944,9 @@ begin
   if (Now_ <> '') and (CompareSemVer(To_, Now_) = 0) then
   begin
     Si('Already on Askr ' + Now_ + '.');
-    { En nøyaktig pin gjør at update aldri flytter seg. Det er riktig,
-      men uten forklaring motsier det `askr outdated`, som nettopp sa at
-      noe nyere finnes. Si hvorfor, og hva man gjør. }
+    { An exact pin means update never moves. That is right, but without an
+      explanation it contradicts `askr outdated`, which has just said that
+      something newer exists. Say why, and what to do. }
     if (Target = '') and (Length(Tags) > 0) and
        (CompareSemVer(Tags[High(Tags)], Now_) > 0) then
     begin
@@ -974,8 +976,8 @@ begin
     Exit(1);
   end;
 
-  { Notatene skrives ut FØR noe er endret i prosjektet. En oppgradering
-    man ikke har lest er en oppgradering man feilsoker etterpå. }
+  { The notes are printed BEFORE anything in the project is changed. An
+    upgrade you have not read is an upgrade you debug afterwards. }
   if Now_ <> '' then
   begin
     Notater := UpgradeNotes(CacheDirFor(To_), Now_, To_);
@@ -991,8 +993,9 @@ begin
     end;
   end;
 
-  { Pinnen i askr.toml må følge med, ellers sier fila og lockfila to
-    forskjellige ting, og neste `askr install` drar deg tilbake. }
+  { The pin in askr.toml has to come along, or the file and the lock file
+    say two different things, and the next `askr install` drags you
+    back. }
   if (Target <> '') and (P.AskrWantedVersion <> To_) then
     SetPinnedVersion(P, To_);
 
@@ -1069,7 +1072,8 @@ begin
   Result := False;
   ExitKode := 0;
 
-  { Without denne ville den delegerte prosessen delegert videre i ring. }
+  { Without this the delegated process would have delegated onwards in a
+    ring. }
   if GetEnvironmentVariable('ASKR_DELEGATED') = '1' then
     Exit;
 
@@ -1077,9 +1081,9 @@ begin
   if (Dir = '') or (TreeVersion(Dir) = AskrVersion) then
     Exit;
 
-  { En lokal sti er rammeverksutvikling. Da er det med vilje at man
-    kjører verktøyet man selv har bygget, og delegering ville gjort det
-    umulig å teste en endring i CLI-en. }
+  { A local path is framework development. Then running the tool you have
+    built yourself is the point, and delegation would have made it
+    impossible to test a change in the CLI. }
   if O = poPath then
     Exit;
 
@@ -1088,12 +1092,12 @@ begin
   begin
     Skall := IncludeTrailingPathDelimiter(Dir) + 'askr';
     if not FileExists(Skall) then
-      Exit;   { ingen måte å bygge den på — la det gamle verktøyet prøve }
+      Exit;   { no way to build it — let the old tool have a go }
     Si('Building the askr ' + TreeVersion(Dir) + ' tool once...');
-    { Fanges i stedet for å slippes ut. Byggskriptet i rammeverket er et
-      arbeidsverktøy og skriver norsk; det skal ikke havne foran en som
-      bare ville kjøre askr build. Ved feil vises alt, for da er det
-      nettopp utdataene man trenger. }
+    { Caught rather than let out. The build script in the framework is a
+      working tool and writes Norwegian; it must not land in front of
+      somebody who only wanted to run askr build. On an error everything is
+      shown, because then the output is precisely what you need. }
     if (RunCapture('/bin/sh', [Skall, 'cli'], Dir, Bygglogg) <> 0) or
        not FileExists(Binaer) then
     begin
@@ -1111,8 +1115,9 @@ begin
     SetLength(Args, Length(Args) + 1);
     Args[High(Args)] := ParamStr(I);
   end;
-  { Miljøvariabelen settes i barnet gjennom env, fordi FPCs RTL holder
-    sin egen kopi av miljøet fra oppstart og setenv ikke når fram. }
+  { The environment variable is set in the child through env, because FPC's
+    RTL keeps its own copy of the environment from start-up and setenv does
+    not reach it. }
   SetLength(Args, Length(Args) + 2);
   for I := High(Args) downto 2 do
     Args[I] := Args[I - 2];
@@ -1157,7 +1162,7 @@ begin
   else
     Si('  locked    (no askr.lock)');
 
-  { Den ene sjekken som fanger driften mellom de to økosystemene. }
+  { The one check that catches the drift between the two ecosystems. }
   if (TreeLaufVersion(Dir) <> '') and
      (TreeVersion(Dir) <> '') and
      (TreeLaufVersion(Dir) <> TreeVersion(Dir)) then

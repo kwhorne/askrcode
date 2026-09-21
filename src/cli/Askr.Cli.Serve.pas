@@ -1,27 +1,28 @@
-{ Askr.Cli.Serve — dev-serveren.
+{ Askr.Cli.Serve — the dev server.
 
-  Dette er der PRD-ens første suksesskriterium avgjøres: under 300 ms fra
-  lagret fil til oppdatert nettleser.
+  This is where the PRD's first success criterion is decided: under 300 ms
+  from a saved file to an updated browser.
 
-  Formen er en supervisor, ikke hot patching. Appen er en kompilert binær;
-  den byttes ut i sin helhet. Det som gjør at det likevel oppleves som hot
-  reload, er proxyen: den lytter på porten utvikleren bruker og holder
-  tilkoblinger mens byttet skjer.
+  The shape is a supervisor, not hot patching. The app is a compiled binary;
+  it is swapped out in its entirety. What makes it feel like hot reload
+  anyway is the proxy: it listens on the port the developer uses and holds
+  connections while the swap happens.
 
-  Løkka er:
+  The loop is:
 
-      endring oppdaget  ->  proxy pauses
-                        ->  inkrementell rebuild
-                        ->  gammel prosess stoppes, ny startes
-                        ->  vent til den svarer på porten
-                        ->  proxy slippes
+      change detected  ->  proxy pauses
+                       ->  incremental rebuild
+                       ->  old process stopped, new one started
+                       ->  wait until it answers on the port
+                       ->  proxy released
 
-  Frontend går ikke gjennom dette i det hele tatt. Vite kjører ved siden av
-  og gjør HMR selv; en endring i en .svelte-fil utløser ingen rebuild av
-  Pascal-siden.
+  The frontend does not go through this at all. Vite runs alongside and does
+  HMR itself; a change in a .svelte file triggers no rebuild of the Pascal
+  side.
 
-  Tiden måles fra filas mtime, ikke fra da pollingen oppdaget den. Alt annet
-  ville skjult deteksjonsforsinkelsen, og den er en reell del av løkka. }
+  The time is measured from the file's mtime, not from when the polling
+  noticed it. Anything else would have hidden the detection delay, and that
+  is a real part of the loop. }
 unit Askr.Cli.Serve;
 
 {$mode Delphi}{$H+}
@@ -160,8 +161,8 @@ begin
   for I := 0 to High(FOpts.AppArgs) do
     Result.Parameters.Add(FOpts.AppArgs[I]);
   Result.CurrentDirectory := FOpts.Root;
-  { Appen skriver til samme terminal. Logglinjene fra dev-serveren og fra
-    appen hører sammen. }
+  { The app writes to the same terminal. The log lines from the dev server
+    and from the app belong together. }
   Result.Options := [];
   Result.Execute;
 end;
@@ -214,7 +215,8 @@ begin
     end;
     if MonotonicMs - Start > TimeoutMs then
       Exit(False);
-    { Ett millisekund. Hele poenget er å komme i gang så fort som mulig. }
+    { One millisecond. The whole point is to get going as fast as
+      possible. }
     Sleep(1);
   until False;
 end;
@@ -276,9 +278,10 @@ begin
     Exit;
   end;
 
-  { Den nye prosessen startes på den andre porten før den gamle drepes.
-    Nedstengingen tar 44 ms målt, og den trenger ikke ligge i den kritiske
-    stien. Proxyen bytter port i det øyeblikket den nye svarer. }
+  { The new process is started on the other port before the old one is
+    killed. The shutdown takes 44 ms measured, and it does not need to be in
+    the critical path. The proxy switches port the moment the new one
+    answers. }
   if FAppPort = FOpts.BackendPort then
     NewPort := FOpts.BackendPort + 1
   else
@@ -300,16 +303,17 @@ begin
   FProxy.Resume('');
   TUp := MonotonicMs;
 
-  { Veggklokka leses her, før den gamle prosessen drepes. Leses den etterpå,
-    havner nedstengingen i tallet selv om ingen venter på den. }
+  { The wall clock is read here, before the old process is killed. Read
+    afterwards, the shutdown ends up in the number even though nobody is
+    waiting for it. }
   Total := UnixNowMs - Saved;
 
-  { Utenfor målingen, og utenfor det brukeren venter på. }
+  { Outside the measurement, and outside what the user is waiting for. }
   StopProcess(Old);
 
-  { Deteksjonen er det som skjedde før T0: tiden fra editoren skrev fila til
-    pollingen så den. Den regnes ut som resten, og skjules ikke — den er en
-    reell del av løkka. }
+  { The detection is what happened before T0: the time from the editor
+    writing the file to the polling seeing it. It is worked out like the
+    rest, and is not hidden — it is a real part of the loop. }
   if Total < 0 then
     Total := TUp - T0;
 
@@ -399,7 +403,7 @@ begin
     case Kind of
       wkBackend: Rebuild(Changed);
       wkFrontend:
-        { Vite tar denne selv. Pascal-siden skal ikke bygges. }
+        { Vite takes this one itself. The Pascal side is not to be built. }
         WriteLn('  vite      ', ExtractFileName(Changed));
       wkNone: ;
     end;

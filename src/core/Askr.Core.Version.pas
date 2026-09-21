@@ -107,7 +107,7 @@ begin
       Number := '';
     end
     else
-      Exit;     { noe annet enn siffer og punktum }
+      Exit;     { anything but digits and dots }
   end;
 
   if Clause < 1 then

@@ -314,8 +314,8 @@ begin
         N := Integer(Arg);
         for I := 1 to N do
         begin
-          if not SkipInner(R, Depth_ + 1) then Exit(False);   { nøkkel }
-          if not SkipInner(R, Depth_ + 1) then Exit(False);   { verdi }
+          if not SkipInner(R, Depth_ + 1) then Exit(False);   { key }
+          if not SkipInner(R, Depth_ + 1) then Exit(False);   { value }
         end;
         Result := True;
       end;

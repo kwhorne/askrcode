@@ -84,7 +84,7 @@ type
     Op: string;           { ==, !=, <, <=, >, >=, like, is, is not }
     HasOperand: Boolean;  { "is null" has no right-hand side }
     IsParam: Boolean;
-    Operand: string;      { parameternavn, eller literalen slik den sto }
+    Operand: string;      { parameter name, or the literal as written }
     LitKind: TRunKind;
     Line: Integer;
   end;
@@ -116,9 +116,9 @@ type
   { A relation derived from a foreign key in the database. No declaration
     in the Rún source — the schema knows it already. }
   TRelation = record
-    Name: string;         { navnet man skriver etter «with» }
+    Name: string;         { the name you write after "with" }
     Table: string;        { tabellen som peker hit }
-    ForeignKey: string;   { kolonnen i den som peker }
+    ForeignKey: string;   { the column in the one that points }
     LocalKey: string;     { the column here that it points at }
   end;
   { Pascal does not take an anonymous dynamic array as a return type. }

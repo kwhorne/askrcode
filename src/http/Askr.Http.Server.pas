@@ -350,7 +350,7 @@ begin
         Exit;
       end;
       if not Fill(Sock) then
-        Exit;   { normal stengning eller timeout — ikke en feil }
+        Exit;   { a normal close or a timeout — not an error }
       { From the first byte onwards the request has started. }
       SetTimeout(Sock, SO_RCVTIMEO, FServer.Options.RequestTimeoutMs);
     end;

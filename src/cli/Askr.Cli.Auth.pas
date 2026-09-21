@@ -1,18 +1,18 @@
-{ Askr.Cli.Auth — genererer innlogging, registrering og passordtilbakestilling.
+{ Askr.Cli.Auth — generates sign-in, registration and password reset.
 
-  Kjøres av `askr new --auth` og av `askr make auth` i et prosjekt som
-  allerede finnes.
+  Run by `askr new --auth` and by `askr make auth` in a project that
+  already exists.
 
-  **Sidene er vanlig HTML, ikke Inertia.** Et nytt prosjekt har Inertia satt
-  opp, men ikke installert — `npm install` er noe man gjør etterpå. Å kreve
-  det før man kan logge inn ville gjort innloggingen ubrukelig akkurat i det
-  vinduet der man trenger den mest. Sidene bruker systemfonter og inline CSS
-  og trenger verken npm eller nett, som velkomstsiden. Det står i den
-  genererte koden hvordan de gjøres om til Inertia-sider.
+  **The pages are plain HTML, not Inertia.** A new project has Inertia set
+  up, but not installed — `npm install` is something you do afterwards.
+  Requiring it before you can sign in would have made sign-in useless
+  exactly in the window where it is needed most. The pages use system fonts
+  and inline CSS and need neither npm nor a network, like the welcome page.
+  The generated code says how they are turned into Inertia pages.
 
-  **Alt som genereres er ditt.** Det er hele poenget med et stillas: du skal
-  kunne endre innloggingssiden. Derfor ligger malene her og ikke i
-  rammeverket. }
+  **Everything generated is yours.** That is the whole point of scaffolding:
+  you are supposed to be able to change the sign-in page. That is why the
+  templates are here and not in the framework. }
 unit Askr.Cli.Auth;
 
 {$mode Delphi}{$H+}
@@ -22,14 +22,14 @@ interface
 uses
   SysUtils, Classes;
 
-{ Skriver modellen, migrasjonene og kontrolleren. Rører ikke app.lpr —
-  linjene som må inn der skrives ut til slutt, eller settes inn av
-  InstallerRuter når markørene finnes. }
+{ Writes the model, the migrations and the controller. Does not touch
+  app.lpr — the lines that have to go in there are printed at the end, or
+  inserted by InstallerRuter when the markers are there. }
 procedure LagAuth(const Rot: string; Force: Boolean);
 
-{ Setter inn uses-linja og rutene i app.lpr hvis markørene fra `askr new`
-  er der. Returnerer False når de ikke er det, og da må brukeren gjøre det
-  selv. }
+{ Inserts the uses line and the routes in app.lpr if the markers from
+  `askr new` are there. Returns False when they are not, and then the user
+  has to do it themselves. }
 function InstallerRuter(const Rot: string): Boolean;
 
 implementation
@@ -49,7 +49,7 @@ begin
     '{$mode Delphi}{$H+}' + #10 + #10 +
     'interface' + #10 + #10 +
     'uses' + #10 +
-    { TModelList ligger i Askr.Urd.Query, ikke i Askr.Urd.Model. }
+    { TModelList lives in Askr.Urd.Query, not in Askr.Urd.Model. }
     '  SysUtils, Askr.Urd.Model, Askr.Urd.Query;' + #10 + #10 +
     'type' + #10 +
     '  TUser = class(TModel)' + #10 +
@@ -64,9 +64,10 @@ begin
     '    property Id: Int64 read FId write FId;' + #10 +
     '    property Name: string read FName write FName;' + #10 +
     '    property Email: string read FEmail write FEmail;' + #10 +
-    '    { Hele PHC-strengen fra HashPassword, ikke bare hashen: den' + #10 +
-    '      bærer algoritme, iterasjoner og salt, og det er den som gjør' + #10 +
-    '      at parametrene kan endres uten en migrasjon. }' + #10 +
+    '    { The whole PHC string from HashPassword, not just the hash:' + #10 +
+    '      it carries the algorithm, the iterations and the salt, and' + #10 +
+    '      that is what lets the parameters change without a' + #10 +
+    '      migration. }' + #10 +
     '    property PasswordHash: string read FPasswordHash write FPasswordHash;' + #10 +
     '    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;' + #10 +
     '    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;' + #10 +
@@ -86,17 +87,17 @@ begin
     '  V.Field(' + Q + 'Name' + Q + ').Required.MaxLen(120);' + #10 +
     '  V.Field(' + Q + 'Email' + Q + ').Required.Email.UniqueIn(' +
       Q + 'users' + Q + ');' + #10 +
-    '  { Passordet valideres i kontrolleren, ikke her: modellen ser aldri' + #10 +
-    '    klarteksten, bare hashen. }' + #10 +
+    '  { The password is validated in the controller, not here: the' + #10 +
+    '    model never sees the plaintext, only the hash. }' + #10 +
     'end;' + #10 + #10 +
     'end.' + #10);
 end;
 
 { ---------------------------------------------------------- kontrolleren -- }
 
-{ Malen bygges linje for linje i stedet for som én kjedet streng. En
-  kontroller på to hundre linjer skrevet som `'...' + #10 +` er ikke lesbar
-  for den som skal endre den. Anførselstegn dobles, som i all Pascal. }
+{ The template is built line by line rather than as one chained string. A
+  two-hundred-line controller written as `'...' + #10 +` is not readable for
+  whoever has to change it. Quotes are doubled, as in all Pascal. }
 procedure WriteControllers(const Rot: string);
 var
   L: TStringList;
@@ -111,15 +112,17 @@ begin
   try
     A('unit App.Http.AuthController;');
     A('');
-    A('{ Innlogging, registrering og passordtilbakestilling.');
+    A('{ Sign-in, registration and password reset.');
     A('');
-    A('  Sidene er vanlig HTML og trenger verken npm eller nett, slik at');
-    A('  innlogging virker fra første bygg. Vil du ha dem som Inertia-sider,');
-    A('  bytt Result := Page(...) mot Result := Inertia(''Auth/Login'', [...])');
-    A('  og skriv komponentene i frontend/src/pages/Auth/.');
+    A('  The pages are plain HTML and need neither npm nor a network, so');
+    A('  that signing in works from the first build. If you want them as');
+    A('  Inertia pages, swap Result := Page(...) for');
+    A('  Result := Inertia(''Auth/Login'', [...]) and write the components');
+    A('  in frontend/src/pages/Auth/.');
     A('');
-    A('  Alt her er ditt. Rammeverket eier ikke brukermodellen din — det');
-    A('  lagrer en id som tekst, og denne fila slår opp resten. }');
+    A('  Everything here is yours. The framework does not own your user');
+    A('  model — it stores an id as text, and this file looks up the');
+    A('  rest. }');
     A('');
     A('{$mode Delphi}{$H+}');
     A('');
@@ -148,19 +151,20 @@ begin
     A('    function ShowReset(Req: TRequest): TResponse;');
     A('    function DoReset(Req: TRequest): TResponse;');
     A('');
-    A('    { After_ innlogging. Rene HTML-sider, som resten av auth: et');
-    A('      nytt prosjekt skal kunne logge inn OG komme videre uten at');
-    A('      npm install er kjørt. Bygger du appen i Inertia, bytter du');
-    A('      disse tre ut — de er et utgangspunkt, ikke en ramme. }');
+    A('    { After signing in. Plain HTML pages, like the rest of auth: a');
+    A('      new project has to be able to sign in AND get somewhere');
+    A('      without npm install having been run. If you build the app in');
+    A('      Inertia, you swap these three out — they are a starting');
+    A('      point, not a frame. }');
     A('    function Dashboard(Req: TRequest): TResponse;');
     A('    function ShowProfile(Req: TRequest): TResponse;');
     A('    function SaveProfile(Req: TRequest): TResponse;');
     A('    function ShowSecurity(Req: TRequest): TResponse;');
     A('    function ChangePassword(Req: TRequest): TResponse;');
     A('');
-    A('    { Passkeys. Utfordringene gaar gjennom JSON, resten av auth');
-    A('      er skjemaer -- forskjellen er at nettleseren maa snakke med');
-    A('      autentikatoren mellom de to stegene. }');
+    A('    { Passkeys. The challenges go through JSON, the rest of auth');
+    A('      is forms — the difference is that the browser has to talk to');
+    A('      the authenticator between the two steps. }');
     A('    function PasskeyChallenge(Req: TRequest): TResponse;');
     A('    function PasskeyRegister(Req: TRequest): TResponse;');
     A('    function PasskeyDelete(Req: TRequest): TResponse;');
@@ -168,13 +172,13 @@ begin
     A('    function LoginPasskey(Req: TRequest): TResponse;');
     A('  end;');
     A('');
-    A('{ Askr lagrer bare brukerens id. Denne gir resten tilbake, og');
-    A('  registreres med SetUserLoader i app.lpr. }');
+    A('{ Askr stores only the user''s id. This gives back the rest, and');
+    A('  is registered with SetUserLoader in app.lpr. }');
     A('function LoadUser(const Id: string): TObject;');
     A('');
     A('implementation');
     A('');
-    A('{ ------------------------------------------------------- sidene -- }');
+    A('{ -------------------------------------------------------- pages -- }');
     A('');
     A('function Esc(const S: string): string;');
     A('var');
@@ -192,8 +196,8 @@ begin
     A('    end;');
     A('end;');
     A('');
-    A('{ Ett sted for skallet, slik at de fem sidene ser like ut og kan');
-    A('  endres ett sted. }');
+    A('{ One place for the shell, so that the five pages look the same and');
+    A('  can be changed in one place. }');
     A('function Page(const Title, Body: string): string;');
     A('begin');
     A('  Result :=');
@@ -238,23 +242,23 @@ begin
     A('    Result := ''<p class="'' + Klasse + ''">'' + Esc(S) + ''</p>'';');
     A('end;');
     A('');
-    A('{ JavaScript-en for passkeys staar lenger nede, men brukes av');
-    A('  sikkerhetssida over. }');
+    A('{ The JavaScript for passkeys is further down, but is used by the');
+    A('  security page above. }');
     A('function PasskeyJs: string; forward;');
     A('');
-    A('{ ------------------------------------------- skall for app-sider -- }');
+    A('{ ---------------------------------------- shell for app pages -- }');
     A('');
-    A('{ Navnet leses fra askr.toml ved kjøring, ikke bakt inn av');
-    A('  stillaset: endrer du `name` der, følger sidemenyen med. }');
+    A('{ The name is read from askr.toml at run time, not baked in by the');
+    A('  scaffolding: change `name` there and the sidebar follows. }');
     A('function AppNavn: string;');
     A('begin');
     A('  Result := Cfg(''name'', ''Askr'');');
     A('end;');
     A('');
-    A('{ Sidemeny og innhold. Eget skall fordi innloggingssidene er smale');
-    A('  og sentrerte, mens sidene etter innlogging er en app. Samme');
-    A('  regel gjelder likevel: ingen npm, ingen nett, ingen filer ved');
-    A('  siden av binæren. }');
+    A('{ Sidebar and content. A shell of its own because the sign-in pages');
+    A('  are narrow and centred, while the pages after signing in are an');
+    A('  app. The same rule still applies: no npm, no network, no files');
+    A('  next to the binary. }');
     A('function Nav(const Href, Etikett, Aktiv: string): string;');
     A('begin');
     A('  Result := ''<a href="'' + Esc(Href) + ''"'';');
@@ -342,10 +346,10 @@ begin
     A('    ''</aside><main>'' + Body + ''</main></div></body></html>'';');
     A('end;');
     A('');
-    A('{ ---------------------------------------------- plassholdere -- }');
+    A('{ ------------------------------------------------ placeholders -- }');
     A('');
-    A('{ $1 i Postgres, ? i MySQL og SQLite. Driveren vet hvilken; denne');
-    A('  koden skal slippe å vite det. }');
+    A('{ $1 in Postgres, ? in MySQL and SQLite. The driver knows which;');
+    A('  this code should not have to. }');
     A('function Plassholder(N: Integer): string;');
     A('var');
     A('  B: TStrBuilder;');
@@ -382,14 +386,14 @@ begin
     A('    .First;');
     A('end;');
     A('');
-    A('{ ------------------------------------------------------ bremsen -- }');
+    A('{ ---------------------------------------------------- throttle -- }');
     A('');
-    A('{ Without dette er innloggingsskjemaet et mål for gjetting i stor skala.');
-    A('  Cachen brukes hvis den finnes; er den ikke satt opp, hopper vi over');
-    A('  bremsen i stedet for å ta ned innloggingen. Da står det i loggen.');
+    A('{ Without this the sign-in form is a target for guessing at scale.');
+    A('  The cache is used if it exists; if it is not set up, we skip the');
+    A('  throttle rather than taking sign-in down. It is then in the log.');
     A('');
-    A('  Telleren står på e-posten, ikke på IP-en: en angriper har mange');
-    A('  IP-er og som regel bare én konto å komme inn på. }');
+    A('  The counter is on the email address, not on the IP: an attacker');
+    A('  has many IPs and usually only one account to get into. }');
     A('const');
     A('  MaxForsok = 5;');
     A('  BremseVinduSek = 900;');
@@ -409,7 +413,7 @@ begin
     A('      Result := StrToIntDef(V, 0) >= MaxForsok;');
     A('  except');
     A('    on Exception do');
-    A('      { Ingen cache satt opp. Se kommentaren over. }');
+    A('      { No cache set up. See the comment above. }');
     A('      Result := False;');
     A('  end;');
     A('end;');
@@ -485,15 +489,16 @@ begin
     A('  U := FinnPaaEpost(Epost);');
     A('  if (U = nil) or not VerifyPassword(Passord, U.PasswordHash) then');
     A('  begin');
-    A('    { Én melding for begge tilfellene. Sier man "no such account",');
-    A('      har man laget et oppslagsverk over hvem som er registrert. }');
+    A('    { One message for both cases. Say "no such account" and you');
+    A('      have built a directory of who is registered. }');
     A('    TellForsok(Epost);');
     A('    CurrentSession.Flash(''error'', ''Those credentials do not match.'');');
     A('    Exit(Redirect(''/login'', 303));');
     A('  end;');
     A('');
-    A('  { Passordet er i hånden akkurat nå, så en hash laget med svakere');
-    A('    parametre kan oppgraderes uten å spørre brukeren om noe. }');
+    A('  { The password is in hand right now, so a hash made with weaker');
+    A('    parameters can be upgraded without asking the user for');
+    A('    anything. }');
     A('  if NeedsRehash(U.PasswordHash) then');
     A('  begin');
     A('    U.PasswordHash := HashPassword(Passord);');
@@ -501,7 +506,8 @@ begin
     A('  end;');
     A('');
     A('  NullstillForsok(Epost);');
-    A('  { Login bytter sesjons-id. Without det er session fixation åpent. }');
+    A('  { Login changes the session id. Without it session fixation is');
+    A('    wide open. }');
     A('  Askr.Auth.Login(IntToStr(U.Id), Req.Form(''remember'').Len > 0);');
     A('  LogInfo(''login'', [''user'', U.Id]);');
     A('  Result := Redirect(''/dashboard'', 303);');
@@ -538,10 +544,11 @@ begin
     A('    ''<p class="alt"><a href="/login">I already have an account</a></p>''));');
     A('end;');
     A('');
-    A('{ Minstekravet står ett sted, slik at registrering og tilbakestilling');
-    A('  ikke kan bli uenige. Tolv tegn er OWASPs anbefaling for et passord');
-    A('  uten andre krav; regler om store bokstaver og tall gir svakere');
-    A('  passord i praksis, fordi folk lager Passord1! }');
+    A('{ The minimum is in one place, so that registration and reset cannot');
+    A('  disagree. Twelve characters is OWASP''s recommendation for a');
+    A('  password with no other requirements; rules about capitals and');
+    A('  digits give weaker passwords in practice, because people make');
+    A('  Password1! }');
     A('function PassordFeil(const P, Bekreft: string): string;');
     A('begin');
     A('  if Length(P) < 12 then');
@@ -574,7 +581,7 @@ begin
     A('    Exit(Redirect(''/register'', 303));');
     A('  end;');
     A('');
-    A('  { Klarteksten går ikke lenger enn hit. }');
+    A('  { The plaintext goes no further than this. }');
     A('  U.PasswordHash := HashPassword(Passord);');
     A('  U.Save;');
     A('');
@@ -599,8 +606,8 @@ begin
     A('end;');
     A('');
     A('const');
-    A('  { En time. Lenge nok til at en e-post kan bli liggende litt, kort');
-    A('    nok til at en gammel innboks ikke er en nøkkel. }');
+    A('  { One hour. Long enough that an email can sit for a while, short');
+    A('    enough that an old inbox is not a key. }');
     A('  ResetLevetidMs = 60 * 60 * 1000;');
     A('');
     A('function TAuthController.SendReset(Req: TRequest): TResponse;');
@@ -613,8 +620,8 @@ begin
     A('  Epost := LowerCase(Trim(Req.Form(''email'').ToString));');
     A('  U := FinnPaaEpost(Epost);');
     A('');
-    A('  { Samme svar uansett om adressen finnes. Alt annet gjør skjemaet');
-    A('    til et oppslagsverk over hvem som er registrert. }');
+    A('  { The same answer whether or not the address exists. Anything else');
+    A('    turns the form into a directory of who is registered. }');
     A('  CurrentSession.Flash(''notice'',');
     A('    ''If that address has an account, a link is on its way.'');');
     A('');
@@ -622,8 +629,8 @@ begin
     A('  begin');
     A('    Token := RandomToken(32);');
     A('    A := CurrentArena;');
-    A('    { Hashen lagres, ikke tokenet. En lekket tabell skal ikke gi noen');
-    A('      muligheten til å tilbakestille passord. }');
+    A('    { The hash is stored, not the token. A leaked table must not give');
+    A('      anybody the ability to reset passwords. }');
     A('    CurrentDb.ExecParams(A,');
     A('      ''INSERT INTO password_resets (email, token_hash, expires_at, '' +');
     A('      ''created_at) VALUES ('' + Plassholdere(4) + '')'',');
@@ -633,8 +640,8 @@ begin
     A('    Link_ := Cfg(''app.url'', ''http://127.0.0.1:8080'') +');
     A('      ''/reset-password/'' + Token;');
     A('');
-    A('    { I utvikling skriver TLogTransport e-posten til en fil, slik at');
-    A('      lenken faktisk kan prøves uten en SMTP-server. }');
+    A('    { In development TLogTransport writes the email to a file, so');
+    A('      that the link can actually be tried without an SMTP server. }');
     A('    M := Mail.Message_;');
     A('    M.AddTo(Epost).Subject(''Reset your password'')');
     A('     .Text(''Open this link to choose a new password:'' + #10 + #10 +');
@@ -690,9 +697,9 @@ begin
     A('');
     A('  if (R = nil) or R.IsEmpty then');
     A('  begin');
-    A('    { Utløpt, brukt opp, eller aldri gyldig. Samme melding for alle');
-    A('      tre: hvilken av dem det var er ikke noe den som spør skal få');
-    A('      vite. }');
+    A('    { Expired, used up, or never valid. The same message for all');
+    A('      three: which of them it was is not something the asker gets to');
+    A('      know. }');
     A('    CurrentSession.Flash(''error'',');
     A('      ''That link is no longer valid. Ask for a new one.'');');
     A('    Exit(Redirect(''/forgot-password'', 303));');
@@ -706,27 +713,27 @@ begin
     A('  U.PasswordHash := HashPassword(Passord);');
     A('  U.Save;');
     A('');
-    A('  { Engangsbruk. All_ tokens for adressen slettes, ikke bare det som');
-    A('    ble brukt — ba noen om to lenker, skal ikke den andre fortsatt');
-    A('    virke. }');
+    A('  { Single use. All tokens for the address are deleted, not only');
+    A('    the one that was used — if somebody asked for two links, the');
+    A('    other one must not still work. }');
     A('  CurrentDb.ExecParams(A,');
     A('    ''DELETE FROM password_resets WHERE email = '' + Plassholder(1),');
     A('    [DbParam(A, Epost)]);');
     A('');
-    A('  { Sesjonen byttes ut. Var noen andre logget inn som denne brukeren,');
-    A('    skal de ikke fortsette å være det etter et passordbytte. }');
+    A('  { The session is swapped. If somebody else was signed in as this');
+    A('    user, they must not stay that way after a password change. }');
     A('  NullstillForsok(Epost);');
     A('  Askr.Auth.Login(IntToStr(U.Id));');
     A('  LogInfo(''password reset'', [''user'', U.Id]);');
     A('  Result := Redirect(''/dashboard'', 303);');
     A('end;');
     A('');
-    A('{ ------------------------------------------ etter innlogging -- }');
+    A('{ --------------------------------------------- after sign-in -- }');
     A('');
-    A('{ Den innloggede brukeren, eller nil. Vakten står i app.lpr, så');
-    A('  denne skal aldri gi nil i praksis — men en handler som antar det');
-    A('  og tar feil, krasjer med en access violation i stedet for å');
-    A('  sende deg til innloggingen. }');
+    A('{ The signed-in user, or nil. The guard is in app.lpr, so this');
+    A('  should never give nil in practice — but a handler that assumes it');
+    A('  and is wrong crashes with an access violation instead of sending');
+    A('  you to the sign-in page. }');
     A('function Meg: TUser;');
     A('begin');
     A('  Result := TUser(Askr.Auth.User);');
@@ -813,8 +820,8 @@ begin
     A('    Exit(RespondHtml(AppShell(''Profile'', ''/settings/profile'', U.Name,');
     A('      ProfilSide(U, ''That does not look like an email address.'', ''''))));');
     A('');
-    A('  { Unik e-post er håndhevet i databasen. Å la INSERT feile hadde');
-    A('    gitt en 500 i stedet for et skjema med en feilmelding. }');
+    A('  { A unique email is enforced in the database. Letting the INSERT');
+    A('    fail would have given a 500 instead of a form with an error. }');
     A('  if Epost <> LowerCase(U.Email) then');
     A('  begin');
     A('    Annen := FinnPaaEpost(Epost);');
@@ -831,10 +838,10 @@ begin
     A('  Result := Redirect(''/settings/profile'', 303);');
     A('end;');
     A('');
-    A('{ --------------------------------------------------- sikkerhet -- }');
+    A('{ ---------------------------------------------------- security -- }');
     A('');
-    A('{ Lista over registrerte passkeys. Datoen er det eneste som');
-    A('  skiller to noekler fra hverandre for den som ser paa. }');
+    A('{ The list of registered passkeys. The date is the only thing that');
+    A('  tells two keys apart for whoever is looking. }');
     A('function PasskeyListe(U: TUser): string;');
     A('var');
     A('  L: TCredentialList;');
@@ -882,9 +889,9 @@ begin
     A('    ''<p class="right"><button class="go" type="submit">'' +');
     A('    ''Change password</button></p></form></div></section>'' +');
     A('');
-    A('    { Står her fordi det er her man leter etter det. At det ikke');
-    A('      finnes ennå sies rett ut — en knapp som ikke gjør noe er');
-    A('      verre enn en setning som forklarer hvorfor. }');
+    A('    { It is here because this is where people look for it. That it');
+    A('      does not exist yet is said outright — a button that does');
+    A('      nothing is worse than a sentence explaining why. }');
     A('    ''<section><div><h2>Passkeys</h2>'' +');
     A('    ''<p>Sign in with Touch ID, Windows Hello or a security'' +');
     A('    '' key.</p></div><div>'' +');
@@ -926,8 +933,9 @@ begin
     A('  Now_ := Req.Form(''current'').ToString;');
     A('  Nytt := Req.Form(''password'').ToString;');
     A('');
-    A('  { Det gamle passordet kreves selv om man alt er logget inn: uten');
-    A('    det kan en åpen maskin overtas permanent av den som går forbi. }');
+    A('  { The old password is required even though you are already signed');
+    A('    in: without it an unattended machine can be taken over for good');
+    A('    by whoever walks past. }');
     A('  if not VerifyPassword(Now_, U.PasswordHash) then');
     A('    Exit(Avvis(''That is not your current password.''));');
     A('');
@@ -938,20 +946,20 @@ begin
     A('  U.PasswordHash := HashPassword(Nytt);');
     A('  U.Save;');
     A('');
-    A('  { Samme grunn som ved tilbakestilling: var noen andre logget inn');
-    A('    som denne brukeren, skal de ikke fortsette å være det. Login');
-    A('    bytter sesjons-id. }');
+    A('  { The same reason as at reset: if somebody else was signed in as');
+    A('    this user, they must not stay that way. Login changes the');
+    A('    session id. }');
     A('  Askr.Auth.Login(IntToStr(U.Id));');
     A('  LogInfo(''password changed'', [''user'', U.Id]);');
     A('  CurrentSession.Flash(''security_ok'', ''Password changed.'');');
     A('  Result := Redirect(''/settings/security'', 303);');
     A('end;');
     A('');
-    A('{ JavaScript for de to seremoniene.');
+    A('{ JavaScript for the two ceremonies.');
     A('');
-    A('  Ligger inline av samme grunn som alt annet her: innlogging skal');
-    A('  virke foer npm install. Det er rundt tretti linjer, og alt de');
-    A('  gjoer er aa oversette mellom base64url og ArrayBuffer og kalle');
+    A('  Inline for the same reason as everything else here: signing in has');
+    A('  to work before npm install. It is around thirty lines, and all');
+    A('  they do is translate between base64url and ArrayBuffer and call');
     A('  navigator.credentials. }');
     A('function PasskeyJs: string;');
     A('begin');
@@ -1018,8 +1026,8 @@ begin
     A('    ''</script>'';');
     A('end;');
     A('');
-    A('{ Askr.Urd.Bind sin JsonRoot er intern, saa kroppen parses her.');
-    A('  Den leses to ganger i verste fall, og det er noen hundre byte. }');
+    A('{ Askr.Urd.Bind''s JsonRoot is internal, so the body is parsed here.');
+    A('  It is read twice at worst, and that is a few hundred bytes. }');
     A('function Body_(Req: TRequest): PJsonValue;');
     A('var');
     A('  ErrPos: SizeInt;');
@@ -1047,19 +1055,19 @@ begin
     A('');
     A('{ RP ID og origin.');
     A('');
-    A('  Standardverdiene utledes fra requesten, slik at `askr serve`');
-    A('  virker uten oppsett -- WebAuthn regner localhost som en sikker');
-    A('  kontekst, saa det holder i utvikling. I produksjon boer de settes');
-    A('  i askr.toml:');
+    A('  The defaults are derived from the request, so that `askr serve`');
+    A('  works without any setup — WebAuthn counts localhost as a secure');
+    A('  context, so that is enough in development. In production they');
+    A('  should be set in askr.toml:');
     A('');
     A('    [webauthn]');
     A('    rp_id  = "example.com"');
     A('    origin = "https://example.com"');
     A('');
-    A('  Grunnen er at Host-hodet kommer fra klienten. Err verdi gir ikke');
-    A('  et hull i seg selv -- nettleseren nekter aa bruke en passkey paa');
-    A('  feil domene uansett -- men en fast verdi er det som gjoer at');
-    A('  serveren ogsaa sier nei, og ikke bare nettleseren. }');
+    A('  The reason is that the Host header comes from the client. A wrong');
+    A('  value is not a hole in itself — the browser refuses to use a');
+    A('  passkey on the wrong domain anyway — but a fixed value is what');
+    A('  makes the server say no too, and not only the browser. }');
     A('function WaOpts(Req: TRequest): TWebAuthnOptions;');
     A('var');
     A('  Vert: string;');
@@ -1076,9 +1084,9 @@ begin
     A('    Vert := ' + Q + 'localhost' + Q + ';');
     A('  if Result.Origin = ' + Q + Q + ' then');
     A('  begin');
-    A('    { Bare localhost slipper unna https. Det er nettleserens regel,');
-    A('      ikke vaar, og aa gjette feil her gir en feilmelding som ikke');
-    A('      forklarer noe. }');
+    A('    { Only localhost gets away without https. That is the browser''''s');
+    A('      rule, not ours, and guessing wrong here gives an error message');
+    A('      that explains nothing. }');
     A('    if (Pos(' + Q + 'localhost' + Q + ', Vert) = 1) or');
     A('       (Pos(' + Q + '127.0.0.1' + Q + ', Vert) = 1) then');
     A('      Result.Origin := ' + Q + 'http://' + Q + ' + Vert');
@@ -1096,10 +1104,10 @@ begin
     A('  end;');
     A('end;');
     A('');
-    A('{ WebAuthn godtar ikke en IP-adresse som RP ID -- den maa vaere et');
-    A('  domenenavn. localhost er gyldig; 127.0.0.1 er det ikke, og');
-    A('  nettleseren svarer da bare "This is an invalid domain", som ikke');
-    A('  sier hva man skal gjoere. Derfor sies det her i stedet. }');
+    A('{ WebAuthn does not accept an IP address as an RP ID — it has to be');
+    A('  a domain name. localhost is valid; 127.0.0.1 is not, and the');
+    A('  browser then answers only "This is an invalid domain", which does');
+    A('  not say what to do. So it is said here instead. }');
     A('function ErIpAdresse(const S: string): Boolean;');
     A('var');
     A('  I: Integer;');
@@ -1110,8 +1118,8 @@ begin
     A('      Exit(False);');
     A('end;');
     A('');
-    A('{ Utfordringen lagres i sesjonen til svaret kommer. Without det kunne');
-    A('  en angriper spille av et gammelt svar. }');
+    A('{ The challenge is kept in the session until the answer arrives.');
+    A('  Without it an attacker could replay an old answer. }');
     A('function NyUtfordring: string;');
     A('begin');
     A('  Result := Base64UrlEncode(NewChallenge);');
@@ -1123,7 +1131,7 @@ begin
     A('  S: string;');
     A('begin');
     A('  S := CurrentSession.Get(' + Q + 'wa_challenge' + Q + ');');
-    A('  { Den brukes én gang. Blir den liggende, kan den brukes igjen. }');
+    A('  { It is used once. Left lying about, it can be used again. }');
     A('  CurrentSession.Forget(' + Q + 'wa_challenge' + Q + ');');
     A('  Result := Base64UrlDecode(S);');
     A('end;');
@@ -1184,8 +1192,8 @@ begin
     A('  W.Field(' + Q + 'userId' + Q + ', Base64UrlEncode(StrBytes(IntToStr(U.Id))));');
     A('  W.Field(' + Q + 'userName' + Q + ', U.Email);');
     A('  W.Field(' + Q + 'userDisplayName' + Q + ', U.Name);');
-    A('  { Noekler brukeren alt har, slik at autentikatoren ikke lager en');
-    A('    ny for den samme kontoen. }');
+    A('  { Keys the user already has, so that the authenticator does not');
+    A('    make a new one for the same account. }');
     A('  W.Key(' + Q + 'exclude' + Q + ');');
     A('  W.BeginArray;');
     A('  Liste := TQuery<TCredential>.New');
@@ -1253,8 +1261,8 @@ begin
     A('  U := Meg;');
     A('  if U = nil then');
     A('    Exit(Redirect(' + Q + '/login' + Q + ', 303));');
-    A('  { Eierskapet maa sjekkes. Without det kan hvem som helst slette');
-    A('    andres noekler ved aa gjette en id. }');
+    A('  { The ownership has to be checked. Without it anybody can delete');
+    A('    somebody else''''s keys by guessing an id. }');
     A('  C := TQuery<TCredential>.New');
     A('    .Where(ColInt64(' + Q + 'credentials' + Q + ', ' + Q + 'id' + Q + '), Eq,');
     A('      StrToInt64Def(Req.Param(' + Q + 'id' + Q + ').ToString, 0))');
@@ -1281,8 +1289,8 @@ begin
     A('  W.Field(' + Q + 'challenge' + Q + ', NyUtfordring);');
     A('  W.Field(' + Q + 'rpId' + Q + ', WaOpts(Req).RpId);');
     A('  W.EndObject;');
-    A('  { Ingen liste over noekler: den ville roept hvem som har konto');
-    A('    her. Nettleseren finner selv en passkey for dette domenet. }');
+    A('  { No list of keys: it would give away who has an account here.');
+    A('    The browser finds a passkey for this domain by itself. }');
     A('  Result := JsonSvar(W.ToString);');
     A('end;');
     A('');
@@ -1305,9 +1313,9 @@ begin
     A('  C := TQuery<TCredential>.New');
     A('    .Where(ColStr(' + Q + 'credentials' + Q + ', ' + Q + 'credential_id' + Q + '), Eq, CredId)');
     A('    .First;');
-    A('  { Samme svar enten noekkelen ikke finnes eller signaturen ikke');
-    A('    holder. Alt annet forteller en angriper hvilke noekler som er');
-    A('    registrert her. }');
+    A('  { The same answer whether the key does not exist or the signature');
+    A('    does not hold. Anything else tells an attacker which keys are');
+    A('    registered here. }');
     A('  if C = nil then');
     A('    Exit(JsonFeil(' + Q + 'That passkey did not work.' + Q + ', 401));');
     A('');
@@ -1326,8 +1334,8 @@ begin
     A('  end;');
     A('');
     A('  if Asr.CloneWarning then');
-    A('    { Et varsel, ikke en avvisning: de fleste plattformautentikatorer');
-    A('      teller ikke i det hele tatt. Se docs/webauthn.md. }');
+    A('    { A warning, not a rejection: most platform authenticators do');
+    A('      not count at all. See docs/webauthn.md. }');
     A('    LogInfo(' + Q + 'passkey sign counter did not advance' + Q + ',');
     A('      [' + Q + 'credential' + Q + ', C.Id]);');
     A('');
@@ -1381,7 +1389,7 @@ begin
     '    Id;' + #10 +
     '    Text(' + Q + 'name' + Q + ', 120);' + #10 +
     '    Text(' + Q + 'email' + Q + ', 255).Unique;' + #10 +
-    '    { 255 tegn holder til PHC-strengen med god margin. }' + #10 +
+    '    { 255 characters covers the PHC string with room to spare. }' + #10 +
     '    Text(' + Q + 'password_hash' + Q + ', 255);' + #10 +
     '    Timestamps;' + #10 +
     '  end;' + #10 +
@@ -1419,12 +1427,12 @@ begin
     '  begin' + #10 +
     '    Id;' + #10 +
     '    Text(' + Q + 'email' + Q + ', 255);' + #10 +
-    '    { Hashen av tokenet, ikke tokenet. En lekket tabell skal ikke' + #10 +
-    '      gi noen muligheten til å tilbakestille passord — samme' + #10 +
-    '      resonnement som for passordene selv. }' + #10 +
+    '    { The hash of the token, not the token. A leaked table must not' + #10 +
+    '      give anybody the ability to reset passwords — the same' + #10 +
+    '      reasoning as for the passwords themselves. }' + #10 +
     '    Text(' + Q + 'token_hash' + Q + ', 64).Unique;' + #10 +
-    '    { Unix-millisekunder. Et heltall betyr det samme uansett hvilken' + #10 +
-    '      tidssone serveren tror den står i. }' + #10 +
+    '    { Unix milliseconds. An integer means the same thing whatever' + #10 +
+    '      time zone the server thinks it is in. }' + #10 +
     '    BigInt(' + Q + 'expires_at' + Q + ');' + #10 +
     '    BigInt(' + Q + 'created_at' + Q + ');' + #10 +
     '    Index([' + Q + 'email' + Q + ']);' + #10 +
@@ -1445,11 +1453,12 @@ const
   MarkorUses = '  App.Http.HomeController;';
   MarkorRuter = '  R.Get(''/demo'', Home.Demo);';
 
-{ Setter inn uses-linja og rutene der `askr new` la igjen dem.
+{ Inserts the uses line and the routes where `askr new` left them.
 
-  Finner den ikke markørene — fordi app.lpr er endret, som den skal kunne
-  være — gjør den ingenting og sier fra. Å gjette seg til et sted å sette
-  inn kode i en fil noen har skrevet selv er verre enn å be dem gjøre det. }
+  If it does not find the markers — because app.lpr has been changed, as it
+  is meant to be — it does nothing and says so. Guessing at a place to
+  insert code into a file somebody has written themselves is worse than
+  asking them to do it. }
 function InstallerRuter(const Rot: string): Boolean;
 var
   L: TStringList;
@@ -1465,8 +1474,8 @@ begin
   try
     L.LoadFromFile(Path_);
 
-    { Allerede installert? Da er det ingenting å gjøre, og det er ikke en
-      feil. }
+    { Already installed? Then there is nothing to do, and it is not an
+      error. }
     for I := 0 to L.Count - 1 do
       if Pos('App.Http.AuthController', L[I]) > 0 then
         Exit(True);
@@ -1483,9 +1492,10 @@ begin
     if (IdxUses < 0) or (IdxRuter < 0) then
       Exit(False);
 
-    { Bakfra, slik at den første innsettingen ikke flytter den andre. }
-    { Sidene etter innlogging. Ruteren sorterer på spesifisitet, ikke
-      rekkefølge, så plasseringen her betyr bare hvordan app.lpr ser ut. }
+    { From the back, so that the first insertion does not move the
+      second. }
+    { The pages after sign-in. The router sorts on specificity, not order,
+      so the placement here only affects how app.lpr reads. }
     L.Insert(IdxRuter + 1, '  R.Post(''/login/passkey'', Auth_.LoginPasskey);');
     L.Insert(IdxRuter + 1, '  R.Get(''/login/passkey/challenge'', Auth_.LoginChallenge);');
     L.Insert(IdxRuter + 1, '  R.Post(''/settings/passkeys/:id/delete'', Auth_.PasskeyDelete);');
@@ -1511,19 +1521,20 @@ begin
     L.Insert(IdxUses, '  App.Http.AuthController,');
     L.Insert(IdxUses, '  App.Models.User,');
 
-    { Kontrolleren må lages, brukeroppslaget registreres, og cachen settes
-      opp for bremsen på innloggingen. Alt tre rett før rutene. }
+    { The controller has to be made, the user loader registered, and the
+      cache set up for the throttle on sign-in. All three right before the
+      routes. }
     for I := 0 to L.Count - 1 do
       if L[I] = '  Home := THomeController.Create;' then
       begin
-        L.Insert(I + 1, '  { Askr lagrer bare brukerens id; denne gir resten tilbake. }');
+        L.Insert(I + 1, '  { Askr stores only the user''s id; this gives back the rest. }');
         L.Insert(I + 2, '  SetUserLoader(@LoadUser);');
-        L.Insert(I + 3, '  { Brukes av bremsen på innloggingsskjemaet. }');
+        L.Insert(I + 3, '  { Used by the throttle on the sign-in form. }');
         L.Insert(I + 4, '  SetCache(TCache.Create);');
-        L.Insert(I + 5, '  { Passordtilbakestilling sender e-post. MAIL_TRANSPORT');
-        L.Insert(I + 6, '    avgjør hvor den havner: log skriver til en fil slik at');
-        L.Insert(I + 7, '    lenken kan prøves uten noen server, resend og smtp');
-        L.Insert(I + 8, '    sender på ekte. Se docs/mail.md. }');
+        L.Insert(I + 5, '  { Password reset sends email. MAIL_TRANSPORT decides');
+        L.Insert(I + 6, '    where it ends up: log writes to a file so the link can');
+        L.Insert(I + 7, '    be tried without any server, resend and smtp send for');
+        L.Insert(I + 8, '    real. See docs/mail.md. }');
         L.Insert(I + 9, '  SetMail(TMailer.Create(MailFromConfig));');
         L.Insert(I + 10, '  Mail.SetDefaultFrom(Cfg(''mail.from'', ''noreply@localhost''), '''');');
         L.Insert(I + 11, '  Auth_ := TAuthController.Create;');
@@ -1540,15 +1551,15 @@ begin
     for I := 0 to L.Count - 1 do
       if L[I] = '  Askr.Session, Askr.Csrf, Askr.Auth,' then
       begin
-        { Askr.Mail.Resend må være linket inn for at MAIL_TRANSPORT=resend
-          skal finnes som navn. Den koster ingen kjøretidsavhengighet:
-          OpenSSL lastes først når noe faktisk sender. }
+        { Askr.Mail.Resend has to be linked in for MAIL_TRANSPORT=resend to
+          exist as a name. It costs no run-time dependency: OpenSSL is not
+          loaded until something actually sends. }
         L[I] := '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Cache,';
         L.Insert(I + 1, '  Askr.Mail, Askr.Mail.Resend,');
         Break;
       end;
 
-    { Kontrolleren frigjøres der de andre gjør det. }
+    { The controller is freed where the others are. }
     for I := L.Count - 1 downto 0 do
       if L[I] = '    Home.Free;' then
       begin
@@ -1609,10 +1620,10 @@ procedure WriteCredential(const Rot: string);
 begin
   Emit(IncludeTrailingPathDelimiter(Rot) +
     'app/Models/App.Models.Credential.pas',
-    '{ En registrert passkey.' + #10 + #10 +
-    '  Her ligger bare den OFFENTLIGE noekkelen. Det er hele poenget med' + #10 +
-    '  passkeys: en lekket database gir ingen innlogging, fordi det som' + #10 +
-    '  trengs for aa signere aldri forlater brukerens utstyr. }' + #10 +
+    '{ A registered passkey.' + #10 + #10 +
+    '  Only the PUBLIC key is here. That is the whole point of passkeys:' + #10 +
+    '  a leaked database gives nobody a way in, because what is needed to' + #10 +
+    '  sign never leaves the user''s own device. }' + #10 +
     'unit App.Models.Credential;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
     'interface' + #10 + #10 +
@@ -1633,15 +1644,16 @@ begin
     '  published' + #10 +
     '    property Id: Int64 read FId write FId;' + #10 +
     '    property UserId: Int64 read FUserId write FUserId;' + #10 +
-    '    { base64url, slik nettleseren oppgir den. }' + #10 +
+    '    { base64url, the way the browser reports it. }' + #10 +
     '    property CredentialId: string read FCredentialId write FCredentialId;' + #10 +
-    '    { Hex, 64 tegn hver. }' + #10 +
+    '    { Hex, 64 characters each. }' + #10 +
     '    property PublicKeyX: string read FPublicKeyX write FPublicKeyX;' + #10 +
     '    property PublicKeyY: string read FPublicKeyY write FPublicKeyY;' + #10 +
     '    property SignCount: Int64 read FSignCount write FSignCount;' + #10 +
-    '    { Ikke Label: det er et reservert ord i Pascal, og et' + #10 +
-    '      property som maa hete Label_ blir kolonnen label_. Urd' + #10 +
-    '      snake_caser property-navnet, saa navnet her ER kolonnen. }' + #10 +
+    '    { Not Label: it is a reserved word in Pascal, and a property' + #10 +
+    '      that has to be called Label_ becomes the column label_. Urd' + #10 +
+    '      snake_cases the property name, so the name here IS the' + #10 +
+    '      column. }' + #10 +
     '    property Nickname: string read FNickname write FNickname;' + #10 +
     '    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;' + #10 +
     '    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;' + #10 +
@@ -1681,15 +1693,15 @@ begin
     'end;' + #10 + #10 +
     'procedure TCreateCredentials.Up(S: TSchemaBuilder);' + #10 +
     'begin' + #10 +
-    '  { Registrerte passkeys. Bare offentlige noekler: det som trengs' + #10 +
-    '    for aa signere forlater aldri brukerens utstyr, og derfor gir' + #10 +
-    '    en lekket database her ingen innlogging. }' + #10 +
+    '  { Registered passkeys. Public keys only: what is needed to sign' + #10 +
+    '    never leaves the user''s own device, and so a leaked database' + #10 +
+    '    here gives nobody a way in. }' + #10 +
     '  with S.Create(' + Q + 'credentials' + Q + ') do' + #10 +
     '  begin' + #10 +
     '    Id;' + #10 +
     '    ForeignKey(' + Q + 'user_id' + Q + ', ' + Q + 'users' + Q + ');' + #10 +
-    '    { Unik: den samme noekkelen skal ikke kunne registreres to' + #10 +
-    '      ganger, heller ikke paa to kontoer. }' + #10 +
+    '    { Unique: the same key must not be registrable twice, not even' + #10 +
+    '      on two accounts. }' + #10 +
     '    Text(' + Q + 'credential_id' + Q + ', 255).Unique;' + #10 +
     '    Text(' + Q + 'public_key_x' + Q + ', 64);' + #10 +
     '    Text(' + Q + 'public_key_y' + Q + ', 64);' + #10 +
@@ -1723,12 +1735,12 @@ begin
   WriteUser(Rot);
   WriteCredential(Rot);
   WriteMigrations(Rot, Tidsstempel);
-  { Egen migrasjon, og TO tidsstempel senere: credentials peker paa
-    users med en fremmednoekkel, saa tabellen maa finnes foerst — og
-    WriteMigrations bruker selv T og T+1. With_ +1 fikk credentials
-    samme versjon som password_resets, og migratoren hoppet over den
-    som alt kjoert. Tabellen ble da aldri laget, og sikkerhetssida
-    svarte 500. }
+  { A migration of its own, and TWO timestamps later: credentials points
+    at users with a foreign key, so the table has to exist first — and
+    WriteMigrations itself uses T and T+1. With +1, credentials got the
+    same version as password_resets, and the migrator skipped it as
+    already run. The table was then never created, and the security page
+    answered 500. }
   WritePasskeyMigration(Rot, IntToStr(StrToInt64(Tidsstempel) + 2));
   WriteControllers(Rot);
   UpdateIndex(Rot, 'database', 'App.Migrations', 'App.Migrations.');

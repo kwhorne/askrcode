@@ -1,34 +1,35 @@
-{ Askr.Console — kommandoene appen svarer på selv.
+{ Askr.Console — the commands the app answers itself.
 
-  `askr migrate` kan ikke kjøres av verktøyet. Migrasjonene er Pascal-kode
-  som er kompilert inn i appbinæren, og det samme gjelder rutene, jobbene,
-  planen og modellene. Verktøyet vet ikke hva som står der; det eneste det
-  kan gjøre er å be binæren om å gjøre det.
+  `askr migrate` cannot be run by the tool. The migrations are Pascal code
+  compiled into the app binary, and the same goes for the routes, the jobs,
+  the schedule and the models. The tool does not know what is in them; the
+  only thing it can do is ask the binary to do it.
 
-  Derfor: `askr <noe>` kjører `app --noe`, og denne uniten er det som tar
-  imot flagget i den andre enden.
+  So: `askr <something>` runs `app --something`, and this unit is what
+  receives the flag at the other end.
 
-  **Kommandoene ligger her, ikke i den genererte app.lpr.** Et prosjekt
-  laget i fjor skal få nye kommandoer ved å bygge på nytt, ikke ved å
-  scaffolde om. Alt en app.lpr trenger er én linje:
+  **The commands live here, not in the generated app.lpr.** A project made
+  last year is to get new commands by rebuilding, not by scaffolding again.
+  All an app.lpr needs is one line:
 
       if RunConsole then Exit;
 
-  Den returnerer True når den håndterte noe, og da skal appen avslutte i
-  stedet for å starte serveren. Før dette leste den genererte app.lpr
-  `ParamStr(1)` som portnummer, og `askr migrate` startet webserveren på
-  port 8080 i stedet for å migrere. Det var ikke en liten feil — det gjorde
-  hele migrasjonsverktøyet utilgjengelig fra et ferskt prosjekt.
+  It returns True when it handled something, and then the app is to exit
+  instead of starting the server. Before this the generated app.lpr read
+  `ParamStr(1)` as a port number, and `askr migrate` started the web server
+  on port 8080 instead of migrating. That was not a small bug — it made the
+  whole migration tool unreachable from a fresh project.
 
-  ## What som med vilje ikke finnes
+  ## What deliberately does not exist
 
-  Laravel har `optimize`, `config:cache`, `route:cache`, `view:cache` og
-  `clear-compiled`. De finnes fordi PHP tolker kildekoden på nytt ved hver
-  request, og cachen er det som sparer det. I Askr **er** binæren cachen.
-  Kommandoene ville vært seremoni uten virkning.
+  Laravel has `optimize`, `config:cache`, `route:cache`, `view:cache` and
+  `clear-compiled`. They exist because PHP interprets the source again on
+  every request, and the cache is what saves that. In Askr the binary **is**
+  the cache. The commands would have been ceremony without effect.
 
-  `vendor:publish`, `package:discover` og `install:*` hører til Composer.
-  `tinker` krever en tolk for Pascal-uttrykk og er utsatt med vilje. }
+  `vendor:publish`, `package:discover` and `install:*` belong to Composer.
+  `tinker` requires an interpreter for Pascal expressions and is deferred on
+  purpose. }
 unit Askr.Console;
 
 {$mode Delphi}{$H+}
@@ -45,8 +46,8 @@ uses
   Askr.Queue, Askr.Scheduler, Askr.Cache;
 
 type
-  { En seeder er en klasse som fyller databasen. Samme form som en
-    migrasjon: registrer den, og verktøyet finner den. }
+  { A seeder is a class that fills the database. The same shape as a
+    migration: register it, and the tool finds it. }
   TSeeder = class
   public
     class function Name: string; virtual;
@@ -57,24 +58,25 @@ type
 procedure RegisterSeeder(S: TSeederClass);
 function RegisteredSeeders: TList;
 
-{ Appen sier hvor databasen er. Without den kan ingen av db-kommandoene
-  gjøre noe, og da sier de fra i stedet for å feile halvveis. }
+{ The app says where the database is. Without it none of the db commands
+  can do anything, and then they say so instead of failing halfway. }
 procedure SetConsoleDsn(const Dsn: string);
-{ Ruteren, køen, planen og cachen settes av appen når den har dem. Det som
-  ikke er satt, sier kommandoen fra om. }
+{ The router, the queue, the schedule and the cache are set by the app
+  when it has them. Whatever is not set, the command says so. }
 procedure SetConsoleRouter(R: TRouter);
 
-{ Kjører kommandoen i ParamStr(1) hvis det er en. True betyr «håndtert,
-  ikke start serveren». Exit-koden settes med Halt inne i kommandoen når
-  noe gikk galt. }
+{ Runs the command in ParamStr(1) if there is one. True means "handled,
+  do not start the server". The exit code is set with Halt inside the
+  command when something went wrong. }
 function RunConsole: Boolean;
 
-{ Vedlikeholdsmodus. `askr down` skriver en fil; denne middlewaren er det
-  som gjør at fila betyr noe.
+{ Maintenance mode. `askr down` writes a file; this middleware is what
+  makes the file mean anything.
 
-  Fila og ikke et flagg i minnet, fordi `askr down` er en annen prosess enn
-  serveren — og fordi modusen skal overleve en omstart. Statiske filer
-  registreres før denne hvis de skal serveres uansett. }
+  A file and not a flag in memory, because `askr down` is a different
+  process from the server — and because the mode has to survive a restart.
+  Static files are registered before this one if they are to be served
+  regardless. }
 procedure UseMaintenance(R: TRouter);
 function InMaintenance: Boolean;
 
@@ -124,9 +126,9 @@ end;
 procedure Si(const S: string); forward;
 procedure Err(const S: string); forward;
 
-{ Ja/nei i en statusutskrift. Skrevet ut fordi IfThen uten StrUtils eller
-  Math i uses treffer en generisk deklarasjon og gir «Generics without
-  specialization» — en feilmelding som ikke sier hva som er galt. }
+{ Yes/no in a status printout. Written out because IfThen without StrUtils
+  or Math in uses hits a generic declaration and gives "Generics without
+  specialization" — an error message that does not say what is wrong. }
 function BoolAnswer(B: Boolean; const Ja, Nei: string): string;
 begin
   if B then
@@ -135,9 +137,10 @@ begin
     Result := Nei;
 end;
 
-{ De omgivende køen, planen og cachen kaster når de ikke er satt, og
-  meldingene deres sier hva som mangler. Kommandoene her fanger dem i
-  stedet for å la et stakkspor stå som svar på «askr queue:status». }
+{ The surrounding queue, schedule and cache raise when they are not set,
+  and their messages say what is missing. The commands here catch them
+  rather than letting a stack trace stand as the answer to "askr
+  queue:status". }
 function HasQueue: Boolean;
 begin
   Result := True;
@@ -192,7 +195,7 @@ begin
   Flush(ErrOutput);
 end;
 
-{ Et flagg på formen --step=3 eller --step 3. }
+{ A flag of the form --step=3 or --step 3. }
 function FlagValue(const Name_: string; Standard: Integer): Integer;
 var
   I: Integer;
@@ -223,7 +226,7 @@ function Arg(Index: Integer): string;
 var
   I, N: Integer;
 begin
-  { Første argument som ikke er et flagg, etter kommandoen selv. }
+  { The first argument that is not a flag, after the command itself. }
   N := 0;
   for I := 2 to ParamCount do
     if Copy(ParamStr(I), 1, 2) <> '--' then
@@ -248,8 +251,8 @@ begin
   except
     on E: Exception do
     begin
-      { DSN-en kan ha passord i seg og skrives aldri ut. Skjemaet alene
-        sier nok til å finne feilen. }
+      { The DSN may have a password in it and is never printed. The schema
+        alone says enough to find the problem. }
       Err(Format('Could not connect to the %s database: %s',
         [DsnScheme(GDsn), E.Message]));
       Halt(1);
@@ -309,7 +312,8 @@ begin
       if Info[I].Applied and Info[I].Registered then
         Mark := 'applied'
       else if Info[I].Applied then
-        { Kjørt, men fila er borte. Det er en tilstand man vil vite om. }
+        { Run, but the file is gone. That is a state you want to know
+          about. }
         Mark := 'MISSING'
       else
         Mark := 'pending';
@@ -345,9 +349,9 @@ begin
   end;
 end;
 
-{ Sletter alle tabeller i skjemaet, ikke bare de Norn kjenner. En
-  migrate:fresh som lot noe stå ville gitt en database som ser tom ut og
-  ikke er det. }
+{ Drops every table in the schema, not only the ones Norn knows about. A
+  migrate:fresh that left something standing would have given a database
+  that looks empty and is not. }
 function DropAllTables(C: TDbConnection; A: TArena): Integer;
 var
   S: TDbSchema;
@@ -362,9 +366,9 @@ begin
       B.Init(A, 128);
       B.Append('DROP TABLE IF EXISTS ');
       C.AppendIdentStr(B, S.TableAt(I).Name);
-      { CASCADE i Postgres; MySQL og SQLite ordner rekkefølgen selv når
-        fremmednøkler slås av, men å droppe i omvendt rekkefølge er
-        upålitelig. }
+      { CASCADE in Postgres; MySQL and SQLite sort the order out themselves
+        when foreign keys are switched off, but dropping in reverse order
+        is unreliable. }
       if C.Dialect = sdPostgres then
         B.Append(' CASCADE');
       try
@@ -372,12 +376,12 @@ begin
         Inc(Result);
       except
         on EDbError do
-          { En tabell som ikke lot seg droppe fordi en annen peker på den
-            tas i neste runde. }
+          { A table that could not be dropped because another one points at
+            it is taken in the next round. }
           ;
       end;
     end;
-    { Andre runde for det som var bundet. }
+    { A second round for what was tied up. }
     for I := 0 to S.TableCount - 1 do
     begin
       B.Init(A, 128);
@@ -404,8 +408,8 @@ var
 begin
   if IsProduction and not HasFlag('force') then
   begin
-    { Den ene kommandoen som sletter alt skal ikke kunne kjøres i
-      produksjon ved et uhell. }
+    { The one command that deletes everything must not be runnable in
+      production by accident. }
     Err('Refusing to wipe the database with APP_ENV=production. ' +
       'Pass --force if that is really what you want.');
     Halt(1);
@@ -444,8 +448,9 @@ end;
 
 procedure CmdMigrateReset;
 begin
-  { All_, ikke bare de siste. 0 til Down betyr ingenting, så tallet må
-    være stort nok til å dekke alt som er kjørt. }
+  { All of them, not only the last ones. 0 to Down means nothing, so the
+    number has to be large enough to cover everything that has been
+    run. }
   CmdRollback(MaxInt);
 end;
 
@@ -514,7 +519,7 @@ begin
   C := OpenDb;
   A := TArena.Create(128 * 1024);
   try
-    { Skjemaet, ikke DSN-en: den kan ha passord i seg. }
+    { The schema, not the DSN: it may have a password in it. }
     Si('Driver     ' + DsnScheme(GDsn));
     Si('Dialect    ' + GetEnumName(TypeInfo(TSqlDialect), Ord(C.Dialect)));
     Si('');
@@ -630,9 +635,9 @@ begin
       for I := 0 to High(Filer) do
         Si('  ' + Opts.OutputDir + '/' + Filer[I].FileName);
       Si('');
-      { WriteSources rører ikke filer som er uendret, slik at tidsstempler
-        og inkrementell kompilering ikke forstyrres — og gir tilbake bare
-        navnene på dem som faktisk ble skrevet. }
+      { WriteSources leaves unchanged files alone, so that timestamps and
+        incremental compilation are not disturbed — and gives back only the
+        names of the ones that were actually written. }
       Si(Format('%d file(s), %d changed.', [Length(Filer), Length(Endret)]));
     finally
       S.Free;
@@ -642,7 +647,7 @@ begin
   end;
 end;
 
-{ ---------------------------------------------------------------- kø -- }
+{ ------------------------------------------------------------- queue -- }
 
 procedure RequiresQueue;
 begin
@@ -659,9 +664,9 @@ begin
     [Queue.Workers, BoolAnswer(Queue.Durable, 'durable', 'in-process')]));
   Queue.Start;
   Before := 0;
-  { Kjører til noen avbryter. En egen prosess for køen er ikke nødvendig
-    i Askr — appen kan gjøre begge deler — men den finnes for den som vil
-    skille dem. }
+  { Runs until somebody interrupts. A separate process for the queue is
+    not necessary in Askr — the app can do both — but it exists for whoever
+    wants to keep them apart. }
   while True do
   begin
     Sleep(1000);
@@ -714,8 +719,8 @@ begin
   if not HasSchedule then
     Halt(1);
   RequiresQueue;
-  { Ett tikk. Scheduleren dytter til køen og utfører aldri noe selv, så
-    jobbene kjører av køen etterpå. }
+  { One tick. The scheduler pushes to the queue and never runs anything
+    itself, so the jobs run off the queue afterwards. }
   N := Schedule.Tick;
   Queue.Start;
   Queue.WaitUntilEmpty(60000);
@@ -753,8 +758,8 @@ class function TVedlikehold.Check(Req: TRequest): TResponse;
 begin
   if not InMaintenance then
     Exit(nil);
-  { 503 med Retry-After, ikke 200 med en beskjed: en søkemotor og en
-    lastbalanserer skal begge forstå at dette er midlertidig. }
+  { 503 with Retry-After, not 200 with a message: a search engine and a
+    load balancer are both to understand that this is temporary. }
   Result := RespondText('Service Unavailable', 503)
     .WithHeader('Retry-After', '60');
 end;
@@ -775,8 +780,8 @@ begin
   finally
     L.Free;
   end;
-  { En fil, ikke en flagg i minnet: den skal gjelde for enhver prosess som
-    starter etterpå, og den skal overleve en omstart. }
+  { A file, not a flag in memory: it is to apply to any process that starts
+    afterwards, and it is to survive a restart. }
   Si('The application is now in maintenance mode.');
 end;
 
@@ -915,8 +920,8 @@ begin
   if ParamCount < 1 then
     Exit;
   K := ParamStr(1);
-  { Kommandoene kommer som --navn fra verktøyet. Without prefikset er det
-    portnummeret, slik det alltid har vært. }
+  { The commands arrive as --name from the tool. Without the prefix it is
+    the port number, as it always has been. }
   if Copy(K, 1, 2) <> '--' then
     Exit;
   System.Delete(K, 1, 2);

@@ -1,10 +1,10 @@
-{ Askr.Cli.Project — finner og leser askr.toml.
+{ Askr.Cli.Project — finds and reads askr.toml.
 
-  Én fil i rota sier hva prosjektet heter og hvor ting ligger. Formatet er
-  det minste som ser ut som TOML: nøkkel = verdi, én per linje, seksjoner i
-  klammer. Ingen tabeller, ingen arrays utover kommaseparerte strenger, ingen
-  flerlinjes verdier. Trengs mer, er det et tegn på at konfigurasjonen har
-  vokst forbi det den burde. }
+  One file in the root says what the project is called and where things
+  are. The format is the smallest thing that looks like TOML: key = value,
+  one per line, sections in brackets. No tables, no arrays beyond
+  comma-separated strings, no multi-line values. If more is needed, that is
+  a sign the configuration has grown past what it ought to be. }
 unit Askr.Cli.Project;
 
 {$mode Delphi}{$H+}
@@ -24,13 +24,13 @@ type
     constructor Create(const ARoot: string);
     destructor Destroy; override;
 
-    { Leter oppover fra Start etter askr.toml. nil hvis ingen finnes. }
+    { Looks upwards from Start for askr.toml. nil if there is none. }
     class function Find(const Start: string): TProject;
 
     function Name: string;
     function MainFile: string;
-    { Hovedfila for et desktop-bygg. Tom når prosjektet ikke har noe
-      desktop-skall. }
+    { The main file for a desktop build. Empty when the project has no
+      desktop shell. }
     function DesktopMainFile: string;
     { Testprogrammet. Standard er tests/app_tests.lpr. }
     function TestFile: string;
@@ -39,14 +39,14 @@ type
     function BackendPort: Word;
     function Compiler: string;
     function CompilerFlags: string;
-    { Rammeverkets rot, når prosjektet peker på en lokal utsjekking.
-      Tom når prosjektet i stedet pinner en versjon. }
+    { The framework's root, when the project points at a local checkout.
+      Empty when the project pins a version instead. }
     function AskrPath: string;
-    { Versjonen prosjektet ber om, fra [askr] version. Kan være en
-      npm-formet spesifikasjon: 0.6.0, ^0.6.0, ~0.6.0. }
+    { The version the project asks for, from [askr] version. It can be an
+      npm-shaped specification: 0.6.0, ^0.6.0, ~0.6.0. }
     function AskrWantedVersion: string;
-    { Where_ versjoner hentes fra. Standard er det offentlige repoet; en
-      gaffel eller et speil settes med [askr] source. }
+    { Where versions are fetched from. The default is the public
+      repository; a fork or a mirror is set with [askr] source. }
     function AskrSource: string;
     function UnitPaths: TStringArray;
     function WatchDirs: TStringArray;
@@ -86,9 +86,9 @@ begin
   FRoot := ExcludeTrailingPathDelimiter(ExpandFileName(ARoot));
   FValues := TStringList.Create;
   FValues.NameValueSeparator := '=';
-  { Parseren ligger i Askr.Core.Config, og appen bruker den samme.
-    askr.toml skal ikke kunne bety én ting for CLI-en og noe annet for
-    appen den bygger. }
+  { The parser lives in Askr.Core.Config, and the app uses the same one.
+    askr.toml must not be able to mean one thing for the CLI and something
+    else for the app it builds. }
   ParseTomlInto(IncludeTrailingPathDelimiter(FRoot) + 'askr.toml', FValues);
 end;
 
@@ -149,9 +149,10 @@ begin
   Result := IncludeTrailingPathDelimiter(FRoot) + D;
 end;
 
-{ Porten står under [app] i nye prosjekter, slik at appen kan lese den som
-  app.port gjennom Askr.Core.Config. Den bare `port` på toppnivå beholdes
-  fordi prosjekter laget før seksjonen kom fortsatt har den der. }
+{ The port is under [app] in new projects, so that the app can read it as
+  app.port through Askr.Core.Config. The bare `port` at the top level is
+  kept because projects made before the section existed still have it
+  there. }
 function TProject.Port: Word;
 begin
   Result := Word(StrToIntDef(Get('app.port', Get('port', '8080')), 8080));
@@ -170,15 +171,16 @@ end;
 
 function TProject.CompilerFlags: string;
 begin
-  { -O1 i dev: -O2 koster mer enn det gir når løkka er målt i millisekunder. }
+  { -O1 in dev: -O2 costs more than it gives when the loop is measured in
+    milliseconds. }
   Result := Get('flags', '-Sh -O1 -vw');
 end;
 
 function TProject.AskrPath: string;
 begin
-  { [askr] path vinner. Den gamle formen — askr = "..." på toppnivå —
-    leses fortsatt, fordi prosjekter laget før versjonering fantes
-    skal fortsette å bygge. }
+  { [askr] path wins. The old form — askr = "..." at the top level — is
+    still read, because projects made before versioning existed are to keep
+    building. }
   Result := Get('askr.path', '');
   if Result = '' then
     Result := Get('askr', '');

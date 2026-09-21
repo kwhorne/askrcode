@@ -1,14 +1,14 @@
-{ Askr.Cli.Watch — ser etter endringer i kildefiler.
+{ Askr.Cli.Watch — watches for changes in source files.
 
-  Pollet, ikke hendelsesdrevet. FSEvents på macOS og inotify på Linux er
-  raskere å våkne på, men de er to ulike API-er med hver sine særheter, og
-  en full skanning av noen hundre filer koster under en millisekund. Ved 25 ms
-  intervall er deteksjonen dyrere enn den trenger å være med rundt tolv
-  millisekunder i snitt — men det er en tolvtedel av budsjettet, og det er
-  billig nok til at kompleksiteten ikke er verdt det.
+  Polled, not event driven. FSEvents on macOS and inotify on Linux are
+  faster to wake on, but they are two different APIs each with their own
+  quirks, and a full scan of a few hundred files costs under a millisecond.
+  At a 25 ms interval the detection is more expensive than it needs to be,
+  at around twelve milliseconds on average — but that is a twelfth of the
+  budget, and it is cheap enough that the complexity is not worth it.
 
-  Blir prosjektene store nok til at skanningen merkes, er det da man bytter.
-  Ikke før. }
+  If the projects grow big enough for the scan to be noticeable, that is
+  when you switch. Not before. }
 unit Askr.Cli.Watch;
 
 {$mode Delphi}{$H+}
@@ -35,22 +35,23 @@ type
     constructor Create;
     destructor Destroy; override;
     procedure AddRoot(const Dir: string);
-    { Filendelser som utløser en rebuild av backend. }
+    { File extensions that trigger a rebuild of the backend. }
     procedure AddBackendExt(const Ext: string);
-    { Endelser som Vite håndterer selv; de skal ikke utløse rebuild. }
+    { Extensions Vite handles itself; they must not trigger a rebuild. }
     procedure AddFrontendExt(const Ext: string);
     procedure IgnoreDir(const Name: string);
 
-    { Leser inn nåtilstanden uten å rapportere endringer. }
+    { Reads in the current state without reporting changes. }
     procedure Prime;
-    { What som har endret seg siden forrige kall. ChangedPath settes til den
-      første fila som utløste det. }
+    { What has changed since the previous call. ChangedPath is set to the
+      first file that triggered it. }
     function Poll(out ChangedPath: string): TWatchKind;
     function FileCount: Integer;
   end;
 
-{ Filas mtime i millisekunder siden epoch. Brukes til å måle hele
-  utviklerløkka fra lagringsøyeblikket, ikke fra da pollingen oppdaget den. }
+{ The file's mtime in milliseconds since the epoch. Used to measure the
+  whole developer loop from the moment of saving, not from when the polling
+  noticed it. }
 function FileMtimeMs(const Path: string): Int64;
 
 implementation
@@ -76,9 +77,9 @@ begin
   FFrontendExts := TStringList.Create;
   FIgnore := TStringList.Create;
   FSeen := TStringList.Create;
-  { Sortert for oppslag i O(log n): en full skanning hvert 25. millisekund
-    tåler ikke lineære søk per fil. Stempelet lagres som en hash i Objects,
-    fordi Values og ValueFromIndex ikke er lov på en sortert liste. }
+  { Sorted for O(log n) lookups: a full scan every 25 milliseconds cannot
+    take a linear search per file. The stamp is stored as a hash in Objects,
+    because Values and ValueFromIndex are not allowed on a sorted list. }
   FSeen.Sorted := True;
   FSeen.Duplicates := dupIgnore;
 end;
@@ -167,10 +168,10 @@ begin
   end;
 end;
 
-{ Nanosekunder, ikke sekunder. TSearchRec.TimeStamp og FileAge har begge
-  bare sekundoppløsning, og to lagringer innenfor samme sekund er helt
-  vanlig når man jobber fort. fpStat gir nanosekunder på både macOS og
-  Linux — bare under ulike feltnavn. }
+{ Nanoseconds, not seconds. TSearchRec.TimeStamp and FileAge both have
+  only second resolution, and two saves within the same second are entirely
+  normal when you work fast. fpStat gives nanoseconds on both macOS and
+  Linux — only under different field names. }
 function StampOf(const Path: string): string;
 var
   St: TStat;
@@ -194,14 +195,14 @@ begin
   Poll(Dummy);
 end;
 
-{ FNV-1a over stempelet. Kollisjon ville betydd en tapt endring, men et
-  64-bits utfall gjør det usannsynlig nok til at alternativet — en egen
-  strengliste å holde i synk — ikke er verdt det. }
-{ FNV-1a er tuftet på at multiplikasjonen flyter over og brytes modulo
-  ordstørrelsen — det er ikke et uhell, det er algoritmen. Bygger noen med
-  -Cr eller -Co, som er helt rimelig i en debug-bygging, blir den tilsiktede
-  wraparounden til en ERangeError. Avhengigheten står derfor her i stedet for
-  å være stilltiende. }
+{ FNV-1a over the stamp. A collision would have meant a lost change, but a
+  64-bit result makes it unlikely enough that the alternative — a separate
+  string list to keep in sync — is not worth it. }
+{ FNV-1a is built on the multiplication overflowing and being cut modulo
+  the word size — that is not an accident, that is the algorithm. If
+  somebody builds with -Cr or -Co, which is entirely reasonable in a debug
+  build, the intended wraparound becomes an ERangeError. The dependency is
+  therefore written here rather than being tacit. }
 {$push}{$R-}{$Q-}
 function HashStamp(const S: string): PtrInt;
 var
@@ -242,8 +243,9 @@ begin
       if Idx < 0 then
       begin
         FSeen.AddObject(Path, TObject(Hash));
-        { En ny fil er en endring, men ikke under Prime — da er FSeen tom og
-          alt er nytt. Kalleren bruker Prime nettopp for å svelge det. }
+        { A new file is a change, but not during Prime — then FSeen is empty
+          and everything is new. The caller uses Prime precisely to swallow
+          that. }
         if Result = wkNone then
         begin
           Changed := KindFor(Path);
@@ -256,12 +258,12 @@ begin
       end
       else if PtrInt(FSeen.Objects[Idx]) <> Hash then
       begin
-        { Objects kan settes på en sortert liste; det er bare strengene som
-          ikke kan røres. }
+        { Objects can be set on a sorted list; it is only the strings that
+          cannot be touched. }
         FSeen.Objects[Idx] := TObject(Hash);
         Changed := KindFor(Path);
-        { Backend vinner: en runde som rører både Pascal og Svelte skal
-          bygge på nytt, ikke bare la Vite oppdatere. }
+        { The backend wins: a round that touches both Pascal and Svelte is to
+          rebuild, not merely let Vite update. }
         if (Result = wkNone) or (Changed = wkBackend) then
         begin
           Result := Changed;

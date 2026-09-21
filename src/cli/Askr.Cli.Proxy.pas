@@ -1,16 +1,18 @@
-{ Askr.Cli.Proxy — dev-serverens front mot nettleseren.
+{ Askr.Cli.Proxy — the dev server's front towards the browser.
 
-  Appen kjører på en intern port og byttes ut når koden endres. Proxyen
-  lytter på porten utvikleren faktisk bruker, og overlever byttet.
+  The app runs on an internal port and is swapped out when the code
+  changes. The proxy listens on the port the developer actually uses, and
+  survives the swap.
 
-  Det er dette PRD-en mener med at dev-serveren køer innkommende requests
-  mens koden byttes i stedet for å vise feilside: under en rebuild holder
-  proxyen tilkoblingen åpen i stedet for å koble til en port det ikke er noen
-  som lytter på. Nettleseren ser en request som tar litt lengre tid, ikke en
-  feil.
+  This is what the PRD means by the dev server queuing incoming requests
+  while the code is swapped rather than showing an error page: during a
+  rebuild the proxy holds the connection open instead of connecting to a
+  port nobody is listening on. The browser sees a request that takes a
+  little longer, not an error.
 
-  Relayet er rå TCP, ikke HTTP. Det er enklere, og det betyr at Vites
-  HMR-socket og alt annet som ikke er vanlig HTTP går gjennom uendret. }
+  The relay is raw TCP, not HTTP. It is simpler, and it means that Vite's
+  HMR socket and everything else that is not ordinary HTTP passes through
+  unchanged. }
 unit Askr.Cli.Proxy;
 
 {$mode Delphi}{$H+}
@@ -49,7 +51,7 @@ type
     FHeldTotal: LongInt;
     FHeldMaxMs: LongInt;
     function IsRunning: Boolean;
-    { Venter til rebuild er ferdig. False hvis den tok for lang tid. }
+    { Waits until the rebuild is finished. False if it took too long. }
     function WaitForReady(TimeoutMs: Integer; out HeldMs: Integer): Boolean;
   public
     constructor Create(APublicPort, ABackendPort: Word);
@@ -57,17 +59,17 @@ type
     procedure Start;
     procedure Stop;
 
-    { Kalles rundt en rebuild. Resume med tom feilmelding betyr at bygget gikk
-      bra; ellers vises meldingen i nettleseren. }
+    { Called around a rebuild. Resume with an empty error message means the
+      build went well; otherwise the message is shown in the browser. }
     procedure Pause;
     procedure Resume(const AError: string);
-    { Tom når siste bygg gikk bra. }
+    { Empty when the last build went well. }
     function BuildError: string;
 
     property PublicPort: Word read FPublicPort;
     property BackendPort: Word read FBackendPort write FBackendPort;
-    { Where_ mange requests som har blitt holdt, og lengste holdetid. Tallene
-      er det som viser om køingen faktisk virker. }
+    { How many requests have been held, and the longest hold. The numbers
+      are what show whether the queuing actually works. }
     property HeldTotal: LongInt read FHeldTotal;
     property HeldMaxMs: LongInt read FHeldMaxMs;
   end;
@@ -85,8 +87,9 @@ type
   end;
 
 const
-  { Where_ lenge en request holdes før vi gir opp og sier fra. En rebuild som
-    tar mer enn dette er uansett noe utvikleren må vite om. }
+  { How long a request is held before we give up and say so. A rebuild
+    that takes longer than this is something the developer needs to know
+    about anyway. }
   MaxHoldMs = 15000;
 
 var
@@ -246,8 +249,8 @@ begin
       Sleep(5);
       Continue;
     end;
-    { Én tråd per tilkobling. En dev-server har én bruker; det er ikke her
-      skalerbarhet betyr noe. }
+    { One thread per connection. A dev server has one user; this is not
+      where scalability matters. }
     TRelay.Create(FProxy, Sock);
   end;
 end;
@@ -300,8 +303,8 @@ begin
   fpSend(FClient, PChar(Body), Length(Body), 0);
 end;
 
-{ Toveis relay med select. To tråder per tilkobling ville vært enklere å
-  skrive, men dobbelt så mange tråder å rydde opp i. }
+{ A two-way relay with select. Two threads per connection would have been
+  easier to write, but twice as many threads to clean up. }
 procedure TRelay.Pump(A, B: TSocket);
 var
   FDS: TFDSet;
@@ -364,8 +367,9 @@ var
   Err: string;
 begin
   try
-    { Her skjer køingen: er en rebuild i gang, holdes tilkoblingen i stedet
-      for å koble til en port ingen lytter på. }
+    { This is where the queuing happens: if a rebuild is under way, the
+      connection is held instead of connecting to a port nobody is
+      listening on. }
     if not FProxy.WaitForReady(MaxHoldMs, HeldMs) then
     begin
       SendErrorPage('The build took longer than ' + IntToStr(MaxHoldMs div 1000) +

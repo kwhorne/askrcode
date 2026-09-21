@@ -265,7 +265,7 @@ type
     function PrimaryKeyValue: Int64;
     procedure SetPrimaryKeyValue(Value: Int64);
 
-    { Reglene for modellen, slik PRD-en skriver dem:
+    { The rules for the model, the way the PRD writes them:
 
       procedure TCustomer.Rules(V: TValidator);
       begin
