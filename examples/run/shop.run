@@ -1,20 +1,20 @@
 # Rún v0.1.
 #
-# Det språket gir som Pascal ikke kan: én generisk erklæring som blir
-# konkrete, typede funksjoner — og «with», som er et reservert ord i Pascal
-# og derfor umulig som navn på eager loading der.
+# What the language gives that Pascal cannot: one generic declaration that
+# becomes concrete, typed functions — and "with", which is a reserved word in
+# Pascal and therefore impossible as a name for eager loading there.
 #
-# Ingen kolonner, typer eller relasjoner er skrevet her. Alt leses av
-# databasen mens dette oversettes.
+# No columns, types or relations are written here. All of it is read from the
+# database while this is being translated.
 
 db "sqlite:.build/run/shop.db"
 
 model Customer from customers
 model Order    from orders
 
-# Én erklæring, to typede funksjoner: CustomerById og OrderById.
-# I Pascal ville dette krevd to nesten like funksjoner, eller en generisk
-# metode kompilatoren nekter å ta imot.
+# One declaration, two typed functions: CustomerById and OrderById.
+# In Pascal this would have needed two nearly identical functions, or a
+# generic method the compiler refuses to accept.
 query<M> ById(id: int) -> M for Customer, Order
 
 query ActiveCustomers(minBalance: money) -> [Customer]:

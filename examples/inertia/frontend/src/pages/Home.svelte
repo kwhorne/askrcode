@@ -21,9 +21,10 @@
     manager beside it.
   </Text>
 
-  <!-- En <dl> med fleksrader, ikke en tabell. En tabell har en minstebredde
-       som presser hele siden bredere enn en telefonskjerm, og dette er
-       etikett og verdi — ikke tabelldata. Samme valg som velkomstsiden. -->
+  <!-- A <dl> with flex rows, not a table. A table has a minimum width that
+       pushes the whole page wider than a phone screen, and this is a label
+       and a value — not tabular data. The same choice as the welcome
+       page. -->
   <Card class="max-w-md">
     <dl class="flex flex-col gap-2 text-sm">
       {#each rows as [label, value] (label)}

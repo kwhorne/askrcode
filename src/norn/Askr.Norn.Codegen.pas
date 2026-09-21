@@ -84,7 +84,13 @@ function DefaultCodegenOptions: TCodegenOptions;
 begin
   Result.OutputDir := 'app/Schema';
   Result.UnitPrefix := 'App.Schema';
-  Result.SkipTables := MigrationsTable;
+  { The framework's own tables, not only the migrations one. An app with a
+    durable queue would otherwise get App.Schema.AskrJobs and
+    App.Schema.AskrFailedJobs generated for tables it never queries — and
+    they would appear and disappear from `askr schema` depending on whether
+    the queue had been used yet. The names are repeated here rather than
+    taken from Askr.Queue.Db, because Norn must not depend on the runtime. }
+  Result.SkipTables := MigrationsTable + ',askr_jobs,askr_failed_jobs';
 end;
 
 function IsReserved(const S: string): Boolean;

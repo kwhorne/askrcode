@@ -74,7 +74,7 @@ begin
     fpSignal(SIGINT, @Stop_);
     fpSignal(SIGTERM, @Stop_);
     Server.Start;
-    WriteLn(Format('Notes som webtjeneste på http://%s:%d  (%s)',
+    WriteLn(Format('Notes as a web service on http://%s:%d  (%s)',
       [Opts.Host, Server.BoundPort, Dsn]));
     while Server.Running do
       Sleep(50);

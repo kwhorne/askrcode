@@ -1,7 +1,7 @@
-{ Desktop-skallet. Nøyaktig formen PRD-en skriver.
+{ The desktop shell. Exactly the shape the PRD writes.
 
-  Samme App.Routes som webmain.lpr. Forskjellen er denne fila og valget av
-  databaseadapter — ingenting annet. }
+  The same App.Routes as webmain.lpr. The difference is this file and the
+  choice of database adapter — nothing else. }
 program DesktopMain;
 
 {$mode Delphi}{$H+}
@@ -23,8 +23,8 @@ begin
   Root := GetCurrentDir;
   Dsn := 'sqlite:' + IncludeTrailingPathDelimiter(Root) + 'notes.db';
 
-  { Tabellen må finnes før første request. En skrivebordsapp har ingen
-    migreringskommando brukeren kjører på forhånd. }
+  { The table has to exist before the first request. A desktop app has no
+    migration command the user runs beforehand. }
   Pool := TDbPool.Create(Dsn, 1);
   try
     C := Pool.Acquire;
@@ -40,8 +40,8 @@ begin
   SetPublicDir(IncludeTrailingPathDelimiter(Root) + 'public');
   TInertia.SetHead(GetEnvironmentVariable('ASKR_HEAD'));
 
-  { Heter DesktopApp og ikke App, fordi App. er navnerommet brukerkoden
-    ligger i — se kommentaren i Askr.Desktop. }
+  { It is called DesktopApp and not App, because App. is the namespace
+    user code lives in — see the comment in Askr.Desktop. }
   DesktopApp.UseDatabase(Dsn);
   DesktopApp.RegisterRoutes(@RegisterAppRoutes);
   DesktopApp.Window('Notes', 1100, 780);

@@ -1,13 +1,13 @@
-<!-- Denne siden bruker Inertias useForm direkte, og ikke <Form>.
+<!-- This page uses Inertia's useForm directly, and not <Form>.
 
-     Det er med vilje: Lauf skal ikke kreve sitt eget skjemalag for å være
-     til nytte. <Field> tar da `error` som prop og kontrollen en
-     `bind:value`, og alt det andre — etiketten, aria-describedby,
-     aria-invalid — virker som før. Customers/New viser den andre veien.
+     That is deliberate: Lauf must not require its own form layer to be
+     useful. <Field> then takes `error` as a prop and the control a
+     `bind:value`, and everything else — the label, aria-describedby,
+     aria-invalid — works as before. Customers/New shows the other way.
 
-     Siden serveres av desktop-demoen (examples/desktop), ikke av
-     Inertia-demoen, og bruker derfor ikke den delte Layout-en: rutene der
-     er andre. -->
+     The page is served by the desktop demo (examples/desktop), not by the
+     Inertia demo, and so does not use the shared Layout: the routes there
+     are different. -->
 <script>
   import { router, useForm } from '@inertiajs/svelte'
   import { Heading, Text, Badge, Button, Field, Input, Table } from '@askrcode/lauf'

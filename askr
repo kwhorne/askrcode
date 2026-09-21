@@ -257,11 +257,16 @@ cmd_lauf_check() {
 
 cmd_schema() {
   prepare
-  SCHEMA_OUT="$BUILD/schema"
+  # Relativ sti, ikke absolutt: både binæren og fpc kan kjøre i containeren
+  # med /work som arbeidskatalog, og en vertssti finnes ikke der. Med den
+  # absolutte varianten skrev norndemo filene gjennom fallbacken sin, mens
+  # verify lette etter dem på vertsstien og feilet med «Can't find unit
+  # App.Schema.Customers».
+  SCHEMA_OUT="${BUILD#$ROOT/}/schema"
   ASKR_SCHEMA_OUT="$SCHEMA_OUT"
   export ASKR_SCHEMA_OUT
   DB_SRC=/work/examples/norndemo/norndemo.lpr
-  fpc_run -Fu"$ROOT/examples/norndemo" examples/norndemo/norndemo.lpr
+  fpc_run -Fuexamples/norndemo examples/norndemo/norndemo.lpr
   run_against_db norndemo
 
   # Det avgjørende steget: kompiler koden Norn nettopp genererte, og bruk den.

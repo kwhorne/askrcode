@@ -1,9 +1,9 @@
 @import 'tailwindcss';
 @import '@askrcode/lauf/theme.css';
 
-/* Tailwind lager bare utilities for klassene den ser, og den ser ikke inn i
-   node_modules av seg selv. Uten denne linja mangler hver klasse Lauf bruker
-   fra stilarket, og komponentene kommer ut uten styling. */
+/* Tailwind only makes utilities for the classes it sees, and it does not
+   look into node_modules by itself. Without this line every class Lauf uses
+   is missing from the stylesheet, and the components come out unstyled. */
 @source '../node_modules/@askrcode/lauf/src';
 
 body {

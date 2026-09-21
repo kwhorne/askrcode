@@ -1,5 +1,5 @@
-{ Storage databasen spiken introspiserer mot. Skjemaet finnes bare her — Rún-
-  kilden nevner ingen kolonner, den leser dem. }
+{ Builds the database the spike introspects against. The schema exists
+  only here — the Rún source names no columns, it reads them. }
 program setupdb;
 
 {$mode Delphi}{$H+}
@@ -14,9 +14,10 @@ var
   I, J, Extra: Integer;
   Money: Currency;
 begin
-  { With_ et tall som argument legges det på så mange ekstra tabeller. Skjemaet
-    en ekte app har er ikke to tabeller, og introspeksjonen kjører på hver
-    eneste bygging — da må kostnaden måles på noe som likner. }
+  { With a number as an argument that many extra tables are added. The
+    schema a real app has is not two tables, and the introspection runs on
+    every build — so the cost has to be measured against something that
+    resembles one. }
   Extra := StrToIntDef(ParamStr(1), 0);
   ForceDirectories('.build/run');
   if FileExists('.build/run/shop.db') then
@@ -71,21 +72,21 @@ begin
     for I := 1 to Extra do
     begin
       C.Exec(A, Format(
-        'CREATE TABLE tabell_%d (id INTEGER PRIMARY KEY, name TEXT NOT NULL, ' +
-        'verdi NUMERIC(12,2), flagg TINYINT(1), maalt TEXT, weight REAL, ' +
+        'CREATE TABLE table_%d (id INTEGER PRIMARY KEY, name TEXT NOT NULL, ' +
+        'value NUMERIC(12,2), flag TINYINT(1), measured TEXT, weight REAL, ' +
         'ref_id INTEGER REFERENCES customers(id))', [I]));
       C.Exec(A, Format(
-        'CREATE INDEX tabell_%d_name_idx ON tabell_%d (name)', [I, I]));
+        'CREATE INDEX table_%d_name_idx ON table_%d (name)', [I, I]));
       for J := 1 to 3 do
       begin
         Money := J;
-        C.ExecParams(A, Format('INSERT INTO tabell_%d (name, verdi) ' +
+        C.ExecParams(A, Format('INSERT INTO table_%d (name, value) ' +
           'VALUES (?, ?)', [I]),
           [DbParam(A, 'rad'), DbParam(A, Money)]);
       end;
     end;
 
-    WriteLn(Format('setupdb: .build/run/shop.db klar (%d tabeller)',
+    WriteLn(Format('setupdb: .build/run/shop.db ready (%d tables)',
       [2 + Extra]));
   finally
     C.Free;

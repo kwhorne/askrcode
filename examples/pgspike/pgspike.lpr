@@ -1,10 +1,10 @@
-{ Spike: libpq over C-ABI, med resultatet i arenaen.
+{ A spike: libpq over the C ABI, with the result in the arena.
 
-  PRD-en kaller C-ABI-interop den største enkeltrisikoen i prosjektet. Dette
-  programmet er der for å avlive den, og for å svare på det som faktisk var
-  uavklart: hvem eier radene når destructorer aldri kjører.
+  The PRD calls C ABI interop the single biggest risk in the project. This
+  program exists to kill it, and to answer what was actually unresolved:
+  who owns the rows when destructors never run.
 
-  Kjøres med `./askr spike`. DSN kan overstyres med ASKR_PG_DSN. }
+  Run with `./askr spike`. The DSN can be overridden with ASKR_PG_DSN. }
 program PgSpike;
 
 {$mode Delphi}{$H+}
@@ -40,7 +40,7 @@ begin
   end;
 end;
 
-{ Brukes til å vise at Defer faktisk kjører ved Reset. }
+{ Used to show that Defer really does run on Reset. }
 var
   CleanedCount: Integer = 0;
 
@@ -74,9 +74,9 @@ begin
   WriteLn('Askr — spike: libpq, C-ABI og arena');
   WriteLn;
 
-  { 1. Lastes biblioteket i det hele tatt? }
+  { 1. Does the library load at all? }
   WriteLn('Biblioteket');
-  Expect(PgAvailable, 'libpq lastet med dlopen');
+  Expect(PgAvailable, 'libpq loaded with dlopen');
   if not PgAvailable then
   begin
     WriteLn;
@@ -95,7 +95,8 @@ begin
 
   A := TArena.Create(64 * 1024);
   try
-    { 2. Forbindelse. Den er ikke et arena-objekt — den lever på heapen. }
+    { 2. The connection. It is not an arena object — it lives on the
+      heap. }
     WriteLn('Forbindelse');
     C := TPgConnection.Create(Dsn);
     try
@@ -103,18 +104,18 @@ begin
       Si('serverversjon', IntToStr(C.ServerVersion));
       WriteLn;
 
-      { 3. Det enkleste som kan kalles en spørring. }
+      { 3. The simplest thing that can be called a query. }
       WriteLn('SELECT 1');
       R := C.Exec(A, 'SELECT 1 AS ett');
       Expect(R.RowCount = 1, 'én rad');
       Expect(R.FieldCount = 1, 'én kolonne');
-      Expect(R.FieldName(0).EqualsStr('ett'), 'kolonnenavnet kom med');
+      Expect(R.FieldName(0).EqualsStr('ett'), 'the column name came along');
       Expect(R.Value(0, 0).EqualsStr('1'), 'verdien er 1');
-      Si('verdien som TStr', R.Value(0, 0).ToString);
+      Si('the value as a TStr', R.Value(0, 0).ToString);
       WriteLn;
 
       { 4. Ekte data: DDL, parametre, UTF-8, NULL og typer. }
-      WriteLn('Rundtur med parametre');
+      WriteLn('A round trip with parameters');
       C.Exec(A, 'DROP TABLE IF EXISTS spike_customers');
       C.Exec(A,
         'CREATE TABLE spike_customers (' +
@@ -127,9 +128,9 @@ begin
       R := C.ExecParams(A,
         'INSERT INTO spike_customers (name, email, balance) ' +
         'VALUES ($1, $2, $3) RETURNING id',
-        [DbParam(A, 'Knut W. Hørne'), DbParam(A, 'kh@gets.no'),
+        [DbParam(A, 'Ada Lovelace'), DbParam(A, 'ada@example.com'),
          DbParam(A, '1234.50')]);
-      Expect(R.RowCount = 1, 'RETURNING ga id tilbake');
+      Expect(R.RowCount = 1, 'RETURNING gave the id back');
       Si('ny id', R.Value(0, 'id').ToString);
 
       C.ExecParams(A,
@@ -139,12 +140,12 @@ begin
       R := C.Exec(A,
         'SELECT id, name, email, balance FROM spike_customers ORDER BY id');
       Expect(R.RowCount = 2, 'to rader');
-      Expect(R.Value(0, 'name').EqualsStr('Knut W. Hørne'),
-        'UTF-8 overlevde rundturen');
+      Expect(R.Value(0, 'name').EqualsStr('Ada Lovelace'),
+        'UTF-8 survived the round trip');
       Expect(R.Value(0, 'balance').EqualsStr('1234.50'),
-        'NUMERIC kom tilbake uten avrunding');
+        'NUMERIC came back without rounding');
       Expect(R.IsNull(1, R.IndexOfField('email')), 'NULL skilles fra tom streng');
-      Expect(not R.IsNull(0, R.IndexOfField('email')), 'ikke-NULL er ikke NULL');
+      Expect(not R.IsNull(0, R.IndexOfField('email')), 'not-NULL is not NULL');
 
       WriteLn;
       WriteLn('  rader:');
@@ -156,60 +157,62 @@ begin
            R.Value(I, 'balance').ToString]));
       WriteLn;
 
-      { 5. Err skal komme tilbake som EDbError med SQLSTATE, ikke som 500. }
-      WriteLn('Feilhåndtering');
+      { 5. An error is to come back as EDbError with a SQLSTATE, not as a
+        500. }
+      WriteLn('Error handling');
       try
         C.ExecParams(A,
           'INSERT INTO spike_customers (name, email) VALUES ($1, $2)',
-          [DbParam(A, 'Duplikat'), DbParam(A, 'kh@gets.no')]);
-        Expect(False, 'unik-brudd skulle kastet');
+          [DbParam(A, 'Duplikat'), DbParam(A, 'ada@example.com')]);
+        Expect(False, 'the unique violation should have raised');
       except
         on E: EDbError do
         begin
-          Expect(E.SqlState = '23505', 'unik-brudd gir SQLSTATE 23505');
+          Expect(E.SqlState = '23505', 'a unique violation gives SQLSTATE 23505');
           Si('sqlstate', E.SqlState);
         end;
       end;
 
       try
         C.Exec(A, 'SELECT * FROM finnes_ikke');
-        Expect(False, 'ukjent tabell skulle kastet');
+        Expect(False, 'the unknown table should have raised');
       except
         on E: EDbError do
-          Expect(E.SqlState = '42P01', 'ukjent tabell gir SQLSTATE 42P01');
+          Expect(E.SqlState = '42P01', 'an unknown table gives SQLSTATE 42P01');
       end;
 
-      Expect(C.IsAlive, 'forbindelsen lever etter to feil');
+      Expect(C.IsAlive, 'the connection is alive after two errors');
       WriteLn;
 
       { 6. Transaksjon. }
       WriteLn('Transaksjon');
       C.StartTransaction;
       C.ExecParams(A, 'INSERT INTO spike_customers (name) VALUES ($1)',
-        [DbParam(A, 'Rulles tilbake')]);
+        [DbParam(A, 'Rolled back')]);
       R := C.Exec(A, 'SELECT count(*) FROM spike_customers');
-      Expect(R.Value(0, 0).EqualsStr('3'), 'raden er synlig inne i transaksjonen');
+      Expect(R.Value(0, 0).EqualsStr('3'), 'the row is visible inside the transaction');
       C.Rollback;
       R := C.Exec(A, 'SELECT count(*) FROM spike_customers');
-      Expect(R.Value(0, 0).EqualsStr('2'), 'ROLLBACK fjernet den igjen');
+      Expect(R.Value(0, 0).EqualsStr('2'), 'ROLLBACK removed it again');
       WriteLn;
 
-      { 7. Arenaen: alt over ligger der, og forsvinner i én operasjon. }
+      { 7. The arena: everything above is in it, and disappears in one
+        operation. }
       WriteLn('Arena');
       AfterSetup := A.BytesLive;
-      Si('bytes i bruk etter alt over', IntToStr(AfterSetup));
-      Si('bytes reservert fra OS', IntToStr(A.BytesReserved));
+      Si('bytes in use after everything above', IntToStr(AfterSetup));
+      Si('bytes reserved from the OS', IntToStr(A.BytesReserved));
       Si('blokker', IntToStr(A.BlockCount));
 
       A.Defer(CountCleanup, nil);
       A.Defer(CountCleanup, nil);
       A.Reset;
-      Expect(A.BytesLive = 0, 'Reset frigjorde hele resultatsettet');
-      Expect(CleanedCount = 2, 'Defer kjørte opprydningen ved Reset');
+      Expect(A.BytesLive = 0, 'Reset released the whole result set');
+      Expect(CleanedCount = 2, 'Defer ran the cleanup on Reset');
 
-      { 8. Tusen spørringer skal ikke få arenaen til å vokse. }
+      { 8. A thousand queries must not make the arena grow. }
       WriteLn;
-      WriteLn('Tusen spørringer');
+      WriteLn('A thousand queries');
       for I := 1 to 50 do
       begin
         A.Reset;
@@ -224,9 +227,9 @@ begin
           [DbParam(A, Int64(0))]);
       end;
       Expect(A.BytesReserved = AfterSetup,
-        'arenaen vokste ikke over 1000 spørringer');
-      Si('reservert etter 1050 spørringer', IntToStr(A.BytesReserved));
-      Si('topp per spørring', IntToStr(A.HighWaterMark));
+        'the arena did not grow over 1000 queries');
+      Si('reserved after 1050 queries', IntToStr(A.BytesReserved));
+      Si('peak per query', IntToStr(A.HighWaterMark));
 
       C.Exec(A, 'DROP TABLE IF EXISTS spike_customers');
     finally
@@ -238,7 +241,7 @@ begin
 
   WriteLn;
   if Err = 0 then
-    WriteLn('Spiken holder. C-ABI-risikoen er avlivet.')
+    WriteLn('The spike holds. The C ABI risk is dead.')
   else
   begin
     WriteLn(Err, ' feil.');

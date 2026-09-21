@@ -1,15 +1,15 @@
-{ Inertia ende-til-ende: Askr serverer, Svelte rendrer.
+{ Inertia end to end: Askr serves, Svelte renders.
 
-  Steg 4 i fase 1. Kjøres med `./askr web` og åpnes i nettleser.
+  Step 4 of phase 1. Run with `./askr web` and open it in a browser.
 
-  Demoen bruker ingen database med vilje. Modellene lages i arenaen og fylles
-  for hånd, slik at steg 4 kan kjøres nativt uten libpq — og slik at det som
-  testes her er Inertia-kontrakten, ikke datalaget. Urd-demoen dekker veien
-  til databasen.
+  The demo deliberately uses no database. The models are made in the arena
+  and filled by hand, so that step 4 can run natively without libpq — and
+  so that what is tested here is the Inertia contract, not the data layer.
+  The Urd demo covers the way to the database.
 
-  Vite-manifestet leses ved oppstart med Askrs egen JSON-parser, og gir både
-  script-taggene og versjonsstrengen Inertia bruker til å oppdage at frontend
-  er bygget på nytt. }
+  The Vite manifest is read at start-up with Askr's own JSON parser, and
+  gives both the script tags and the version string Inertia uses to notice
+  that the frontend has been rebuilt. }
 program InertiaDemo;
 
 {$mode Delphi}{$H+}
@@ -41,8 +41,9 @@ type
     property Status: string read FStatus write FStatus;
   end;
 
-  { Alias fordi en nøstet spesialisering som typeargument ikke lar seg
-    skrive: de to avsluttende vinkelparentesene leses som en skiftoperator. }
+  { An alias, because a nested specialization as a type argument cannot be
+    written: the two closing angle brackets are read as a shift
+    operator. }
   TOrderList = TModelList<TOrder>;
 
   TCustomer = class(TModel)
@@ -80,9 +81,9 @@ begin
 end;
 
 type
-  { Data som skal overleve requesten kan ikke ligge i request-arenaen.
-    PRD-ens første regel, demonstrert: dette er en vanlig heap-struktur med
-    en lås, fordi flere workere skriver til den. }
+  { Data that has to outlive the request cannot live in the request arena.
+    The PRD's first rule, demonstrated: this is an ordinary heap structure
+    with a lock, because several workers write to it. }
   TStoredCustomer = record
     Name: string;
     Email: string;
@@ -112,9 +113,9 @@ end;
 const
   Name: array[0..5] of string = (
     'Ada Lovelace', 'Niklaus Wirth', 'Grace Hopper',
-    'Anders Hejlsberg', 'Barbara Liskov', 'Knut W. Hørne');
+    'Anders Hejlsberg', 'Barbara Liskov', 'Ada Lovelace');
   Emails: array[0..5] of string = (
-    'ada@gets.no', 'niklaus@gets.no', 'grace@gets.no',
+    'ada@gets.no', 'niklaus@example.com', 'grace@gets.no',
     '', 'barbara@gets.no', 'kh@gets.no');
 
 { Bygger testdata i request-arenaen. Alt forsvinner ved Reset. }
@@ -152,7 +153,7 @@ begin
     Result.Add(K);
   end;
 
-  { Så det som er lagt til gjennom skjemaet. }
+  { Then what has been added through the form. }
   EnterCriticalSection(GStoredLock);
   try
     for I := 0 to High(GStored) do
@@ -195,11 +196,11 @@ var
   Root, Entry, Css, Item: PJsonValue;
   ErrPos: SizeInt;
   I: Integer;
-  JsFil: string;
+  JsFile: string;
 begin
   if not FileExists(Path) then
   begin
-    WriteLn('Fant ikke ', Path, ' — kjør `npm run build` i frontend-mappa.');
+    WriteLn('Could not find ', Path, ' — run `npm run build` in the frontend directory.');
     Halt(1);
   end;
 
@@ -209,18 +210,18 @@ begin
     L.LoadFromFile(Path);
     if not JsonParse(A, StrDup(A, L.Text), Root, ErrPos) then
     begin
-      WriteLn('Ugyldig manifest ved posisjon ', ErrPos);
+      WriteLn('Invalid manifest at position ', ErrPos);
       Halt(1);
     end;
 
     Entry := JsonMember(Root, 'src/main.js');
     if Entry = nil then
     begin
-      WriteLn('Manifestet har ingen src/main.js');
+      WriteLn('The manifest has no src/main.js');
       Halt(1);
     end;
 
-    JsFil := JsonAsString(JsonMember(Entry, 'file'));
+    JsFile := JsonAsString(JsonMember(Entry, 'file'));
     GHeadTags := '';
     Css := JsonMember(Entry, 'css');
     if Css <> nil then
@@ -231,11 +232,12 @@ begin
           '<link rel="stylesheet" href="/build/' + JsonAsString(Item) + '">' + #10 + '  ';
       end;
     GHeadTags := GHeadTags +
-      '<script type="module" src="/build/' + JsFil + '"></script>';
+      '<script type="module" src="/build/' + JsFile + '"></script>';
 
-    { Filnavnet har allerede hash i seg, så det er en god nok versjon:
-      bygges frontend på nytt, endres den, og Inertia tvinger omlasting. }
-    GAssetVersion := JsFil;
+    { The file name already has a hash in it, so it is a good enough
+      version: rebuild the frontend and it changes, and Inertia forces a
+      reload. }
+    GAssetVersion := JsFile;
   finally
     L.Free;
     A.Free;
@@ -254,7 +256,8 @@ type
     function Store(Req: TRequest): TResponse;
   end;
 
-  { Statiske filer som middleware: treffer den, stopper requesten der. }
+  { Static files as middleware: if it matches, the request stops
+    there. }
   TStaticMiddleware = class
   private
     FStatic: TStaticFiles;
@@ -268,7 +271,8 @@ constructor TStaticMiddleware.Create(const PublicDir: string);
 begin
   inherited Create;
   FStatic := TStaticFiles.Create(PublicDir);
-  { Filnavnene har hash, så de kan caches lenge. }
+  { The file names have hashes, so they can be cached for a long
+    time. }
   FStatic.MaxAge := 31536000;
 end;
 
@@ -314,11 +318,11 @@ begin
   Result := Inertia('Customers/New', ['errors', nil]);
 end;
 
-{ Formen PRD-en skriver, med ett avvik: validering som feiler rendrer siden
-  på nytt med errors som prop, i stedet for Back.WithErrors. Det siste
-  krever at feilene overlever en omdirigering, altså sesjoner — som hører
-  til fase 2. Inertia 3 leser props.errors fra hvilket som helst svar, så
-  resultatet i frontend er det samme. }
+{ The shape the PRD writes, with one departure: a validation that fails
+  renders the page again with errors as a prop, rather than
+  Back.WithErrors. The latter requires the errors to survive a redirect,
+  that is, sessions — which belong to phase 2. Inertia 3 reads props.errors
+  from any reply at all, so the result in the frontend is the same. }
 function TAppController.Store(Req: TRequest): TResponse;
 var
   K: TCustomer;
@@ -331,9 +335,10 @@ begin
 
   SaveCustomer(K.Name, K.Email, K.Balance);
 
-  { Rendrer lista direkte i stedet for å omdirigere til den. Flash overlever
-    ikke en omdirigering uten sesjoner, og de to requestene ville dessuten
-    kunne havnet på hver sin worker. Se kommentaren ved InertiaFlash. }
+  { Renders the list directly instead of redirecting to it. Flash does not
+    survive a redirect without sessions, and the two requests could
+    moreover land on different workers. See the comment at
+    InertiaFlash. }
   InertiaFlash('success', 'Customer ' + K.Name + ' was created.');
   Result := Index(Req);
 end;
@@ -365,8 +370,9 @@ var
   I: Integer;
 begin
   InitCriticalSection(GStoredLock);
-  { Prosjektrota er der appen kjøres fra. `askr serve` setter arbeidsmappa
-    dit; kjøres binæren for hånd, er det mappa man står i. }
+  { The project root is where the app is run from. `askr serve` sets the
+    working directory there; run the binary by hand and it is the directory
+    you are standing in. }
   Root := GetEnvironmentVariable('ASKR_WEB_ROOT');
   if Root = '' then
     Root := GetCurrentDir;
@@ -404,7 +410,7 @@ begin
   Statisk := TStaticMiddleware.Create(PublicDir);
   R := TRouter.Create;
 
-  { Rutingstabellen. Den samme funksjonen ville desktop-skallet kalt. }
+  { The routing table. The same function the desktop shell would call. }
   R.Use(Statisk.Handle);
   R.Get('/', Ctrl.Home);                     R.AsName('home');
   R.Get('/customers', Ctrl.Index);           R.AsName('customers.index');
@@ -418,7 +424,7 @@ begin
     fpSignal(SIGINT, @HandleSignal);
     fpSignal(SIGTERM, @HandleSignal);
     Server.Start;
-    WriteLn(Format('Askr + Inertia 3 + Svelte 5 på http://%s:%d',
+    WriteLn(Format('Askr + Inertia 3 + Svelte 5 on http://%s:%d',
       [Opts.Host, Server.BoundPort]));
     WriteLn('Statiske filer fra ', PublicDir);
     WriteLn('Inertia-versjon ', TInertia.Version);
@@ -431,7 +437,7 @@ begin
     finally
       Lines.Free;
     end;
-    WriteLn('Ctrl-C for å stoppe.');
+    WriteLn('Ctrl-C to stop.');
     while Server.Running do
       Sleep(50);
   finally

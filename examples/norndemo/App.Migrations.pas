@@ -1,7 +1,7 @@
-{ Migrasjonene for demoen, i den formen PRD-en skriver dem.
+{ The migrations for the demo, in the form the PRD writes them.
 
-  Hver migrasjon registrerer seg selv i initialization. Å ta med denne uniten
-  i uses er alt som skal til for at `askr migrate` ser dem. }
+  Each migration registers itself in initialization. Putting this unit in
+  uses is all it takes for `askr migrate` to see them. }
 unit App.Migrations;
 
 {$mode Delphi}{$H+}

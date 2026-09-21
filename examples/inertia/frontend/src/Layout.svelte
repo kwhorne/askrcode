@@ -1,14 +1,15 @@
-<!-- Navigasjonen for Inertia-demoen. Notes/Index bruker den med vilje
-     ikke: den siden serveres av desktop-demoen, som har helt andre ruter. -->
+<!-- The navigation for the Inertia demo. Notes/Index deliberately does not
+     use it: that page is served by the desktop demo, which has entirely
+     different routes. -->
 <script>
   import { Link } from '@inertiajs/svelte'
   import { Flash } from '@askrcode/lauf/inertia'
   let { children } = $props()
 </script>
 
-<!-- Flash setter opp live-områdene én gang og gjør Askrs flash om til
-     toasts. Den må stå utenfor sidene, ellers byttes området ut ved hver
-     navigering og meldingen leses ikke opp. -->
+<!-- Flash sets up the live regions once and turns Askr's flash into
+     toasts. It has to sit outside the pages, or the region is swapped out
+     on every navigation and the message is not read out. -->
 <Flash />
 
 <main class="mx-auto max-w-3xl px-4 pt-10 pb-16">

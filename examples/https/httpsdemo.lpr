@@ -1,4 +1,4 @@
-{ HTTPS-demo. Samme app som hello, med sertifikat. }
+{ An HTTPS demo. The same app as hello, with a certificate. }
 program httpsdemo;
 
 {$mode Delphi}{$H+}
@@ -28,7 +28,7 @@ begin
   Srv := TAskrServer.Create(Opts);
   Srv.SetHandler(Behandler);
   Srv.Start;
-  WriteLn('lytter på https://127.0.0.1:', Srv.BoundPort);
+  WriteLn('listening on https://127.0.0.1:', Srv.BoundPort);
   Flush(Output);
   Srv.Run;
 end.

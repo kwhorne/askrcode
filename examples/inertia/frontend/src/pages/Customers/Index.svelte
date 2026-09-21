@@ -6,7 +6,7 @@
 
   let { customers = [], total = 0, generert = '' } = $props()
 
-  let skalSlettes = $state(null)
+  let toDelete = $state(null)
 
   const money = (v) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v)
@@ -63,7 +63,7 @@
                 <Dropdown.Item icon={PencilSquare} href={`/customers/${c.id}`}>Open</Dropdown.Item>
               </Dropdown.Group>
               <Dropdown.Separator />
-              <Dropdown.Item icon={Trash} variant="danger" onclick={() => (skalSlettes = c)}>
+              <Dropdown.Item icon={Trash} variant="danger" onclick={() => (toDelete = c)}>
                 Delete
               </Dropdown.Item>
             </Dropdown>
@@ -73,18 +73,19 @@
     </Table.Body>
   </Table>
 
-  <!-- Sletting er ikke bygget i demoen; modalen er her for å vise
-       fokusfella, Escape og at knappen som åpnet den får fokus tilbake. -->
+  <!-- Deleting is not built in the demo; the modal is here to show the
+       focus trap, Escape, and that the button which opened it gets focus
+       back. -->
   <Modal
-    open={skalSlettes !== null}
-    onOpenChange={(v) => { if (!v) skalSlettes = null }}
+    open={toDelete !== null}
+    onOpenChange={(v) => { if (!v) toDelete = null }}
     title="Delete customer"
     description="This cannot be undone."
     size="sm"
   >
-    <p>{skalSlettes?.name} will be removed.</p>
+    <p>{toDelete?.name} will be removed.</p>
     {#snippet footer()}
-      <Button onclick={() => (skalSlettes = null)}>Cancel</Button>
+      <Button onclick={() => (toDelete = null)}>Cancel</Button>
       <Button variant="danger">Delete</Button>
     {/snippet}
   </Modal>

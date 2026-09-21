@@ -1,11 +1,11 @@
-{ Norn ende-til-ende: migrasjoner, introspeksjon, codegen og driftsjekk.
+{ Norn end to end: migrations, introspection, codegen and a drift check.
 
-  Steg 3 i fase 1. Kjøres med `./askr schema` (krever `./askr db:up`).
+  Step 3 of phase 1. Run with `./askr schema` (needs `./askr db:up`).
 
-  Demoen svarer også på spørsmålet Rún-dokumentet stiller: holder codegen, i
-  den forstand at generert kode og database ikke kan drive fra hverandre uten
-  at noe oppdager det? Den siste delen lager drift med vilje og ser hva som
-  skjer. }
+  The demo also answers the question the Rún document asks: does codegen
+  hold, in the sense that generated code and the database cannot drift
+  apart without something noticing? The last part creates drift on purpose
+  and sees what happens. }
 program NornDemo;
 
 {$mode Delphi}{$H+}
@@ -47,7 +47,7 @@ end;
 
 procedure Quiet(const Line: string);
 begin
-  { Migratoren logger hver setning; her holder det med overskriftene. }
+  { The migrator logs every statement; here the headings are enough. }
   if (Length(Line) > 4) and (Copy(Line, 1, 4) = '    ') then
     Exit;
   WriteLn(Line);
@@ -90,7 +90,7 @@ var
 begin
   if not FileExists(Path) then
   begin
-    WriteLn('  (fant ikke ', Path, ')');
+    WriteLn('  (could not find ', Path, ')');
     Exit;
   end;
   L := TStringList.Create;
@@ -123,7 +123,7 @@ var
   I, Ran: Integer;
   Avtrykk1, Avtrykk2: string;
 begin
-  WriteLn('Askr — Norn ende-til-ende');
+  WriteLn('Askr — Norn end to end');
   WriteLn;
 
   C := OpenDbConnection(Dsn);
@@ -135,17 +135,17 @@ begin
     M := TMigrator.Create(C);
     try
       M.OnLog := @Quiet;
-      Expect(M.PendingCount = 3, 'tre migrasjoner venter');
+      Expect(M.PendingCount = 3, 'three migrations are pending');
       Ran := M.Up;
-      Expect(Ran = 3, 'alle tre kjørte');
-      Expect(M.PendingCount = 0, 'ingenting venter etterpå');
+      Expect(Ran = 3, 'all three ran');
+      Expect(M.PendingCount = 0, 'nothing is pending afterwards');
 
       St := M.Status;
-      Expect(Length(St) = 3, 'status viser tre');
+      Expect(Length(St) = 3, 'status shows three');
       for I := 0 to High(St) do
         Si(St[I].Version, St[I].Title);
       Expect(St[0].Title = 'Create customers',
-        'tittel utledes fra klassenavnet');
+        'the title is derived from the class name');
       WriteLn;
 
       WriteLn('Introspeksjon');
@@ -157,18 +157,18 @@ begin
         Si('kolonner i customers', IntToStr(T.ColumnCount));
         Expect(T.ColumnCount = 7,
           'id, name, email, balance, created_at, updated_at, active');
-        Expect(T.PrimaryKey = 'id', 'primærnøkkelen ble lest tilbake');
+        Expect(T.PrimaryKey = 'id', 'the primary key was read back');
         Expect(T.HasColumn('active'),
-          'kolonnen fra ALTER-migrasjonen er med');
+          'the column from the ALTER migration is there');
         Expect(T.IsIndexed('created_at'),
-          'indeksen fra migrasjonen ble funnet');
-        Expect(T.IsIndexed('email'), 'UNIQUE gir også en indeks');
-        Expect(not T.IsIndexed('balance'), 'balance har ingen indeks');
+          'the index from the migration was found');
+        Expect(T.IsIndexed('email'), 'UNIQUE gives an index too');
+        Expect(not T.IsIndexed('balance'), 'balance has no index');
 
         T := Schema.Table('orders');
-        Expect(T.ForeignKeyCount = 1, 'fremmednøkkelen ble lest tilbake');
-        Expect(T.ForeignKey(0).RefTable = 'customers', 'den peker på customers');
-        Si('skjemaavtrykk', SchemaFingerprint(Schema));
+        Expect(T.ForeignKeyCount = 1, 'the foreign key was read back');
+        Expect(T.ForeignKey(0).RefTable = 'customers', 'it points at customers');
+        Si('schema fingerprint', SchemaFingerprint(Schema));
         Avtrykk1 := SchemaFingerprint(Schema);
         WriteLn;
 
@@ -177,20 +177,20 @@ begin
         Opts.OutputDir := OutDir;
         Files := GenerateSources(Schema, Opts);
         Expect(Length(Files) = 3,
-          'to tabell-units og ett manifest (migrasjonstabellen hoppes over)');
+          'two table units and one manifest (the framework''s own tables are skipped)');
         Changed := WriteSources(Files, Opts);
-        Si('filer skrevet', IntToStr(Length(Changed)));
+        Si('files written', IntToStr(Length(Changed)));
 
         Drift := CheckDrift(Files, Opts);
-        Expect(Length(Drift) = 0, 'ingen drift rett etter generering');
+        Expect(Length(Drift) = 0, 'no drift right after generating');
 
-        { Skriver man igjen uten endringer, skal ingenting røres. }
+        { Write again with no changes and nothing is to be touched. }
         Changed := WriteSources(Files, Opts);
         Expect(Length(Changed) = 0,
-          'uendrede filer skrives ikke på nytt');
+          'unchanged files are not rewritten');
         WriteLn;
 
-        WriteLn('Generert kode');
+        WriteLn('Generated code');
         WriteOutFile(IncludeTrailingPathDelimiter(OutDir) +
           'App.Schema.Customers.pas', 26);
         WriteLn;
@@ -198,17 +198,17 @@ begin
         Schema.Free;
       end;
 
-      { Her er kjernespørsmålet: hva skjer når databasen endres uten at
-        migrasjonene vet om det? }
-      WriteLn('Drift: kolonne lagt til utenom migrasjonene');
+      { Here is the core question: what happens when the database changes
+        without the migrations knowing about it? }
+      WriteLn('Drift: a column added outside the migrations');
       C.Exec(A, 'ALTER TABLE customers ADD COLUMN rabatt NUMERIC(5,2)');
       Schema := IntrospectSchema(C);
       try
         Avtrykk2 := SchemaFingerprint(Schema);
-        Expect(Avtrykk1 <> Avtrykk2, 'skjemaavtrykket endret seg');
+        Expect(Avtrykk1 <> Avtrykk2, 'the schema fingerprint changed');
         Files := GenerateSources(Schema, Opts);
         Drift := CheckDrift(Files, Opts);
-        Expect(Length(Drift) > 0, 'driftsjekken oppdager det');
+        Expect(Length(Drift) > 0, 'the drift check notices');
         for I := 0 to High(Drift) do
           Si('avviker', Drift[I]);
       finally
@@ -216,28 +216,28 @@ begin
       end;
       WriteLn;
 
-      WriteLn('Rulle tilbake');
+      WriteLn('Rolling back');
       C.Exec(A, 'ALTER TABLE customers DROP COLUMN rabatt');
       Ran := M.Down(1);
-      Expect(Ran = 1, 'én migrasjon rullet tilbake');
+      Expect(Ran = 1, 'one migration rolled back');
       Schema := IntrospectSchema(C);
       try
         Expect(not Schema.Table('customers').HasColumn('active'),
-          'kolonnen er borte igjen');
+          'the column is gone again');
         Expect(SchemaFingerprint(Schema) <> Avtrykk1,
-          'avtrykket er et annet enn før');
+          'the fingerprint is a different one');
       finally
         Schema.Free;
       end;
-      Expect(M.PendingCount = 1, 'den venter nå igjen');
+      Expect(M.PendingCount = 1, 'it is pending again now');
       Ran := M.Up;
-      Expect(Ran = 1, 'og kan kjøres på nytt');
+      Expect(Ran = 1, 'and can be run again');
       Schema := IntrospectSchema(C);
       try
         Expect(SchemaFingerprint(Schema) = Avtrykk1,
-          'avtrykket er tilbake der det var');
+          'the fingerprint is back where it was');
         Files := GenerateSources(Schema, Opts);
-        Expect(Length(CheckDrift(Files, Opts)) = 0, 'og driften er borte');
+        Expect(Length(CheckDrift(Files, Opts)) = 0, 'and the drift is gone');
       finally
         Schema.Free;
       end;
@@ -251,7 +251,7 @@ begin
 
   WriteLn;
   if Err = 0 then
-    WriteLn('Norn holder: migrasjoner, introspeksjon, codegen og driftsjekk.')
+    WriteLn('Norn holds: migrations, introspection, codegen and the drift check.')
   else
   begin
     WriteLn(Err, ' feil.');

@@ -1,11 +1,12 @@
-{ Bruker koden Norn nettopp genererte.
+{ Uses the code Norn has just generated.
 
-  Dette er poenget med hele steg 3. Kolonnekonstantene under er ikke skrevet
-  for hånd — de er lest ut av det faktiske skjemaet og generert. At dette
-  programmet kompilerer, er beviset på at genererte navn og typer stemmer.
+  This is the point of all of step 3. The column constants below are not
+  written by hand — they are read out of the actual schema and generated.
+  That this program compiles is the proof that the generated names and
+  types are right.
 
-  Prøv å endre Customers.Balance til Customers.Balanse, eller å sammenlikne
-  den med en streng. Begge deler er kompileringsfeil. }
+  Try changing Customers.Balance to Customers.Balanse, or comparing it
+  with a string. Both are compile errors. }
 program Verify;
 
 {$mode Delphi}{$H+}
@@ -98,7 +99,7 @@ var
   Items: TModelList<TCustomer>;
   I, J, Order: Integer;
 begin
-  WriteLn('Askr — bruker generert skjema');
+  WriteLn('Askr — using the generated schema');
   WriteLn;
 
   C := OpenDbConnection(Dsn);
@@ -107,32 +108,33 @@ begin
   PrevDb := UseDb(C);
   try
     WriteLn('Generert av Norn');
-    Si('avtrykk i manifestet', SchemaAvtrykk);
-    Si('kolonne fra generert unit',
+    Si('the fingerprint in the manifest', SchemaAvtrykk);
+    Si('a column from the generated unit',
       string(Customers.Balance.Table) + '.' + string(Customers.Balance.Name));
     Expect(string(Customers.Balance.Name) = 'balance',
-      'kolonnenavnet kom fra databasen');
+      'the column name came from the database');
     Expect(string(Orders.CustomerId.Name) = 'customer_id',
-      'snake_case ble beholdt i SQL, PascalCase i Pascal');
+      'snake_case was kept in SQL, PascalCase in Pascal');
     WriteLn;
 
     WriteLn('Manifestet');
     Expect(ColumnExists('customers', 'email'), 'ColumnExists finner email');
-    { Manifestet skal si nei til noe som ikke finnes, ikke bare ja til det
-      som gjør det. Før domenet ble engelsk het denne kolonnen «epost», og
-      denne linja fanget at manifestet ikke bare svarte ja på alt. }
+    { The manifest is to say no to something that does not exist, not only
+      yes to what does. Before the domain became English this column was
+      called "epost", and this line caught that the manifest was not simply
+      answering yes to everything. }
     Expect(not ColumnExists('customers', 'e_mail'),
-      'og ikke en kolonne som ikke finnes');
-    Expect(IsIndexed('customers', 'created_at'), 'created_at er indeksert');
-    Expect(not IsIndexed('customers', 'balance'), 'balance er ikke det');
+      'and not a column that does not exist');
+    Expect(IsIndexed('customers', 'created_at'), 'created_at is indexed');
+    Expect(not IsIndexed('customers', 'balance'), 'balance is not');
     Si('PascalType for balance', PascalTypeOf('customers', 'balance'));
     Expect(PascalTypeOf('customers', 'balance') = 'Currency',
-      'NUMERIC(12,2) ble til Currency');
+      'NUMERIC(12,2) became Currency');
     Expect(PascalTypeOf('customers', 'created_at') = 'TDateTime',
-      'TIMESTAMPTZ ble til TDateTime');
+      'TIMESTAMPTZ became TDateTime');
     WriteLn;
 
-    WriteLn('Typet spørring mot genererte kolonner');
+    WriteLn('A typed query against generated columns');
     TQuery<TOrder>.New.DeleteAll;
     TQuery<TCustomer>.New.DeleteAll;
     for I := 1 to 5 do
@@ -166,18 +168,18 @@ begin
       .Preload(['Orders'])
       .Get;
     Expect(Items.Count = 4, 'fire customers over 150');
-    Expect(Items[0].Balance = 500, 'sortert synkende');
+    Expect(Items[0].Balance = 500, 'sorted descending');
     Order := 0;
     for I := 0 to Items.Count - 1 do
       Order := Order + Items[I].Orders.Count;
-    Expect(Order = 2 + 3 + 4 + 5, 'eager loading mot generert skjema');
+    Expect(Order = 2 + 3 + 4 + 5, 'eager loading against the generated schema');
 
     Expect(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 3,
-      'boolean-kolonne generert riktig');
+      'the boolean column was generated correctly');
     Expect(TQuery<TOrder>.New.Where(Orders.Status, Eq, 'new').Count = 15,
-      'tekstkolonne i den andre tabellen');
+      'a text column in the other table');
     Expect(TQuery<TOrder>.New.Where(Orders.Total, GTE, 30).Count = 6,
-      'NUMERIC sammenliknes som Currency');
+      'NUMERIC is compared as Currency');
   finally
     UseDb(PrevDb);
     UseArena(PrevA);
@@ -187,7 +189,7 @@ begin
 
   WriteLn;
   if Err = 0 then
-    WriteLn('Generert kode kompilerer og virker mot databasen den kom fra.')
+    WriteLn('Generated code compiles and works against the database it came from.')
   else
   begin
     WriteLn(Err, ' feil.');

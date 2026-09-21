@@ -1,9 +1,11 @@
-{ Minste kjørende Askr-app: arena og HTTP-vert, som er steg 1 i fase 1.
+{ The smallest running Askr app: the arena and the HTTP host, which is
+  step 1 of phase 1.
 
-  Ruting, kontrollere og validering kommer i steg 5, så handleren her matcher
-  stien for hånd. Poenget er å vise at arena-modellen holder: hver request får
-  en nullstilt arena, alt som allokeres underveis forsvinner i én operasjon,
-  og RSS flater ut etter noen hundre requests. }
+  Routing, controllers and validation arrive in step 5, so the handler here
+  matches the path by hand. The point is to show that the arena model
+  holds: every request gets a reset arena, everything allocated along the
+  way disappears in one operation, and RSS levels off after a few hundred
+  requests. }
 program Hello;
 
 {$mode Delphi}{$H+}
@@ -17,9 +19,9 @@ uses
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Server;
 
 type
-  { En vanlig klasse som lever i request-arenaen. Ingen try/finally, ingen
-    Free — verten gjør Arena.Reset før neste request. Slik kommer også
-    TModel til å se ut når Urd lander i steg 2. }
+  { An ordinary class that lives in the request arena. No try/finally, no
+    Free — the host does Arena.Reset before the next request. This is also
+    what TModel will look like when Urd lands in step 2. }
   TGreeting = class(TArenaObject)
   private
     FName: TStr;
@@ -29,8 +31,8 @@ type
     function Render: TStr;
   end;
 
-  { Kontrollerene i PRD-en er metoder på en klasse. Verten tar imot begge
-    deler, så dette er formen appene faktisk kommer til å bruke. }
+  { The controllers in the PRD are methods on a class. The host accepts
+    both forms, so this is the shape apps will actually use. }
   THelloController = class
   public
     function Handle(Req: TRequest): TResponse;
@@ -68,12 +70,13 @@ var
   B: TStrBuilder;
 begin
   if Req.Path.EqualsStr('/') then
-    Exit(RespondText('Askr kjører. Prøv /hello?name=Knut, /echo eller /stats' + LineEnding));
+    Exit(RespondText('Askr is running. Try /hello?name=Ada, /echo or /stats' + LineEnding));
 
   if Req.Path.EqualsStr('/hello') then
   begin
-    { Allokert i arenaen fordi TGreeting arver TArenaObject og verten har satt
-      den omgivende arenaen. Constructoren kjører som normalt. }
+    { Allocated in the arena because TGreeting inherits TArenaObject and the
+      host has set the surrounding arena. The constructor runs as
+      normal. }
     G := TGreeting.Create(Req.Query('name'));
     Exit(RespondJson('').WithBody(G.Render));
   end;
@@ -100,8 +103,8 @@ begin
     B.AppendInt(Req.Arena.BlockCount);
     B.Append(',"arena_resets":');
     B.AppendInt(Int64(Req.Arena.ResetCount));
-    { Tallene over gjelder den workeren som tok akkurat denne requesten.
-      De under gjelder hele serveren. }
+    { The numbers above are for the worker that took this particular
+      request. The ones below are for the whole server. }
     B.Append(',"server_arena_reservert":');
     B.AppendInt(Server.TotalArenaReserved);
     B.Append(',"server_arena_topp":');
@@ -112,7 +115,7 @@ begin
     Exit(RespondJson('').WithBody(B.ToStr));
   end;
 
-  Result := RespondJson('{"feil":"Fant ikke ruten"}', 404);
+  Result := RespondJson('{"error":"No such route"}', 404);
 end;
 
 procedure HandleSignal(Sig: cint); cdecl;
@@ -142,13 +145,13 @@ begin
     fpSignal(SIGTERM, @HandleSignal);
 
     Server.Start;
-    WriteLn(Format('Askr lytter på http://%s:%d med %d workere',
+    WriteLn(Format('Askr is listening on http://%s:%d with %d workers',
       [Opts.Host, Server.BoundPort, Server.Options.Workers]));
-    WriteLn('Ctrl-C for å stoppe.');
+    WriteLn('Ctrl-C to stop.');
     while Server.Running do
       Sleep(50);
 
-    WriteLn(Format('Stoppet etter %d requests.', [Server.TotalRequests]));
+    WriteLn(Format('Stopped after %d requests.', [Server.TotalRequests]));
   finally
     Server.Free;
     Controller.Free;

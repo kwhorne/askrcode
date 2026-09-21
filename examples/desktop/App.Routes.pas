@@ -1,12 +1,14 @@
-{ App.Routes — appen. Verken web- eller desktop-skallet rører denne fila.
+{ App.Routes — the app. Neither the web shell nor the desktop shell
+  touches this file.
 
-  Dette er PRD-ens påstand gjort etterprøvbar: modeller, kontroller og
-  rutingstabell ligger her, og de to skallene er tynne. webmain.lpr starter
-  en HTTP-server; desktopmain.lpr starter den samme tabellen mot en lokal
-  port og peker systemets webview dit.
+  This is the PRD's claim made checkable: the models, the controller and
+  the routing table are here, and the two shells are thin. webmain.lpr
+  starts an HTTP server; desktopmain.lpr starts the same table against a
+  local port and points the system's webview at it.
 
-  Databasen er SQLite, som er det desktop faktisk vil bruke. Den samme koden
-  kjører mot Postgres ved å bytte DSN — driverabstraksjonen ligger under. }
+  The database is SQLite, which is what desktop will actually use. The same
+  code runs against Postgres by changing the DSN — the driver abstraction
+  is underneath. }
 unit App.Routes;
 
 {$mode Delphi}{$H+}
@@ -48,10 +50,10 @@ type
     function Destroy_(Req: TRequest): TResponse;
   end;
 
-{ Kalles av begge skallene, og av ingen andre. }
+{ Called by both shells, and by nobody else. }
 procedure RegisterAppRoutes(R: TRouter);
-{ Oppretter tabellen hvis den ikke finnes. Desktop har ingen egen
-  migreringskommando å kjøre først. }
+{ Creates the table if it does not exist. Desktop has no migration
+  command of its own to run first. }
 procedure EnsureSchema(C: TDbConnection);
 procedure SetPublicDir(const ADir: string);
 

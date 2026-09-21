@@ -1,9 +1,9 @@
-{ Rún-transpileren som frittstående program.
+{ The Rún transpiler as a standalone program.
 
-  Dette er hele det offentlige API-et: Transpile tar en .run-fil og skriver
-  en Pascal-unit, og forteller hva det kostet. I en ekte app kalles den av
-  «askr build» for hver .run-fil under app/ — dette programmet finnes for
-  demoen og for å måle. }
+  This is the whole public API: Transpile takes a .run file and writes a
+  Pascal unit, and reports what it cost. In a real app it is called by
+  `askr build` for every .run file under app/ — this program exists for the
+  demo and for measuring. }
 program Transpile_;
 
 {$mode Delphi}{$H+}
@@ -20,16 +20,16 @@ var
 begin
   if ParamCount < 3 then
   begin
-    WriteLn('bruk: transpile <inn.run> <ut.pas> <unitnavn>');
+    WriteLn('usage: transpile <in.run> <out.pas> <unitname>');
     Halt(2);
   end;
 
   try
     S := Transpile(ParamStr(1), ParamStr(2), ParamStr(3));
   except
-    { Feilen er poenget med språket: den skal si fil, linje og hva som var
-      galt, og den skal komme før fpc får se noe som helst. Halt(1) slik at
-      et byggskript stopper. }
+    { The error is the point of the language: it is to say the file, the
+      line and what was wrong, and it is to come before fpc sees anything
+      at all. Halt(1) so that a build script stops. }
     on E: ERunError do
     begin
       WriteLn(ErrOutput, E.Message);
@@ -38,7 +38,7 @@ begin
   end;
 
   WriteLn(Format('%s -> %s', [ParamStr(1), ParamStr(2)]));
-  WriteLn(Format('  %d modeller, %d spørringer, dialekt %s',
+  WriteLn(Format('  %d models, %d queries, dialect %s',
     [S.Models, S.Queries, S.Dialect]));
   WriteLn(Format('  parse %d ms, skjema %d ms, utskrift %d ms, i alt %d ms',
     [S.ParseMs, S.SchemaMs, S.EmitMs, S.TotalMs]));

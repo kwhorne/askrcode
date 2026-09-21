@@ -4,12 +4,12 @@ frontend = "frontend"
 port = 8080
 backend_port = 8081
 
-# Bare denne mappa har appkode; rammeverket ligger i askr-stien under.
+# Only this directory has app code; the framework is at the askr path below.
 units = "."
-# Rammeverkets kilder følges også, så en endring der utløser rebuild.
+# The framework's sources are watched too, so a change there triggers a rebuild.
 watch = ".,/Users/kh/code/askrcode/src"
 
 askr = "/Users/kh/code/askrcode"
 
-# -O1 i dev. -O2 koster mer enn det gir når løkka måles i millisekunder.
+# -O1 in dev. -O2 costs more than it gives when the loop is measured in milliseconds.
 flags = "-Sh -O1 -vw -WM11.0"

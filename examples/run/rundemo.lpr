@@ -1,8 +1,9 @@
-{ Håndskrevet. Bruker det Rún skrev ut.
+{ Handwritten. Uses what Rún wrote out.
 
-  Det som er verdt å se etter: ingen av typene her er skrevet av et
-  menneske. TCustomerRow, feltet Orders og funksjonene CustomerById og
-  OrderById kom alle ut av databasen mens Rún-kilden ble oversatt. }
+  What is worth looking for: none of the types here were written by a
+  human. TCustomerRow, the Orders field and the functions CustomerById and
+  OrderById all came out of the database while the Rún source was being
+  translated. }
 program RunDemo;
 
 {$mode Delphi}{$H+}
@@ -26,9 +27,9 @@ begin
   A := TArena.Create;
   C := OpenDbConnection('sqlite:.build/run/shop.db');
   try
-    { Én generisk erklæring i Rún ga to typede funksjoner her. I Pascal
-      ville dette krevd to nesten like funksjoner — eller en generisk
-      metode kompilatoren nekter å ta imot. }
+    { One generic declaration in Rún gave two typed functions here. In
+      Pascal this would have needed two nearly identical functions — or a
+      generic method the compiler refuses to accept. }
     Cust := CustomerById(A, C, 3, Found);
     WriteLn(Format('CustomerById(3): %s <%s>, balance %.2f',
       [Cust.Name, Cust.Email, Cust.Balance]));
@@ -39,8 +40,8 @@ begin
     WriteLn('CustomerById(9999) found: ', BoolToStr(Found, True));
     WriteLn;
 
-    { «with orders» — relasjonen ble lest av fremmednøkkelen i skjemaet,
-      og hentes med én ekstra spørring, ikke én per rad. }
+    { "with orders" — the relation was read from the foreign key in the
+      schema, and is fetched with one extra query, not one per row. }
     Customers := ActiveCustomers(A, C, 400);
     Total := 0;
     for I := 0 to High(Customers) do
@@ -69,7 +70,7 @@ begin
 
     if Length(Customers) = 0 then
     begin
-      WriteLn('ingenting kom tilbake — noe er galt');
+      WriteLn('nothing came back — something is wrong');
       Halt(1);
     end;
   finally
