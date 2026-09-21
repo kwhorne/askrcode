@@ -8,6 +8,24 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.8.0
+
+Nothing can break in the framework. One new unit, and `Askr.Mail` only
+gained members.
+
+Two things are worth knowing if you touch mail:
+
+**`askr make auth --force` now writes a different mail line.** It becomes
+`SetMail(TMailer.Create(MailFromConfig))` and adds `Askr.Mail.Resend` to
+`uses`. If you rerun the scaffold, set `MAIL_TRANSPORT` in `.env` —
+without it the default is `log`, which sends nothing. Projects that do
+not rerun it are unaffected.
+
+**`MailFromConfig` reads `MAIL_HOST`, not `SMTP_HOST`.** The old
+generated code called `CfgOrFail('smtp.host')` directly and still does;
+only the new function uses the `mail.*` names. Nothing renames itself
+under you.
+
 ## 0.7.0
 
 Nothing can break. Two new units; none changed.

@@ -16,6 +16,97 @@ with the zero-major caveat that minor releases may break things until
 
 Nothing yet.
 
+## 0.8.0 — 2026-09-21
+
+A mail provider. Resend over its HTTP API, and the transport is now
+chosen by configuration rather than by code.
+
+### Added
+
+- **`Askr.Mail.Resend`** — `TResendTransport`, sending through
+  `api.resend.com`. Set `MAIL_TRANSPORT=resend` and `RESEND_API_KEY` and
+  that is the whole setup.
+
+  It is a separate unit on purpose: it needs the HTTP client, and an app
+  that sends over SMTP or writes to a file should not link that. Same
+  rule as `Askr.Image.Vips`.
+
+  Why the HTTP API rather than SMTP to the same provider: the response
+  carries a message id you can look up later, the errors are machine
+  readable instead of a three-digit code with free text, and there is an
+  idempotency key.
+
+- **`TMailMessage.Idempotency`** — a key that makes it safe to send the
+  same message twice. This is the one that matters in a queue: a job
+  that fails *after* the provider accepted the message gets retried, and
+  without a key that survives the retry the recipient gets two copies.
+  `TSmtpTransport` ignores it.
+
+- **`EResendError`** carries `Status`, `Name_` (the provider's own error
+  type, unchanged) and `Retryable`. The distinction that matters is
+  inside the 429s: a rate limit is worth retrying, a daily quota is not
+  — it will not clear within any backoff a queue has, so it belongs in
+  the failed-jobs table where a person sees it.
+
+- **`MailFromConfig`** picks the transport from `MAIL_TRANSPORT`: `log`
+  (the default), `resend`, `smtp` or `null`. Moving from a log file in
+  development to a real provider is now a config change.
+
+  **An unknown name is an error, not a fallback.** `MAIL_TRANSPORT=resnd`
+  stops the app at startup and lists what it does know. Quietly writing
+  production mail to a log file nobody reads looks exactly like
+  everything working.
+
+- **`RegisterMailTransport`** — how a transport in another unit makes its
+  name available to `MailFromConfig`. `Askr.Mail.Resend` registers
+  `resend` in its `initialization`.
+
+- **SMTP authentication.** `TSmtpTransport.Credentials` with AUTH PLAIN
+  and AUTH LOGIN. It was missing entirely, which meant `TSmtpTransport`
+  could not talk to any hosted relay.
+
+  **The password is never sent over an unencrypted connection.** PLAIN
+  and LOGIN both put it on the wire in base64, which is not encryption.
+  Plaintext plus a username is refused unless `AllowPlainAuth` says
+  otherwise.
+
+- `TMailMessage` now exposes `ToList`, `CcList`, `BccList`,
+  `SubjectLine`, `TextBody`, `HtmlBody` and `ExtraHeaders`, so a
+  transport can build its own format instead of parsing the RFC 5322
+  text. `FormatMailAddress` is exported for the same reason — the
+  quoting rule lives in one place.
+
+### Changed
+
+- `askr new --auth` writes `SetMail(TMailer.Create(MailFromConfig))` and
+  links `Askr.Mail.Resend`, in place of the hardcoded
+  `if IsProduction then TSmtpTransport…`. Existing projects keep working;
+  their own `app.lpr` is unchanged.
+
+- `.env` and `.env.example` from `askr new` now carry `MAIL_TRANSPORT`,
+  `MAIL_FROM`, `RESEND_API_KEY` and the SMTP keys.
+
+### Fixed
+
+- `TMailMessage.Header(name, '')` behaved differently on FPC 3.2.2 and
+  3.3.1 — `TStringList.Values[Key] := ''` deletes the entry on trunk and
+  keeps it on 3.2.2. It now means the same on both.
+
+### Notes
+
+One real call was made to `api.resend.com` **without a valid key**: it
+came back 401 with Resend's own error JSON, parsed into `EResendError`
+with status and type. That
+proves DNS, TLS, the request shape and the error handling — not that a
+message is delivered. Everything else is tested against
+`TFakeResendHttp`, plus one test that reads the actual bytes off a
+socket to check that `Authorization` and `Idempotency-Key` are really on
+the wire.
+
+**No mail has been sent with a valid Resend key from this repository.**
+That is the same caveat the AI layer carries, and it stands until
+someone has done it.
+
 ## 0.7.0 — 2026-09-21
 
 Images. Two units, and the split between them is the point.

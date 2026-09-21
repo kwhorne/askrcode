@@ -23,7 +23,8 @@ interface
 
 uses
   SysUtils, Classes, Sockets, BaseUnix,
-  Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, netdb, Askr.Tls;
+  Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Config,
+  Askr.Core.Crypto, netdb, Askr.Tls;
 
 type
   EMailError = class(Exception);
@@ -33,17 +34,23 @@ type
     Name_: string;
   end;
 
+  { Navngitt, fordi en property ikke kan ha en anonym arraytype — og
+    transporter utenfor denne uniten trenger å lese mottakerne
+    strukturert, ikke bare som ferdig rendret tekst. }
+  TMailAddressArray = array of TMailAddress;
+
   TMailMessage = class
   private
     FFrom: TMailAddress;
-    FTo: array of TMailAddress;
-    FCc: array of TMailAddress;
-    FBcc: array of TMailAddress;
+    FTo: TMailAddressArray;
+    FCc: TMailAddressArray;
+    FBcc: TMailAddressArray;
     FSubject: string;
     FText: string;
     FHtml: string;
     FHeaders: TStringList;
     FMessageId: string;
+    FIdempotency: string;
     function Recipients: TStringArray;
   public
     constructor Create;
@@ -62,11 +69,37 @@ type
     function Html(const S: string): TMailMessage;
     function Header(const Name_, Value: string): TMailMessage;
 
+    { En nøkkel som gjør det trygt å sende meldingen om igjen. Providere
+      som støtter det avviser den andre sendingen i stedet for å levere
+      to eposter; SMTP-transporten bryr seg ikke om den.
+
+      Poenget er køen: en jobb som feiler etter at providern tok imot
+      meldingen, prøves på nytt, og uten en nøkkel som overlever den
+      retten får mottakeren to. Sett den til noe som er likt over et
+      gjenforsøk — jobb-id-en, ordrenummeret — ikke til noe tilfeldig. }
+    function Idempotency(const Key: string): TMailMessage;
+
+    { Message-ID-en, laget om den ikke finnes ennå. Render bruker den
+      samme, slik at det ikke finnes to måter å få tak i den på. }
+    function EnsureMessageId: string;
+
     { Hele meldingen som RFC 5322-tekst. Bcc utelates fra hodet, men er med
       i mottakerlista — det er hele poenget med Bcc. }
     function Render: string;
     property AllRecipients: TStringArray read Recipients;
     property Sender: TMailAddress read FFrom;
+
+    { Lesetilgang for transporter som bygger sitt eget format i stedet
+      for å sende RFC 5322-teksten. Navnene er ikke de samme som
+      byggemetodenes — Subject er allerede en setter. }
+    property ToList: TMailAddressArray read FTo;
+    property CcList: TMailAddressArray read FCc;
+    property BccList: TMailAddressArray read FBcc;
+    property SubjectLine: string read FSubject;
+    property TextBody: string read FText;
+    property HtmlBody: string read FHtml;
+    property ExtraHeaders: TStringList read FHeaders;
+    property IdempotencyKey: string read FIdempotency;
   end;
 
   TMailTransport = class
@@ -124,6 +157,11 @@ type
     FCtx: TTlsContext;
     FTls: TTlsConn;
     FEhlo: string;
+    FUsername: string;
+    FPassword: string;
+    FAllowPlainAuth: Boolean;
+    procedure Authenticate;
+    function OffersMechanism(const Mech: string): Boolean;
     function ReadLine: string;
     function Expect(const Code: string): string;
     procedure SendLine(const S: string);
@@ -138,7 +176,19 @@ type
     destructor Destroy; override;
     procedure Send(M: TMailMessage); override;
     function Describe: string; override;
+
+    { Brukernavn og passord til relayet. Tomt brukernavn betyr ingen
+      AUTH — en relé på loopback vil ofte ikke ha den.
+
+      AUTH sendes aldri over en ukryptert forbindelse. Passordet i PLAIN
+      og LOGIN går i klartekst på lufta, og et oppsett som sender det
+      likevel har gitt bort passordet til alle som ser trafikken. Vil man
+      ha smtpPlain og AUTH samtidig, må det være mot loopback, og da sier
+      AllowPlainAuth det eksplisitt. }
+    procedure Credentials(const AUser, APassword: string);
     property TimeoutMs: Integer read FTimeoutMs write FTimeoutMs;
+    property AllowPlainAuth: Boolean read FAllowPlainAuth
+      write FAllowPlainAuth;
     { Av bare til selvsignerte sertifikater i test. En klient som ikke
       verifiserer har kryptering, men ingen visshet om hvem den snakker med. }
     property VerifyPeer: Boolean read FVerifyPeer write FVerifyPeer;
@@ -164,6 +214,33 @@ type
 function Mail: TMailer;
 procedure SetMail(AMailer: TMailer);
 
+{ Adressen slik den skal stå i et hode: «Navn» <adresse>, eller bare
+  adressen. Eksportert fordi transporter utenfor uniten trenger nøyaktig
+  den samme siteringen — et komma i et usitert navn deler adressefeltet i
+  to, og da får feil person e-posten. }
+function FormatMailAddress(const A: TMailAddress): string;
+
+type
+  { Én transport bygget ut av konfigurasjonen. Navnet den registreres
+    under er det mail.transport settes til. }
+  TMailTransportFactory = function: TMailTransport;
+
+{ Gjør et transportnavn tilgjengelig for MailFromConfig. Askr.Mail.Resend
+  registrerer 'resend' i sin initialization — en app som ikke bruker den
+  uniten linker ikke HTTP-klienten, og mail.transport = resend sier da hva
+  som mangler i stedet for å falle stille tilbake til noe annet. }
+procedure RegisterMailTransport(const Name_: string;
+  F: TMailTransportFactory);
+
+{ Transporten mail.transport peker på. 'log' er standarden, fordi det er
+  det riktige svaret i utvikling: ingenting sendes, alt kan leses.
+
+  'smtp' leser mail.host, mail.port, mail.username, mail.password og
+  mail.encryption; 'null' forkaster alt. Et ukjent navn kaster og sier
+  hvilke som finnes — en stavefeil her ville ellers sendt produksjonsposten
+  til en loggfil. }
+function MailFromConfig: TMailTransport;
+
 implementation
 
 var
@@ -181,7 +258,7 @@ begin
   GMailer := AMailer;
 end;
 
-function Fold(const A: TMailAddress): string;
+function FormatMailAddress(const A: TMailAddress): string;
 begin
   if A.Name_ = '' then
     Result := A.Address
@@ -190,6 +267,11 @@ begin
       adressefeltet i to, og da får feil person e-posten. }
     Result := '"' + StringReplace(A.Name_, '"', '''', [rfReplaceAll]) +
       '" <' + A.Address + '>';
+end;
+
+function Fold(const A: TMailAddress): string;
+begin
+  Result := FormatMailAddress(A);
 end;
 
 function FoldList(const L: array of TMailAddress): string;
@@ -278,9 +360,31 @@ begin
 end;
 
 function TMailMessage.Header(const Name_, Value: string): TMailMessage;
+var
+  I: Integer;
 begin
-  FHeaders.Values[Name_] := Value;
+  { Ikke Values[Name_] := Value: en tom verdi sletter oppføringen på
+    3.3.1 og blir liggende på 3.2.2. Header('X-Foo', '') skal bety det
+    samme på begge. }
+  I := FHeaders.IndexOfName(Name_);
+  if I >= 0 then
+    FHeaders[I] := Name_ + '=' + Value
+  else
+    FHeaders.Add(Name_ + '=' + Value);
   Result := Self;
+end;
+
+function TMailMessage.Idempotency(const Key: string): TMailMessage;
+begin
+  FIdempotency := Key;
+  Result := Self;
+end;
+
+function TMailMessage.EnsureMessageId: string;
+begin
+  if FMessageId = '' then
+    FMessageId := Format('<%d.%d@askr>', [UnixNow, Random(1000000)]);
+  Result := FMessageId;
 end;
 
 function TMailMessage.Recipients: TStringArray;
@@ -310,8 +414,7 @@ begin
   if Length(FTo) + Length(FCc) + Length(FBcc) = 0 then
     raise EMailError.Create('The message has no recipients');
 
-  if FMessageId = '' then
-    FMessageId := Format('<%d.%d@askr>', [UnixNow, Random(1000000)]);
+  EnsureMessageId;
 
   A := TArena.Create(16 * 1024);
   try
@@ -518,6 +621,77 @@ begin
   Expect('250');
 end;
 
+function TSmtpTransport.OffersMechanism(const Mech: string): Boolean;
+var
+  Linjer: TStringList;
+  I, P: Integer;
+  L: string;
+begin
+  { Mekanismene står som en ordliste på AUTH-linja: «250-AUTH PLAIN LOGIN».
+    Et rått delstrengsøk ville sagt ja til LOGIN på grunn av XOAUTH2-LOGIN
+    eller lignende, så vi leter etter hele ordet på nettopp den linja. }
+  Result := False;
+  Linjer := TStringList.Create;
+  try
+    Linjer.Text := FEhlo;
+    for I := 0 to Linjer.Count - 1 do
+    begin
+      L := UpperCase(Linjer[I]);
+      if (Copy(L, 1, 8) <> '250-AUTH') and (Copy(L, 1, 8) <> '250 AUTH') then
+        Continue;
+      { Mellomrom rundt, slik at ordet må stå alene. }
+      P := Pos(' ' + UpperCase(Mech) + ' ', Copy(L, 9, MaxInt) + ' ');
+      if P > 0 then
+        Exit(True);
+    end;
+  finally
+    Linjer.Free;
+  end;
+end;
+
+procedure TSmtpTransport.Credentials(const AUser, APassword: string);
+begin
+  FUsername := AUser;
+  FPassword := APassword;
+end;
+
+procedure TSmtpTransport.Authenticate;
+var
+  Kryptert: Boolean;
+begin
+  if FUsername = '' then
+    Exit;
+
+  Kryptert := FTls <> nil;
+  if (not Kryptert) and (not FAllowPlainAuth) then
+    raise EMailError.CreateFmt(
+      'Refusing to send the password to %s:%d in the clear. Use STARTTLS, ' +
+      'or set AllowPlainAuth if this really is a relay on loopback.',
+      [FHost, FPort]);
+
+  { PLAIN foretrekkes: én tur-retur i stedet for tre. LOGIN er med fordi
+    noen eldre relayer bare har den. }
+  if OffersMechanism('PLAIN') then
+  begin
+    SendLine('AUTH PLAIN ' + Base64Encode(
+      BytesOf(#0 + FUsername + #0 + FPassword)));
+    Expect('235');
+  end
+  else if OffersMechanism('LOGIN') then
+  begin
+    SendLine('AUTH LOGIN');
+    Expect('334');
+    SendLine(Base64Encode(BytesOf(FUsername)));
+    Expect('334');
+    SendLine(Base64Encode(BytesOf(FPassword)));
+    Expect('235');
+  end
+  else
+    raise EMailError.CreateFmt(
+      '%s:%d offers no AUTH mechanism Askr can use (PLAIN or LOGIN), ' +
+      'but a username was configured.', [FHost, FPort]);
+end;
+
 procedure TSmtpTransport.StartTls;
 begin
   if FCtx = nil then
@@ -599,6 +773,8 @@ begin
       Greet;
     end;
 
+    Authenticate;
+
     SendLine('MAIL FROM:<' + M.Sender.Address + '>');
     Expect('250');
 
@@ -672,6 +848,98 @@ begin
     if FreeAfter then
       M.Free;
   end;
+end;
+
+{ ---------------------------------------------------- transportregister -- }
+
+type
+  TMailFactoryEntry = record
+    Name_: string;
+    Factory: TMailTransportFactory;
+  end;
+
+var
+  GFactories: array of TMailFactoryEntry;
+
+procedure RegisterMailTransport(const Name_: string;
+  F: TMailTransportFactory);
+var
+  I: Integer;
+  Nkl: string;
+begin
+  { En vanlig record-array med lineært søk, ikke et TStringList med
+    Objects: en prosedyrevariabel kan ikke castes til TObject i
+    Delphi-modus — kompilatoren leser det som et kall. Samme grunn som
+    handler-tabellen i køen. }
+  Nkl := LowerCase(Name_);
+  for I := 0 to High(GFactories) do
+    if GFactories[I].Name_ = Nkl then
+    begin
+      GFactories[I].Factory := F;
+      Exit;
+    end;
+  SetLength(GFactories, Length(GFactories) + 1);
+  GFactories[High(GFactories)].Name_ := Nkl;
+  GFactories[High(GFactories)].Factory := F;
+end;
+
+function KjenteTransporter: string;
+var
+  I: Integer;
+begin
+  Result := 'log, null, smtp';
+  for I := 0 to High(GFactories) do
+    Result := Result + ', ' + GFactories[I].Name_;
+end;
+
+function SmtpFromConfig: TMailTransport;
+var
+  Sikkerhet: TSmtpSecurity;
+  Kryptering: string;
+  T: TSmtpTransport;
+begin
+  Kryptering := LowerCase(Cfg('mail.encryption', 'tls'));
+  if Kryptering = 'none' then
+    Sikkerhet := smtpPlain
+  else if Kryptering = 'ssl' then
+    Sikkerhet := smtpTlsDirect
+  else if (Kryptering = 'tls') or (Kryptering = 'starttls') then
+    Sikkerhet := smtpStartTls
+  else
+    raise EMailError.CreateFmt(
+      'Unknown mail.encryption %s. Use tls, ssl or none.', [Kryptering]);
+
+  T := TSmtpTransport.Create(CfgOrFail('mail.host'),
+    Word(CfgInt('mail.port', 587)), Sikkerhet);
+  T.Credentials(Cfg('mail.username', ''), Cfg('mail.password', ''));
+  Result := T;
+end;
+
+function MailFromConfig: TMailTransport;
+var
+  Navn: string;
+  I: Integer;
+begin
+  Navn := LowerCase(Cfg('mail.transport', 'log'));
+
+  if Navn = 'log' then
+    Exit(TLogTransport.Create(Cfg('mail.log', 'storage/mail.log')));
+  if Navn = 'null' then
+    Exit(TNullTransport.Create);
+  if Navn = 'smtp' then
+    Exit(SmtpFromConfig);
+
+  for I := 0 to High(GFactories) do
+    if GFactories[I].Name_ = Navn then
+      Exit(GFactories[I].Factory());
+
+  { Ikke fall tilbake til log. En stavefeil i produksjon ville da sett ut
+    som at posten gikk ut, og den eneste som visste noe annet var en fil
+    ingen leser. Samme regel som for en gate som ikke finnes. }
+  raise EMailError.CreateFmt(
+    'Unknown mail transport %s. Available: %s. A transport from another ' +
+    'unit has to be linked in before it can be named here.',
+    [Navn, KjenteTransporter]);
 end;
 
 initialization

@@ -19,7 +19,8 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
-  Askr.Auth, Askr.Mail, Askr.Ai, Askr.Inertia, Askr.Testing,
+  Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips;
 
 { -------------------------------------------------------------- versjon -- }
@@ -633,6 +634,754 @@ begin
   finally
     Msg.Free;
     M.Free;
+  end;
+end;
+
+{ ------------------------------------------------------------- resend -- }
+
+{ Transporten får aldri lov til å sende noe ekte her. Alt går gjennom
+  TFakeResendHttp, som tar vare på JSON-en og svarer med det testen la i
+  kø — samme grep som TFakeAiTransport. }
+function NyResend(out H: TFakeResendHttp): TResendTransport;
+begin
+  H := TFakeResendHttp.Create;
+  Result := TResendTransport.Create('re_test_nokkel');
+  Result.UseHttp(H, True);
+end;
+
+procedure TestResendForm;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  J: string;
+begin
+  T := NyResend(H);
+  try
+    H.Queue('{"id":"49a3999c-0ce1-4ea6-ab68-afcd6dc2e794"}', 200);
+    T.Send(TMailMessage.Create
+      .From('orders@example.com', 'Example, Inc.')
+      .AddTo('customer@example.com', 'Ada Lovelace')
+      .Cc('sales@example.com')
+      .Bcc('audit@example.com')
+      .Subject('Your order')
+      .Text('Thank you.')
+      .Html('<p>Thank you.</p>'));
+
+    AssertEqual(H.Sent.Count, 1, 'én forespørsel');
+    J := H.Sent[0];
+    AssertContains(J, '"from":"\"Example, Inc.\" <orders@example.com>"',
+      'avsender med sitert navn');
+    AssertContains(J, '"to":["\"Ada Lovelace\" <customer@example.com>"]',
+      'to er en liste');
+    AssertContains(J, '"cc":["sales@example.com"]', 'cc');
+    AssertContains(J, '"bcc":["audit@example.com"]', 'bcc');
+    AssertContains(J, '"subject":"Your order"', 'emne');
+    AssertContains(J, '"html":"<p>Thank you.</p>"', 'html');
+    AssertContains(J, '"text":"Thank you."', 'tekst');
+    AssertEqual(H.LastUrl, 'https://api.resend.com/emails', 'endepunkt');
+    AssertEqual(H.LastApiKey, 're_test_nokkel', 'nøkkelen gis til HTTP-laget');
+    AssertEqual(T.LastId, '49a3999c-0ce1-4ea6-ab68-afcd6dc2e794',
+      'id-en fra svaret');
+    AssertEqual(T.Count, 1, 'talt som sendt');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendReplyTo;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  J: string;
+begin
+  T := NyResend(H);
+  try
+    H.Queue('{"id":"x"}', 200);
+    T.Send(TMailMessage.Create
+      .From('a@example.com')
+      .AddTo('b@example.com')
+      .Subject('s')
+      .Text('t')
+      .Header('Reply-To', 'one@example.com, two@example.com')
+      .Header('X-Entity-Ref-ID', '42'));
+
+    J := H.Sent[0];
+    AssertContains(J, '"reply_to":["one@example.com","two@example.com"]',
+      'reply_to blir et eget felt, som liste');
+    AssertContains(J, '"headers":{"X-Entity-Ref-ID":"42"}',
+      'andre hoder havner i headers');
+    { Resend avviser Reply-To som fritt hode. Står den begge steder, er
+      det tilfeldig hvilken som vinner. }
+    AssertNotContains(J, '"headers":{"Reply-To"',
+      'reply-to står ikke også i headers');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendIngenHoder;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+begin
+  T := NyResend(H);
+  try
+    H.Queue('{"id":"x"}', 200);
+    T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
+      .Subject('s').Text('t'));
+    { Et tomt headers-objekt er ikke feil, men det sier at vi skriver ut
+      nøkler vi ikke har noe å fylle. }
+    AssertNotContains(H.Sent[0], '"headers"',
+      'ingen headers-nøkkel uten hoder');
+    AssertNotContains(H.Sent[0], '"cc"', 'ingen cc uten cc');
+    AssertNotContains(H.Sent[0], '"html"', 'ingen html uten html');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendIdempotens;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  Foerste: string;
+begin
+  T := NyResend(H);
+  try
+    H.Queue('{"id":"x"}', 200);
+    T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
+      .Subject('s').Text('t').Idempotency('order-1001-receipt'));
+    AssertEqual(H.LastIdempotency, 'order-1001-receipt',
+      'kallerens nøkkel brukes som den er');
+
+    H.Queue('{"id":"y"}', 200);
+    T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
+      .Subject('s').Text('t'));
+    Foerste := H.LastIdempotency;
+    AssertTrue(Foerste <> '', 'uten egen nøkkel brukes message-id-en');
+    AssertTrue(Foerste <> 'order-1001-receipt',
+      'og den er ikke forrige melding sin');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendSammeMeldingSammeNoekkel;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  M: TMailMessage;
+  A, B: string;
+begin
+  { Det som gjør et gjenforsøk trygt: samme melding må gi samme nøkkel.
+    Gjør den ikke det, får mottakeren to eposter av én jobb. }
+  T := NyResend(H);
+  M := TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
+    .Subject('s').Text('t');
+  try
+    H.Queue('{"id":"x"}', 200);
+    T.Send(M);
+    A := H.LastIdempotency;
+    H.Queue('{"id":"x"}', 200);
+    T.Send(M);
+    B := H.LastIdempotency;
+    AssertEqual(A, B, 'samme melding gir samme idempotensnøkkel');
+  finally
+    M.Free;
+    T.Free;
+  end;
+end;
+
+procedure TestResendFeil;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  Status: Integer;
+  Navn: string;
+  KanProeves, Kastet: Boolean;
+begin
+  T := NyResend(H);
+  try
+    H.Queue('{"statusCode":422,"message":"Invalid `to` field.",' +
+      '"name":"validation_error"}', 422);
+    Kastet := False;
+    Status := 0;
+    Navn := '';
+    KanProeves := True;
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t'));
+    except
+      on E: EResendError do
+      begin
+        Kastet := True;
+        Status := E.Status;
+        Navn := E.Name_;
+        KanProeves := E.Retryable;
+        AssertContains(E.Message, 'Invalid `to` field.',
+          'providerens egen tekst kommer med');
+        AssertContains(E.Message, 'validation_error', 'og typen');
+      end;
+    end;
+    AssertTrue(Kastet, '422 kaster');
+    AssertEqual(Status, 422, 'status');
+    AssertEqual(Navn, 'validation_error', 'typen slik API-et skriver den');
+    AssertTrue(not KanProeves, 'en valideringsfeil prøves ikke om igjen');
+    AssertEqual(T.Count, 0, 'og telles ikke som sendt');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendRateLimit;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  KanProeves: Boolean;
+begin
+  T := NyResend(H);
+  try
+    H.Queue('{"message":"Too many requests.",' +
+      '"name":"rate_limit_exceeded"}', 429);
+    KanProeves := False;
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t'));
+    except
+      on E: EResendError do
+        KanProeves := E.Retryable;
+    end;
+    AssertTrue(KanProeves, 'rate limit kan prøves om igjen');
+
+    { Kvote er ikke det samme. Den går ikke over innenfor noen backoff en
+      kø har, og skal til feiltabellen der noen ser den. }
+    H.Queue('{"message":"Daily quota reached.",' +
+      '"name":"daily_quota_exceeded"}', 429);
+    KanProeves := True;
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t'));
+    except
+      on E: EResendError do
+        KanProeves := E.Retryable;
+    end;
+    AssertTrue(not KanProeves, 'kvote prøves ikke om igjen');
+
+    H.Queue('{"message":"Something went wrong.",' +
+      '"name":"application_error"}', 500);
+    KanProeves := False;
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t'));
+    except
+      on E: EResendError do
+        KanProeves := E.Retryable;
+    end;
+    AssertTrue(KanProeves, '5xx kan prøves om igjen');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendUkjentFeilform;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  Msg: string;
+begin
+  { Feltet har hatt flere navn over tid, og en feilside kan være HTML.
+    Ingen av delene skal gi en tom feilmelding. }
+  T := NyResend(H);
+  try
+    H.Queue('{"message":"nope","error_type":"invalid_parameter"}', 422);
+    Msg := '';
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t'));
+    except
+      on E: EResendError do
+        Msg := E.Message;
+    end;
+    AssertContains(Msg, 'invalid_parameter', 'error_type leses også');
+
+    H.Queue('<html><body>502 Bad Gateway</body></html>', 502);
+    Msg := '';
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t'));
+    except
+      on E: EResendError do
+        Msg := E.Message;
+    end;
+    AssertContains(Msg, '502', 'statusen kommer med når kroppen ikke er JSON');
+    AssertContains(Msg, 'Bad Gateway', 'og det serveren faktisk skrev');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendTomKropp;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  Kastet: Boolean;
+begin
+  T := NyResend(H);
+  try
+    Kastet := False;
+    try
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s'));
+    except
+      on E: EMailError do
+        Kastet := True;
+    end;
+    AssertTrue(Kastet, 'melding uten tekst og html avvises før nettverket');
+    AssertEqual(H.Sent.Count, 0, 'og ingenting ble sendt');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestResendLekkerIkkeNoekkel;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+begin
+  T := NyResend(H);
+  try
+    AssertNotContains(T.Describe, 're_test_nokkel',
+      'Describe viser ikke nøkkelen');
+    AssertContains(T.Describe, 'resend', 'men sier hvilken transport det er');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestMailFraConfig;
+const
+  Katalog = 'askr-mailcfg-test.tmp';
+var
+  T: TMailTransport;
+  L: TStringList;
+  Kastet: Boolean;
+  Msg: string;
+begin
+  { Standarden er loggfila. Uten den ville et prosjekt uten oppsett
+    forsøkt å sende ekte post i utvikling. }
+  T := MailFromConfig;
+  try
+    AssertTrue(T is TLogTransport, 'uten oppsett er transporten log');
+  finally
+    T.Free;
+  end;
+
+  ForceDirectories(Katalog);
+  L := TStringList.Create;
+  try
+    L.Add('[mail]');
+    L.Add('transport = "sendgrid"');
+    L.SaveToFile(Katalog + PathDelim + 'askr.toml');
+  finally
+    L.Free;
+  end;
+
+  Kastet := False;
+  Msg := '';
+  ClearConfig;
+  try
+    LoadConfig(Katalog);
+    try
+      T := MailFromConfig;
+      T.Free;
+    except
+      on E: EMailError do
+      begin
+        Kastet := True;
+        Msg := E.Message;
+      end;
+    end;
+  finally
+    ClearConfig;
+    DeleteFile(Katalog + PathDelim + 'askr.toml');
+    RemoveDir(Katalog);
+  end;
+
+  { Ikke et stille fall tilbake til log. En stavefeil i produksjon ville
+    da sett ut som at posten gikk ut. }
+  AssertTrue(Kastet, 'et ukjent transportnavn kaster');
+  AssertContains(Msg, 'sendgrid', 'feilen sier hva som ble bedt om');
+  AssertContains(Msg, 'resend',
+    'og lista nevner resend, som er linket inn her');
+end;
+
+{ En server som tar vare på hele requesten og svarer som Resend.
+
+  Den finnes fordi TFakeResendHttp hopper over nettopp det laget som
+  setter headerne på lufta: en mutasjon som slettet Idempotency-Key kom
+  gjennom hele suiten uten at noe sa fra. Her leses byte-ene som faktisk
+  ble sendt. }
+type
+  TResendEkkoServer = class(TThread)
+  private
+    FLytt: TSocket;
+    FPort: Word;
+    FRequest: string;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create;
+    property Port: Word read FPort;
+    property Request: string read FRequest;
+  end;
+
+constructor TResendEkkoServer.Create;
+var
+  Addr: TInetSockAddr;
+  Len: TSockLen;
+  Ja: Integer;
+begin
+  FLytt := fpSocket(AF_INET, SOCK_STREAM, 0);
+  Ja := 1;
+  fpSetSockOpt(FLytt, SOL_SOCKET, SO_REUSEADDR, @Ja, SizeOf(Ja));
+  FillChar(Addr, SizeOf(Addr), 0);
+  Addr.sin_family := AF_INET;
+  Addr.sin_addr.s_addr := HToNL($7F000001);
+  Addr.sin_port := 0;
+  fpBind(FLytt, @Addr, SizeOf(Addr));
+  fpListen(FLytt, 4);
+  Len := SizeOf(Addr);
+  fpGetSockName(FLytt, @Addr, @Len);
+  FPort := NToHS(Addr.sin_port);
+  FreeOnTerminate := False;
+  inherited Create(False);
+end;
+
+procedure TResendEkkoServer.Execute;
+var
+  S: TSocket;
+  Svar: string;
+  N: ssize_t;
+  Buf: array[0..8191] of Byte;
+begin
+  S := fpAccept(FLytt, nil, nil);
+  if S >= 0 then
+  begin
+    N := fpRecv(S, @Buf[0], SizeOf(Buf), 0);
+    if N > 0 then
+    begin
+      SetLength(FRequest, N);
+      Move(Buf[0], FRequest[1], N);
+    end;
+    Svar := '{"id":"ekko-1"}';
+    Svar := 'HTTP/1.1 200 OK'#13#10 +
+      'Content-Type: application/json'#13#10 +
+      'Content-Length: ' + IntToStr(Length(Svar)) + #13#10 +
+      'Connection: close'#13#10#13#10 + Svar;
+    fpSend(S, PChar(Svar), Length(Svar), 0);
+    CloseSocket(S);
+  end;
+  CloseSocket(FLytt);
+end;
+
+procedure TestResendPaaLufta;
+var
+  Srv: TResendEkkoServer;
+  T: TResendTransport;
+  R: string;
+begin
+  Srv := TResendEkkoServer.Create;
+  try
+    T := TResendTransport.Create('re_hemmelig_nokkel');
+    try
+      T.BaseUrl := 'http://127.0.0.1:' + IntToStr(Srv.Port);
+      T.Send(TMailMessage.Create.From('a@example.com')
+        .AddTo('b@example.com').Subject('s').Text('t')
+        .Idempotency('job-77'));
+      AssertEqual(T.LastId, 'ekko-1', 'id-en leses ut av et ekte svar');
+    finally
+      T.Free;
+    end;
+    Srv.WaitFor;
+    R := Srv.Request;
+
+    AssertContains(R, 'POST /emails HTTP/1.1', 'metode og sti');
+    { Det avgjørende: begge headerne skal faktisk ligge i byte-ene. }
+    AssertContains(R, 'Authorization: Bearer re_hemmelig_nokkel',
+      'nøkkelen går som Bearer');
+    AssertContains(R, 'Idempotency-Key: job-77',
+      'idempotensnøkkelen står i hodet, ikke bare i koden');
+    AssertContains(R, 'Content-Type: application/json', 'innholdstypen');
+    AssertContains(R, '"subject":"s"', 'kroppen kom med');
+  finally
+    Srv.Free;
+  end;
+end;
+
+{ En SMTP-server som sier hva den kan og skriver ned samtalen.
+
+  Den finnes for AUTH-stien. Passordet går over denne forbindelsen, og
+  det er den ene koden i mailuniten der en feil ikke bare gir en epost
+  som ikke kommer fram — den gir bort passordet. }
+type
+  TSmtpEkkoServer = class(TThread)
+  private
+    FLytt: TSocket;
+    FPort: Word;
+    FSamtale: string;
+    FAuthLinje: string;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(const AAuthLinje: string);
+    property Port: Word read FPort;
+    property Samtale: string read FSamtale;
+  end;
+
+constructor TSmtpEkkoServer.Create(const AAuthLinje: string);
+var
+  Addr: TInetSockAddr;
+  Len: TSockLen;
+  Ja: Integer;
+begin
+  FAuthLinje := AAuthLinje;
+  FLytt := fpSocket(AF_INET, SOCK_STREAM, 0);
+  Ja := 1;
+  fpSetSockOpt(FLytt, SOL_SOCKET, SO_REUSEADDR, @Ja, SizeOf(Ja));
+  FillChar(Addr, SizeOf(Addr), 0);
+  Addr.sin_family := AF_INET;
+  Addr.sin_addr.s_addr := HToNL($7F000001);
+  Addr.sin_port := 0;
+  fpBind(FLytt, @Addr, SizeOf(Addr));
+  fpListen(FLytt, 4);
+  Len := SizeOf(Addr);
+  fpGetSockName(FLytt, @Addr, @Len);
+  FPort := NToHS(Addr.sin_port);
+  FreeOnTerminate := False;
+  inherited Create(False);
+end;
+
+procedure TSmtpEkkoServer.Execute;
+var
+  S: TSocket;
+  Linje: string;
+  C: Char;
+  N: ssize_t;
+  IData: Boolean;
+  AuthSteg: Integer;
+
+  procedure Si(const Sv: string);
+  var
+    Ut: string;
+  begin
+    Ut := Sv + #13#10;
+    fpSend(S, PChar(Ut), Length(Ut), 0);
+  end;
+
+begin
+  S := fpAccept(FLytt, nil, nil);
+  if S < 0 then
+  begin
+    CloseSocket(FLytt);
+    Exit;
+  end;
+  Si('220 ekko.example ESMTP');
+  IData := False;
+  AuthSteg := 0;
+  Linje := '';
+  repeat
+    N := fpRecv(S, @C, 1, 0);
+    if N <= 0 then
+      Break;
+    if C = #13 then
+      Continue;
+    if C <> #10 then
+    begin
+      Linje := Linje + C;
+      Continue;
+    end;
+
+    FSamtale := FSamtale + Linje + #10;
+
+    if IData then
+    begin
+      if Linje = '.' then
+      begin
+        IData := False;
+        Si('250 2.0.0 Ok: queued');
+      end;
+    end
+    else if Copy(UpperCase(Linje), 1, 4) = 'EHLO' then
+    begin
+      Si('250-ekko.example');
+      if FAuthLinje <> '' then
+        Si('250-' + FAuthLinje);
+      Si('250 SIZE 35651584');
+    end
+    else if Copy(UpperCase(Linje), 1, 4) = 'AUTH' then
+    begin
+      if Copy(UpperCase(Linje), 1, 10) = 'AUTH LOGIN' then
+      begin
+        AuthSteg := 1;
+        Si('334 VXNlcm5hbWU6');
+      end
+      else
+        Si('235 2.7.0 Authentication successful');
+    end
+    else if AuthSteg = 1 then
+    begin
+      AuthSteg := 2;
+      Si('334 UGFzc3dvcmQ6');
+    end
+    else if AuthSteg = 2 then
+    begin
+      AuthSteg := 0;
+      Si('235 2.7.0 Authentication successful');
+    end
+    else if Copy(UpperCase(Linje), 1, 4) = 'QUIT' then
+    begin
+      Si('221 Bye');
+      Break;
+    end
+    else if Copy(UpperCase(Linje), 1, 4) = 'DATA' then
+    begin
+      IData := True;
+      Si('354 End data with <CR><LF>.<CR><LF>');
+    end
+    else
+      Si('250 2.1.0 Ok');
+    Linje := '';
+  until False;
+  CloseSocket(S);
+  CloseSocket(FLytt);
+end;
+
+procedure SendMedAuth(Srv: TSmtpEkkoServer; const Bruker, Passord: string;
+  Tillat: Boolean);
+var
+  T: TSmtpTransport;
+  Msg: TMailMessage;
+begin
+  T := TSmtpTransport.Create('127.0.0.1', Srv.Port, smtpPlain);
+  Msg := TMailMessage.Create;
+  try
+    T.AllowPlainAuth := Tillat;
+    T.Credentials(Bruker, Passord);
+    Msg.From('a@example.com').AddTo('b@example.com').Subject('s').Text('t');
+    T.Send(Msg);
+  finally
+    Msg.Free;
+    T.Free;
+  end;
+end;
+
+procedure TestSmtpAuthPlain;
+var
+  Srv: TSmtpEkkoServer;
+begin
+  Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
+  try
+    SendMedAuth(Srv, 'resend', 're_hemmelig', True);
+    Srv.WaitFor;
+    { SASL PLAIN er #0bruker#0passord i base64. Regnet ut for hånd her,
+      slik at testen sjekker kodingen og ikke bare gjentar koden. }
+    AssertContains(Srv.Samtale, 'AUTH PLAIN AHJlc2VuZAByZV9oZW1tZWxpZw==',
+      'AUTH PLAIN med riktig SASL-koding');
+    AssertContains(Srv.Samtale, 'MAIL FROM:<a@example.com>',
+      'og sendingen fortsetter etterpå');
+  finally
+    Srv.Free;
+  end;
+end;
+
+procedure TestSmtpAuthLogin;
+var
+  Srv: TSmtpEkkoServer;
+begin
+  { Bare LOGIN tilbudt. Uten denne grenen ville et eldre relé fått AUTH
+    PLAIN det ikke forstår. }
+  Srv := TSmtpEkkoServer.Create('AUTH LOGIN');
+  try
+    SendMedAuth(Srv, 'bruker', 'passord', True);
+    Srv.WaitFor;
+    AssertContains(Srv.Samtale, 'AUTH LOGIN', 'faller til LOGIN');
+    AssertNotContains(Srv.Samtale, 'AUTH PLAIN',
+      'og prøver ikke PLAIN den ikke tilbyr');
+    AssertContains(Srv.Samtale, 'YnJ1a2Vy', 'brukernavnet i base64');
+    AssertContains(Srv.Samtale, 'cGFzc29yZA==', 'passordet i base64');
+  finally
+    Srv.Free;
+  end;
+end;
+
+procedure TestSmtpAuthKreverKryptering;
+var
+  Srv: TSmtpEkkoServer;
+  Kastet: Boolean;
+  Msg: string;
+begin
+  { Det viktigste i hele AUTH-stien: passordet skal ikke gå i klartekst
+    med mindre noen har sagt det eksplisitt. }
+  Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
+  Kastet := False;
+  Msg := '';
+  try
+    try
+      SendMedAuth(Srv, 'bruker', 'passord', False);
+    except
+      on E: EMailError do
+      begin
+        Kastet := True;
+        Msg := E.Message;
+      end;
+    end;
+    AssertTrue(Kastet, 'AUTH over klartekst stoppes');
+    AssertContains(Msg, 'in the clear', 'og sier hvorfor');
+    AssertNotContains(Msg, 'passord', 'uten å gjenta passordet');
+    AssertNotContains(Srv.Samtale, 'AUTH', 'ingenting ble sendt');
+  finally
+    Srv.Free;
+  end;
+end;
+
+procedure TestSmtpAuthUkjentMekanisme;
+var
+  Srv: TSmtpEkkoServer;
+  Kastet: Boolean;
+begin
+  { XOAUTH2-LOGIN inneholder «LOGIN» som delstreng. Et rått søk ville
+    sagt ja og sendt AUTH LOGIN til en server som ikke har den. }
+  Srv := TSmtpEkkoServer.Create('AUTH XOAUTH2-LOGIN CRAM-MD5');
+  Kastet := False;
+  try
+    try
+      SendMedAuth(Srv, 'bruker', 'passord', True);
+    except
+      on E: EMailError do
+        Kastet := True;
+    end;
+    AssertTrue(Kastet, 'ingen mekanisme vi kan er en feil, ikke et forsøk');
+    AssertNotContains(Srv.Samtale, 'AUTH LOGIN',
+      'delstrengen XOAUTH2-LOGIN teller ikke som LOGIN');
+  finally
+    Srv.Free;
+  end;
+end;
+
+procedure TestSmtpUtenBruker;
+var
+  Srv: TSmtpEkkoServer;
+begin
+  { Ingen brukernavn: ingen AUTH, og ingen klage. En relé på loopback
+    vil ofte ikke ha noen. }
+  Srv := TSmtpEkkoServer.Create('AUTH PLAIN LOGIN');
+  try
+    SendMedAuth(Srv, '', '', False);
+    Srv.WaitFor;
+    AssertNotContains(Srv.Samtale, 'AUTH', 'ingen AUTH uten brukernavn');
+    AssertContains(Srv.Samtale, 'MAIL FROM:', 'men posten går');
+  finally
+    Srv.Free;
   end;
 end;
 
@@ -3212,6 +3961,31 @@ begin
   Test('tekst og html blir multipart', @TestMultipart);
   Test('bcc er mottaker, men ikke i hodet', @TestBccSkjulesIHodet);
   Test('melding uten avsender avvises', @TestManglerAvsender);
+  Test('transporten velges av mail.transport', @TestMailFraConfig);
+  Test('SMTP AUTH PLAIN kodes som SASL sier', @TestSmtpAuthPlain);
+  Test('SMTP faller til AUTH LOGIN når PLAIN ikke tilbys',
+    @TestSmtpAuthLogin);
+  Test('passordet går aldri i klartekst uten at noen har sagt det',
+    @TestSmtpAuthKreverKryptering);
+  Test('en mekanisme vi ikke kan, er en feil', @TestSmtpAuthUkjentMekanisme);
+  Test('uten brukernavn sendes ingen AUTH', @TestSmtpUtenBruker);
+
+  Group('Resend');
+  Test('forespørselen har riktig form', @TestResendForm);
+  Test('reply-to blir et eget felt, andre hoder blir headers',
+    @TestResendReplyTo);
+  Test('felter uten innhold skrives ikke ut', @TestResendIngenHoder);
+  Test('idempotensnøkkelen sendes med', @TestResendIdempotens);
+  Test('samme melding gir samme nøkkel over et gjenforsøk',
+    @TestResendSammeMeldingSammeNoekkel);
+  Test('en feil blir EResendError med status og type', @TestResendFeil);
+  Test('rate limit kan prøves om igjen, kvote kan ikke',
+    @TestResendRateLimit);
+  Test('ukjent feilform gir fortsatt en brukbar melding',
+    @TestResendUkjentFeilform);
+  Test('melding uten kropp avvises før nettverket', @TestResendTomKropp);
+  Test('nøkkelen står ikke i Describe', @TestResendLekkerIkkeNoekkel);
+  Test('headerne ligger i byte-ene på lufta', @TestResendPaaLufta);
 
   Group('Testklienten');
   Test('ruter, parametre og kropp uten socket', @TestKlientMotRuter);

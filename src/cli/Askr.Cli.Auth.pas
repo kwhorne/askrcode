@@ -1520,17 +1520,13 @@ begin
         L.Insert(I + 2, '  SetUserLoader(@LoadUser);');
         L.Insert(I + 3, '  { Brukes av bremsen på innloggingsskjemaet. }');
         L.Insert(I + 4, '  SetCache(TCache.Create);');
-        L.Insert(I + 5, '  { Passordtilbakestilling sender e-post. TLogTransport');
-        L.Insert(I + 6, '    skriver den til en fil, slik at lenken kan prøves');
-        L.Insert(I + 7, '    uten en SMTP-server. Bytt til TSmtpTransport i');
-        L.Insert(I + 8, '    produksjon — se docs/mail.md. }');
-        L.Insert(I + 9, '  if IsProduction then');
-        L.Insert(I + 10, '    SetMail(TMailer.Create(TSmtpTransport.Create(');
-        L.Insert(I + 11, '      CfgOrFail(''smtp.host''), Word(CfgInt(''smtp.port'', 587)))))');
-        L.Insert(I + 12, '  else');
-        L.Insert(I + 13, '    SetMail(TMailer.Create(TLogTransport.Create(''storage/mail.log'')));');
-        L.Insert(I + 14, '  Mail.SetDefaultFrom(Cfg(''mail.from'', ''noreply@localhost''), '''');');
-        L.Insert(I + 15, '  Auth_ := TAuthController.Create;');
+        L.Insert(I + 5, '  { Passordtilbakestilling sender e-post. MAIL_TRANSPORT');
+        L.Insert(I + 6, '    avgjør hvor den havner: log skriver til en fil slik at');
+        L.Insert(I + 7, '    lenken kan prøves uten noen server, resend og smtp');
+        L.Insert(I + 8, '    sender på ekte. Se docs/mail.md. }');
+        L.Insert(I + 9, '  SetMail(TMailer.Create(MailFromConfig));');
+        L.Insert(I + 10, '  Mail.SetDefaultFrom(Cfg(''mail.from'', ''noreply@localhost''), '''');');
+        L.Insert(I + 11, '  Auth_ := TAuthController.Create;');
         Break;
       end;
 
@@ -1544,7 +1540,11 @@ begin
     for I := 0 to L.Count - 1 do
       if L[I] = '  Askr.Session, Askr.Csrf, Askr.Auth,' then
       begin
-        L[I] := '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Cache, Askr.Mail,';
+        { Askr.Mail.Resend må være linket inn for at MAIL_TRANSPORT=resend
+          skal finnes som navn. Den koster ingen kjøretidsavhengighet:
+          OpenSSL lastes først når noe faktisk sender. }
+        L[I] := '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Cache,';
+        L.Insert(I + 1, '  Askr.Mail, Askr.Mail.Resend,');
         Break;
       end;
 
@@ -1570,10 +1570,10 @@ begin
   WriteLn('Could not find the markers in app.lpr. Add this yourself:');
   WriteLn;
   WriteLn('  uses  App.Models.User, App.Http.AuthController,');
-  WriteLn('        Askr.Cache, Askr.Mail;');
+  WriteLn('        Askr.Cache, Askr.Mail, Askr.Mail.Resend;');
   WriteLn;
   WriteLn('  SetCache(TCache.Create);');
-  WriteLn('  SetMail(TMailer.Create(TLogTransport.Create(''storage/mail.log'')));');
+  WriteLn('  SetMail(TMailer.Create(MailFromConfig));');
   WriteLn;
   WriteLn('  var Auth_: TAuthController;');
   WriteLn;

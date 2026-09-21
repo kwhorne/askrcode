@@ -72,8 +72,8 @@ Phases 1 and 2 are complete on **macOS and Linux**. The data layer is
 complete for all three dialects. The CLI has 22 commands. Documentation is
 35 pages under [`docs/`](docs/).
 
-Two things are **written and have never been run**, and they will say so
-until someone runs them:
+Three things are **written and have never been run in earnest**, and they
+will say so until someone runs them:
 
 - **Windows.** The WebView2 binding is written and type-checked; nobody has
   started it on a Windows machine. It does not count as finished until they
@@ -83,6 +83,9 @@ until someone runs them:
   401 with Anthropic's own error JSON, parsed correctly. That proves DNS,
   TLS, the request shape and the error path — not that a response with
   content comes back.
+- **The Resend transport against a real API key.** Same story, same
+  evidence: a real 401 from `api.resend.com`, its error JSON parsed into
+  `EResendError`. No mail has been sent from here with a valid key.
 
 ## Getting started
 

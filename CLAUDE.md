@@ -528,6 +528,61 @@ som sendes opp mot det den skal være.
   vilje. `^0.6.0` følger npm-regelen for nullmajor og slipper ikke
   `0.7.0` gjennom.
 
+## Mail og providere
+
+* **`TMailTransport` er hele grensesnittet: `Send` og `Describe`.** En
+  provider er en klasse til, ikke et lag til. `Askr.Mail.Resend` er det
+  ferdige eksempelet; Postmark eller SES har samme form.
+* **Resend ligger i en egen unit fordi den trenger HTTP-klienten.** En app
+  som sender over SMTP eller skriver til fil skal ikke linke den. Samme
+  regel som `Askr.Image.Vips` og `Askr.Run`: ingenting ellers i `src/` får
+  avhenge av den.
+* **HTTP og ikke SMTP mot samme provider, av tre grunner**, og bare den
+  tredje er viktig: en id tilbake med én gang, maskinlesbare feil, og en
+  idempotensnøkkel. Uten den siste gir et gjenforsøk i køen to eposter.
+* **`Idempotency` settes av kalleren, og fallbacken er ikke god nok
+  alene.** Uten egen nøkkel brukes Message-ID-en, som er stabil for
+  *samme objekt* — men en kø bygger meldingen på nytt, og da er den ny.
+  Fallbacken dekker et gjenforsøk i samme prosess; det er den eksplisitte
+  nøkkelen som dekker tilfellet som faktisk skjer. Testen som holder dette
+  fast sender samme melding to ganger og krever samme nøkkel.
+* **`Retryable` skiller innenfor 429.** `rate_limit_exceeded` går over av
+  seg selv; `daily_quota_exceeded` gjør det ikke innenfor noen backoff en
+  kø har. Å behandle dem likt betyr enten at kvotefeilen brenner opp alle
+  forsøkene, eller at et rate limit havner i feiltabellen med én gang.
+* **Feilfeltet har hatt flere navn.** Det ekte 401-svaret bruker `name`;
+  Resends egen dokumentasjon sier `error_type`. Begge leses, og `type` i
+  tillegg. En feil vi ikke klarer å navngi skal fortsatt komme fram med
+  status og tekst — en HTML-feilside fra et mellomledd er ikke JSON.
+* **Reply-To løftes ut av `headers`.** Resend har et eget felt og avviser
+  det som fritt hode. Står det begge steder, er det tilfeldig hvilket som
+  vinner.
+* **`MailFromConfig` kaster på et ukjent navn.** Ikke fall tilbake til
+  log: en stavefeil i produksjon ville da sett ut som at posten gikk ut,
+  og den eneste som visste noe annet var en fil ingen leser. Samme regel
+  som «en gate som ikke finnes svarer nei». Registeret er en record-array
+  med lineært søk, fordi en prosedyrevariabel ikke kan castes til
+  `TObject` i Delphi-modus.
+* **SMTP hadde ingen AUTH i det hele tatt** før dette. `mail.username` ville
+  vært en konfignøkkel som ikke gjorde noe — samme halve løfte som
+  `askr down` var før `UseMaintenance`.
+* **Passordet sendes aldri over en ukryptert forbindelse.** PLAIN og LOGIN
+  legger det på lufta i base64, som ikke er kryptering. `AllowPlainAuth`
+  må settes eksplisitt, og da mot loopback. Mekanismene matches som hele
+  ord på AUTH-linja — `XOAUTH2-LOGIN` inneholder «LOGIN» som delstreng, og
+  et rått søk ville sendt AUTH LOGIN til en server som ikke har den.
+* **Fake-laget dekker ikke det laget som setter headerne.** En mutasjon som
+  slettet `Idempotency-Key` gikk gjennom hele suiten. Derfor går én test
+  mot en rå socket og leser byte-ene som faktisk ble sendt. Samme grunn som
+  chunked-serveren i HTTP-klienttestene.
+* **Ett ekte kall er gjort mot `api.resend.com`, uten gyldig nøkkel.** Det
+  kom tilbake som 401 med Resends egen feil-JSON, riktig parset. Det
+  beviser DNS, TLS, requestformen og feilhåndteringen — ikke at en melding
+  blir levert. **Ingen epost er sendt med en gyldig Resend-nøkkel herfra**,
+  og det skal stå til noen har gjort det.
+* En melding uten `text` og uten `html` avvises før nettverket. Resend gir
+  422 på den, og den feilen er lettere å forstå her.
+
 ## Kommandolinja
 
 * **`Askr.Console` ligger i rammeverket, ikke i den genererte app.lpr.**
@@ -1385,9 +1440,11 @@ helhet: `.env`, krypto, CSRF, auth, filopplasting, konfigurasjon, logging,
 varig kø, modell-livskvalitet, HTTP-klient, AI, kommandolinja og
 auth-stillaset. Ingenting i «stopper produksjon»-tabellen står åpent.
 
-**To ting er skrevet og aldri kjørt**, og begge skal stå slik til noen har
-gjort det: Windows-webviewen, og AI-laget med en gyldig API-nøkkel. Det er
-de eneste to stedene i Askr der det er sant.
+**Tre ting står uten en kjøring med ekte legitimasjon**, og alle tre skal
+stå slik til noen har gjort det: Windows-webviewen, AI-laget med en gyldig
+API-nøkkel, og Resend-transporten med en gyldig nøkkel. De to siste har
+begge et ekte 401 bak seg — DNS, TLS, requestform og feilsti er prøvd — men
+ingen av dem har fått et svar med innhold.
 
 Rekkefølgen videre og begrunnelsene står i LARAVEL.md, ikke her.
 

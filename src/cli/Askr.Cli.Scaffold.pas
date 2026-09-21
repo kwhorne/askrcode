@@ -624,6 +624,22 @@ begin
     'DATABASE_URL=sqlite:' + Name + '.db' + #10 +
     '# DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/' + Name + #10 +
     #10 +
+    '# log | resend | smtp | null. log writes to a file instead of' + #10 +
+    '# sending, which is what you want in development.' + #10 +
+    'MAIL_TRANSPORT=log' + #10 +
+    'MAIL_FROM=noreply@localhost' + #10 +
+    '# MAIL_LOG=storage/mail.log' + #10 +
+    #10 +
+    '# resend: get a key at resend.com and verify your domain first.' + #10 +
+    '# RESEND_API_KEY=' + #10 +
+    #10 +
+    '# smtp: MAIL_ENCRYPTION is tls (STARTTLS), ssl or none.' + #10 +
+    '# MAIL_HOST=' + #10 +
+    '# MAIL_PORT=587' + #10 +
+    '# MAIL_USERNAME=' + #10 +
+    '# MAIL_PASSWORD=' + #10 +
+    '# MAIL_ENCRYPTION=tls' + #10 +
+    #10 +
     '# ANTHROPIC_API_KEY=' + #10);
 
   Skriv(Rot + '/.env.example',
@@ -635,6 +651,11 @@ begin
     'APP_KEY=' + #10 +
     'LOG_LEVEL=info' + #10 +
     'DATABASE_URL=' + #10 +
+    #10 +
+    '# log | resend | smtp | null' + #10 +
+    'MAIL_TRANSPORT=log' + #10 +
+    'MAIL_FROM=' + #10 +
+    'RESEND_API_KEY=' + #10 +
     'ANTHROPIC_API_KEY=' + #10);
 
   { storage/ finnes fra start, slik at en loggtransport eller en
