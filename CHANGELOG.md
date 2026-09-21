@@ -14,6 +14,28 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **`Askr.Cli.Diag` — compiler diagnostics as structure.** The first step
+  towards `askr mcp`: fpc's output parsed into file, line, column and
+  severity, so a tool can hand an agent something it can act on rather than
+  a wall of text.
+
+  It parses the **format**, never the message text. The wording varies
+  between compilers — 3.2.2 writes `function header doesn't match` where
+  trunk writes `Function header doesn't match` — while the shape does not.
+
+  A premise test holds that down against real captured output from three
+  toolchains: 3.2.2 on aarch64, 3.2.2 on x86_64 and 3.3.1 trunk. The
+  positioned lines are byte-identical from all three, and
+  `tests/vectors/fpcdiag/capture.sh` regenerates the vectors.
+
+  Three properties are mutation-checked: the `(24) Fatal:` form with a line
+  and no column; that the severity is a known set rather than "whatever
+  stands before the colon", so `Target OS: Darwin for AArch64` is not a
+  diagnostic; and that warnings and notes do **not** stop a build — the
+  distinction an exit code cannot make.
+
 ### Changed
 
 - **`tests/` is English.** Comments, test names, fixture data and
