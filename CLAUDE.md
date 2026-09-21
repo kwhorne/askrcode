@@ -44,6 +44,19 @@ feil i notatet to ganger.
 
 `./askr check` og `./askr pg`/`mysql` tar `ASKR_ARCH=amd64` på samme måte.
 
+**`./askr mcp:check` er porten for MCP-lagets arkitektoniske innsats.**
+Serveren ligger i verktøyet og ikke i appbinæren, motsatt av Laravel Boost,
+fordi en app som ikke kompilerer ikke finnes — og det er nettopp da en agent
+trenger å få vite hva som er galt. Porten skriver et prosjekt som ikke lar
+seg kompilere, sender ekte rammer gjennom `askr mcp`, og krever håndtrykket
+likevel. Så en gang til uten prosjekt i det hele tatt.
+
+`McpServe` kjøres **før `FindProject`**. Den skriver til stdout og avslutter
+uten askr.toml, og for en klient er det ikke «ingen prosjekt» — det er en
+parse-feil på protokollkanalen. Alt under `McpServe` eier stdout; én WriteLn
+på feil side, og klienten ser søppel uten noe som sier hvor det kom fra.
+Porten sjekker at hver linje er ett JSON-objekt.
+
 `tools/probes/run.sh <fpc>` kjører generics-probene mot en gitt kompilator.
 Det er sju filer — seks grenser (p1–p6) og kallstedet (p7) som avhenger av
 p2 — og **alle sju feiler fortsatt**, på 3.2.2 og på trunk. Probene er
