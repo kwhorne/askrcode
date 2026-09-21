@@ -153,7 +153,7 @@ implementation
 function ParseUrl(const Url: string; out Scheme, Host: string;
   out Port: Word; out PathAndQuery: string): Boolean;
 var
-  Rest, Vert: string;
+  Rest, HostPart: string;
   P: Integer;
 begin
   Scheme := '';
@@ -177,7 +177,7 @@ begin
   while (P <= Length(Rest)) and (Rest[P] <> '/') and (Rest[P] <> '?') and
         (Rest[P] <> '#') do
     Inc(P);
-  Vert := Copy(Rest, 1, P - 1);
+  HostPart := Copy(Rest, 1, P - 1);
   if P <= Length(Rest) then
   begin
     PathAndQuery := Copy(Rest, P, MaxInt);
@@ -193,21 +193,21 @@ begin
 
   { User info in the address is ignored — it does not belong in a URL, and
     pretending it is not there is safer than passing it on. }
-  P := Pos('@', Vert);
+  P := Pos('@', HostPart);
   if P > 0 then
-    Vert := Copy(Vert, P + 1, MaxInt);
+    HostPart := Copy(HostPart, P + 1, MaxInt);
 
-  P := Pos(':', Vert);
+  P := Pos(':', HostPart);
   if P > 0 then
   begin
-    Host := Copy(Vert, 1, P - 1);
-    Port := Word(StrToIntDef(Copy(Vert, P + 1, MaxInt), 0));
+    Host := Copy(HostPart, 1, P - 1);
+    Port := Word(StrToIntDef(Copy(HostPart, P + 1, MaxInt), 0));
     if Port = 0 then
       Exit;
   end
   else
   begin
-    Host := Vert;
+    Host := HostPart;
     if Scheme = 'https' then
       Port := 443
     else
@@ -338,7 +338,7 @@ procedure freeaddrinfo(Res: PAddrInfo); cdecl; external 'c' name 'freeaddrinfo';
   IPv4 only: the rest of Askr uses TInetSockAddr, and IPv6 requires a
   different address family the whole way through. It is a documented limit
   in the server from step 1, and the client inherits it. }
-function SlaaOppIPv4(const Host: string; out Addr: TInAddr): Boolean;
+function LookupIPv4(const Host: string; out Addr: TInAddr): Boolean;
 var
   Hints: TAddrInfo;
   Res, Cur: PAddrInfo;
@@ -383,7 +383,7 @@ constructor TConn.Create(const Host: string; Port: Word;
   UseTls, NoVerify: Boolean; ConnectMs, ReadMs: Integer);
 var
   Addr: TInetSockAddr;
-  Vert: THostEntry;
+  HostEnt: THostEntry;
 begin
   inherited Create;
   FSock := fpSocket(AF_INET, SOCK_STREAM, 0);
@@ -400,12 +400,12 @@ begin
       fallback; there GetHostByName returns the address in the host's byte
       order and ResolveHostByName in the network's, and getting that wrong
       gives an address that looks valid and points the wrong way. }
-    if not SlaaOppIPv4(Host, Addr.sin_addr) then
+    if not LookupIPv4(Host, Addr.sin_addr) then
     begin
-      if GetHostByName(Host, Vert) then
-        Addr.sin_addr.s_addr := HToNL(Vert.Addr.s_addr)
-      else if ResolveHostByName(Host, Vert) then
-        Addr.sin_addr := Vert.Addr
+      if GetHostByName(Host, HostEnt) then
+        Addr.sin_addr.s_addr := HToNL(HostEnt.Addr.s_addr)
+      else if ResolveHostByName(Host, HostEnt) then
+        Addr.sin_addr := HostEnt.Addr
       else
       begin
         CloseSocket(FSock);
@@ -570,7 +570,7 @@ var
   C: TConn;
   Req, Buf, Bit: string;
   I, P, ContentLength, Chunk: Integer;
-  HeaderDone, Chunked, LukkVedSlutt, Avbrutt: Boolean;
+  HeaderDone, Chunked, CloseAtEnd, Aborted: Boolean;
   WasRead: Int64;
   T0: Int64;
 begin
@@ -632,7 +632,7 @@ begin
     HeaderDone := False;
     Chunked := False;
     ContentLength := -1;
-    LukkVedSlutt := False;
+    CloseAtEnd := False;
     WasRead := 0;
 
     { --- statuslinje og headere --- }
@@ -719,7 +719,7 @@ begin
       { Neither a length nor chunked: the body lasts until the connection
         closes. That is legal in HTTP/1.1 together with Connection:
         close. }
-      LukkVedSlutt := True;
+      CloseAtEnd := True;
 
     if Chunked then
     begin
@@ -771,7 +771,7 @@ begin
     else
     begin
       { What is already in the buffer is the beginning of the body. }
-      Avbrutt := False;
+      Aborted := False;
       if Buf <> '' then
       begin
         Inc(WasRead, Length(Buf));
@@ -780,12 +780,12 @@ begin
             others. If it were ignored here, the client read on after the
             callback had said stop — and for an SSE stream that means it
             never stops. }
-          Avbrutt := not Emit(Buf)
+          Aborted := not Emit(Buf)
         else
           Result.Body := Buf;
         Buf := '';
       end;
-      while (not Avbrutt) and (LukkVedSlutt or (WasRead < ContentLength)) do
+      while (not Aborted) and (CloseAtEnd or (WasRead < ContentLength)) do
       begin
         Bit := C.Read(64 * 1024);
         if Bit = '' then

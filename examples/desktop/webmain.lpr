@@ -38,13 +38,13 @@ end;
 
 var
   Opts: TServerOptions;
-  Dsn, Rot: string;
+  Dsn, Root: string;
   C: TDbConnection;
 begin
-  Rot := GetCurrentDir;
+  Root := GetCurrentDir;
   Dsn := GetEnvironmentVariable('ASKR_DSN');
   if Dsn = '' then
-    Dsn := 'sqlite:' + IncludeTrailingPathDelimiter(Rot) + 'notes.db';
+    Dsn := 'sqlite:' + IncludeTrailingPathDelimiter(Root) + 'notes.db';
 
   Pool := TDbPool.Create(Dsn, 4);
   C := Pool.Acquire;
@@ -54,7 +54,7 @@ begin
     Pool.Release(C);
   end;
 
-  SetPublicDir(IncludeTrailingPathDelimiter(Rot) + 'public');
+  SetPublicDir(IncludeTrailingPathDelimiter(Root) + 'public');
   TInertia.SetHead(GetEnvironmentVariable('ASKR_HEAD'));
 
   R := TRouter.Create;

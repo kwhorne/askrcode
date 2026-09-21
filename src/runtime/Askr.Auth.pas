@@ -158,9 +158,9 @@ end;
 
 function ReadRemember(const Cookie_: string; out UserId: string): Boolean;
 var
-  Payload, UtloepStr: string;
+  Payload, ExpiryStr: string;
   P: Integer;
-  Utloep: Int64;
+  Expiry: Int64;
 begin
   UserId := '';
   if Cookie_ = '' then
@@ -170,13 +170,13 @@ begin
   P := Pos('|', Payload);
   if P <= 1 then
     Exit(False);
-  UtloepStr := Copy(Payload, P + 1, MaxInt);
-  if not TryStrToInt64(UtloepStr, Utloep) then
+  ExpiryStr := Copy(Payload, P + 1, MaxInt);
+  if not TryStrToInt64(ExpiryStr, Expiry) then
     Exit(False);
   { The expiry is inside the signed part, not only in the cookie's
     Max-Age. A client that keeps the cookie longer than we asked must not
     get in. }
-  if UnixNow > Utloep then
+  if UnixNow > Expiry then
     Exit(False);
   UserId := Copy(Payload, 1, P - 1);
   Result := UserId <> '';

@@ -238,28 +238,28 @@ end;
 
 function IsoTimestamp(EpochMs: Int64): string;
 var
-  Dager, Sek, Ms: Int64;
+  Days, Secs, Ms: Int64;
   Y: Int64;
   M, D: Word;
   T, Tim, Min_, S_: Int64;
 begin
-  Sek := EpochMs div 1000;
+  Secs := EpochMs div 1000;
   Ms := EpochMs mod 1000;
   { A negative epoch — a date before 1970 — must not give negative times. }
   if Ms < 0 then
   begin
     Inc(Ms, 1000);
-    Dec(Sek);
+    Dec(Secs);
   end;
-  if Sek >= 0 then
-    Dager := Sek div 86400
+  if Secs >= 0 then
+    Days := Secs div 86400
   else
-    Dager := (Sek - 86399) div 86400;
-  T := Sek - Dager * 86400;
+    Days := (Secs - 86399) div 86400;
+  T := Secs - Days * 86400;
   Tim := T div 3600;
   Min_ := (T div 60) mod 60;
   S_ := T mod 60;
-  CivilFromDays(Dager, Y, M, D);
+  CivilFromDays(Days, Y, M, D);
   Result := Format('%.4d-%.2d-%.2dT%.2d:%.2d:%.2d.%.3dZ',
     [Y, M, D, Tim, Min_, S_, Ms]);
 end;

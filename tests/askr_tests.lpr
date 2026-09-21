@@ -236,7 +236,7 @@ var
   Adresse1, Adresse2: Pointer;
   Reservert: PtrUInt;
   I, J: Integer;
-  Forrige: Pointer;
+  Previous: Pointer;
   AllUnique: Boolean;
 begin
   Group('Arena — New<T>');
@@ -293,14 +293,14 @@ begin
 
     { Mange objekter: ingen skal overlappe, og arenaen skal flate ut. }
     A.Reset;
-    Forrige := nil;
+    Previous := nil;
     AllUnique := True;
     for I := 1 to 10000 do
     begin
       K := A.New<TKatt>;
-      if Pointer(K) = Forrige then
+      if Pointer(K) = Previous then
         AllUnique := False;
-      Forrige := Pointer(K);
+      Previous := Pointer(K);
       if K.Bein <> 4 then
         AllUnique := False;
     end;
@@ -330,7 +330,7 @@ type
     Number: Integer;
   end;
 
-  { Bare ShortString og tall — ingenting å finalisere. }
+  { Only ShortString og tall — ingenting å finalisere. }
   TWithoutString = class(TArenaObject)
   public
     Kort: string[16];
@@ -1229,7 +1229,7 @@ begin
     Check(Pos('text/html', Raw) > 0, 'vanlig request gir HTML');
     Check(Pos('</script><img', Raw) = 0,
       'en propverdi kan ikke bryte ut av script-blokka');
-    { Bare < og / escapes; > er ufarlig alene. }
+    { Only < og / escapes; > er ufarlig alene. }
     Check(Pos('\u003c\/script>', Raw) > 0,
       'den er escapet til \u003c og \/ i stedet');
     Check(Pos('<script data-page="app" type="application/json">', Raw) > 0,
@@ -1625,7 +1625,7 @@ begin
       'felter uten feil står ikke oppført');
     CheckEqS(K.Errors.First('name'), 'name is required', 'meldingen');
 
-    { Bare første feil per felt. }
+    { Only første feil per felt. }
     A.Reset;
     K := A.New<TTestCustomer>;
     K.Name := 'et altfor langt name som ikke passer';
@@ -2233,8 +2233,8 @@ var
   I: Integer;
   P: TMlPost;
   Made, Oppdatert: TDateTime;
-  Liste: TModelList<TMlPost>;
-  Skjema: TDbSchema;
+  Items: TModelList<TMlPost>;
+  Schema_: TDbSchema;
   Tab: TDbTable;
   Err: string;
 begin
@@ -2373,23 +2373,23 @@ begin
     CheckEqI(TQuery<TMlBar>.New.Count, 1,
       'en modell uten soft deletes filtrerer ingenting');
 
-    Liste := TQuery<TMlPost>.New.Get;
-    CheckEqI(Liste.Count, 1, 'Get virker med soft-delete-leddet på');
+    Items := TQuery<TMlPost>.New.Get;
+    CheckEqI(Items.Count, 1, 'Get virker med soft-delete-leddet på');
 
     { ---- tidsstempler overlever rundturen ---- }
     { Det som virkelig betyr noe med DATETIME i SQLite: at
       introspeksjonen ser en dato, og at verdien kommer tilbake som en
       dato. Without begge deler er den erklærte typen bare pynt. }
-    Skjema := IntrospectSchema(C);
+    Schema_ := IntrospectSchema(C);
     try
-      Tab := Skjema.Table('ml_posts');
+      Tab := Schema_.Table('ml_posts');
       Check(Tab <> nil, 'tabellen ble introspisert');
       CheckEqS(PascalTypeFor(
         Tab.Column(Tab.IndexOfColumn('created_at')).SqlType,
         Tab.Column(Tab.IndexOfColumn('created_at')).Scale), 'TDateTime',
         'created_at introspiseres som TDateTime, ikke string');
     finally
-      Skjema.Free;
+      Schema_.Free;
     end;
 
     P := TQuery<TMlPost>.New.WithTrashed.Get[0];
@@ -2404,9 +2404,9 @@ begin
       ville testen vært grønn eller rød etter hvor raskt maskinen var. }
     P.CreatedAt := UtcNow + 1;
     P.Save;
-    Liste := NyestePoster(1).Get;
-    CheckEqI(Liste.Count, 1, 'en scope er bare en funksjon som gir en query');
-    CheckEqS(Liste[0].Title, 'Nyere', 'og den kan sorteres og begrenses');
+    Items := NyestePoster(1).Get;
+    CheckEqI(Items.Count, 1, 'en scope er bare en funksjon som gir en query');
+    CheckEqS(Items[0].Title, 'Nyere', 'og den kan sorteres og begrenses');
     { En scope kan kjedes videre, og soft-delete-leddet blir med. }
     CheckEqI(NyestePoster(10).WithTrashed.Count, 2,
       'og den kjedes videre som alt annet');
@@ -2531,7 +2531,7 @@ begin
     CheckEqI(Q.Failed, 1, 'talt som feilet');
     Check(QFeilmeldinger >= 3, 'OnError ble kalt for hvert forsøk');
 
-    { Ukjent jobbnavn forkastes, ikke krasjer. }
+    { Unknown_ jobbnavn forkastes, ikke krasjer. }
     Q.Push('finnes-ikke', 'z');
     Check(Q.WaitUntilEmpty(3000), 'ukjent jobb forkastes');
     Frist := 0;
@@ -2645,7 +2645,7 @@ var
   I, J: Integer;
   K: TSqCustomer;
   O: TSqOrder;
-  Liste: TSqCustomerList;
+  Items: TSqCustomerList;
   Count_: Integer;
   Reservert: PtrUInt;
   Sq: TSqliteConnection;
@@ -2746,14 +2746,14 @@ begin
       .Where(SqCustomers.Balance, GT, 150).ToSql) > 0,
       'plassholderen er ?, ikke $1');
 
-    Liste := TQuery<TSqCustomer>.New
+    Items := TQuery<TSqCustomer>.New
       .Where(SqCustomers.Balance, GT, 150)
       .OrderBy(SqCustomers.Balance, Desc)
       .Get;
-    CheckEqI(Liste.Count, 4, 'fire over 150');
-    Check(Liste[0].Balance = 500, 'sortert synkende');
-    CheckEqS(Liste[0].Name, 'Customer 5', 'riktig rad hydrert');
-    Check(Liste[0].Active = False, 'boolean hydrert fra INTEGER');
+    CheckEqI(Items.Count, 4, 'fire over 150');
+    Check(Items[0].Balance = 500, 'sortert synkende');
+    CheckEqS(Items[0].Name, 'Customer 5', 'riktig rad hydrert');
+    Check(Items[0].Active = False, 'boolean hydrert fra INTEGER');
 
     { OR-gruppe: fritekstsøk over flere kolonner.
 
@@ -2777,23 +2777,23 @@ begin
     CheckEqS(TQuery<TSqCustomer>.New.WhereAnyLike([SqCustomers.Name], '').ToSql,
       TQuery<TSqCustomer>.New.ToSql, 'tomt søk legger ikke på noe');
 
-    Liste := TQuery<TSqCustomer>.New
+    Items := TQuery<TSqCustomer>.New
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ada')
       .Get;
-    CheckEqI(Liste.Count, 1, 'søket treffer Ada på navnet');
+    CheckEqI(Items.Count, 1, 'søket treffer Ada på navnet');
 
     { Treffer på e-post selv om navnet ikke inneholder søkeordet. Det er
       hele poenget med OR-en. }
-    Liste := TQuery<TSqCustomer>.New
+    Items := TQuery<TSqCustomer>.New
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'customer3@')
       .Get;
-    CheckEqI(Liste.Count, 1, 'og treffer på e-post når navnet ikke passer');
+    CheckEqI(Items.Count, 1, 'og treffer på e-post når navnet ikke passer');
 
     { Ufølsom for store bokstaver, også utenfor Postgres. }
-    Liste := TQuery<TSqCustomer>.New
+    Items := TQuery<TSqCustomer>.New
       .WhereAnyLike([SqCustomers.Name, SqCustomers.Email], 'ADA')
       .Get;
-    CheckEqI(Liste.Count, 1, 'søket bryr seg ikke om store bokstaver');
+    CheckEqI(Items.Count, 1, 'søket bryr seg ikke om store bokstaver');
 
     { ---- TGrid: sortering, søk og paginering i databasen ---- }
     begin
@@ -2809,25 +2809,25 @@ begin
        .Searchable([SqCustomers.Name, SqCustomers.Email])
        .DefaultSort('name')
        .PerPage(2);
-      Liste := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqI(Liste.Count, 2, 'griden gir én side');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqI(Items.Count, 2, 'griden gir én side');
       CheckEqI(G.Total, Count_, 'men teller hele settet');
-      CheckEqS(Liste[0].Name, 'Ada', 'standardsorteringen gjelder');
+      CheckEqS(Items[0].Name, 'Ada', 'standardsorteringen gjelder');
 
       { Side to. }
-      Sql := Liste[1].Name;   { siste rad på side én }
+      Sql := Items[1].Name;   { siste rad på side én }
       G := TGrid<TSqCustomer>.New;
       G.Read(LagRequest(A, 'GET /c?page=2 HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2);
-      Liste := G.Rows(TQuery<TSqCustomer>.New);
-      Check(Liste[0].Name > Sql, 'side to fortsetter der side én sluttet');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      Check(Items[0].Name > Sql, 'side to fortsetter der side én sluttet');
 
       { Sortering fra URL-en. }
       G := TGrid<TSqCustomer>.New;
       G.Read(LagRequest(A, 'GET /c?sort=balance&dir=desc HTTP/1.1'#13#10'Host: t'))
        .Sortable('balance', SqCustomers.Balance).DefaultSort('balance').PerPage(10);
-      Liste := G.Rows(TQuery<TSqCustomer>.New);
-      Check(Liste[0].Balance = 500, 'synkende på balance');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      Check(Items[0].Balance = 500, 'synkende på balance');
 
       { **Kolonnen fra URL-en er hvitelistet.** En kolonne som ikke er
         registrert faller tilbake til standarden i stedet for å havne i
@@ -2838,8 +2838,8 @@ begin
       G.Read(LagRequest(A,
         'GET /c?sort=email); DROP TABLE sq_customers;-- HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(10);
-      Liste := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqS(Liste[0].Name, 'Ada', 'ukjent sorteringskolonne faller tilbake');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqS(Items[0].Name, 'Ada', 'ukjent sorteringskolonne faller tilbake');
       CheckEqI(TQuery<TSqCustomer>.New.Count, Count_, 'og tabellen står der fortsatt');
 
       { Søk over flere kolonner. }
@@ -2848,8 +2848,8 @@ begin
        .Sortable('name', SqCustomers.Name)
        .Searchable([SqCustomers.Name, SqCustomers.Email])
        .DefaultSort('name').PerPage(10);
-      Liste := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqI(Liste.Count, 1, 'søket treffer på e-post');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqI(Items.Count, 1, 'søket treffer på e-post');
       CheckEqI(G.Total, 1, 'og totalen teller treffene, ikke tabellen');
 
       { Søket må gjelde sammen med kallerens eget Where, ikke i stedet for.
@@ -2859,16 +2859,16 @@ begin
        .Sortable('name', SqCustomers.Name)
        .Searchable([SqCustomers.Name, SqCustomers.Email])
        .DefaultSort('name').PerPage(10);
-      Liste := G.Rows(TQuery<TSqCustomer>.New.Where(SqCustomers.Balance, GT, 300));
-      CheckEqI(Liste.Count, 2, 'søk og eget Where gjelder samtidig');
+      Items := G.Rows(TQuery<TSqCustomer>.New.Where(SqCustomers.Balance, GT, 300));
+      CheckEqI(Items.Count, 2, 'søk og eget Where gjelder samtidig');
 
       { Taket på sidestørrelse. Without det er per=1000000 en måte å be om
         hele tabellen på. }
       G := TGrid<TSqCustomer>.New;
       G.Read(LagRequest(A, 'GET /c?per=100000 HTTP/1.1'#13#10'Host: t'))
        .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2, 3);
-      Liste := G.Rows(TQuery<TSqCustomer>.New);
-      CheckEqI(Liste.Count, 3, 'sidestørrelsen klemmes ned til taket');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqI(Items.Count, 3, 'sidestørrelsen klemmes ned til taket');
 
       { Payloaden frontend leser. }
       GW.Init(A, 256);
@@ -2881,21 +2881,21 @@ begin
       Check(Pos('"sort":"name"', GJson) > 0, 'og hvilken kolonne som er sortert');
     end;
 
-    { Ada er aktiv, og av Customer 2..5 er 2 og 4 det. Tre til sammen. }
+    { Ada er aktiv, og av Customer 2..5 er 2 og 4 det. Three til sammen. }
     CheckEqI(TQuery<TSqCustomer>.New.Where(SqCustomers.Active, Eq, True).Count, 3,
       'boolean-filter mot INTEGER-kolonne');
     CheckEqI(TQuery<TSqCustomer>.New.WhereIn(SqCustomers.Id, [1, 2, 3]).Count, 3,
       'WhereIn');
 
     { Eager loading. }
-    Liste := TQuery<TSqCustomer>.New.Preload(['Order']).OrderBy(SqCustomers.Id).Get;
+    Items := TQuery<TSqCustomer>.New.Preload(['Order']).OrderBy(SqCustomers.Id).Get;
     Count_ := 0;
-    for I := 0 to Liste.Count - 1 do
-      if Liste[I].Order <> nil then
-        Count_ := Count_ + Liste[I].Order.Count;
+    for I := 0 to Items.Count - 1 do
+      if Items[I].Order <> nil then
+        Count_ := Count_ + Items[I].Order.Count;
     CheckEqI(Count_, 1 + 2 + 3 + 4, 'eager loading fordelte alle orders');
-    CheckEqI(Liste[0].Order.Count, 0, 'første customer har ingen');
-    CheckEqI(Liste[4].Order.Count, 4, 'siste har fire');
+    CheckEqI(Items[0].Order.Count, 0, 'første customer har ingen');
+    CheckEqI(Items[4].Order.Count, 4, 'siste har fire');
 
     { Validering, inkludert UniqueIn mot SQLite. }
     K := A.New<TSqCustomer>;

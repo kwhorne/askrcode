@@ -45,9 +45,9 @@ begin
   end;
 end;
 
-procedure Like(const What, Forventet, Fikk: string);
+procedure Like(const What, Expected, Got: string);
 begin
-  if Forventet = Fikk then
+  if Expected = Got then
   begin
     Inc(Bestatt);
     WriteLn('  ok    ', What);
@@ -56,8 +56,8 @@ begin
   begin
     Inc(Feilet);
     WriteLn('  FEIL  ', What);
-    WriteLn('        forventet: ', Forventet);
-    WriteLn('        fikk:      ', Fikk);
+    WriteLn('        forventet: ', Expected);
+    WriteLn('        fikk:      ', Got);
   end;
 end;
 
@@ -142,7 +142,7 @@ type
     procedure Si(const S: string);
     { False betyr lukket forbindelse. En tom linje er ikke det samme — i
       DATA er den skillet mellom hode og kropp. }
-    function Les(out Line_: string): Boolean;
+    function Read_(out Line_: string): Boolean;
   protected
     procedure Execute; override;
   public
@@ -198,7 +198,7 @@ begin
     fpSend(FSock, PChar(L), Length(L), 0);
 end;
 
-function TFakeSmtp.Les(out Line_: string): Boolean;
+function TFakeSmtp.Read_(out Line_: string): Boolean;
 var
   C: Char;
   N: Integer;
@@ -235,7 +235,7 @@ begin
     Si('220 fake ESMTP');
     IData := False;
     repeat
-      if not Les(Line_) then
+      if not Read_(Line_) then
         Break;
       if IData then
       begin

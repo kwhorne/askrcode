@@ -408,16 +408,16 @@ end;
 
 function ConfigReport(ShowValues: Boolean): string;
 var
-  Noekler: TStringArray;
+  Keys: TStringArray;
   I: Integer;
   K, V, Source_: string;
   Width_: Integer;
 begin
-  Noekler := ConfigKeys;
+  Keys := ConfigKeys;
   Width_ := 0;
-  for I := 0 to High(Noekler) do
-    if Length(Noekler[I]) > Width_ then
-      Width_ := Length(Noekler[I]);
+  for I := 0 to High(Keys) do
+    if Length(Keys[I]) > Width_ then
+      Width_ := Length(Keys[I]);
 
   Result := '';
   if GTomlFile <> '' then
@@ -426,9 +426,9 @@ begin
     Result := Result + '.env       ' + EnvFile + #10;
   Result := Result + 'APP_ENV    ' + AppEnv + #10#10;
 
-  for I := 0 to High(Noekler) do
+  for I := 0 to High(Keys) do
   begin
-    K := Noekler[I];
+    K := Keys[I];
     Source_ := SourceName(CfgSource(K));
     if not ShowValues then
       V := ''

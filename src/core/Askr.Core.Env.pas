@@ -206,7 +206,7 @@ end;
 
 procedure LoadEnvUpwards(const StartDir: string);
 var
-  Dir, Forrige: string;
+  Dir, Previous: string;
 begin
   if StartDir = '' then
     Dir := GetCurrentDir
@@ -219,9 +219,9 @@ begin
       LoadEnv(IncludeTrailingPathDelimiter(Dir) + '.env');
       Exit;
     end;
-    Forrige := Dir;
+    Previous := Dir;
     Dir := ExtractFileDir(ExcludeTrailingPathDelimiter(Dir));
-  until (Dir = '') or (Dir = Forrige);
+  until (Dir = '') or (Dir = Previous);
   { No file found is not an error. The store is created anyway, so Env()
     works and simply answers from the environment. }
   LoadEnv('');

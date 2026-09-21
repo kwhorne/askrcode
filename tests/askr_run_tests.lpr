@@ -42,9 +42,9 @@ begin
   end;
 end;
 
-procedure Like(const What, Forventet, Fikk: string);
+procedure Like(const What, Expected, Got: string);
 begin
-  if Forventet = Fikk then
+  if Expected = Got then
   begin
     Inc(Bestatt);
     WriteLn('  ok    ', What);
@@ -53,8 +53,8 @@ begin
   begin
     Inc(Feilet);
     WriteLn('  FEIL  ', What);
-    WriteLn('        forventet: ', Forventet);
-    WriteLn('        fikk:      ', Fikk);
+    WriteLn('        forventet: ', Expected);
+    WriteLn('        fikk:      ', Got);
   end;
 end;
 

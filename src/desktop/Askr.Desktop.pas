@@ -631,7 +631,7 @@ var
 
 function LoadWebView2: Boolean;
 const
-  Kandidater: array[0..1] of string = ('WebView2Loader.dll',
+  Candidates: array[0..1] of string = ('WebView2Loader.dll',
     'WebView2Loader.dll.lib');
 var
   I: Integer;
@@ -642,12 +642,12 @@ begin
     Exit(False);
   GTried := True;
 
-  for I := 0 to High(Kandidater) do
+  for I := 0 to High(Candidates) do
   begin
-    GLoaderLib := LoadLibrary(Kandidater[I]);
+    GLoaderLib := LoadLibrary(Candidates[I]);
     if GLoaderLib <> NilHandle then
     begin
-      GLoaderName := Kandidater[I];
+      GLoaderName := Candidates[I];
       Break;
     end;
   end;

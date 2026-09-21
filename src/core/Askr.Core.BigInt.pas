@@ -220,40 +220,40 @@ function U256Sub(const A, B: TU256; out R: TU256): UInt32;
 var
   I: Integer;
   T: UInt64;
-  Laan: UInt64;
+  Borrow: UInt64;
 begin
-  Laan := 0;
+  Borrow := 0;
   for I := 0 to U256Limbs - 1 do
   begin
     { Adds 2^32 to keep the intermediate from going below zero. The extra
       bit becomes the borrow out, inverted. }
-    T := (UInt64(A.L[I]) + $100000000) - UInt64(B.L[I]) - Laan;
+    T := (UInt64(A.L[I]) + $100000000) - UInt64(B.L[I]) - Borrow;
     R.L[I] := UInt32(T and $FFFFFFFF);
-    if T < $100000000 then Laan := 1 else Laan := 0;
+    if T < $100000000 then Borrow := 1 else Borrow := 0;
   end;
-  Result := UInt32(Laan);
+  Result := UInt32(Borrow);
 end;
 
 procedure U256Mul(const A, B: TU256; out R: TU512);
 var
   I, J: Integer;
-  T, Baerer: UInt64;
+  T, Carry: UInt64;
 begin
   U512SetZero(R);
   for I := 0 to U256Limbs - 1 do
   begin
     if A.L[I] = 0 then
       Continue;
-    Baerer := 0;
+    Carry := 0;
     for J := 0 to U256Limbs - 1 do
     begin
       { This is the line that decided the limb width. With 32-bit limbs the
         product plus two carries fits in a UInt64 exactly. }
-      T := UInt64(A.L[I]) * UInt64(B.L[J]) + UInt64(R.L[I + J]) + Baerer;
+      T := UInt64(A.L[I]) * UInt64(B.L[J]) + UInt64(R.L[I + J]) + Carry;
       R.L[I + J] := UInt32(T and $FFFFFFFF);
-      Baerer := T shr 32;
+      Carry := T shr 32;
     end;
-    R.L[I + U256Limbs] := UInt32(UInt64(R.L[I + U256Limbs]) + Baerer);
+    R.L[I + U256Limbs] := UInt32(UInt64(R.L[I + U256Limbs]) + Carry);
   end;
 end;
 
@@ -320,16 +320,16 @@ end;
 function U512Sub(const A, B: TU512; out R: TU512): UInt32;
 var
   I: Integer;
-  T, Laan: UInt64;
+  T, Borrow: UInt64;
 begin
-  Laan := 0;
+  Borrow := 0;
   for I := 0 to U512Limbs - 1 do
   begin
-    T := (UInt64(A.L[I]) + $100000000) - UInt64(B.L[I]) - Laan;
+    T := (UInt64(A.L[I]) + $100000000) - UInt64(B.L[I]) - Borrow;
     R.L[I] := UInt32(T and $FFFFFFFF);
-    if T < $100000000 then Laan := 1 else Laan := 0;
+    if T < $100000000 then Borrow := 1 else Borrow := 0;
   end;
-  Result := UInt32(Laan);
+  Result := UInt32(Borrow);
 end;
 
 procedure U512Low(const A: TU512; out R: TU256);
@@ -361,19 +361,19 @@ end;
 procedure U512MulLow(const A, B: TU512; out R: TU512);
 var
   I, J: Integer;
-  T, Baerer: UInt64;
+  T, Carry: UInt64;
 begin
   U512SetZero(R);
   for I := 0 to U512Limbs - 1 do
   begin
     if A.L[I] = 0 then
       Continue;
-    Baerer := 0;
+    Carry := 0;
     for J := 0 to U512Limbs - 1 - I do
     begin
-      T := UInt64(A.L[I]) * UInt64(B.L[J]) + UInt64(R.L[I + J]) + Baerer;
+      T := UInt64(A.L[I]) * UInt64(B.L[J]) + UInt64(R.L[I + J]) + Carry;
       R.L[I + J] := UInt32(T and $FFFFFFFF);
-      Baerer := T shr 32;
+      Carry := T shr 32;
     end;
     { The carry out of the top is dropped deliberately: the call site uses
       only the low 512 bits. }
@@ -460,7 +460,7 @@ end;
 
 function U256ToHex(const A: TU256): string;
 const
-  Sifre = '0123456789abcdef';
+  Digits = '0123456789abcdef';
 var
   B: array[0..U256Bytes - 1] of Byte;
   I: Integer;
@@ -469,8 +469,8 @@ begin
   SetLength(Result, U256Bytes * 2);
   for I := 0 to U256Bytes - 1 do
   begin
-    Result[I * 2 + 1] := Sifre[(B[I] shr 4) + 1];
-    Result[I * 2 + 2] := Sifre[(B[I] and $F) + 1];
+    Result[I * 2 + 1] := Digits[(B[I] shr 4) + 1];
+    Result[I * 2 + 2] := Digits[(B[I] and $F) + 1];
   end;
 end;
 
@@ -478,13 +478,13 @@ end;
 
 procedure ModAdd(const A, B, M: TU256; out R: TU256);
 var
-  Baerer: UInt32;
+  Carry: UInt32;
   T: TU256;
 begin
-  Baerer := U256Add(A, B, R);
+  Carry := U256Add(A, B, R);
   { The sum can reach >= M either by overflowing 256 bits or by simply
     being large. Both have the same answer: subtract M once. }
-  if (Baerer <> 0) or (U256Cmp(R, M) >= 0) then
+  if (Carry <> 0) or (U256Cmp(R, M) >= 0) then
   begin
     U256Sub(R, M, T);
     R := T;
@@ -493,11 +493,11 @@ end;
 
 procedure ModSub(const A, B, M: TU256; out R: TU256);
 var
-  Laan: UInt32;
+  Borrow: UInt32;
   T: TU256;
 begin
-  Laan := U256Sub(A, B, R);
-  if Laan <> 0 then
+  Borrow := U256Sub(A, B, R);
+  if Borrow <> 0 then
   begin
     U256Add(R, M, T);
     R := T;
@@ -567,7 +567,7 @@ end;
 function ModInv(const A, M: TU256; out R: TU256): Boolean;
 var
   U, V, X1, X2, T: TU256;
-  Baerer: UInt32;
+  Carry: UInt32;
 begin
   U256SetZero(R);
   if U256IsZero(A) or U256IsZero(M) then
@@ -591,10 +591,10 @@ begin
       begin
         { X1 is odd: add M first, so the halving is exact. The carry out has
           to be kept — the sum can be 257 bits. }
-        Baerer := U256Add(X1, M, T);
+        Carry := U256Add(X1, M, T);
         X1 := T;
         U256ShrOne(X1);
-        if Baerer <> 0 then
+        if Carry <> 0 then
           X1.L[U256Limbs - 1] := X1.L[U256Limbs - 1] or $80000000;
       end;
     end
@@ -605,10 +605,10 @@ begin
         U256ShrOne(X2)
       else
       begin
-        Baerer := U256Add(X2, M, T);
+        Carry := U256Add(X2, M, T);
         X2 := T;
         U256ShrOne(X2);
-        if Baerer <> 0 then
+        if Carry <> 0 then
           X2.L[U256Limbs - 1] := X2.L[U256Limbs - 1] or $80000000;
       end;
     end

@@ -45,7 +45,7 @@ begin
   end;
 end;
 
-procedure Stille(const Line: string);
+procedure Quiet(const Line: string);
 begin
   { Migratoren logger hver setning; her holder det med overskriftene. }
   if (Length(Line) > 4) and (Copy(Line, 1, 4) = '    ') then
@@ -117,7 +117,7 @@ var
   Schema: TDbSchema;
   Opts: TCodegenOptions;
   Files: TGeneratedFiles;
-  Endret, Drift: TStringArray;
+  Changed, Drift: TStringArray;
   T: TDbTable;
   A: TArena;
   I, Ran: Integer;
@@ -134,7 +134,7 @@ begin
     WriteLn('Migrasjoner');
     M := TMigrator.Create(C);
     try
-      M.OnLog := @Stille;
+      M.OnLog := @Quiet;
       Expect(M.PendingCount = 3, 'tre migrasjoner venter');
       Ran := M.Up;
       Expect(Ran = 3, 'alle tre kjørte');
@@ -178,15 +178,15 @@ begin
         Files := GenerateSources(Schema, Opts);
         Expect(Length(Files) = 3,
           'to tabell-units og ett manifest (migrasjonstabellen hoppes over)');
-        Endret := WriteSources(Files, Opts);
-        Si('filer skrevet', IntToStr(Length(Endret)));
+        Changed := WriteSources(Files, Opts);
+        Si('filer skrevet', IntToStr(Length(Changed)));
 
         Drift := CheckDrift(Files, Opts);
         Expect(Length(Drift) = 0, 'ingen drift rett etter generering');
 
         { Skriver man igjen uten endringer, skal ingenting røres. }
-        Endret := WriteSources(Files, Opts);
-        Expect(Length(Endret) = 0,
+        Changed := WriteSources(Files, Opts);
+        Expect(Length(Changed) = 0,
           'uendrede filer skrives ikke på nytt');
         WriteLn;
 

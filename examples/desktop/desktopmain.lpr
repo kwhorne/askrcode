@@ -16,12 +16,12 @@ uses
   App.Routes;
 
 var
-  Rot, Dsn: string;
+  Root, Dsn: string;
   C: TDbConnection;
   Pool: TDbPool;
 begin
-  Rot := GetCurrentDir;
-  Dsn := 'sqlite:' + IncludeTrailingPathDelimiter(Rot) + 'notes.db';
+  Root := GetCurrentDir;
+  Dsn := 'sqlite:' + IncludeTrailingPathDelimiter(Root) + 'notes.db';
 
   { Tabellen må finnes før første request. En skrivebordsapp har ingen
     migreringskommando brukeren kjører på forhånd. }
@@ -37,7 +37,7 @@ begin
     Pool.Free;
   end;
 
-  SetPublicDir(IncludeTrailingPathDelimiter(Rot) + 'public');
+  SetPublicDir(IncludeTrailingPathDelimiter(Root) + 'public');
   TInertia.SetHead(GetEnvironmentVariable('ASKR_HEAD'));
 
   { Heter DesktopApp og ikke App, fordi App. er navnerommet brukerkoden

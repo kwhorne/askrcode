@@ -400,7 +400,7 @@ begin
   end;
 end;
 
-procedure CmdDbWipe(Stille: Boolean);
+procedure CmdDbWipe(Quiet: Boolean);
 var
   C: TDbConnection;
   A: TArena;
@@ -426,7 +426,7 @@ begin
       C.Exec(A, 'SET FOREIGN_KEY_CHECKS = 1');
     if C.Dialect = sdSqlite then
       C.Exec(A, 'PRAGMA foreign_keys = ON');
-    if not Stille then
+    if not Quiet then
       Si(Format('Dropped %d table(s).', [N]));
   finally
     A.Free;
@@ -435,7 +435,7 @@ begin
 end;
 
 procedure CmdMigrateFresh(WithSeed: Boolean); forward;
-procedure CmdSeed(const Bare: string); forward;
+procedure CmdSeed(const Only: string); forward;
 
 procedure CmdMigrateFresh(WithSeed: Boolean);
 begin
@@ -464,13 +464,13 @@ end;
 
 { ------------------------------------------------------------ seeding -- }
 
-procedure CmdSeed(const Bare: string);
+procedure CmdSeed(const Only: string);
 var
   C: TDbConnection;
   L: TList;
   I, N: Integer;
   S: TSeeder;
-  Kl: TSeederClass;
+  Cls: TSeederClass;
 begin
   L := RegisteredSeeders;
   if L.Count = 0 then
@@ -483,11 +483,11 @@ begin
   try
     for I := 0 to L.Count - 1 do
     begin
-      Kl := TSeederClass(L[I]);
-      if (Bare <> '') and not SameText(Kl.Name, Bare) then
+      Cls := TSeederClass(L[I]);
+      if (Only <> '') and not SameText(Cls.Name, Only) then
         Continue;
-      Si('  seed  ' + Kl.Name);
-      S := Kl.Create;
+      Si('  seed  ' + Cls.Name);
+      S := Cls.Create;
       try
         S.Run(C);
         Inc(N);
@@ -498,9 +498,9 @@ begin
   finally
     C.Free;
   end;
-  if (Bare <> '') and (N = 0) then
+  if (Only <> '') and (N = 0) then
   begin
-    Err('No seeder named "' + Bare + '".');
+    Err('No seeder named "' + Only + '".');
     Halt(1);
   end;
   Si(Format('%d seeder(s) ran.', [N]));
@@ -621,7 +621,7 @@ var
   S: TDbSchema;
   Opts: TCodegenOptions;
   Filer: TGeneratedFiles;
-  Endret: TStringArray;
+  Changed: TStringArray;
   I: Integer;
 begin
   C := OpenDb;
@@ -631,14 +631,14 @@ begin
       Opts := DefaultCodegenOptions;
       Opts.OutputDir := Cfg('schema.dir', 'app/Schema');
       Filer := GenerateSources(S, Opts);
-      Endret := WriteSources(Filer, Opts);
+      Changed := WriteSources(Filer, Opts);
       for I := 0 to High(Filer) do
         Si('  ' + Opts.OutputDir + '/' + Filer[I].FileName);
       Si('');
       { WriteSources leaves unchanged files alone, so that timestamps and
         incremental compilation are not disturbed — and gives back only the
         names of the ones that were actually written. }
-      Si(Format('%d file(s), %d changed.', [Length(Filer), Length(Endret)]));
+      Si(Format('%d file(s), %d changed.', [Length(Filer), Length(Changed)]));
     finally
       S.Free;
     end;
@@ -739,22 +739,22 @@ end;
 
 { ----------------------------------------------------- vedlikehold -- }
 
-function VedlikeholdsFil: string;
+function MaintenanceFile: string;
 begin
   Result := '.askr-down';
 end;
 
 function InMaintenance: Boolean;
 begin
-  Result := FileExists(VedlikeholdsFil);
+  Result := FileExists(MaintenanceFile);
 end;
 
 type
-  TVedlikehold = class
+  TMaintenance = class
     class function Check(Req: TRequest): TResponse;
   end;
 
-class function TVedlikehold.Check(Req: TRequest): TResponse;
+class function TMaintenance.Check(Req: TRequest): TResponse;
 begin
   if not InMaintenance then
     Exit(nil);
@@ -766,7 +766,7 @@ end;
 
 procedure UseMaintenance(R: TRouter);
 begin
-  R.Use(TVedlikehold.Check);
+  R.Use(TMaintenance.Check);
 end;
 
 procedure CmdDown;
@@ -776,7 +776,7 @@ begin
   L := TStringList.Create;
   try
     L.Add(IsoTimestampNow);
-    L.SaveToFile(VedlikeholdsFil);
+    L.SaveToFile(MaintenanceFile);
   finally
     L.Free;
   end;
@@ -787,8 +787,8 @@ end;
 
 procedure CmdUp;
 begin
-  if FileExists(VedlikeholdsFil) then
-    DeleteFile(VedlikeholdsFil);
+  if FileExists(MaintenanceFile) then
+    DeleteFile(MaintenanceFile);
   Si('The application is live.');
 end;
 
@@ -799,7 +799,7 @@ begin
   Si('Application');
   Si('  Environment   ' + AppEnv);
   Si('  Debug         ' + BoolAnswer(not IsProduction, 'yes', 'no'));
-  Si('  Maintenance   ' + BoolAnswer(FileExists(VedlikeholdsFil), 'ON', 'off'));
+  Si('  Maintenance   ' + BoolAnswer(FileExists(MaintenanceFile), 'ON', 'off'));
   Si('  Log level     ' + LogLevelName(LogLevel));
   if ConfigFile <> '' then
     Si('  askr.toml     ' + ConfigFile);
@@ -862,44 +862,44 @@ end;
 { ------------------------------------------------------------- tabell -- }
 
 type
-  TKommando = record
+  TCommand = record
     Name_: string;
-    Hjelp: string;
+    Help: string;
   end;
 
 const
-  Kommandoer: array[0..21] of TKommando = (
-    (Name_: 'about';            Hjelp: 'what this app is configured with'),
-    (Name_: 'routes';           Hjelp: 'the routing table'),
-    (Name_: 'migrate';          Hjelp: 'run pending migrations'),
-    (Name_: 'migrate:status';   Hjelp: 'what has run and what has not'),
-    (Name_: 'migrate:rollback'; Hjelp: 'roll back the last batch (--step=N)'),
-    (Name_: 'migrate:reset';    Hjelp: 'roll back everything'),
-    (Name_: 'migrate:fresh';    Hjelp: 'drop all tables, then migrate (--seed)'),
-    (Name_: 'migrate:refresh';  Hjelp: 'reset, then migrate (--seed)'),
-    (Name_: 'db:seed';          Hjelp: 'run the seeders (--class=Name)'),
-    (Name_: 'db:show';          Hjelp: 'tables in the database'),
-    (Name_: 'db:table';         Hjelp: 'columns, indexes and keys of one table'),
-    (Name_: 'db:wipe';          Hjelp: 'drop every table (--force in production)'),
-    (Name_: 'schema';           Hjelp: 'generate typed columns from the database'),
-    (Name_: 'queue:work';       Hjelp: 'run the queue until interrupted'),
-    (Name_: 'queue:status';     Hjelp: 'counters for the queue'),
-    (Name_: 'schedule:list';    Hjelp: 'the schedule'),
-    (Name_: 'schedule:run';     Hjelp: 'dispatch what is due, once'),
-    (Name_: 'cache:clear';      Hjelp: 'empty the cache'),
-    (Name_: 'down';             Hjelp: 'maintenance mode on'),
-    (Name_: 'up';               Hjelp: 'maintenance mode off'),
-    (Name_: 'env';              Hjelp: 'the current environment'),
-    (Name_: 'list';             Hjelp: 'these commands'));
+  Commands: array[0..21] of TCommand = (
+    (Name_: 'about';            Help: 'what this app is configured with'),
+    (Name_: 'routes';           Help: 'the routing table'),
+    (Name_: 'migrate';          Help: 'run pending migrations'),
+    (Name_: 'migrate:status';   Help: 'what has run and what has not'),
+    (Name_: 'migrate:rollback'; Help: 'roll back the last batch (--step=N)'),
+    (Name_: 'migrate:reset';    Help: 'roll back everything'),
+    (Name_: 'migrate:fresh';    Help: 'drop all tables, then migrate (--seed)'),
+    (Name_: 'migrate:refresh';  Help: 'reset, then migrate (--seed)'),
+    (Name_: 'db:seed';          Help: 'run the seeders (--class=Name)'),
+    (Name_: 'db:show';          Help: 'tables in the database'),
+    (Name_: 'db:table';         Help: 'columns, indexes and keys of one table'),
+    (Name_: 'db:wipe';          Help: 'drop every table (--force in production)'),
+    (Name_: 'schema';           Help: 'generate typed columns from the database'),
+    (Name_: 'queue:work';       Help: 'run the queue until interrupted'),
+    (Name_: 'queue:status';     Help: 'counters for the queue'),
+    (Name_: 'schedule:list';    Help: 'the schedule'),
+    (Name_: 'schedule:run';     Help: 'dispatch what is due, once'),
+    (Name_: 'cache:clear';      Help: 'empty the cache'),
+    (Name_: 'down';             Help: 'maintenance mode on'),
+    (Name_: 'up';               Help: 'maintenance mode off'),
+    (Name_: 'env';              Help: 'the current environment'),
+    (Name_: 'list';             Help: 'these commands'));
 
 function ConsoleCommands: TStringArray;
 var
   I: Integer;
 begin
   Result := nil;
-  SetLength(Result, Length(Kommandoer));
-  for I := Low(Kommandoer) to High(Kommandoer) do
-    Result[I] := Kommandoer[I].Name_;
+  SetLength(Result, Length(Commands));
+  for I := Low(Commands) to High(Commands) do
+    Result[I] := Commands[I].Name_;
 end;
 
 procedure CmdList;
@@ -908,8 +908,8 @@ var
 begin
   Si('Commands this app answers to:');
   Si('');
-  for I := Low(Kommandoer) to High(Kommandoer) do
-    Si(Format('  %-18s %s', [Kommandoer[I].Name_, Kommandoer[I].Hjelp]));
+  for I := Low(Commands) to High(Commands) do
+    Si(Format('  %-18s %s', [Commands[I].Name_, Commands[I].Help]));
 end;
 
 function RunConsole: Boolean;

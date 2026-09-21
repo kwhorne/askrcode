@@ -85,9 +85,9 @@ begin
   end;
 end;
 
-procedure Like(const What, Forventet, Fikk: string);
+procedure Like(const What, Expected, Got: string);
 begin
-  if Forventet = Fikk then
+  if Expected = Got then
   begin
     Inc(Bestatt);
     WriteLn('  ok    ', What);
@@ -96,14 +96,14 @@ begin
   begin
     Inc(Feilet);
     WriteLn('  FEIL  ', What);
-    WriteLn('        forventet: ', Forventet);
-    WriteLn('        fikk:      ', Fikk);
+    WriteLn('        forventet: ', Expected);
+    WriteLn('        fikk:      ', Got);
   end;
 end;
 
-procedure LikeI(const What: string; Forventet, Fikk: Int64);
+procedure LikeI(const What: string; Expected, Got: Int64);
 begin
-  Like(What, IntToStr(Forventet), IntToStr(Fikk));
+  Like(What, IntToStr(Expected), IntToStr(Got));
 end;
 
 { Count_ prepared statements serveren har åpne akkurat nå. }
@@ -117,7 +117,7 @@ begin
   Result := R.AsInt64(0, 1);
 end;
 
-procedure Skjema(C: TDbConnection; A: TArena);
+procedure Schema_(C: TDbConnection; A: TArena);
 begin
   C.Exec(A, 'DROP TABLE IF EXISTS askr_order');
   C.Exec(A, 'DROP TABLE IF EXISTS askr_customer');
@@ -241,7 +241,7 @@ end;
 procedure NornDelen(C: TDbConnection; A: TArena);
 var
   M: TMigrator;
-  Skjema: TDbSchema;
+  Schema_: TDbSchema;
   T: TDbTable;
   Kol: TDbColumn;
   I: Integer;
@@ -263,12 +263,12 @@ begin
   end;
 
   Start('norn: introspeksjon');
-  Skjema := IntrospectSchema(C);
+  Schema_ := IntrospectSchema(C);
   try
-    Ok('fant norn_customer', Skjema.Table('norn_customer') <> nil);
-    Ok('fant norn_order', Skjema.Table('norn_order') <> nil);
+    Ok('fant norn_customer', Schema_.Table('norn_customer') <> nil);
+    Ok('fant norn_order', Schema_.Table('norn_order') <> nil);
 
-    T := Skjema.Table('norn_customer');
+    T := Schema_.Table('norn_customer');
     Like('primærnøkkelen er id', 'id', T.PrimaryKey);
     LikeI('seks kolonner', 6, T.ColumnCount);
 
@@ -310,7 +310,7 @@ begin
         FantIndeks := True;
     Ok('unik-indeksen på email er markert unik', FantIndeks);
 
-    T := Skjema.Table('norn_order');
+    T := Schema_.Table('norn_order');
     LikeI('én fremmednøkkel', 1, T.ForeignKeyCount);
     if T.ForeignKeyCount > 0 then
     begin
@@ -320,7 +320,7 @@ begin
     end;
     Ok('created_at finnes', T.HasColumn('created_at'));
   finally
-    Skjema.Free;
+    Schema_.Free;
   end;
 
   Start('norn: tilbakerulling');
@@ -330,12 +330,12 @@ begin
   finally
     M.Free;
   end;
-  Skjema := IntrospectSchema(C);
+  Schema_ := IntrospectSchema(C);
   try
-    Ok('norn_customer er borte', Skjema.Table('norn_customer') = nil);
-    Ok('norn_order er borte', Skjema.Table('norn_order') = nil);
+    Ok('norn_customer er borte', Schema_.Table('norn_customer') = nil);
+    Ok('norn_order er borte', Schema_.Table('norn_order') = nil);
   finally
-    Skjema.Free;
+    Schema_.Free;
   end;
   C.Exec(A, 'DROP TABLE IF EXISTS askr_migrations');
 end;
@@ -367,7 +367,7 @@ begin
     WriteLn('        server: ', R.Value(0, 0).ToString,
             '   klient: ', MySqlClientVersion);
 
-    Skjema(C, A);
+    Schema_(C, A);
 
     Start('innsetting og id');
     Id := C.InsertGetId(A,

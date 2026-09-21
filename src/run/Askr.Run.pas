@@ -134,7 +134,7 @@ var
   GSrc: string;
   GPos: Integer;
   GLine: Integer;
-  GTok: TToken;
+  GTokens: TToken;
   GFile: string;
 
   GDsn: string;
@@ -153,10 +153,10 @@ end;
 { The nearest name, for "did you mean". An error message that only says
   something does not exist is half the job when the schema is sitting right
   next to it. }
-function Avstand(const A, B: string): Integer;
+function Distance(const A, B: string): Integer;
 var
   D: array of array of Integer;
-  I, J, Kost: Integer;
+  I, J, Cost: Integer;
 begin
   SetLength(D, Length(A) + 1, Length(B) + 1);
   for I := 0 to Length(A) do D[I][0] := I;
@@ -164,31 +164,31 @@ begin
   for I := 1 to Length(A) do
     for J := 1 to Length(B) do
     begin
-      if LowerCase(A[I]) = LowerCase(B[J]) then Kost := 0 else Kost := 1;
+      if LowerCase(A[I]) = LowerCase(B[J]) then Cost := 0 else Cost := 1;
       D[I][J] := D[I - 1][J] + 1;
       if D[I][J - 1] + 1 < D[I][J] then D[I][J] := D[I][J - 1] + 1;
-      if D[I - 1][J - 1] + Kost < D[I][J] then D[I][J] := D[I - 1][J - 1] + Kost;
+      if D[I - 1][J - 1] + Cost < D[I][J] then D[I][J] := D[I - 1][J - 1] + Cost;
     end;
   Result := D[Length(A)][Length(B)];
 end;
 
-function Mente(const Ukjent: string; const Kandidater: TStringArray): string;
+function DidYouMean(const Unknown_: string; const Candidates: TStringArray): string;
 var
   I, Best, D: Integer;
 begin
   Result := '';
   Best := MaxInt;
-  for I := 0 to High(Kandidater) do
+  for I := 0 to High(Candidates) do
   begin
-    D := Avstand(Ukjent, Kandidater[I]);
+    D := Distance(Unknown_, Candidates[I]);
     if D < Best then
     begin
       Best := D;
-      Result := Kandidater[I];
+      Result := Candidates[I];
     end;
   end;
   { Over en tredjedel av navnet er feil — da er gjettet verre enn ingenting. }
-  if (Result = '') or (Best > (Length(Ukjent) div 2) + 1) then
+  if (Result = '') or (Best > (Length(Unknown_) div 2) + 1) then
     Result := '';
 end;
 
@@ -214,11 +214,11 @@ begin
       Break;
   end;
 
-  GTok.Line := GLine;
+  GTokens.Line := GLine;
   if GPos > Length(GSrc) then
   begin
-    GTok.Kind := tkEnd;
-    GTok.Text_ := '';
+    GTokens.Kind := tkEnd;
+    GTokens.Text_ := '';
     Exit;
   end;
 
@@ -227,8 +227,8 @@ begin
     Inc(GPos);
     Start := GPos;
     while (GPos <= Length(GSrc)) and (GSrc[GPos] <> '"') do Inc(GPos);
-    GTok.Kind := tkString;
-    GTok.Text_ := Copy(GSrc, Start, GPos - Start);
+    GTokens.Kind := tkString;
+    GTokens.Text_ := Copy(GSrc, Start, GPos - Start);
     Inc(GPos);
     Exit;
   end;
@@ -240,8 +240,8 @@ begin
     while (GPos <= Length(GSrc)) and (GSrc[GPos] in ['0'..'9', '.']) do Inc(GPos);
     if GPos > Start + Ord(GSrc[Start] = '-') then
     begin
-      GTok.Kind := tkNumber;
-      GTok.Text_ := Copy(GSrc, Start, GPos - Start);
+      GTokens.Kind := tkNumber;
+      GTokens.Text_ := Copy(GSrc, Start, GPos - Start);
       Exit;
     end;
     GPos := Start;
@@ -252,8 +252,8 @@ begin
     Start := GPos;
     while (GPos <= Length(GSrc)) and
           (GSrc[GPos] in ['a'..'z', 'A'..'Z', '0'..'9', '_']) do Inc(GPos);
-    GTok.Kind := tkIdent;
-    GTok.Text_ := Copy(GSrc, Start, GPos - Start);
+    GTokens.Kind := tkIdent;
+    GTokens.Text_ := Copy(GSrc, Start, GPos - Start);
     Exit;
   end;
 
@@ -261,38 +261,38 @@ begin
   Start := GPos;
   if (GPos + 1 <= Length(GSrc)) then
   begin
-    GTok.Text_ := Copy(GSrc, GPos, 2);
-    if (GTok.Text_ = '==') or (GTok.Text_ = '!=') or (GTok.Text_ = '<=') or
-       (GTok.Text_ = '>=') or (GTok.Text_ = '->') then
+    GTokens.Text_ := Copy(GSrc, GPos, 2);
+    if (GTokens.Text_ = '==') or (GTokens.Text_ = '!=') or (GTokens.Text_ = '<=') or
+       (GTokens.Text_ = '>=') or (GTokens.Text_ = '->') then
     begin
       Inc(GPos, 2);
-      GTok.Kind := tkOp;
+      GTokens.Kind := tkOp;
       Exit;
     end;
   end;
-  GTok.Kind := tkOp;
-  GTok.Text_ := GSrc[Start];
+  GTokens.Kind := tkOp;
+  GTokens.Text_ := GSrc[Start];
   Inc(GPos);
 end;
 
-function ErIdent(const S: string): Boolean;
+function IsIdent(const S: string): Boolean;
 begin
-  Result := (GTok.Kind = tkIdent) and (GTok.Text_ = S);
+  Result := (GTokens.Kind = tkIdent) and (GTokens.Text_ = S);
 end;
 
 procedure Expect(const S: string);
 begin
-  if (GTok.Text_ <> S) or
-     ((GTok.Kind <> tkIdent) and (GTok.Kind <> tkOp)) then
-    Err(GTok.Line, Format('expected "%s", found "%s"', [S, GTok.Text_]));
+  if (GTokens.Text_ <> S) or
+     ((GTokens.Kind <> tkIdent) and (GTokens.Kind <> tkOp)) then
+    Err(GTokens.Line, Format('expected "%s", found "%s"', [S, GTokens.Text_]));
   NextToken;
 end;
 
 function ExpectIdent: string;
 begin
-  if GTok.Kind <> tkIdent then
-    Err(GTok.Line, Format('expected a name, found "%s"', [GTok.Text_]));
-  Result := GTok.Text_;
+  if GTokens.Kind <> tkIdent then
+    Err(GTokens.Line, Format('expected a name, found "%s"', [GTokens.Text_]));
+  Result := GTokens.Text_;
   NextToken;
 end;
 
@@ -315,7 +315,7 @@ procedure ParseModel;
 var
   M: TModelDecl;
 begin
-  M.Line := GTok.Line;
+  M.Line := GTokens.Line;
   NextToken;
   M.Name := ExpectIdent;
   Expect('from');
@@ -332,13 +332,13 @@ var
   O: TOrderTerm;
 begin
   FillChar(Q, SizeOf(Q), 0);
-  Q.Line := GTok.Line;
+  Q.Line := GTokens.Line;
   NextToken;
 
   { query<M> is a generic query. One declaration, one concrete function per
     model in the for list. This is what Pascal cannot express, and the
     reason Rún exists. }
-  if GTok.Text_ = '<' then
+  if GTokens.Text_ = '<' then
   begin
     NextToken;
     Q.TypeParam := ExpectIdent;
@@ -348,23 +348,23 @@ begin
   Q.Name := ExpectIdent;
 
   Expect('(');
-  while GTok.Text_ <> ')' do
+  while GTokens.Text_ <> ')' do
   begin
     P.Name := ExpectIdent;
     Expect(':');
-    P.Kind := KindFromName(ExpectIdent, GTok.Line);
+    P.Kind := KindFromName(ExpectIdent, GTokens.Line);
     SetLength(Q.Params, Length(Q.Params) + 1);
     Q.Params[High(Q.Params)] := P;
-    if GTok.Text_ = ',' then
+    if GTokens.Text_ = ',' then
       NextToken;
   end;
   Expect(')');
 
   { -> M gir én rad, -> [M] gir mange. }
-  if GTok.Text_ = '->' then
+  if GTokens.Text_ = '->' then
   begin
     NextToken;
-    if GTok.Text_ = '[' then
+    if GTokens.Text_ = '[' then
     begin
       NextToken;
       ExpectIdent;
@@ -377,15 +377,15 @@ begin
     end;
   end;
 
-  if ErIdent('for') then
+  if IsIdent('for') then
   begin
     if Q.TypeParam = '' then
-      Err(GTok.Line, '"for" belongs to a generic query: query<M> Name(...) -> M for A, B');
+      Err(GTokens.Line, '"for" belongs to a generic query: query<M> Name(...) -> M for A, B');
     NextToken;
     repeat
       SetLength(Q.For_, Length(Q.For_) + 1);
       Q.For_[High(Q.For_)] := ExpectIdent;
-      if GTok.Text_ = ',' then
+      if GTokens.Text_ = ',' then
         NextToken
       else
         Break;
@@ -397,7 +397,7 @@ begin
 
   { A generic query that only fetches on the primary key needs no body —
     "from M where id == id" is understood. }
-  if (Q.TypeParam <> '') and (GTok.Text_ <> ':') then
+  if (Q.TypeParam <> '') and (GTokens.Text_ <> ':') then
   begin
     Q.ModelName := Q.TypeParam;
     Q.Single := True;
@@ -418,98 +418,98 @@ begin
   Expect('from');
   Q.ModelName := ExpectIdent;
   if (Q.TypeParam <> '') and (Q.ModelName <> Q.TypeParam) then
-    Err(GTok.Line, Format('a generic query selects from "%s", not "%s"', [Q.TypeParam, Q.ModelName]));
+    Err(GTokens.Line, Format('a generic query selects from "%s", not "%s"', [Q.TypeParam, Q.ModelName]));
 
-  while (GTok.Kind = tkIdent) and
-        ((GTok.Text_ = 'where') or (GTok.Text_ = 'order') or
-         (GTok.Text_ = 'limit') or (GTok.Text_ = 'offset') or
-         (GTok.Text_ = 'with')) do
+  while (GTokens.Kind = tkIdent) and
+        ((GTokens.Text_ = 'where') or (GTokens.Text_ = 'order') or
+         (GTokens.Text_ = 'limit') or (GTokens.Text_ = 'offset') or
+         (GTokens.Text_ = 'with')) do
   begin
-    if GTok.Text_ = 'where' then
+    if GTokens.Text_ = 'where' then
     begin
       NextToken;
       repeat
         FillChar(W, SizeOf(W), 0);
-        W.Line := GTok.Line;
+        W.Line := GTokens.Line;
         W.Col := ExpectIdent;
 
         { "is null" and "is not null" have no right-hand side. }
-        if ErIdent('is') then
+        if IsIdent('is') then
         begin
           NextToken;
-          if ErIdent('not') then
+          if IsIdent('not') then
           begin
             NextToken;
             W.Op := 'is not';
           end
           else
             W.Op := 'is';
-          if not ErIdent('null') then
-            Err(GTok.Line, '"is" must be followed by "null" or "not null"');
+          if not IsIdent('null') then
+            Err(GTokens.Line, '"is" must be followed by "null" or "not null"');
           NextToken;
           W.HasOperand := False;
         end
         else
         begin
-          if ErIdent('like') then
+          if IsIdent('like') then
           begin
             W.Op := 'like';
             NextToken;
           end
           else
           begin
-            if GTok.Kind <> tkOp then
-              Err(GTok.Line, 'ventet en sammenlikning');
-            W.Op := GTok.Text_;
+            if GTokens.Kind <> tkOp then
+              Err(GTokens.Line, 'ventet en sammenlikning');
+            W.Op := GTokens.Text_;
             if (W.Op <> '==') and (W.Op <> '!=') and (W.Op <> '<') and
                (W.Op <> '<=') and (W.Op <> '>') and (W.Op <> '>=') then
-              Err(GTok.Line, Format('"%s" is not a comparison', [W.Op]));
+              Err(GTokens.Line, Format('"%s" is not a comparison', [W.Op]));
             NextToken;
           end;
           W.HasOperand := True;
-          case GTok.Kind of
+          case GTokens.Kind of
             tkString:
               begin
                 W.IsParam := False;
-                W.Operand := GTok.Text_;
+                W.Operand := GTokens.Text_;
                 W.LitKind := rkText;
               end;
             tkNumber:
               begin
                 W.IsParam := False;
-                W.Operand := GTok.Text_;
-                if Pos('.', GTok.Text_) > 0 then
+                W.Operand := GTokens.Text_;
+                if Pos('.', GTokens.Text_) > 0 then
                   W.LitKind := rkFloat
                 else
                   W.LitKind := rkInt;
               end;
             tkIdent:
-              if (GTok.Text_ = 'true') or (GTok.Text_ = 'false') then
+              if (GTokens.Text_ = 'true') or (GTokens.Text_ = 'false') then
               begin
                 W.IsParam := False;
-                W.Operand := GTok.Text_;
+                W.Operand := GTokens.Text_;
                 W.LitKind := rkBool;
               end
               else
               begin
                 W.IsParam := True;
-                W.Operand := GTok.Text_;
+                W.Operand := GTokens.Text_;
               end;
           else
-            Err(GTok.Line, 'expected a value or a parameter name');
+            Err(GTokens.Line, 'expected a value or a parameter name');
           end;
           NextToken;
         end;
 
         SetLength(Q.Wheres, Length(Q.Wheres) + 1);
         Q.Wheres[High(Q.Wheres)] := W;
-        if ErIdent('and') then
+        if IsIdent('and') then
           NextToken
         else
           Break;
       until False;
     end
-    else if GTok.Text_ = 'with' then
+    else if GTokens.Text_ = 'with' then
     begin
       { "with" is reserved in Pascal and cannot be used for eager loading
         there. Here it can. The relation is looked up in the foreign keys
@@ -518,49 +518,49 @@ begin
       repeat
         SetLength(Q.Withs, Length(Q.Withs) + 1);
         Q.Withs[High(Q.Withs)] := ExpectIdent;
-        if GTok.Text_ = ',' then
+        if GTokens.Text_ = ',' then
           NextToken
         else
           Break;
       until False;
     end
-    else if GTok.Text_ = 'order' then
+    else if GTokens.Text_ = 'order' then
     begin
       NextToken;
       Expect('by');
       repeat
         FillChar(O, SizeOf(O), 0);
-        O.Line := GTok.Line;
+        O.Line := GTokens.Line;
         O.Col := ExpectIdent;
-        if ErIdent('desc') then
+        if IsIdent('desc') then
         begin
           O.Desc := True;
           NextToken;
         end
-        else if ErIdent('asc') then
+        else if IsIdent('asc') then
           NextToken;
         SetLength(Q.Orders, Length(Q.Orders) + 1);
         Q.Orders[High(Q.Orders)] := O;
-        if GTok.Text_ = ',' then
+        if GTokens.Text_ = ',' then
           NextToken
         else
           Break;
       until False;
     end
-    else if GTok.Text_ = 'offset' then
+    else if GTokens.Text_ = 'offset' then
     begin
       NextToken;
-      if GTok.Kind <> tkNumber then
-        Err(GTok.Line, 'offset expects a number');
-      Q.Offset := StrToIntDef(GTok.Text_, 0);
+      if GTokens.Kind <> tkNumber then
+        Err(GTokens.Line, 'offset expects a number');
+      Q.Offset := StrToIntDef(GTokens.Text_, 0);
       NextToken;
     end
     else
     begin
       NextToken;
-      if GTok.Kind <> tkNumber then
-        Err(GTok.Line, 'limit expects a number');
-      Q.Limit := StrToIntDef(GTok.Text_, 0);
+      if GTokens.Kind <> tkNumber then
+        Err(GTokens.Line, 'limit expects a number');
+      Q.Limit := StrToIntDef(GTokens.Text_, 0);
       NextToken;
     end;
   end;
@@ -576,23 +576,23 @@ begin
   GLine := 1;
   NextToken;
 
-  if not ErIdent('db') then
-    Err(GTok.Line, 'the file must start with db "<dsn>"');
+  if not IsIdent('db') then
+    Err(GTokens.Line, 'the file must start with db "<dsn>"');
   NextToken;
-  if GTok.Kind <> tkString then
-    Err(GTok.Line, 'db expects a quoted DSN');
-  GDsn := GTok.Text_;
+  if GTokens.Kind <> tkString then
+    Err(GTokens.Line, 'db expects a quoted DSN');
+  GDsn := GTokens.Text_;
   NextToken;
 
-  while GTok.Kind <> tkEnd do
+  while GTokens.Kind <> tkEnd do
   begin
-    if ErIdent('model') then
+    if IsIdent('model') then
       ParseModel
-    else if ErIdent('query') then
+    else if IsIdent('query') then
       ParseQuery
     else
-      Err(GTok.Line,
-        Format('expected "model" or "query", found "%s"', [GTok.Text_]));
+      Err(GTokens.Line,
+        Format('expected "model" or "query", found "%s"', [GTokens.Text_]));
   end;
 end;
 
@@ -635,12 +635,12 @@ begin
 end;
 
 { " Did you mean X?" only when the guess is worth something. }
-function IfThenText(const Gjett: string): string;
+function IfThenText(const Guess: string): string;
 begin
-  if Gjett = '' then
+  if Guess = '' then
     Result := ''
   else
-    Result := Format(' Did you mean "%s"?', [Gjett]);
+    Result := Format(' Did you mean "%s"?', [Guess]);
 end;
 
 function TableFor(const ModelName: string; Line: Integer): TDbTable;
@@ -660,7 +660,7 @@ begin
         for J := 0 to GSchema.TableCount - 1 do
           Name[J] := GSchema.TableAt(J).Name;
         Err(Line, Format('table "%s" does not exist in the database.%s',
-          [Table_, IfThenText(Mente(Table_, Name))]));
+          [Table_, IfThenText(DidYouMean(Table_, Name))]));
       end;
       Exit;
     end;
@@ -689,7 +689,7 @@ begin
     end;
 end;
 
-function SiterIdent(const S: string): string;
+function QuoteIdent_(const S: string): string;
 begin
   if GDialect = sdMySql then
     Result := '`' + StringReplace(S, '`', '``', [rfReplaceAll]) + '`'
@@ -697,7 +697,7 @@ begin
     Result := '"' + StringReplace(S, '"', '""', [rfReplaceAll]) + '"';
 end;
 
-function Plassholder(N: Integer): string;
+function Placeholder(N: Integer): string;
 begin
   { The dialect is known at comptime, because the DSN is in the source.
     The Rún code never mentions it. }
@@ -722,7 +722,7 @@ begin
     for I := 0 to T.ColumnCount - 1 do
       Name[I] := T.Column(I).Name;
     Err(Line, Format('table "%s" has no column "%s".%s',
-      [T.Name, Col, IfThenText(Mente(Col, Name))]));
+      [T.Name, Col, IfThenText(DidYouMean(Col, Name))]));
   end;
   C := T.Column(Idx);
   Result := KindFromSql(C.SqlType, C.Scale);
@@ -732,16 +732,16 @@ function ParamKind(const Q: TQueryDecl; const Name: string;
   Line: Integer): TRunKind;
 var
   I: Integer;
-  Kandidater: TStringArray;
+  Candidates: TStringArray;
 begin
   for I := 0 to High(Q.Params) do
     if Q.Params[I].Name = Name then
       Exit(Q.Params[I].Kind);
-  SetLength(Kandidater, Length(Q.Params));
+  SetLength(Candidates, Length(Q.Params));
   for I := 0 to High(Q.Params) do
-    Kandidater[I] := Q.Params[I].Name;
+    Candidates[I] := Q.Params[I].Name;
   Err(Line, Format('"%s" is neither a parameter nor a value.%s',
-    [Name, IfThenText(Mente(Name, Kandidater))]));
+    [Name, IfThenText(DidYouMean(Name, Candidates))]));
   Result := rkText;
 end;
 
@@ -752,26 +752,26 @@ end;
 procedure CheckComparison(T: TDbTable; const Q: TQueryDecl;
   const W: TCmp);
 var
-  Venstre, Hoyre: TRunKind;
+  Left_, Right_: TRunKind;
 begin
-  Venstre := ColumnKind(T, W.Col, W.Line);
+  Left_ := ColumnKind(T, W.Col, W.Line);
   if W.IsParam then
-    Hoyre := ParamKind(Q, W.Operand, W.Line)
+    Right_ := ParamKind(Q, W.Operand, W.Line)
   else
-    Hoyre := W.LitKind;
+    Right_ := W.LitKind;
 
   { int against money and float is fine — numbers are numbers. Anything
     else is not. }
-  if Venstre = Hoyre then
+  if Left_ = Right_ then
     Exit;
-  if (Venstre in [rkInt, rkMoney, rkFloat]) and
-     (Hoyre in [rkInt, rkMoney, rkFloat]) then
+  if (Left_ in [rkInt, rkMoney, rkFloat]) and
+     (Right_ in [rkInt, rkMoney, rkFloat]) then
     Exit;
 
   Err(W.Line, Format(
     '"%s" is %s in table %s, but is compared with %s. ' +
     'The schema was read from %s.',
-    [W.Col, KindName(Venstre), T.Name, KindName(Hoyre), GDsn]));
+    [W.Col, KindName(Left_), T.Name, KindName(Right_), GDsn]));
 end;
 
 { Relations are derived from the foreign keys in the database. No
@@ -779,24 +779,24 @@ end;
   customers.id, then Customer has a relation called "orders". That is the
   whole point of comptime — the schema knows this already, and then nobody
   should write it a second time. }
-function RelasjonerFor(T: TDbTable): TRelationArray;
+function RelationsFor(T: TDbTable): TRelationArray;
 var
   I, J: Integer;
-  Annen: TDbTable;
+  Other: TDbTable;
   FK: TDbForeignKey;
   R: TRelation;
 begin
   Result := nil;
   for I := 0 to GSchema.TableCount - 1 do
   begin
-    Annen := GSchema.TableAt(I);
-    for J := 0 to Annen.ForeignKeyCount - 1 do
+    Other := GSchema.TableAt(I);
+    for J := 0 to Other.ForeignKeyCount - 1 do
     begin
-      FK := Annen.ForeignKey(J);
+      FK := Other.ForeignKey(J);
       if not SameText(FK.RefTable, T.Name) then
         Continue;
-      R.Name := Annen.Name;
-      R.Table := Annen.Name;
+      R.Name := Other.Name;
+      R.Table := Other.Name;
       R.ForeignKey := FK.Column;
       R.LocalKey := FK.RefColumn;
       SetLength(Result, Length(Result) + 1);
@@ -812,7 +812,7 @@ var
   I: Integer;
   Name_: TStringArray;
 begin
-  Rels := RelasjonerFor(T);
+  Rels := RelationsFor(T);
   for I := 0 to High(Rels) do
     if SameText(Rels[I].Name, Name) then
       Exit(Rels[I]);
@@ -824,7 +824,7 @@ begin
       'load with "with"', [T.Name]))
   else
     Err(Line, Format('%s has no relation "%s".%s',
-      [T.Name, Name, IfThenText(Mente(Name, Name_))]));
+      [T.Name, Name, IfThenText(DidYouMean(Name, Name_))]));
   Result.Name := '';
 end;
 
@@ -852,7 +852,7 @@ var
   Mark: array of Byte;   { 0 untouched, 1 in progress, 2 done }
   Ut: TStringArray;
 
-  function IndeksFor(const Name: string): Integer;
+  function IndexFor(const Name: string): Integer;
   var
     K: Integer;
   begin
@@ -862,7 +862,7 @@ var
     Result := -1;
   end;
 
-  procedure Besok(Idx: Integer);
+  procedure Visit(Idx: Integer);
   var
     T: TDbTable;
     Rels: TRelationArray;
@@ -880,15 +880,15 @@ var
     T := GSchema.Table(GModels[Idx].Table);
     if T <> nil then
     begin
-      Rels := RelasjonerFor(T);
+      Rels := RelationsFor(T);
       for K := 0 to High(Rels) do
       begin
         RelModel := ModelForTable(Rels[K].Table);
         if RelModel = '' then
           Continue;
-        D := IndeksFor(RelModel);
+        D := IndexFor(RelModel);
         if (D >= 0) and (D <> Idx) then
-          Besok(D);
+          Visit(D);
       end;
     end;
     Mark[Idx] := 2;
@@ -902,7 +902,7 @@ begin
   SetLength(Mark, Length(GModels));
   Ut := nil;
   for I := 0 to High(GModels) do
-    Besok(I);
+    Visit(I);
   Order_ := Ut;
 end;
 
@@ -910,7 +910,7 @@ end;
   in the for list, with the type parameter substituted. This is the answer
   to Where<T> being impossible in Pascal: we write out the concrete variants
   instead of demanding them of the compiler. }
-procedure Monomorfiser;
+procedure Monomorphize;
 var
   I, J: Integer;
   Q, K: TQueryDecl;
@@ -948,7 +948,7 @@ begin
   Result := Op;
 end;
 
-function BindUttrykk(const Q: TQueryDecl; const W: TCmp): string;
+function BindExpr(const Q: TQueryDecl; const W: TCmp): string;
 var
   K: TRunKind;
 begin
@@ -982,12 +982,12 @@ begin
   for I := 0 to T.ColumnCount - 1 do
   begin
     if I > 0 then Result := Result + ', ';
-    Result := Result + SiterIdent(T.Column(I).Name);
+    Result := Result + QuoteIdent_(T.Column(I).Name);
   end;
 end;
 
 function EmitQuery(var Ut: TStringList; const Q: TQueryDecl;
-  Grensesnitt: Boolean): string;
+  Iface: Boolean): string;
 var
   T, RT: TDbTable;
   I, PNo: Integer;
@@ -1012,13 +1012,13 @@ begin
 
   Result := Format('function %s(A: TArena; C: TDbConnection%s): %s;',
     [Q.Name, Args, Ret]);
-  if Grensesnitt then
+  if Iface then
   begin
     Ut.Add(Result);
     Exit;
   end;
 
-  Sql := 'SELECT ' + ColumnList(T) + ' FROM ' + SiterIdent(T.Name);
+  Sql := 'SELECT ' + ColumnList(T) + ' FROM ' + QuoteIdent_(T.Name);
 
   PNo := 0;
   Bind := '';
@@ -1029,13 +1029,13 @@ begin
     begin
       CheckComparison(T, Q, Q.Wheres[I]);
       if I > 0 then Sql := Sql + ' AND ';
-      Sql := Sql + SiterIdent(Q.Wheres[I].Col) + ' ';
+      Sql := Sql + QuoteIdent_(Q.Wheres[I].Col) + ' ';
       if Q.Wheres[I].HasOperand then
       begin
         Inc(PNo);
-        Sql := Sql + SqlOp(Q.Wheres[I].Op) + ' ' + Plassholder(PNo);
+        Sql := Sql + SqlOp(Q.Wheres[I].Op) + ' ' + Placeholder(PNo);
         if Bind <> '' then Bind := Bind + ', ';
-        Bind := Bind + BindUttrykk(Q, Q.Wheres[I]);
+        Bind := Bind + BindExpr(Q, Q.Wheres[I]);
       end
       else
         Sql := Sql + SqlOp(Q.Wheres[I].Op);
@@ -1049,7 +1049,7 @@ begin
     begin
       ColumnKind(T, Q.Orders[I].Col, Q.Orders[I].Line);
       if I > 0 then Sql := Sql + ', ';
-      Sql := Sql + SiterIdent(Q.Orders[I].Col);
+      Sql := Sql + QuoteIdent_(Q.Orders[I].Col);
       if Q.Orders[I].Desc then Sql := Sql + ' DESC';
     end;
   end;
@@ -1120,7 +1120,7 @@ begin
     Ut.Add('    end;');
     Ut.Add('    RR := C.Exec(A,');
     Ut.Add('      ' + QuotedStr('SELECT ' + ColumnList(RT) + ' FROM ' +
-           SiterIdent(RT.Name) + ' WHERE ' + SiterIdent(Rel.ForeignKey) +
+           QuoteIdent_(RT.Name) + ' WHERE ' + QuoteIdent_(Rel.ForeignKey) +
            ' IN (') + ' + Ids.ToString + '')'');');
     Ut.Add('    for I := 0 to High(Rows) do');
     Ut.Add('      for J := 0 to RR.RowCount - 1 do');
@@ -1143,7 +1143,7 @@ begin
 end;
 
 procedure EmitRowType(var Ut: TStringList; const M: TModelDecl;
-  Grensesnitt: Boolean);
+  Iface: Boolean);
 var
   T: TDbTable;
   I: Integer;
@@ -1153,9 +1153,9 @@ var
   RelModel: string;
 begin
   T := GSchema.Table(M.Table);
-  Rels := RelasjonerFor(T);
+  Rels := RelationsFor(T);
 
-  if Grensesnitt then
+  if Iface then
   begin
     Ut.Add(Format('  { %s — fields and types read from the schema at comptime }',
       [M.Table]));
@@ -1211,7 +1211,7 @@ begin
   Ut.Add('');
 end;
 
-function ModellIndeks(const Name: string): Integer;
+function ModelIndex(const Name: string): Integer;
 var
   I: Integer;
 begin
@@ -1240,9 +1240,9 @@ begin
   GConn := nil;
   { TToken has a string field. FillChar over it would have left a
     reference nobody releases. }
-  GTok.Text_ := '';
-  GTok.Line := 0;
-  GTok.Kind := tkEnd;
+  GTokens.Text_ := '';
+  GTokens.Line := 0;
+  GTokens.Kind := tkEnd;
 end;
 
 function Transpile(const InFile, OutFile, UnitName: string): TRunStats;
@@ -1250,8 +1250,8 @@ var
   Source_: TStringList;
   Ut: TStringList;
   I: Integer;
-  T0, TWasRead, TSkjema, TEmit: Int64;
-  Orden: TStringArray;
+  T0, TWasRead, TSchemaInfo, TEmit: Int64;
+  Order_: TStringArray;
 begin
   ResetState;
   T0 := MonotonicMs;
@@ -1269,7 +1269,7 @@ begin
     GConn := OpenDbConnection(GDsn);
     GDialect := GConn.Dialect;
     GSchema := IntrospectSchema(GConn);
-    TSkjema := MonotonicMs - T0 - TWasRead;
+    TSchemaInfo := MonotonicMs - T0 - TWasRead;
 
     for I := 0 to High(GModels) do
       if GSchema.Table(GModels[I].Table) = nil then
@@ -1290,30 +1290,30 @@ begin
     Ut.Add('  SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Urd.Driver;');
     Ut.Add('');
     Ut.Add('type');
-    SortModels(Orden);
-    for I := 0 to High(Orden) do
-      EmitRowType(Ut, GModels[ModellIndeks(Orden[I])], True);
-    Monomorfiser;
+    SortModels(Order_);
+    for I := 0 to High(Order_) do
+      EmitRowType(Ut, GModels[ModelIndex(Order_[I])], True);
+    Monomorphize;
     for I := 0 to High(GConcrete) do
       EmitQuery(Ut, GConcrete[I], True);
     Ut.Add('');
     Ut.Add('implementation');
     Ut.Add('');
-    for I := 0 to High(Orden) do
-      EmitRowType(Ut, GModels[ModellIndeks(Orden[I])], False);
+    for I := 0 to High(Order_) do
+      EmitRowType(Ut, GModels[ModelIndex(Order_[I])], False);
     for I := 0 to High(GConcrete) do
       EmitQuery(Ut, GConcrete[I], False);
     Ut.Add('end.');
 
     ForceDirectories(ExtractFilePath(OutFile));
     Ut.SaveToFile(OutFile);
-    TEmit := MonotonicMs - T0 - TWasRead - TSkjema;
+    TEmit := MonotonicMs - T0 - TWasRead - TSchemaInfo;
 
     Result.Models := Length(GModels);
     Result.Queries := Length(GConcrete);
     Result.Dialect := Copy(GDsn, 1, Pos(':', GDsn) - 1);
     Result.ParseMs := TWasRead;
-    Result.SchemaMs := TSkjema;
+    Result.SchemaMs := TSchemaInfo;
     Result.EmitMs := TEmit;
     Result.TotalMs := MonotonicMs - T0;
   finally

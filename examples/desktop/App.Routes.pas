@@ -113,28 +113,28 @@ end;
 
 function TNotesController.Index(Req: TRequest): TResponse;
 var
-  Liste: TNoteList;
+  Items: TNoteList;
 begin
-  Liste := AllNotes(Req.Arena);
+  Items := AllNotes(Req.Arena);
   Result := Inertia('Notes/Index',
-    ['notes', Liste,
-     'total', Int64(Liste.Count),
+    ['notes', Items,
+     'total', Int64(Items.Count),
      'skall', GetEnvironmentVariable('ASKR_SHELL')]);
 end;
 
 function TNotesController.Store(Req: TRequest): TResponse;
 var
   N: TNote;
-  Liste: TNoteList;
+  Items: TNoteList;
 begin
   N := Req.Arena.New<TNote>;
   Req.FillInto(N);
 
   if not N.Validate then
   begin
-    Liste := AllNotes(Req.Arena);
+    Items := AllNotes(Req.Arena);
     Exit(Inertia('Notes/Index',
-      ['notes', Liste, 'total', Int64(Liste.Count),
+      ['notes', Items, 'total', Int64(Items.Count),
        'errors', N.Errors, 'sendt', N,
        'skall', GetEnvironmentVariable('ASKR_SHELL')]));
   end;

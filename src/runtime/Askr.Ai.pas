@@ -328,7 +328,7 @@ begin
   FTimeoutMs := ATimeoutMs;
 end;
 
-function LagKlient(const ApiKey: string; TimeoutMs: Integer): THttpClient;
+function MakeClient(const ApiKey: string; TimeoutMs: Integer): THttpClient;
 begin
   Result := THttpClient.Create;
   Result.ReadTimeoutMs := TimeoutMs;
@@ -345,7 +345,7 @@ var
   K: THttpClient;
   R: THttpResponse;
 begin
-  K := LagKlient(ApiKey, FTimeoutMs);
+  K := MakeClient(ApiKey, FTimeoutMs);
   try
     R := K.Post(Url, Body, 'application/json');
     Status := R.Status;
@@ -361,7 +361,7 @@ var
   K: THttpClient;
   R: THttpResponse;
 begin
-  K := LagKlient(ApiKey, FTimeoutMs);
+  K := MakeClient(ApiKey, FTimeoutMs);
   try
     R := K.Stream('POST', Url, Body, 'application/json', Cb);
     Status := R.Status;
@@ -669,7 +669,7 @@ end;
 function TAiClient.ParseResponse(const Json: string): TAiResponse;
 var
   A: TArena;
-  Root, Content, Blokk, U, Inp: PJsonValue;
+  Root, Content, Block, U, Inp: PJsonValue;
   Err: SizeInt;
   T: string;
   N: Integer;
@@ -702,22 +702,22 @@ begin
     Content := JsonMember(Root, 'content');
     if Content <> nil then
     begin
-      Blokk := Content^.First;
+      Block := Content^.First;
       N := 0;
-      while Blokk <> nil do
+      while Block <> nil do
       begin
-        T := JsonAsString(JsonMember(Blokk, 'type'));
+        T := JsonAsString(JsonMember(Block, 'type'));
         if T = 'text' then
-          Result.Text := Result.Text + JsonAsString(JsonMember(Blokk, 'text'))
+          Result.Text := Result.Text + JsonAsString(JsonMember(Block, 'text'))
         else if T = 'thinking' then
           Result.Thinking := Result.Thinking +
-            JsonAsString(JsonMember(Blokk, 'thinking'))
+            JsonAsString(JsonMember(Block, 'thinking'))
         else if T = 'tool_use' then
         begin
           SetLength(Result.ToolCalls, N + 1);
-          Result.ToolCalls[N].Id := JsonAsString(JsonMember(Blokk, 'id'));
-          Result.ToolCalls[N].Name := JsonAsString(JsonMember(Blokk, 'name'));
-          Inp := JsonMember(Blokk, 'input');
+          Result.ToolCalls[N].Id := JsonAsString(JsonMember(Block, 'id'));
+          Result.ToolCalls[N].Name := JsonAsString(JsonMember(Block, 'name'));
+          Inp := JsonMember(Block, 'input');
           { The arguments are passed on as JSON text. Taking them apart here
             would have required the framework to know which fields the tool
             has — and that is precisely what the tool knows itself. }
@@ -727,7 +727,7 @@ begin
             Result.ToolCalls[N].InputJson := '{}';
           Inc(N);
         end;
-        Blokk := Blokk^.Next;
+        Block := Block^.Next;
       end;
     end;
   finally
@@ -805,7 +805,7 @@ var
   Root, D, U: PJsonValue;
   Err: SizeInt;
   T, Bit: string;
-  Fortsett: Boolean;
+  KeepGoing: Boolean;
 begin
   { Only data lines mean anything. The `event:` lines repeat what is in
     the JSON's own `type`, and comment lines (`:`) are heartbeats. }
@@ -832,12 +832,12 @@ begin
         if Bit = '' then
           Exit;
         FStreamText := FStreamText + Bit;
-        Fortsett := True;
+        KeepGoing := True;
         if Assigned(FDelta) then
-          Fortsett := FDelta(Bit)
+          KeepGoing := FDelta(Bit)
         else if Assigned(FDeltaProc) then
-          Fortsett := FDeltaProc(Bit);
-        if not Fortsett then
+          KeepGoing := FDeltaProc(Bit);
+        if not KeepGoing then
           FStreamStop := 'abort';
       end;
     end
@@ -968,13 +968,13 @@ function TAiClient.RunTools(const Prompt: string): TAiResponse;
 var
   Msgs: array of TAiMessage;
   Reply: TAiResponse;
-  I, Runde, N: Integer;
-  Resultat: string;
+  I, Round_, N: Integer;
+  Outcome: string;
 begin
   SetLength(Msgs, 1);
   Msgs[0] := UserMsg(Prompt);
 
-  for Runde := 1 to FMaxTurns do
+  for Round_ := 1 to FMaxTurns do
   begin
     Reply := Send(Msgs);
     if not Reply.WantsTool then
@@ -989,8 +989,8 @@ begin
     for I := 0 to High(Reply.ToolCalls) do
     begin
       try
-        Resultat := RunTool(Reply.ToolCalls[I]);
-        Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id, Resultat);
+        Outcome := RunTool(Reply.ToolCalls[I]);
+        Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id, Outcome);
       except
         on E: Exception do
           { A tool that raises is not a reason to take down the loop. The
@@ -1009,7 +1009,7 @@ end;
 
 function TAiClient.Structured(const Prompt, SchemaJson: string): string;
 const
-  Verktoey = 'respond';
+  Tools_ = 'respond';
 var
   Stored: array of TAiTool;
   Reply: TAiResponse;
@@ -1019,12 +1019,12 @@ begin
   Stored := Copy(FTools, 0, Length(FTools));
   try
     SetLength(FTools, 0);
-    AddTool(Verktoey,
+    AddTool(Tools_,
       'Respond with the requested structured data. Use this tool and ' +
       'nothing else.', SchemaJson, TAiToolHandlerProc(nil));
     { Send builds without tool_choice. Without it the model can answer with
       prose instead, and then "structured" is only a hope. }
-    Reply := SendForcing([UserMsg(Prompt)], Verktoey);
+    Reply := SendForcing([UserMsg(Prompt)], Tools_);
     if not Reply.WantsTool then
       raise EAiError.Create(0, 'no_structured_output',
         'The model answered with text instead of the requested structure.');

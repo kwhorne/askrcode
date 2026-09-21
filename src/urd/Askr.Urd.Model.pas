@@ -970,7 +970,7 @@ begin
 end;
 
 { CurrencyToSql gives 0.0000. In a message to a user that is 0. }
-function Lesbart(V: Currency): string;
+function Readable(V: Currency): string;
 begin
   Result := CurrencyToSql(V);
   if Pos('.', Result) > 0 then
@@ -989,7 +989,7 @@ begin
     Exit;
   if AsNum < V then
     Fail(Format('%s cannot be less than %s',
-      [FColumn, Lesbart(V)]));
+      [FColumn, Readable(V)]));
 end;
 
 function TFieldRules.Max(V: Currency): TFieldRules;
@@ -999,7 +999,7 @@ begin
     Exit;
   if AsNum > V then
     Fail(Format('%s cannot be greater than %s',
-      [FColumn, Lesbart(V)]));
+      [FColumn, Readable(V)]));
 end;
 
 function TFieldRules.Between(Lo, Hi: Currency): TFieldRules;
@@ -1009,7 +1009,7 @@ begin
     Exit;
   if (AsNum < Lo) or (AsNum > Hi) then
     Fail(Format('%s must be between %s and %s',
-      [FColumn, Lesbart(Lo), Lesbart(Hi)]));
+      [FColumn, Readable(Lo), Readable(Hi)]));
 end;
 
 function TFieldRules.OneOf(const Values: array of string): TFieldRules;

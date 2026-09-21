@@ -225,13 +225,13 @@ procedure AssertArenaStable(A: TArena; P: TTestProc; Iterations: Integer;
 var
   I: Integer;
   After_: PtrUInt;
-  Oppvarming: Integer;
+  Warmup_: Integer;
 begin
   Inc(GAsserts);
-  Oppvarming := Iterations div 4;
-  if Oppvarming < 10 then
-    Oppvarming := 10;
-  for I := 1 to Oppvarming do
+  Warmup_ := Iterations div 4;
+  if Warmup_ < 10 then
+    Warmup_ := 10;
+  for I := 1 to Warmup_ do
   begin
     A.Reset;
     P;
@@ -361,23 +361,23 @@ end;
 function RunTests: Integer;
 var
   I: Integer;
-  Forrige: string;
+  Previous: string;
   T0: Int64;
   Ran: Integer;
 begin
   GFailures := 0;
   GAsserts := 0;
   Ran := 0;
-  Forrige := #0;
+  Previous := #0;
   T0 := MonotonicMs;
 
   for I := 0 to High(GTests) do
   begin
-    if GTests[I].GroupName <> Forrige then
+    if GTests[I].GroupName <> Previous then
     begin
       WriteLn;
       WriteLn('  ', GTests[I].GroupName);
-      Forrige := GTests[I].GroupName;
+      Previous := GTests[I].GroupName;
     end;
 
     GCurrentFailed := False;

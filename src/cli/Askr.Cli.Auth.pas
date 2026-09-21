@@ -24,13 +24,13 @@ uses
 
 { Writes the model, the migrations and the controller. Does not touch
   app.lpr — the lines that have to go in there are printed at the end, or
-  inserted by InstallerRuter when the markers are there. }
-procedure LagAuth(const Rot: string; Force: Boolean);
+  inserted by InstallRoutes when the markers are there. }
+procedure MakeAuth(const Root: string; Force: Boolean);
 
 { Inserts the uses line and the routes in app.lpr if the markers from
   `askr new` are there. Returns False when they are not, and then the user
   has to do it themselves. }
-function InstallerRuter(const Rot: string): Boolean;
+function InstallRoutes(const Root: string): Boolean;
 
 implementation
 
@@ -42,9 +42,9 @@ const
 
 { ------------------------------------------------------------- modellen -- }
 
-procedure WriteUser(const Rot: string);
+procedure WriteUser(const Root: string);
 begin
-  Emit(IncludeTrailingPathDelimiter(Rot) + 'app/Models/App.Models.User.pas',
+  Emit(IncludeTrailingPathDelimiter(Root) + 'app/Models/App.Models.User.pas',
     'unit App.Models.User;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
     'interface' + #10 + #10 +
@@ -98,7 +98,7 @@ end;
 { The template is built line by line rather than as one chained string. A
   two-hundred-line controller written as `'...' + #10 +` is not readable for
   whoever has to change it. Quotes are doubled, as in all Pascal. }
-procedure WriteControllers(const Rot: string);
+procedure WriteControllers(const Root: string);
 var
   L: TStringList;
 
@@ -250,7 +250,7 @@ begin
     A('');
     A('{ The name is read from askr.toml at run time, not baked in by the');
     A('  scaffolding: change `name` there and the sidebar follows. }');
-    A('function AppNavn: string;');
+    A('function AppName: string;');
     A('begin');
     A('  Result := Cfg(''name'', ''Askr'');');
     A('end;');
@@ -259,15 +259,15 @@ begin
     A('  are narrow and centred, while the pages after signing in are an');
     A('  app. The same rule still applies: no npm, no network, no files');
     A('  next to the binary. }');
-    A('function Nav(const Href, Etikett, Aktiv: string): string;');
+    A('function NavLink(const Href, Caption, Active: string): string;');
     A('begin');
     A('  Result := ''<a href="'' + Esc(Href) + ''"'';');
-    A('  if Href = Aktiv then');
+    A('  if Href = Active then');
     A('    Result := Result + '' class="on" aria-current="page"'';');
-    A('  Result := Result + ''>'' + Esc(Etikett) + ''</a>'';');
+    A('  Result := Result + ''>'' + Esc(Caption) + ''</a>'';');
     A('end;');
     A('');
-    A('function AppShell(const Title, Aktiv, Name_, Body: string): string;');
+    A('function AppShell(const Title, Active, Name_, Body: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<!doctype html><html lang="en"><head><meta charset="utf-8">'' +');
@@ -334,11 +334,11 @@ begin
     A('    ''border-bottom:1px solid var(--line)}'' +');
     A('    ''.who{margin-top:1rem}main{padding:1.5rem 1rem}}'' +');
     A('    ''</style></head><body><div class="wrap"><aside>'' +');
-    A('    ''<div class="brand">'' + Esc(AppNavn) + ''</div>'' +');
+    A('    ''<div class="brand">'' + Esc(AppName) + ''</div>'' +');
     A('    ''<nav>'' +');
-    A('      Nav(''/dashboard'', ''Home'', Aktiv) +');
-    A('      Nav(''/settings/profile'', ''Profile'', Aktiv) +');
-    A('      Nav(''/settings/security'', ''Security'', Aktiv) +');
+    A('      NavLink(''/dashboard'', ''Home'', Active) +');
+    A('      NavLink(''/settings/profile'', ''Profile'', Active) +');
+    A('      NavLink(''/settings/security'', ''Security'', Active) +');
     A('    ''</nav>'' +');
     A('    ''<div class="who"><div class="n">'' + Esc(Name_) + ''</div>'' +');
     A('    ''<form method="post" action="/logout">'' + CsrfField +');
@@ -350,7 +350,7 @@ begin
     A('');
     A('{ $1 in Postgres, ? in MySQL and SQLite. The driver knows which;');
     A('  this code should not have to. }');
-    A('function Plassholder(N: Integer): string;');
+    A('function Placeholder(N: Integer): string;');
     A('var');
     A('  B: TStrBuilder;');
     A('begin');
@@ -359,7 +359,7 @@ begin
     A('  Result := B.ToString;');
     A('end;');
     A('');
-    A('function Plassholdere(Count_: Integer): string;');
+    A('function Placeholders(Count_: Integer): string;');
     A('var');
     A('  I: Integer;');
     A('begin');
@@ -368,7 +368,7 @@ begin
     A('  begin');
     A('    if I > 1 then');
     A('      Result := Result + '', '';');
-    A('    Result := Result + Plassholder(I);');
+    A('    Result := Result + Placeholder(I);');
     A('  end;');
     A('end;');
     A('');
@@ -379,10 +379,10 @@ begin
     A('  Result := TQuery<TUser>.New.Find(StrToInt64Def(Id, 0));');
     A('end;');
     A('');
-    A('function FinnPaaEpost(const Epost: string): TUser;');
+    A('function FindByEmail(const Email: string): TUser;');
     A('begin');
     A('  Result := TQuery<TUser>.New');
-    A('    .Where(ColStr(''users'', ''email''), Eq, LowerCase(Trim(Epost)))');
+    A('    .Where(ColStr(''users'', ''email''), Eq, LowerCase(Trim(Email)))');
     A('    .First;');
     A('end;');
     A('');
@@ -395,22 +395,22 @@ begin
     A('  The counter is on the email address, not on the IP: an attacker');
     A('  has many IPs and usually only one account to get into. }');
     A('const');
-    A('  MaxForsok = 5;');
-    A('  BremseVinduSek = 900;');
+    A('  MaxAttempts = 5;');
+    A('  ThrottleWindowSec = 900;');
     A('');
-    A('function BremseNokkel(const Epost: string): string;');
+    A('function ThrottleKey(const Email: string): string;');
     A('begin');
-    A('  Result := ''login:'' + LowerCase(Trim(Epost));');
+    A('  Result := ''login:'' + LowerCase(Trim(Email));');
     A('end;');
     A('');
-    A('function ForMangeForsok(const Epost: string): Boolean;');
+    A('function TooManyAttempts(const Email: string): Boolean;');
     A('var');
     A('  V: string;');
     A('begin');
     A('  Result := False;');
     A('  try');
-    A('    if Cache.Get(BremseNokkel(Epost), V) then');
-    A('      Result := StrToIntDef(V, 0) >= MaxForsok;');
+    A('    if Cache.Get(ThrottleKey(Email), V) then');
+    A('      Result := StrToIntDef(V, 0) >= MaxAttempts;');
     A('  except');
     A('    on Exception do');
     A('      { No cache set up. See the comment above. }');
@@ -418,24 +418,24 @@ begin
     A('  end;');
     A('end;');
     A('');
-    A('procedure TellForsok(const Epost: string);');
+    A('procedure CountAttempt(const Email: string);');
     A('var');
     A('  V: string;');
     A('begin');
     A('  try');
-    A('    if not Cache.Get(BremseNokkel(Epost), V) then');
+    A('    if not Cache.Get(ThrottleKey(Email), V) then');
     A('      V := ''0'';');
-    A('    Cache.Put(BremseNokkel(Epost), IntToStr(StrToIntDef(V, 0) + 1),');
-    A('      BremseVinduSek);');
+    A('    Cache.Put(ThrottleKey(Email), IntToStr(StrToIntDef(V, 0) + 1),');
+    A('      ThrottleWindowSec);');
     A('  except');
     A('    on Exception do ;');
     A('  end;');
     A('end;');
     A('');
-    A('procedure NullstillForsok(const Epost: string);');
+    A('procedure ClearAttempts(const Email: string);');
     A('begin');
     A('  try');
-    A('    Cache.Forget(BremseNokkel(Epost));');
+    A('    Cache.Forget(ThrottleKey(Email));');
     A('  except');
     A('    on Exception do ;');
     A('  end;');
@@ -472,26 +472,26 @@ begin
     A('');
     A('function TAuthController.DoLogin(Req: TRequest): TResponse;');
     A('var');
-    A('  Epost, Passord: string;');
+    A('  Email, Password: string;');
     A('  U: TUser;');
     A('begin');
-    A('  Epost := Req.Form(''email'').ToString;');
-    A('  Passord := Req.Form(''password'').ToString;');
+    A('  Email := Req.Form(''email'').ToString;');
+    A('  Password := Req.Form(''password'').ToString;');
     A('');
-    A('  if ForMangeForsok(Epost) then');
+    A('  if TooManyAttempts(Email) then');
     A('  begin');
-    A('    LogWarn(''login throttled'', [''email'', Epost]);');
+    A('    LogWarn(''login throttled'', [''email'', Email]);');
     A('    CurrentSession.Flash(''error'',');
     A('      ''Too many attempts. Try again in a few minutes.'');');
     A('    Exit(Redirect(''/login'', 303));');
     A('  end;');
     A('');
-    A('  U := FinnPaaEpost(Epost);');
-    A('  if (U = nil) or not VerifyPassword(Passord, U.PasswordHash) then');
+    A('  U := FindByEmail(Email);');
+    A('  if (U = nil) or not VerifyPassword(Password, U.PasswordHash) then');
     A('  begin');
     A('    { One message for both cases. Say "no such account" and you');
     A('      have built a directory of who is registered. }');
-    A('    TellForsok(Epost);');
+    A('    CountAttempt(Email);');
     A('    CurrentSession.Flash(''error'', ''Those credentials do not match.'');');
     A('    Exit(Redirect(''/login'', 303));');
     A('  end;');
@@ -501,11 +501,11 @@ begin
     A('    anything. }');
     A('  if NeedsRehash(U.PasswordHash) then');
     A('  begin');
-    A('    U.PasswordHash := HashPassword(Passord);');
+    A('    U.PasswordHash := HashPassword(Password);');
     A('    U.Save;');
     A('  end;');
     A('');
-    A('  NullstillForsok(Epost);');
+    A('  ClearAttempts(Email);');
     A('  { Login changes the session id. Without it session fixation is');
     A('    wide open. }');
     A('  Askr.Auth.Login(IntToStr(U.Id), Req.Form(''remember'').Len > 0);');
@@ -549,7 +549,7 @@ begin
     A('  password with no other requirements; rules about capitals and');
     A('  digits give weaker passwords in practice, because people make');
     A('  Password1! }');
-    A('function PassordFeil(const P, Bekreft: string): string;');
+    A('function PasswordProblem(const P, Bekreft: string): string;');
     A('begin');
     A('  if Length(P) < 12 then');
     A('    Exit(''The password must be at least 12 characters.'');');
@@ -561,10 +561,10 @@ begin
     A('function TAuthController.DoRegister(Req: TRequest): TResponse;');
     A('var');
     A('  U: TUser;');
-    A('  Passord, Err: string;');
+    A('  Password, Err: string;');
     A('begin');
-    A('  Passord := Req.Form(''password'').ToString;');
-    A('  Err := PassordFeil(Passord,');
+    A('  Password := Req.Form(''password'').ToString;');
+    A('  Err := PasswordProblem(Password,');
     A('    Req.Form(''password_confirmation'').ToString);');
     A('  if Err <> '''' then');
     A('  begin');
@@ -582,7 +582,7 @@ begin
     A('  end;');
     A('');
     A('  { The plaintext goes no further than this. }');
-    A('  U.PasswordHash := HashPassword(Passord);');
+    A('  U.PasswordHash := HashPassword(Password);');
     A('  U.Save;');
     A('');
     A('  Askr.Auth.Login(IntToStr(U.Id));');
@@ -608,17 +608,17 @@ begin
     A('const');
     A('  { One hour. Long enough that an email can sit for a while, short');
     A('    enough that an old inbox is not a key. }');
-    A('  ResetLevetidMs = 60 * 60 * 1000;');
+    A('  ResetLifetimeMs = 60 * 60 * 1000;');
     A('');
     A('function TAuthController.SendReset(Req: TRequest): TResponse;');
     A('var');
-    A('  Epost, Token, Link_: string;');
+    A('  Email, Token, Link_: string;');
     A('  U: TUser;');
     A('  A: TArena;');
     A('  M: TMailMessage;');
     A('begin');
-    A('  Epost := LowerCase(Trim(Req.Form(''email'').ToString));');
-    A('  U := FinnPaaEpost(Epost);');
+    A('  Email := LowerCase(Trim(Req.Form(''email'').ToString));');
+    A('  U := FindByEmail(Email);');
     A('');
     A('  { The same answer whether or not the address exists. Anything else');
     A('    turns the form into a directory of who is registered. }');
@@ -633,9 +633,9 @@ begin
     A('      anybody the ability to reset passwords. }');
     A('    CurrentDb.ExecParams(A,');
     A('      ''INSERT INTO password_resets (email, token_hash, expires_at, '' +');
-    A('      ''created_at) VALUES ('' + Plassholdere(4) + '')'',');
-    A('      [DbParam(A, Epost), DbParam(A, Sha256Hex(Token)),');
-    A('       DbParam(A, UnixNowMs + ResetLevetidMs), DbParam(A, UnixNowMs)]);');
+    A('      ''created_at) VALUES ('' + Placeholders(4) + '')'',');
+    A('      [DbParam(A, Email), DbParam(A, Sha256Hex(Token)),');
+    A('       DbParam(A, UnixNowMs + ResetLifetimeMs), DbParam(A, UnixNowMs)]);');
     A('');
     A('    Link_ := Cfg(''app.url'', ''http://127.0.0.1:8080'') +');
     A('      ''/reset-password/'' + Token;');
@@ -643,7 +643,7 @@ begin
     A('    { In development TLogTransport writes the email to a file, so');
     A('      that the link can actually be tried without an SMTP server. }');
     A('    M := Mail.Message_;');
-    A('    M.AddTo(Epost).Subject(''Reset your password'')');
+    A('    M.AddTo(Email).Subject(''Reset your password'')');
     A('     .Text(''Open this link to choose a new password:'' + #10 + #10 +');
     A('           Link_ + #10 + #10 + ''It expires in one hour.'');');
     A('    Mail.Send(M);');
@@ -673,15 +673,15 @@ begin
     A('');
     A('function TAuthController.DoReset(Req: TRequest): TResponse;');
     A('var');
-    A('  Token, Passord, Err, Epost: string;');
+    A('  Token, Password, Err, Email: string;');
     A('  A: TArena;');
     A('  R: TDbResult;');
     A('  U: TUser;');
     A('begin');
     A('  Token := Req.Form(''token'').ToString;');
-    A('  Passord := Req.Form(''password'').ToString;');
+    A('  Password := Req.Form(''password'').ToString;');
     A('');
-    A('  Err := PassordFeil(Passord,');
+    A('  Err := PasswordProblem(Password,');
     A('    Req.Form(''password_confirmation'').ToString);');
     A('  if Err <> '''' then');
     A('  begin');
@@ -692,7 +692,7 @@ begin
     A('  A := CurrentArena;');
     A('  R := CurrentDb.ExecParams(A,');
     A('    ''SELECT email FROM password_resets WHERE token_hash = '' +');
-    A('    Plassholder(1) + '' AND expires_at > '' + Plassholder(2),');
+    A('    Placeholder(1) + '' AND expires_at > '' + Placeholder(2),');
     A('    [DbParam(A, Sha256Hex(Token)), DbParam(A, UnixNowMs)]);');
     A('');
     A('  if (R = nil) or R.IsEmpty then');
@@ -705,24 +705,24 @@ begin
     A('    Exit(Redirect(''/forgot-password'', 303));');
     A('  end;');
     A('');
-    A('  Epost := R.Value(0, 0).ToString;');
-    A('  U := FinnPaaEpost(Epost);');
+    A('  Email := R.Value(0, 0).ToString;');
+    A('  U := FindByEmail(Email);');
     A('  if U = nil then');
     A('    Exit(Redirect(''/forgot-password'', 303));');
     A('');
-    A('  U.PasswordHash := HashPassword(Passord);');
+    A('  U.PasswordHash := HashPassword(Password);');
     A('  U.Save;');
     A('');
     A('  { Single use. All tokens for the address are deleted, not only');
     A('    the one that was used — if somebody asked for two links, the');
     A('    other one must not still work. }');
     A('  CurrentDb.ExecParams(A,');
-    A('    ''DELETE FROM password_resets WHERE email = '' + Plassholder(1),');
-    A('    [DbParam(A, Epost)]);');
+    A('    ''DELETE FROM password_resets WHERE email = '' + Placeholder(1),');
+    A('    [DbParam(A, Email)]);');
     A('');
     A('  { The session is swapped. If somebody else was signed in as this');
     A('    user, they must not stay that way after a password change. }');
-    A('  NullstillForsok(Epost);');
+    A('  ClearAttempts(Email);');
     A('  Askr.Auth.Login(IntToStr(U.Id));');
     A('  LogInfo(''password reset'', [''user'', U.Id]);');
     A('  Result := Redirect(''/dashboard'', 303);');
@@ -734,7 +734,7 @@ begin
     A('  should never give nil in practice — but a handler that assumes it');
     A('  and is wrong crashes with an access violation instead of sending');
     A('  you to the sign-in page. }');
-    A('function Meg: TUser;');
+    A('function CurrentUser: TUser;');
     A('begin');
     A('  Result := TUser(Askr.Auth.User);');
     A('end;');
@@ -744,7 +744,7 @@ begin
     A('  U: TUser;');
     A('  B: string;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('');
@@ -765,9 +765,9 @@ begin
     A('  Result := RespondHtml(AppShell(''Home'', ''/dashboard'', U.Name, B));');
     A('end;');
     A('');
-    A('{ ------------------------------------------------------ profil -- }');
+    A('{ ----------------------------------------------------- profile -- }');
     A('');
-    A('function ProfilSide(U: TUser; const Err, Ok: string): string;');
+    A('function ProfilePage(U: TUser; const Err, Ok: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<h1>Settings</h1>'' +');
@@ -794,44 +794,44 @@ begin
     A('var');
     A('  U: TUser;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('  Result := RespondHtml(AppShell(''Profile'', ''/settings/profile'', U.Name,');
-    A('    ProfilSide(U, '''', CurrentSession.GetFlash(''profile_ok''))));');
+    A('    ProfilePage(U, '''', CurrentSession.GetFlash(''profile_ok''))));');
     A('end;');
     A('');
     A('function TAuthController.SaveProfile(Req: TRequest): TResponse;');
     A('var');
-    A('  U, Annen: TUser;');
-    A('  Name_, Epost: string;');
+    A('  U, Other: TUser;');
+    A('  Name_, Email: string;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('');
     A('  Name_ := Trim(Req.Form(''name'').ToString);');
-    A('  Epost := LowerCase(Trim(Req.Form(''email'').ToString));');
+    A('  Email := LowerCase(Trim(Req.Form(''email'').ToString));');
     A('');
     A('  if Name_ = '''' then');
     A('    Exit(RespondHtml(AppShell(''Profile'', ''/settings/profile'', U.Name,');
-    A('      ProfilSide(U, ''Name is required.'', ''''))));');
-    A('  if (Epost = '''') or (Pos(''@'', Epost) < 2) then');
+    A('      ProfilePage(U, ''Name is required.'', ''''))));');
+    A('  if (Email = '''') or (Pos(''@'', Email) < 2) then');
     A('    Exit(RespondHtml(AppShell(''Profile'', ''/settings/profile'', U.Name,');
-    A('      ProfilSide(U, ''That does not look like an email address.'', ''''))));');
+    A('      ProfilePage(U, ''That does not look like an email address.'', ''''))));');
     A('');
     A('  { A unique email is enforced in the database. Letting the INSERT');
     A('    fail would have given a 500 instead of a form with an error. }');
-    A('  if Epost <> LowerCase(U.Email) then');
+    A('  if Email <> LowerCase(U.Email) then');
     A('  begin');
-    A('    Annen := FinnPaaEpost(Epost);');
-    A('    if (Annen <> nil) and (Annen.Id <> U.Id) then');
+    A('    Other := FindByEmail(Email);');
+    A('    if (Other <> nil) and (Other.Id <> U.Id) then');
     A('      Exit(RespondHtml(AppShell(''Profile'', ''/settings/profile'', U.Name,');
-    A('        ProfilSide(U, ''That email is already in use.'', ''''))));');
+    A('        ProfilePage(U, ''That email is already in use.'', ''''))));');
     A('  end;');
     A('');
     A('  U.Name := Name_;');
-    A('  U.Email := Epost;');
+    A('  U.Email := Email;');
     A('  U.Save;');
     A('  LogInfo(''profile updated'', [''user'', U.Id]);');
     A('  CurrentSession.Flash(''profile_ok'', ''Saved.'');');
@@ -842,7 +842,7 @@ begin
     A('');
     A('{ The list of registered passkeys. The date is the only thing that');
     A('  tells two keys apart for whoever is looking. }');
-    A('function PasskeyListe(U: TUser): string;');
+    A('function PasskeyList(U: TUser): string;');
     A('var');
     A('  L: TCredentialList;');
     A('  I: Integer;');
@@ -869,7 +869,7 @@ begin
     A('      ''</p></div>'';');
     A('end;');
     A('');
-    A('function SikkerhetSide(const Err, Ok, Noklene: string): string;');
+    A('function SecurityPage(const Err, Ok, Noklene: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<h1>Security</h1>'' +');
@@ -906,44 +906,44 @@ begin
     A('var');
     A('  U: TUser;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('  Result := RespondHtml(AppShell(''Security'', ''/settings/security'', U.Name,');
-    A('    SikkerhetSide('''', CurrentSession.GetFlash(''security_ok''),');
-    A('      PasskeyListe(U))));');
+    A('    SecurityPage('''', CurrentSession.GetFlash(''security_ok''),');
+    A('      PasskeyList(U))));');
     A('end;');
     A('');
     A('function TAuthController.ChangePassword(Req: TRequest): TResponse;');
     A('var');
     A('  U: TUser;');
-    A('  Now_, Nytt, Err: string;');
+    A('  CurrentPass, NewPass, Err: string;');
     A('');
-    A('  function Avvis(const M: string): TResponse;');
+    A('  function Reject(const M: string): TResponse;');
     A('  begin');
     A('    Result := RespondHtml(AppShell(''Security'', ''/settings/security'', U.Name,');
-    A('      SikkerhetSide(M, '''', PasskeyListe(U))));');
+    A('      SecurityPage(M, '''', PasskeyList(U))));');
     A('  end;');
     A('');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
     A('');
-    A('  Now_ := Req.Form(''current'').ToString;');
-    A('  Nytt := Req.Form(''password'').ToString;');
+    A('  CurrentPass := Req.Form(''current'').ToString;');
+    A('  NewPass := Req.Form(''password'').ToString;');
     A('');
     A('  { The old password is required even though you are already signed');
     A('    in: without it an unattended machine can be taken over for good');
     A('    by whoever walks past. }');
-    A('  if not VerifyPassword(Now_, U.PasswordHash) then');
-    A('    Exit(Avvis(''That is not your current password.''));');
+    A('  if not VerifyPassword(CurrentPass, U.PasswordHash) then');
+    A('    Exit(Reject(''That is not your current password.''));');
     A('');
-    A('  Err := PassordFeil(Nytt, Req.Form(''password_confirmation'').ToString);');
+    A('  Err := PasswordProblem(NewPass, Req.Form(''password_confirmation'').ToString);');
     A('  if Err <> '''' then');
-    A('    Exit(Avvis(Err));');
+    A('    Exit(Reject(Err));');
     A('');
-    A('  U.PasswordHash := HashPassword(Nytt);');
+    A('  U.PasswordHash := HashPassword(NewPass);');
     A('  U.Save;');
     A('');
     A('  { The same reason as at reset: if somebody else was signed in as');
@@ -1070,7 +1070,7 @@ begin
     A('  makes the server say no too, and not only the browser. }');
     A('function WaOpts(Req: TRequest): TWebAuthnOptions;');
     A('var');
-    A('  Vert: string;');
+    A('  Host: string;');
     A('  P: Integer;');
     A('begin');
     A('  Result.RequireUserVerification := False;');
@@ -1079,28 +1079,28 @@ begin
     A('  if (Result.RpId <> ' + Q + Q + ') and (Result.Origin <> ' + Q + Q + ') then');
     A('    Exit;');
     A('');
-    A('  Vert := Req.Header(' + Q + 'Host' + Q + ').ToString;');
-    A('  if Vert = ' + Q + Q + ' then');
-    A('    Vert := ' + Q + 'localhost' + Q + ';');
+    A('  Host := Req.Header(' + Q + 'Host' + Q + ').ToString;');
+    A('  if Host = ' + Q + Q + ' then');
+    A('    Host := ' + Q + 'localhost' + Q + ';');
     A('  if Result.Origin = ' + Q + Q + ' then');
     A('  begin');
     A('    { Only localhost gets away without https. That is the browser''''s');
     A('      rule, not ours, and guessing wrong here gives an error message');
     A('      that explains nothing. }');
-    A('    if (Pos(' + Q + 'localhost' + Q + ', Vert) = 1) or');
-    A('       (Pos(' + Q + '127.0.0.1' + Q + ', Vert) = 1) then');
-    A('      Result.Origin := ' + Q + 'http://' + Q + ' + Vert');
+    A('    if (Pos(' + Q + 'localhost' + Q + ', Host) = 1) or');
+    A('       (Pos(' + Q + '127.0.0.1' + Q + ', Host) = 1) then');
+    A('      Result.Origin := ' + Q + 'http://' + Q + ' + Host');
     A('    else');
-    A('      Result.Origin := ' + Q + 'https://' + Q + ' + Vert;');
+    A('      Result.Origin := ' + Q + 'https://' + Q + ' + Host;');
     A('  end;');
     A('  if Result.RpId = ' + Q + Q + ' then');
     A('  begin');
-    A('    { RP ID er domenet uten port. }');
-    A('    P := Pos(' + Q + ':' + Q + ', Vert);');
+    A('    { The RP ID is the domain without the port. }');
+    A('    P := Pos(' + Q + ':' + Q + ', Host);');
     A('    if P > 0 then');
-    A('      Result.RpId := Copy(Vert, 1, P - 1)');
+    A('      Result.RpId := Copy(Host, 1, P - 1)');
     A('    else');
-    A('      Result.RpId := Vert;');
+    A('      Result.RpId := Host;');
     A('  end;');
     A('end;');
     A('');
@@ -1108,7 +1108,7 @@ begin
     A('  a domain name. localhost is valid; 127.0.0.1 is not, and the');
     A('  browser then answers only "This is an invalid domain", which does');
     A('  not say what to do. So it is said here instead. }');
-    A('function ErIpAdresse(const S: string): Boolean;');
+    A('function IsIpAddress(const S: string): Boolean;');
     A('var');
     A('  I: Integer;');
     A('begin');
@@ -1120,13 +1120,13 @@ begin
     A('');
     A('{ The challenge is kept in the session until the answer arrives.');
     A('  Without it an attacker could replay an old answer. }');
-    A('function NyUtfordring: string;');
+    A('function IssueChallenge: string;');
     A('begin');
     A('  Result := Base64UrlEncode(NewChallenge);');
     A('  CurrentSession.Put(' + Q + 'wa_challenge' + Q + ', Result);');
     A('end;');
     A('');
-    A('function LagretUtfordring: TBytes;');
+    A('function StoredChallenge: TBytes;');
     A('var');
     A('  S: string;');
     A('begin');
@@ -1141,7 +1141,7 @@ begin
     A('  Result := RespondJson(S);');
     A('end;');
     A('');
-    A('function JsonFeil(const Message_: string; Status: Integer): TResponse;');
+    A('function JsonError(const Message_: string; Status: Integer): TResponse;');
     A('var');
     A('  W: TJsonWriter;');
     A('begin');
@@ -1172,23 +1172,23 @@ begin
     A('  U: TUser;');
     A('  W: TJsonWriter;');
     A('  O: TWebAuthnOptions;');
-    A('  Liste: TCredentialList;');
+    A('  Creds: TCredentialList;');
     A('  I: Integer;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
-    A('    Exit(JsonFeil(' + Q + 'Not signed in.' + Q + ', 401));');
+    A('    Exit(JsonError(' + Q + 'Not signed in.' + Q + ', 401));');
     A('  O := WaOpts(Req);');
-    A('  if ErIpAdresse(O.RpId) then');
-    A('    Exit(JsonFeil(' + Q + 'Passkeys need a domain name, not an IP ' + Q + ' +');
+    A('  if IsIpAddress(O.RpId) then');
+    A('    Exit(JsonError(' + Q + 'Passkeys need a domain name, not an IP ' + Q + ' +');
     A('      ' + Q + 'address. Use localhost in development, or set ' + Q + ' +');
     A('      ' + Q + '[webauthn] rp_id in askr.toml.' + Q + ', 400));');
     A('');
     A('  W.Init(Req.Arena, 1024);');
     A('  W.BeginObject;');
-    A('  W.Field(' + Q + 'challenge' + Q + ', NyUtfordring);');
+    A('  W.Field(' + Q + 'challenge' + Q + ', IssueChallenge);');
     A('  W.Field(' + Q + 'rpId' + Q + ', O.RpId);');
-    A('  W.Field(' + Q + 'rpName' + Q + ', AppNavn);');
+    A('  W.Field(' + Q + 'rpName' + Q + ', AppName);');
     A('  W.Field(' + Q + 'userId' + Q + ', Base64UrlEncode(StrBytes(IntToStr(U.Id))));');
     A('  W.Field(' + Q + 'userName' + Q + ', U.Email);');
     A('  W.Field(' + Q + 'userDisplayName' + Q + ', U.Name);');
@@ -1196,10 +1196,10 @@ begin
     A('    make a new one for the same account. }');
     A('  W.Key(' + Q + 'exclude' + Q + ');');
     A('  W.BeginArray;');
-    A('  Liste := TQuery<TCredential>.New');
+    A('  Creds := TQuery<TCredential>.New');
     A('    .Where(ColInt64(' + Q + 'credentials' + Q + ', ' + Q + 'user_id' + Q + '), Eq, U.Id).Get;');
-    A('  for I := 0 to Liste.Count - 1 do');
-    A('    W.Str(Liste[I].CredentialId);');
+    A('  for I := 0 to Creds.Count - 1 do');
+    A('    W.Str(Creds[I].CredentialId);');
     A('  W.EndArray;');
     A('  W.EndObject;');
     A('  Result := JsonSvar(W.ToString);');
@@ -1213,19 +1213,19 @@ begin
     A('  Name_: string;');
     A('  V: PJsonValue;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
-    A('    Exit(JsonFeil(' + Q + 'Not signed in.' + Q + ', 401));');
+    A('    Exit(JsonError(' + Q + 'Not signed in.' + Q + ', 401));');
     A('');
     A('  Reg := VerifyRegistration(WaOpts(Req),');
     A('    JsonFelt(Req, ' + Q + 'clientDataJSON' + Q + '),');
     A('    JsonFelt(Req, ' + Q + 'attestationObject' + Q + '),');
-    A('    LagretUtfordring);');
+    A('    StoredChallenge);');
     A('  if not Reg.Ok then');
     A('  begin');
     A('    LogInfo(' + Q + 'passkey registration refused' + Q + ',');
     A('      [' + Q + 'user' + Q + ', U.Id, ' + Q + 'reason' + Q + ', Reg.Error]);');
-    A('    Exit(JsonFeil(Reg.Error, 400));');
+    A('    Exit(JsonError(Reg.Error, 400));');
     A('  end;');
     A('');
     A('  Name_ := ' + Q + Q + ';');
@@ -1258,7 +1258,7 @@ begin
     A('  U: TUser;');
     A('  C: TCredential;');
     A('begin');
-    A('  U := Meg;');
+    A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(' + Q + '/login' + Q + ', 303));');
     A('  { The ownership has to be checked. Without it anybody can delete');
@@ -1281,12 +1281,12 @@ begin
     A('var');
     A('  W: TJsonWriter;');
     A('begin');
-    A('  if ErIpAdresse(WaOpts(Req).RpId) then');
-    A('    Exit(JsonFeil(' + Q + 'Passkeys need a domain name, not an IP ' + Q + ' +');
+    A('  if IsIpAddress(WaOpts(Req).RpId) then');
+    A('    Exit(JsonError(' + Q + 'Passkeys need a domain name, not an IP ' + Q + ' +');
     A('      ' + Q + 'address.' + Q + ', 400));');
     A('  W.Init(Req.Arena, 256);');
     A('  W.BeginObject;');
-    A('  W.Field(' + Q + 'challenge' + Q + ', NyUtfordring);');
+    A('  W.Field(' + Q + 'challenge' + Q + ', IssueChallenge);');
     A('  W.Field(' + Q + 'rpId' + Q + ', WaOpts(Req).RpId);');
     A('  W.EndObject;');
     A('  { No list of keys: it would give away who has an account here.');
@@ -1304,10 +1304,10 @@ begin
     A('begin');
     A('  V := Body_(Req);');
     A('  if V = nil then');
-    A('    Exit(JsonFeil(' + Q + 'Malformed request.' + Q + ', 400));');
+    A('    Exit(JsonError(' + Q + 'Malformed request.' + Q + ', 400));');
     A('  V := JsonMember(V, ' + Q + 'id' + Q + ');');
     A('  if V = nil then');
-    A('    Exit(JsonFeil(' + Q + 'Malformed request.' + Q + ', 400));');
+    A('    Exit(JsonError(' + Q + 'Malformed request.' + Q + ', 400));');
     A('  CredId := JsonAsString(V);');
     A('');
     A('  C := TQuery<TCredential>.New');
@@ -1317,20 +1317,20 @@ begin
     A('    does not hold. Anything else tells an attacker which keys are');
     A('    registered here. }');
     A('  if C = nil then');
-    A('    Exit(JsonFeil(' + Q + 'That passkey did not work.' + Q + ', 401));');
+    A('    Exit(JsonError(' + Q + 'That passkey did not work.' + Q + ', 401));');
     A('');
     A('  Asr := VerifyAssertion(WaOpts(Req),');
     A('    JsonFelt(Req, ' + Q + 'clientDataJSON' + Q + '),');
     A('    JsonFelt(Req, ' + Q + 'authenticatorData' + Q + '),');
     A('    JsonFelt(Req, ' + Q + 'signature' + Q + '),');
-    A('    LagretUtfordring,');
+    A('    StoredChallenge,');
     A('    HexDecode(C.PublicKeyX), HexDecode(C.PublicKeyY),');
     A('    UInt32(C.SignCount));');
     A('  if not Asr.Ok then');
     A('  begin');
     A('    LogInfo(' + Q + 'passkey sign-in refused' + Q + ',');
     A('      [' + Q + 'credential' + Q + ', C.Id, ' + Q + 'reason' + Q + ', Asr.Error]);');
-    A('    Exit(JsonFeil(' + Q + 'That passkey did not work.' + Q + ', 401));');
+    A('    Exit(JsonError(' + Q + 'That passkey did not work.' + Q + ', 401));');
     A('  end;');
     A('');
     A('  if Asr.CloneWarning then');
@@ -1341,7 +1341,7 @@ begin
     A('');
     A('  U := TQuery<TUser>.New.Find(C.UserId);');
     A('  if U = nil then');
-    A('    Exit(JsonFeil(' + Q + 'That passkey did not work.' + Q + ', 401));');
+    A('    Exit(JsonError(' + Q + 'That passkey did not work.' + Q + ', 401));');
     A('');
     A('  C.SignCount := Asr.SignCount;');
     A('  C.Save;');
@@ -1352,7 +1352,7 @@ begin
     A('');
     A('end.');
 
-    Emit(IncludeTrailingPathDelimiter(Rot) +
+    Emit(IncludeTrailingPathDelimiter(Root) +
       'app/Http/App.Http.AuthController.pas', L.Text);
   finally
     L.Free;
@@ -1361,9 +1361,9 @@ end;
 
 { ---------------------------------------------------------- migrasjonene -- }
 
-procedure WriteMigrations(const Rot, Versjon: string);
+procedure WriteMigrations(const Root, VersionStr: string);
 begin
-  Emit(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Root) +
     'database/App.Migrations.CreateUsers.pas',
     'unit App.Migrations.CreateUsers;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
@@ -1380,7 +1380,7 @@ begin
     'implementation' + #10 + #10 +
     'class function TCreateUsers.Version: string;' + #10 +
     'begin' + #10 +
-    '  Result := ' + Q + Versjon + Q + ';' + #10 +
+    '  Result := ' + Q + VersionStr + Q + ';' + #10 +
     'end;' + #10 + #10 +
     'procedure TCreateUsers.Up(S: TSchemaBuilder);' + #10 +
     'begin' + #10 +
@@ -1402,7 +1402,7 @@ begin
     '  RegisterMigration(TCreateUsers);' + #10 + #10 +
     'end.' + #10);
 
-  Emit(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Root) +
     'database/App.Migrations.CreatePasswordResets.pas',
     'unit App.Migrations.CreatePasswordResets;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
@@ -1419,7 +1419,7 @@ begin
     'implementation' + #10 + #10 +
     'class function TCreatePasswordResets.Version: string;' + #10 +
     'begin' + #10 +
-    '  Result := ' + Q + IntToStr(StrToInt64(Versjon) + 1) + Q + ';' + #10 +
+    '  Result := ' + Q + IntToStr(StrToInt64(VersionStr) + 1) + Q + ';' + #10 +
     'end;' + #10 + #10 +
     'procedure TCreatePasswordResets.Up(S: TSchemaBuilder);' + #10 +
     'begin' + #10 +
@@ -1450,8 +1450,8 @@ end;
 { ------------------------------------------------------------ app.lpr -- }
 
 const
-  MarkorUses = '  App.Http.HomeController;';
-  MarkorRuter = '  R.Get(''/demo'', Home.Demo);';
+  MarkerUses = '  App.Http.HomeController;';
+  MarkerRoutes = '  R.Get(''/demo'', Home.Demo);';
 
 { Inserts the uses line and the routes where `askr new` left them.
 
@@ -1459,14 +1459,14 @@ const
   is meant to be — it does nothing and says so. Guessing at a place to
   insert code into a file somebody has written themselves is worse than
   asking them to do it. }
-function InstallerRuter(const Rot: string): Boolean;
+function InstallRoutes(const Root: string): Boolean;
 var
   L: TStringList;
   Path_: string;
-  I, IdxUses, IdxRuter: Integer;
+  I, IdxUses, IdxRoutes: Integer;
 begin
   Result := False;
-  Path_ := IncludeTrailingPathDelimiter(Rot) + 'app.lpr';
+  Path_ := IncludeTrailingPathDelimiter(Root) + 'app.lpr';
   if not FileExists(Path_) then
     Exit;
 
@@ -1481,42 +1481,42 @@ begin
         Exit(True);
 
     IdxUses := -1;
-    IdxRuter := -1;
+    IdxRoutes := -1;
     for I := 0 to L.Count - 1 do
     begin
-      if L[I] = MarkorUses then
+      if L[I] = MarkerUses then
         IdxUses := I;
-      if L[I] = MarkorRuter then
-        IdxRuter := I;
+      if L[I] = MarkerRoutes then
+        IdxRoutes := I;
     end;
-    if (IdxUses < 0) or (IdxRuter < 0) then
+    if (IdxUses < 0) or (IdxRoutes < 0) then
       Exit(False);
 
     { From the back, so that the first insertion does not move the
       second. }
     { The pages after sign-in. The router sorts on specificity, not order,
       so the placement here only affects how app.lpr reads. }
-    L.Insert(IdxRuter + 1, '  R.Post(''/login/passkey'', Auth_.LoginPasskey);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/login/passkey/challenge'', Auth_.LoginChallenge);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/settings/passkeys/:id/delete'', Auth_.PasskeyDelete);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/settings/passkeys'', Auth_.PasskeyRegister);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/settings/passkeys/challenge'', Auth_.PasskeyChallenge);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/settings/security'', Auth_.ChangePassword);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/settings/security'', Auth_.ShowSecurity);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/settings/profile'', Auth_.SaveProfile);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/settings/profile'', Auth_.ShowProfile);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/dashboard'', Auth_.Dashboard);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/reset-password'', Auth_.DoReset);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/reset-password/:token'', Auth_.ShowReset);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/forgot-password'', Auth_.SendReset);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/forgot-password'', Auth_.ShowForgot);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/logout'', Auth_.DoLogout);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/register'', Auth_.DoRegister);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/register'', Auth_.ShowRegister);');
-    L.Insert(IdxRuter + 1, '  R.Post(''/login'', Auth_.DoLogin);');
-    L.Insert(IdxRuter + 1, '  R.Get(''/login'', Auth_.ShowLogin);');
-    L.Insert(IdxRuter + 1, '');
-    L.Insert(IdxRuter + 1, '  { Innlogging, registrering og passordtilbakestilling. }');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/login/passkey'', Auth_.LoginPasskey);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/login/passkey/challenge'', Auth_.LoginChallenge);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/passkeys/:id/delete'', Auth_.PasskeyDelete);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/passkeys'', Auth_.PasskeyRegister);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/settings/passkeys/challenge'', Auth_.PasskeyChallenge);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/security'', Auth_.ChangePassword);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/settings/security'', Auth_.ShowSecurity);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/profile'', Auth_.SaveProfile);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/settings/profile'', Auth_.ShowProfile);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/dashboard'', Auth_.Dashboard);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/reset-password'', Auth_.DoReset);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/reset-password/:token'', Auth_.ShowReset);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/forgot-password'', Auth_.SendReset);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/forgot-password'', Auth_.ShowForgot);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/logout'', Auth_.DoLogout);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/register'', Auth_.DoRegister);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/register'', Auth_.ShowRegister);');
+    L.Insert(IdxRoutes + 1, '  R.Post(''/login'', Auth_.DoLogin);');
+    L.Insert(IdxRoutes + 1, '  R.Get(''/login'', Auth_.ShowLogin);');
+    L.Insert(IdxRoutes + 1, '');
+    L.Insert(IdxRoutes + 1, '  { Innlogging, registrering og passordtilbakestilling. }');
 
     L.Insert(IdxUses, '  App.Http.AuthController,');
     L.Insert(IdxUses, '  App.Models.User,');
@@ -1616,9 +1616,9 @@ end;
 
 { ------------------------------------------------------------ passkeys -- }
 
-procedure WriteCredential(const Rot: string);
+procedure WriteCredential(const Root: string);
 begin
-  Emit(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Root) +
     'app/Models/App.Models.Credential.pas',
     '{ A registered passkey.' + #10 + #10 +
     '  Only the PUBLIC key is here. That is the whole point of passkeys:' + #10 +
@@ -1670,9 +1670,9 @@ begin
     'end.' + #10);
 end;
 
-procedure WritePasskeyMigration(const Rot, Versjon: string);
+procedure WritePasskeyMigration(const Root, VersionStr: string);
 begin
-  Emit(IncludeTrailingPathDelimiter(Rot) +
+  Emit(IncludeTrailingPathDelimiter(Root) +
     'database/App.Migrations.CreateCredentials.pas',
     'unit App.Migrations.CreateCredentials;' + #10 + #10 +
     '{$mode Delphi}{$H+}' + #10 + #10 +
@@ -1689,7 +1689,7 @@ begin
     'implementation' + #10 + #10 +
     'class function TCreateCredentials.Version: string;' + #10 +
     'begin' + #10 +
-    '  Result := ' + Q + Versjon + Q + ';' + #10 +
+    '  Result := ' + Q + VersionStr + Q + ';' + #10 +
     'end;' + #10 + #10 +
     'procedure TCreateCredentials.Up(S: TSchemaBuilder);' + #10 +
     'begin' + #10 +
@@ -1720,11 +1720,11 @@ begin
     'end.' + #10);
 end;
 
-procedure LagAuth(const Rot: string; Force: Boolean);
+procedure MakeAuth(const Root: string; Force: Boolean);
 var
   Path_: string;
 begin
-  Path_ := IncludeTrailingPathDelimiter(Rot) +
+  Path_ := IncludeTrailingPathDelimiter(Root) +
     'app/Http/App.Http.AuthController.pas';
   if FileExists(Path_) and not Force then
   begin
@@ -1732,20 +1732,20 @@ begin
     Halt(1);
   end;
 
-  WriteUser(Rot);
-  WriteCredential(Rot);
-  WriteMigrations(Rot, Tidsstempel);
+  WriteUser(Root);
+  WriteCredential(Root);
+  WriteMigrations(Root, Stamp);
   { A migration of its own, and TWO timestamps later: credentials points
     at users with a foreign key, so the table has to exist first — and
     WriteMigrations itself uses T and T+1. With +1, credentials got the
     same version as password_resets, and the migrator skipped it as
     already run. The table was then never created, and the security page
     answered 500. }
-  WritePasskeyMigration(Rot, IntToStr(StrToInt64(Tidsstempel) + 2));
-  WriteControllers(Rot);
-  UpdateIndex(Rot, 'database', 'App.Migrations', 'App.Migrations.');
+  WritePasskeyMigration(Root, IntToStr(StrToInt64(Stamp) + 2));
+  WriteControllers(Root);
+  UpdateIndex(Root, 'database', 'App.Migrations', 'App.Migrations.');
 
-  if not InstallerRuter(Rot) then
+  if not InstallRoutes(Root) then
     WriteHelp;
 
   WriteLn;

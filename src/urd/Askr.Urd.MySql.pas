@@ -624,15 +624,15 @@ end;
   allocation per thread in a process that has long-lived workers
   anyway. }
 threadvar
-  GThreadKlar: Boolean;
+  GThreadReady: Boolean;
 
 procedure TMySqlConnection.EnsureThread;
 begin
-  if GThreadKlar then
+  if GThreadReady then
     Exit;
   if Assigned(mysql_thread_init) then
     mysql_thread_init();
-  GThreadKlar := True;
+  GThreadReady := True;
 end;
 
 function TMySqlConnection.Dialect: TSqlDialect;

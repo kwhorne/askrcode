@@ -28,7 +28,7 @@ function FindOnPath(const Name_: string): string;
 var
   Parts_: TStringList;
   I: Integer;
-  Kandidat: string;
+  Candidate: string;
 begin
   Result := '';
   Parts_ := TStringList.Create;
@@ -40,9 +40,9 @@ begin
     begin
       if Parts_[I] = '' then
         Continue;
-      Kandidat := IncludeTrailingPathDelimiter(Parts_[I]) + Name_;
-      if FileExists(Kandidat) then
-        Exit(Kandidat);
+      Candidate := IncludeTrailingPathDelimiter(Parts_[I]) + Name_;
+      if FileExists(Candidate) then
+        Exit(Candidate);
     end;
   finally
     Parts_.Free;
@@ -322,7 +322,7 @@ end;
   .build/run, som legges på søkestien. Kjøres før kompilatoren, slik at
   `askr build` og `askr serve` bare virker — språket skal ikke kreve et
   eget steg man må huske. }
-function RunRun(P: TProject; Stille: Boolean): Boolean;
+function RunRun(P: TProject; Quiet: Boolean): Boolean;
 var
   Filer: TStringList;
   Rec: TSearchRec;
@@ -360,7 +360,7 @@ begin
       Ut := IncludeTrailingPathDelimiter(UtDir) + UnitName + '.pas';
       try
         Stats := Transpile(Filer[J], Ut, UnitName);
-        if not Stille then
+        if not Quiet then
           Si(Format('  run       %s -> %s  (%d models, %d queries, %d ms)',
             [ExtractFileName(Filer[J]), UnitName,
              Stats.Models, Stats.Queries, Stats.TotalMs]));
@@ -581,19 +581,19 @@ begin
     Halt(1);
   end;
   if Slag = 'model' then
-    LagModell(P.Root, Name_, HasFlag('migration'))
+    MakeModel(P.Root, Name_, HasFlag('migration'))
   else if Slag = 'controller' then
-    LagKontroller(P.Root, Name_)
+    MakeController(P.Root, Name_)
   else if Slag = 'migration' then
-    LagMigrasjon(P.Root, Name_)
+    MakeMigration(P.Root, Name_)
   else if Slag = 'seeder' then
-    LagSeeder(P.Root, Name_)
+    MakeSeeder(P.Root, Name_)
   else if Slag = 'job' then
     MakeJob(P.Root, Name_)
   else if Slag = 'middleware' then
-    LagMiddleware(P.Root, Name_)
+    MakeMiddleware(P.Root, Name_)
   else if Slag = 'auth' then
-    LagAuth(P.Root, HasFlag('force'))
+    MakeAuth(P.Root, HasFlag('force'))
   else
   begin
     Si('Unknown: ' + Slag);
@@ -645,7 +645,7 @@ begin
       Si('Usage: askr new <name>');
       Halt(1);
     end;
-    NyttProsjekt(GetCurrentDir, ParamStr(2), WantsAuth);
+    NewProject(GetCurrentDir, ParamStr(2), WantsAuth);
     Exit;
   end;
 

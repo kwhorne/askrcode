@@ -361,17 +361,17 @@ var
   Statisk: TStaticMiddleware;
   R: TRouter;
   Lines: TStringList;
-  Rot, PublicDir: string;
+  Root, PublicDir: string;
   I: Integer;
 begin
   InitCriticalSection(GStoredLock);
   { Prosjektrota er der appen kjøres fra. `askr serve` setter arbeidsmappa
     dit; kjøres binæren for hånd, er det mappa man står i. }
-  Rot := GetEnvironmentVariable('ASKR_WEB_ROOT');
-  if Rot = '' then
-    Rot := GetCurrentDir;
-  Rot := ExpandFileName(Rot);
-  PublicDir := IncludeTrailingPathDelimiter(Rot) + 'public';
+  Root := GetEnvironmentVariable('ASKR_WEB_ROOT');
+  if Root = '' then
+    Root := GetCurrentDir;
+  Root := ExpandFileName(Root);
+  PublicDir := IncludeTrailingPathDelimiter(Root) + 'public';
 
   ReadViteManifest(IncludeTrailingPathDelimiter(PublicDir) +
     'build' + PathDelim + '.vite' + PathDelim + 'manifest.json');

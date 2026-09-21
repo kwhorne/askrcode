@@ -306,7 +306,7 @@ begin
     Store.Commit(Sess, R);
     Cookie_ := CookieFrom(R, A);
 
-    { Neste request: nå er den lesbar. }
+    { Next_ request: nå er den lesbar. }
     A.Reset;
     Req := LagReq(A, Cookie_);
     Sess := Store.Start(Req);
@@ -378,7 +378,7 @@ begin
     Store.Commit(Sess, R);
     Cookie_ := CookieFrom(R, A);
 
-    { Neste request: den skal være med i payloaden. }
+    { Next_ request: den skal være med i payloaden. }
     A.Reset;
     Req := InertiaReq(Cookie_);
     UseRequest(Req);
@@ -594,7 +594,7 @@ end;
 procedure TestBccSkjulesIHodet;
 var
   Raw: string;
-  Mottakere: TStringArray;
+  Recipients: TStringArray;
   Msg: TMailMessage;
 begin
   NullT := TNullTransport.Create;
@@ -602,8 +602,8 @@ begin
   try
     Msg := M.Message_.From('a@b.no').AddTo('c@d.no')
       .Bcc('skjult@e.no').Subject('x').Text('y');
-    Mottakere := Msg.AllRecipients;
-    AssertEqual(Length(Mottakere), 2, 'bcc er med i mottakerlista');
+    Recipients := Msg.AllRecipients;
+    AssertEqual(Length(Recipients), 2, 'bcc er med i mottakerlista');
     M.Send(Msg, False);
     Raw := NullT.LastMessage;
     AssertNotContains(Raw, 'skjult@e.no', 'men ikke i hodet');
@@ -744,7 +744,7 @@ procedure TestResendIdempotens;
 var
   T: TResendTransport;
   H: TFakeResendHttp;
-  Foerste: string;
+  FirstByte: string;
 begin
   T := NewResend(H);
   try
@@ -757,9 +757,9 @@ begin
     H.Queue('{"id":"y"}', 200);
     T.Send(TMailMessage.Create.From('a@example.com').AddTo('b@example.com')
       .Subject('s').Text('t'));
-    Foerste := H.LastIdempotency;
-    AssertTrue(Foerste <> '', 'uten egen nøkkel brukes message-id-en');
-    AssertTrue(Foerste <> 'order-1001-receipt',
+    FirstByte := H.LastIdempotency;
+    AssertTrue(FirstByte <> '', 'uten egen nøkkel brukes message-id-en');
+    AssertTrue(FirstByte <> 'order-1001-receipt',
       'og den er ikke forrige melding sin');
   finally
     T.Free;
@@ -1298,7 +1298,7 @@ procedure TestSmtpAuthLogin;
 var
   Srv: TSmtpEkkoServer;
 begin
-  { Bare LOGIN tilbudt. Without denne grenen ville et eldre relé fått AUTH
+  { Only LOGIN tilbudt. Without denne grenen ville et eldre relé fått AUTH
     PLAIN det ikke forstår. }
   Srv := TSmtpEkkoServer.Create('AUTH LOGIN');
   try
@@ -3039,7 +3039,7 @@ begin
     S := fpAccept(FLytt, nil, nil);
     if S < 0 then
       Break;
-    { Les requesten og kast den — hva som spørres om er ikke poenget. }
+    { Read_ requesten og kast den — hva som spørres om er ikke poenget. }
     fpRecv(S, @Buf[0], SizeOf(Buf), 0);
 
     Reply := 'HTTP/1.1 200 OK'#13#10 +

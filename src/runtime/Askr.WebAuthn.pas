@@ -121,7 +121,7 @@ begin
   Result := T;
 end;
 
-function Sammen(const A, B: TBytes): TBytes;
+function Concat_(const A, B: TBytes): TBytes;
 var
   I: Integer;
   T: TBytes;
@@ -246,13 +246,13 @@ var
   Key_, Value_: Int64;
   Start, Len: Integer;
   Kty, Alg, Crv: Int64;
-  HarX, HarY: Boolean;
+  HasX, HasY: Boolean;
   M: Byte;
 begin
   X := nil; Y := nil;
   Err := '';
   Kty := 0; Alg := 0; Crv := 0;
-  HarX := False; HarY := False;
+  HasX := False; HasY := False;
 
   if not R.ReadMapLen(N) then
   begin
@@ -294,12 +294,12 @@ begin
           if Key_ = -2 then
           begin
             X := Skive(Buf, Start, Len);
-            HarX := True;
+            HasX := True;
           end
           else
           begin
             Y := Skive(Buf, Start, Len);
-            HarY := True;
+            HasY := True;
           end;
         end;
     else
@@ -319,7 +319,7 @@ begin
     Err := 'only ES256 on P-256 is supported';
     Exit(False);
   end;
-  if not (HarX and HarY) then
+  if not (HasX and HasY) then
   begin
     Err := 'the credential public key has no coordinates';
     Exit(False);
@@ -418,15 +418,15 @@ end;
 
 { ----------------------------------------------------------- clientData -- }
 
-function CheckClientData(const Json: TBytes; const ForventetType: string;
+function CheckClientData(const Json: TBytes; const ExpectedType: string;
   const Opts: TWebAuthnOptions; const Challenge: TBytes;
   out Err: string): Boolean;
 var
   A: TArena;
-  Rot, V: PJsonValue;
+  Root, V: PJsonValue;
   ErrPos: SizeInt;
   S: string;
-  Fikk: TBytes;
+  Got: TBytes;
   I: Integer;
   Text_: string;
 begin
@@ -446,14 +446,14 @@ begin
       a few hundred bytes. }
   A := TArena.Create(64 * 1024);
   try
-    if not JsonParse(A, StrDup(A, Text_), Rot, ErrPos) then
+    if not JsonParse(A, StrDup(A, Text_), Root, ErrPos) then
     begin
       Err := 'the client data is not valid JSON';
       Exit;
     end;
 
-    V := JsonMember(Rot, 'type');
-    if (V = nil) or (JsonAsString(V) <> ForventetType) then
+    V := JsonMember(Root, 'type');
+    if (V = nil) or (JsonAsString(V) <> ExpectedType) then
     begin
       Err := 'the client data is for a different ceremony';
       Exit;
@@ -462,27 +462,27 @@ begin
     { The origin is compared exactly. Not "starts with", not "contains":
           https://example.com.attacker.example starts with nothing useful, but
           a loose comparison has let worse through. }
-    V := JsonMember(Rot, 'origin');
+    V := JsonMember(Root, 'origin');
     if (V = nil) or (JsonAsString(V) <> Opts.Origin) then
     begin
       Err := 'the origin does not match';
       Exit;
     end;
 
-    V := JsonMember(Rot, 'challenge');
+    V := JsonMember(Root, 'challenge');
     if V = nil then
     begin
       Err := 'the client data has no challenge';
       Exit;
     end;
     S := JsonAsString(V);
-    Fikk := Base64UrlDecode(S);
-    if (Length(Fikk) <> Length(Challenge)) or (Length(Challenge) = 0) then
+    Got := Base64UrlDecode(S);
+    if (Length(Got) <> Length(Challenge)) or (Length(Challenge) = 0) then
     begin
       Err := 'the challenge does not match';
       Exit;
     end;
-    if not ConstantTimeEquals(Fikk, Challenge) then
+    if not ConstantTimeEquals(Got, Challenge) then
     begin
       Err := 'the challenge does not match';
       Exit;
@@ -635,7 +635,7 @@ function VerifyAssertion(const Opts: TWebAuthnOptions;
 var
   A: TAuthData;
   Err: string;
-  ClientHash, Signert, R, S: TBytes;
+  ClientHash, SignedOver, R, S: TBytes;
 begin
   Result.Ok := False;
   Result.Error := '';
@@ -675,9 +675,9 @@ begin
   { What is signed is authenticatorData followed by the hash of
     clientDataJSON. The order is not optional. }
   ClientHash := DigestBytes(Sha256(ClientDataJson));
-  Signert := Sammen(AuthenticatorData, ClientHash);
+  SignedOver := Concat_(AuthenticatorData, ClientHash);
 
-  if not EcdsaVerifyP256(PubX, PubY, R, S, DigestBytes(Sha256(Signert))) then
+  if not EcdsaVerifyP256(PubX, PubY, R, S, DigestBytes(Sha256(SignedOver))) then
   begin
     Result.Error := 'the signature does not match';
     Exit;

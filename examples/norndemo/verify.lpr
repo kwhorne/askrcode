@@ -95,7 +95,7 @@ var
   PrevDb: TDbConnection;
   K: TCustomer;
   O: TOrder;
-  Liste: TModelList<TCustomer>;
+  Items: TModelList<TCustomer>;
   I, J, Order: Integer;
 begin
   WriteLn('Askr — bruker generert skjema');
@@ -159,17 +159,17 @@ begin
       .OrderBy(Customers.Balance, Desc)
       .ToSql);
 
-    Liste := TQuery<TCustomer>.New
+    Items := TQuery<TCustomer>.New
       .Where(Customers.Balance, GT, 150)
       .Where(Customers.Email, Like, '%@gets.no')
       .OrderBy(Customers.Balance, Desc)
       .Preload(['Orders'])
       .Get;
-    Expect(Liste.Count = 4, 'fire customers over 150');
-    Expect(Liste[0].Balance = 500, 'sortert synkende');
+    Expect(Items.Count = 4, 'fire customers over 150');
+    Expect(Items[0].Balance = 500, 'sortert synkende');
     Order := 0;
-    for I := 0 to Liste.Count - 1 do
-      Order := Order + Liste[I].Orders.Count;
+    for I := 0 to Items.Count - 1 do
+      Order := Order + Items[I].Orders.Count;
     Expect(Order = 2 + 3 + 4 + 5, 'eager loading mot generert skjema');
 
     Expect(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 3,

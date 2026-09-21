@@ -415,12 +415,12 @@ end;
 function ParseMultipart(A: TArena; const Body, Boundary: TStr;
   out Form: TMultipartForm): Boolean;
 var
-  Skille: TStrBuilder;
+  Sep_: TStrBuilder;
   Delim, Start: TStr;
-  P, HodeSlutt, Neste: SizeInt;
-  Hode, Content_, Disp, Name_, Filnavn: TStr;
+  P, HeaderEnd, Next_: SizeInt;
+  Header_, Content_, Disp, Name_, FileName_: TStr;
   FieldsSeen, FilesSeen, PartsSeen: Integer;
-  FieldCap, KapFil: Integer;
+  FieldCap, FileCap: Integer;
   NewField: PMultipartField;
   NewFile: PUploadedFile;
 begin
@@ -433,7 +433,7 @@ begin
   FilesSeen := 0;
   PartsSeen := 0;
   FieldCap := 0;
-  KapFil := 0;
+  FileCap := 0;
 
   if Boundary.Len = 0 then
   begin
@@ -445,10 +445,10 @@ begin
     belongs to the delimiter, not to the content — forget that and every
     single file gets two extra bytes at the end, which is noticed first
     when somebody cannot open a zip file. }
-  Skille.Init(A, Boundary.Len + 8);
-  Skille.Append(#13#10'--');
-  Skille.Append(Boundary);
-  Delim := Skille.ToStr;
+  Sep_.Init(A, Boundary.Len + 8);
+  Sep_.Append(#13#10'--');
+  Sep_.Append(Boundary);
+  Delim := Sep_.ToStr;
   { The very first boundary has no CRLF in front of it when there is no
     preamble. }
   Start := Delim.Slice(2);
@@ -502,27 +502,27 @@ begin
       Exit(False);
     end;
 
-    HodeSlutt := Body.IndexOfStr(#13#10#13#10, P);
-    if (HodeSlutt < 0) or (HodeSlutt - P > MaxPartHeaderBytes) then
+    HeaderEnd := Body.IndexOfStr(#13#10#13#10, P);
+    if (HeaderEnd < 0) or (HeaderEnd - P > MaxPartHeaderBytes) then
     begin
       Form.Error := mpMalformed;
       Exit(False);
     end;
-    Hode := Body.Slice(P, HodeSlutt - P);
-    P := HodeSlutt + 4;
+    Header_ := Body.Slice(P, HeaderEnd - P);
+    P := HeaderEnd + 4;
 
-    Neste := Body.IndexOfStr(Delim, P);
-    if Neste < 0 then
+    Next_ := Body.IndexOfStr(Delim, P);
+    if Next_ < 0 then
     begin
       { Without a closing boundary the body is truncated. Taking the rest
         anyway would give half a file that looks whole. }
       Form.Error := mpMalformed;
       Exit(False);
     end;
-    Content_ := Body.Slice(P, Neste - P);
-    P := Neste + Delim.Len;
+    Content_ := Body.Slice(P, Next_ - P);
+    P := Next_ + Delim.Len;
 
-    Disp := PartHeader(Hode, 'Content-Disposition');
+    Disp := PartHeader(Header_, 'Content-Disposition');
     Name_ := DispositionParam(Disp, 'name');
     if Name_.Len = 0 then
       { A part without a name does not belong to the form. It is skipped
@@ -532,19 +532,19 @@ begin
     { `filename` is what separates a file from an ordinary field — also
       when it is empty, which is how a form with an empty file field
       sends it. }
-    Filnavn := DispositionParam(Disp, 'filename');
+    FileName_ := DispositionParam(Disp, 'filename');
     if Disp.IndexOfStr('filename=') >= 0 then
     begin
       { Doubling in the arena. The previous block stays until Reset — the
         same trade-off TStrBuilder makes, and it costs nothing in an
         arena. A form usually has one file, so that is zero growths. }
-      if FilesSeen >= KapFil then
+      if FilesSeen >= FileCap then
       begin
-        if KapFil = 0 then
-          KapFil := 4
+        if FileCap = 0 then
+          FileCap := 4
         else
-          KapFil := KapFil * 2;
-        NewFile := PUploadedFile(A.Alloc(PtrUInt(KapFil) * SizeOf(TUploadedFile)));
+          FileCap := FileCap * 2;
+        NewFile := PUploadedFile(A.Alloc(PtrUInt(FileCap) * SizeOf(TUploadedFile)));
         if FilesSeen > 0 then
           Move(Form.Files^, NewFile^, PtrUInt(FilesSeen) * SizeOf(TUploadedFile));
         Form.Files := NewFile;
@@ -552,8 +552,8 @@ begin
       NewFile := Form.Files;
       Inc(NewFile, FilesSeen);
       NewFile^.FieldName := Name_;
-      NewFile^.ClientName := Filnavn;
-      NewFile^.ContentType := PartHeader(Hode, 'Content-Type');
+      NewFile^.ClientName := FileName_;
+      NewFile^.ContentType := PartHeader(Header_, 'Content-Type');
       NewFile^.Content := Content_;
       Inc(FilesSeen);
       Form.FileCount := FilesSeen;

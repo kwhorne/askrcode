@@ -105,7 +105,7 @@ type
     FHead: PJob;
     FCount: Integer;
     procedure Insert_(J: PJob);
-    procedure Slipp(var J: TReservedJob);
+    procedure FreeJob(var J: TReservedJob);
   public
     constructor Create;
     destructor Destroy; override;
@@ -335,7 +335,7 @@ begin
   Result := True;
 end;
 
-procedure TMemoryJobStore.Slipp(var J: TReservedJob);
+procedure TMemoryJobStore.FreeJob(var J: TReservedJob);
 var
   P: PJob;
 begin
@@ -355,7 +355,7 @@ end;
 
 procedure TMemoryJobStore.Complete(var J: TReservedJob);
 begin
-  Slipp(J);
+  FreeJob(J);
 end;
 
 procedure TMemoryJobStore.Retry(var J: TReservedJob; DelayMs: Int64);
@@ -385,12 +385,12 @@ begin
   { A job that has used up its attempts disappears. A store in the
     process has nowhere to put it; that is precisely the difference
     between this and a durable queue. }
-  Slipp(J);
+  FreeJob(J);
 end;
 
 procedure TMemoryJobStore.Drop(var J: TReservedJob; const Reason: string);
 begin
-  Slipp(J);
+  FreeJob(J);
 end;
 
 function TMemoryJobStore.Pending: Integer;

@@ -117,11 +117,11 @@ type
     FPreloads: array of string;
     FLimit: Integer;
     FOffset: Integer;
-    FTrashed: (tsUten, tsMed, tsBare);
+    FTrashed: (tsWithout, tsWith, tsOnly);
     function AddWhere: PWhereTerm;
     function AddOrder: POrderTerm;
     function AddInParam(const P: TDbParam): Integer;
-    function SoftDeleteClause(out Bare: Boolean): Boolean;
+    function SoftDeleteClause(out Only: Boolean): Boolean;
     function SoftDeleteAll: Int64;
     procedure BuildWhere(var B: TStrBuilder; var ParamNo: Integer;
       var Params: TArray<TDbParam>);
@@ -476,7 +476,7 @@ var
   I: Integer;
   W: PWhereTerm;
   Op: TSqlOp;
-  Moenster: string;
+  Pattern_: string;
 begin
   Result := Self;
   if (Length(Cols) = 0) or (Text = '') then
@@ -486,7 +486,7 @@ begin
     Op := Like
   else
     Op := ILike;
-  Moenster := '%' + Text + '%';
+  Pattern_ := '%' + Text + '%';
 
   for I := 0 to High(Cols) do
   begin
@@ -494,7 +494,7 @@ begin
     W^.Table := Cols[I].Table;
     W^.Column := Cols[I].Name;
     W^.Op := Op;
-    W^.Param := DbParam(Arena, Moenster);
+    W^.Param := DbParam(Arena, Pattern_);
     { The first clause in the group binds as usual to what came before;
       the rest with OR. The parenthesis is added when building. }
     W^.OrPrev := I > 0;
@@ -656,21 +656,21 @@ end;
 
 function TQuery<M>.WithTrashed: TQuery<M>;
 begin
-  FTrashed := tsMed;
+  FTrashed := tsWith;
   Result := Self;
 end;
 
 function TQuery<M>.OnlyTrashed: TQuery<M>;
 begin
-  FTrashed := tsBare;
+  FTrashed := tsOnly;
   Result := Self;
 end;
 
 { True when the query needs an extra clause about deleted_at. }
-function TQuery<M>.SoftDeleteClause(out Bare: Boolean): Boolean;
+function TQuery<M>.SoftDeleteClause(out Only: Boolean): Boolean;
 begin
-  Bare := FTrashed = tsBare;
-  Result := FMeta.SoftDeletes and (FTrashed <> tsMed);
+  Only := FTrashed = tsOnly;
+  Result := FMeta.SoftDeletes and (FTrashed <> tsWith);
 end;
 
 procedure TQuery<M>.BuildWhere(var B: TStrBuilder; var ParamNo: Integer;
@@ -679,28 +679,28 @@ var
   I, J: Integer;
   W: PWhereTerm;
   C: TDbConnection;
-  Filter, BareSlettede, Foerste: Boolean;
+  Filter, TrashedOnly, IsFirst: Boolean;
 
   { Closes an OR group when the clause we just wrote was its last. }
-  procedure LukkGruppe(Idx: Integer);
+  procedure CloseGroup(Idx: Integer);
   var
-    IGruppe, LastInGroup: Boolean;
+    InGroup, LastInGroup: Boolean;
   begin
-    IGruppe := (FWheres + Idx)^.OrPrev or
+    InGroup := (FWheres + Idx)^.OrPrev or
       ((Idx + 1 < FWhereCount) and (FWheres + Idx + 1)^.OrPrev);
     LastInGroup := (Idx + 1 >= FWhereCount) or
       not (FWheres + Idx + 1)^.OrPrev;
-    if IGruppe and LastInGroup then
+    if InGroup and LastInGroup then
       B.AppendByte(Ord(')'));
   end;
 
 begin
-  Filter := SoftDeleteClause(BareSlettede);
+  Filter := SoftDeleteClause(TrashedOnly);
   if (FWhereCount = 0) and not Filter then
     Exit;
   C := Conn;
   B.Append(' WHERE ');
-  Foerste := True;
+  IsFirst := True;
 
   if Filter then
   begin
@@ -709,11 +709,11 @@ begin
     C.AppendIdentStr(B, FMeta.Table);
     B.AppendByte(Ord('.'));
     C.AppendIdentStr(B, FMeta.DeletedAtColumn);
-    if BareSlettede then
+    if TrashedOnly then
       B.Append(' IS NOT NULL')
     else
       B.Append(' IS NULL');
-    Foerste := False;
+    IsFirst := False;
   end;
 
   for I := 0 to FWhereCount - 1 do
@@ -723,9 +723,9 @@ begin
       B.Append(' OR ')
     else
     begin
-      if not Foerste then
+      if not IsFirst then
         B.Append(' AND ');
-      Foerste := False;
+      IsFirst := False;
       { The start of an OR group: the parenthesis has to go around the whole
         group, or AND binds to the first clause alone. }
       if (I + 1 < FWhereCount) and (FWheres + I + 1)^.OrPrev then
@@ -744,7 +744,7 @@ begin
         B.Append(' IS NULL')
       else
         B.Append(' IS NOT NULL');
-      LukkGruppe(I);
+      CloseGroup(I);
       Continue;
     end;
 
@@ -767,7 +767,7 @@ begin
         Params[ParamNo - 1] := FInParams[W^.ParamFirst + J];
       end;
       B.AppendByte(Ord(')'));
-      LukkGruppe(I);
+      CloseGroup(I);
       Continue;
     end;
 
@@ -776,7 +776,7 @@ begin
     C.AppendPlaceholder(B, ParamNo);
     SetLength(Params, ParamNo);
     Params[ParamNo - 1] := W^.Param;
-    LukkGruppe(I);
+    CloseGroup(I);
   end;
 end;
 
@@ -1192,8 +1192,8 @@ begin
       [FMeta.ModelClass.ClassName]);
   { Only the deleted ones are candidates, unless the caller has said
     otherwise. }
-  if FTrashed = tsUten then
-    FTrashed := tsBare;
+  if FTrashed = tsWithout then
+    FTrashed := tsOnly;
   C := Conn;
   Mark := Arena.Mark;
   try

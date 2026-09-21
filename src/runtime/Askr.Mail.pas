@@ -668,13 +668,13 @@ end;
 
 procedure TSmtpTransport.Authenticate;
 var
-  Kryptert: Boolean;
+  Encrypted: Boolean;
 begin
   if FUsername = '' then
     Exit;
 
-  Kryptert := FTls <> nil;
-  if (not Kryptert) and (not FAllowPlainAuth) then
+  Encrypted := FTls <> nil;
+  if (not Encrypted) and (not FAllowPlainAuth) then
     raise EMailError.CreateFmt(
       'Refusing to send the password to %s:%d in the clear. Use STARTTLS, ' +
       'or set AllowPlainAuth if this really is a relay on loopback.',
@@ -723,7 +723,7 @@ procedure TSmtpTransport.Connect;
 var
   Addr: TInetSockAddr;
   TV: TTimeVal;
-  Vert: THostEntry;
+  Host: THostEntry;
 begin
   FSock := fpSocket(AF_INET, SOCK_STREAM, 0);
   if FSock < 0 then
@@ -745,10 +745,10 @@ begin
       address in different byte orders — GetHostByName in the host's,
       ResolveHostByName in the network's. Getting that wrong gives an
       address that looks valid and points the wrong way. }
-    if GetHostByName(FHost, Vert) then
-      Addr.sin_addr.s_addr := HToNL(Vert.Addr.s_addr)
-    else if ResolveHostByName(FHost, Vert) then
-      Addr.sin_addr := Vert.Addr
+    if GetHostByName(FHost, Host) then
+      Addr.sin_addr.s_addr := HToNL(Host.Addr.s_addr)
+    else if ResolveHostByName(FHost, Host) then
+      Addr.sin_addr := Host.Addr
     else
       raise EMailError.CreateFmt(
         'Could not resolve the SMTP host %s', [FHost]);
@@ -759,7 +759,7 @@ end;
 
 procedure TSmtpTransport.Send(M: TMailMessage);
 var
-  Mottakere: TStringArray;
+  Recipients: TStringArray;
   I: Integer;
   Body: string;
 begin
@@ -791,10 +791,10 @@ begin
     SendLine('MAIL FROM:<' + M.Sender.Address + '>');
     Expect('250');
 
-    Mottakere := M.AllRecipients;
-    for I := 0 to High(Mottakere) do
+    Recipients := M.AllRecipients;
+    for I := 0 to High(Recipients) do
     begin
-      SendLine('RCPT TO:<' + Mottakere[I] + '>');
+      SendLine('RCPT TO:<' + Recipients[I] + '>');
       Expect('250');
     end;
 
@@ -878,25 +878,25 @@ procedure RegisterMailTransport(const Name_: string;
   F: TMailTransportFactory);
 var
   I: Integer;
-  Nkl: string;
+  NClasses: string;
 begin
   { An ordinary record array with a linear search, not a TStringList with
     Objects: a procedure variable cannot be cast to TObject in Delphi mode
     — the compiler reads it as a call. The same reason as the handler
     table in the queue. }
-  Nkl := LowerCase(Name_);
+  NClasses := LowerCase(Name_);
   for I := 0 to High(GFactories) do
-    if GFactories[I].Name_ = Nkl then
+    if GFactories[I].Name_ = NClasses then
     begin
       GFactories[I].Factory := F;
       Exit;
     end;
   SetLength(GFactories, Length(GFactories) + 1);
-  GFactories[High(GFactories)].Name_ := Nkl;
+  GFactories[High(GFactories)].Name_ := NClasses;
   GFactories[High(GFactories)].Factory := F;
 end;
 
-function KjenteTransporter: string;
+function KnownTransports: string;
 var
   I: Integer;
 begin
@@ -907,23 +907,23 @@ end;
 
 function SmtpFromConfig: TMailTransport;
 var
-  Sikkerhet: TSmtpSecurity;
-  Kryptering: string;
+  Security: TSmtpSecurity;
+  Encryption: string;
   T: TSmtpTransport;
 begin
-  Kryptering := LowerCase(Cfg('mail.encryption', 'tls'));
-  if Kryptering = 'none' then
-    Sikkerhet := smtpPlain
-  else if Kryptering = 'ssl' then
-    Sikkerhet := smtpTlsDirect
-  else if (Kryptering = 'tls') or (Kryptering = 'starttls') then
-    Sikkerhet := smtpStartTls
+  Encryption := LowerCase(Cfg('mail.encryption', 'tls'));
+  if Encryption = 'none' then
+    Security := smtpPlain
+  else if Encryption = 'ssl' then
+    Security := smtpTlsDirect
+  else if (Encryption = 'tls') or (Encryption = 'starttls') then
+    Security := smtpStartTls
   else
     raise EMailError.CreateFmt(
-      'Unknown mail.encryption %s. Use tls, ssl or none.', [Kryptering]);
+      'Unknown mail.encryption %s. Use tls, ssl or none.', [Encryption]);
 
   T := TSmtpTransport.Create(CfgOrFail('mail.host'),
-    Word(CfgInt('mail.port', 587)), Sikkerhet);
+    Word(CfgInt('mail.port', 587)), Security);
   T.Credentials(Cfg('mail.username', ''), Cfg('mail.password', ''));
   Result := T;
 end;
@@ -952,7 +952,7 @@ begin
   raise EMailError.CreateFmt(
     'Unknown mail transport %s. Available: %s. A transport from another ' +
     'unit has to be linked in before it can be named here.',
-    [Name_, KjenteTransporter]);
+    [Name_, KnownTransports]);
 end;
 
 initialization

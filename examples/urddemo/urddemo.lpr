@@ -147,7 +147,7 @@ var
   C: TDbConnection;
   K: TCustomer;
   O: TOrder;
-  Liste: TModelList<TCustomer>;
+  Items: TModelList<TCustomer>;
   I, J, OrderCount: Integer;
   Meta: TModelMeta;
   Reservert: PtrUInt;
@@ -226,16 +226,16 @@ begin
         .ToSql;
       Si('generert SQL', Sql);
 
-      Liste := TQuery<TCustomer>.New
+      Items := TQuery<TCustomer>.New
         .Where(Customers.Balance, GT, 150)
         .Where(Customers.Email, Like, '%@gets.no')
         .OrderBy(Customers.Balance, Desc)
         .Limit(3)
         .Get;
-      Expect(Liste.Count = 3, 'Limit virker');
-      Expect(Liste[0].Balance > Liste[1].Balance, 'OrderBy Desc virker');
-      Expect(Liste[0].Balance = 600, 'høyeste balance først');
-      Expect(Liste[0].Name = 'Customer 6', 'riktig rad hydrert');
+      Expect(Items.Count = 3, 'Limit virker');
+      Expect(Items[0].Balance > Items[1].Balance, 'OrderBy Desc virker');
+      Expect(Items[0].Balance = 600, 'høyeste balance først');
+      Expect(Items[0].Name = 'Customer 6', 'riktig rad hydrert');
 
       Expect(TQuery<TCustomer>.New.Where(Customers.Active, Eq, True).Count = 4,
         'boolean-filter');
@@ -247,27 +247,27 @@ begin
       WriteLn;
 
       WriteLn('Eager loading');
-      Liste := TQuery<TCustomer>.New
+      Items := TQuery<TCustomer>.New
         .Preload(['Orders'])
         .OrderBy(Customers.Id)
         .Get;
-      Expect(Liste.Count = 6, 'alle customer');
+      Expect(Items.Count = 6, 'alle customer');
       OrderCount := 0;
-      for I := 0 to Liste.Count - 1 do
-        if Liste[I].Orders <> nil then
-          Inc(OrderCount, Liste[I].Orders.Count);
+      for I := 0 to Items.Count - 1 do
+        if Items[I].Orders <> nil then
+          Inc(OrderCount, Items[I].Orders.Count);
       Si('order lastet', IntToStr(OrderCount));
       Expect(OrderCount = 1 + 2 + 3 + 4 + 5, 'alle orders ble fordelt riktig');
-      Expect(Liste[0].Orders.Count = 0, 'første customer har ingen order');
-      Expect(Liste[5].Orders.Count = 5, 'siste customer har fem');
-      Expect(Liste[5].Orders[0].Total > 0, 'barna er hydrert');
+      Expect(Items[0].Orders.Count = 0, 'første customer har ingen order');
+      Expect(Items[5].Orders.Count = 5, 'siste customer har fem');
+      Expect(Items[5].Orders[0].Total > 0, 'barna er hydrert');
       WriteLn;
 
       WriteLn('Delete');
-      K := TQuery<TCustomer>.New.Find(Liste[5].Id);
+      K := TQuery<TCustomer>.New.Find(Items[5].Id);
       K.Delete;
       Expect(TQuery<TCustomer>.New.Count = 5, 'raden er borte');
-      Expect(TQuery<TOrder>.New.Where(Orders.CustomerId, Eq, Liste[5].Id).Count = 0,
+      Expect(TQuery<TOrder>.New.Where(Orders.CustomerId, Eq, Items[5].Id).Count = 0,
         'ON DELETE CASCADE tok orders');
       Expect(TQuery<TCustomer>.New.Where(Customers.Balance, LT, 250).DeleteAll = 2,
         'DeleteAll returnerer antall rader');

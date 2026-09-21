@@ -112,7 +112,7 @@ type
     procedure Commit; virtual; abstract;
     procedure Rollback; virtual; abstract;
 
-    { Plassholder nummer Index, 1-basert. }
+    { Placeholder nummer Index, 1-basert. }
     procedure AppendPlaceholder(var B: TStrBuilder; Index: Integer); virtual;
     { A quoted identifier. Double quotes inside the name are doubled. }
     procedure AppendIdent(var B: TStrBuilder; const AName: TStr); virtual;

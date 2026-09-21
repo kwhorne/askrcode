@@ -227,20 +227,20 @@ end;
 function TStr.IndexOfStr(const Needle: TStr; StartAt: SizeInt): SizeInt;
 var
   I: SizeInt;
-  Foerste: Byte;
+  FirstByte: Byte;
 begin
   if (Needle.Len <= 0) or (Needle.Len > Len) then
     Exit(-1);
   if StartAt < 0 then
     StartAt := 0;
-  Foerste := Needle.Data^;
+  FirstByte := Needle.Data^;
   I := StartAt;
   while I <= Len - Needle.Len do
   begin
     { Look for the first byte first. Multipart parsing scans the whole body
       for a boundary of 40-70 bytes; a naive double loop is noticeable on an
       upload of a few megabytes. }
-    I := IndexOfByte(Foerste, I);
+    I := IndexOfByte(FirstByte, I);
     if (I < 0) or (I > Len - Needle.Len) then
       Exit(-1);
     if CompareByte((Data + I)^, Needle.Data^, Needle.Len) = 0 then

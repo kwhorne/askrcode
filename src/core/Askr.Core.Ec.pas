@@ -113,7 +113,7 @@ end;
 { Subtracts p until the value is smaller than p. Each s term below is
   under 2^256 and p is over 2^255, so once is enough — but the loop is
   written generally, because the sums further down can be larger. }
-procedure Normaliser(var A: TU256);
+procedure Normalize(var A: TU256);
 var
   T: TU256;
 begin
@@ -142,7 +142,7 @@ begin
   R.L[5] := Word_(W5); R.L[4] := Word_(W4);
   R.L[3] := Word_(W3); R.L[2] := Word_(W2);
   R.L[1] := Word_(W1); R.L[0] := Word_(W0);
-  Normaliser(R);
+  Normalize(R);
 end;
 
 procedure FpReduce(const C: TU512; out R: TU256);
@@ -340,7 +340,7 @@ end;
 procedure EcMul(const K: TU256; const P: TEcPoint; out R: TEcPoint);
 var
   I, Hoy: Integer;
-  Akk, Base: TEcPoint;
+  Acc_, Base: TEcPoint;
 begin
   { Ordinary double-and-add, from the top. Not constant time: the branch
     depends on the bits of K, which here are always public.
@@ -351,22 +351,22 @@ begin
     test "20G + G = 21G" caught exactly that. The copy of the base is belt
     and braces on top; it alone is not what makes this safe. }
   Base := P;
-  EcSetInfinity(Akk);
+  EcSetInfinity(Acc_);
   Hoy := U256HighBit(K);
   if Hoy >= 0 then
     for I := Hoy downto 0 do
     begin
-      EcDouble(Akk, Akk);
+      EcDouble(Acc_, Acc_);
       if U256Bit(K, I) = 1 then
-        EcAdd(Akk, Base, Akk);
+        EcAdd(Acc_, Base, Acc_);
     end;
-  R := Akk;
+  R := Acc_;
 end;
 
 function EcOnCurve(const X, Y: TU256): Boolean;
 var
   Y2, X3, T: TU256;
-  Tre: TU256;
+  Three: TU256;
 begin
   { Outside the field it is not a point at all. }
   if (U256Cmp(X, GP) >= 0) or (U256Cmp(Y, GP) >= 0) then
@@ -379,8 +379,8 @@ begin
   FpSqr(Y, Y2);
   FpSqr(X, T);
   FpMul(T, X, X3);                { x^3 }
-  U256SetU32(Tre, 3);
-  FpMul(X, Tre, T);
+  U256SetU32(Three, 3);
+  FpMul(X, Three, T);
   FpSub(X3, T, X3);               { x^3 - 3x }
   FpAdd(X3, GB, T);               { + b }
   Result := U256Cmp(Y2, T) = 0;

@@ -179,7 +179,7 @@ function TScheduler.NextAfter(const E: TScheduleEntry; FromUnix: Int64): Int64;
 var
   D: TDateTime;
   Y, M, Dd: Word;
-  Kandidat: TDateTime;
+  Candidate: TDateTime;
   DayNow, Diff: Integer;
 begin
   if E.Kind = skInterval then
@@ -191,9 +191,9 @@ begin
   case E.Kind of
     skDaily:
       begin
-        Kandidat := EncodeDate(Y, M, Dd) + EncodeTime(E.Hour, E.Minute, 0, 0);
-        if DateTimeToUnix(Kandidat) <= FromUnix then
-          Kandidat := Kandidat + 1;
+        Candidate := EncodeDate(Y, M, Dd) + EncodeTime(E.Hour, E.Minute, 0, 0);
+        if DateTimeToUnix(Candidate) <= FromUnix then
+          Candidate := Candidate + 1;
       end;
     skWeekly:
       begin
@@ -202,34 +202,34 @@ begin
         Diff := E.Day - DayNow;
         if Diff < 0 then
           Inc(Diff, 7);
-        Kandidat := EncodeDate(Y, M, Dd) + Diff +
+        Candidate := EncodeDate(Y, M, Dd) + Diff +
           EncodeTime(E.Hour, E.Minute, 0, 0);
-        if DateTimeToUnix(Kandidat) <= FromUnix then
-          Kandidat := Kandidat + 7;
+        if DateTimeToUnix(Candidate) <= FromUnix then
+          Candidate := Candidate + 7;
       end;
     skMonthly:
       begin
-        Kandidat := EncodeDate(Y, M, 1) + EncodeTime(E.Hour, E.Minute, 0, 0);
+        Candidate := EncodeDate(Y, M, 1) + EncodeTime(E.Hour, E.Minute, 0, 0);
         { A date that does not exist in the month — 31 February — is moved to
           the last day of the month rather than skipped. }
         Dd := E.Day;
-        if Dd > DaysInMonth(Kandidat) then
-          Dd := DaysInMonth(Kandidat);
-        Kandidat := EncodeDate(Y, M, Dd) + EncodeTime(E.Hour, E.Minute, 0, 0);
-        if DateTimeToUnix(Kandidat) <= FromUnix then
+        if Dd > DaysInMonth(Candidate) then
+          Dd := DaysInMonth(Candidate);
+        Candidate := EncodeDate(Y, M, Dd) + EncodeTime(E.Hour, E.Minute, 0, 0);
+        if DateTimeToUnix(Candidate) <= FromUnix then
         begin
-          Kandidat := IncMonth(EncodeDate(Y, M, 1), 1);
+          Candidate := IncMonth(EncodeDate(Y, M, 1), 1);
           Dd := E.Day;
-          if Dd > DaysInMonth(Kandidat) then
-            Dd := DaysInMonth(Kandidat);
-          DecodeDate(Kandidat, Y, M, Dd);
-          Kandidat := EncodeDate(Y, M, Dd) + EncodeTime(E.Hour, E.Minute, 0, 0);
+          if Dd > DaysInMonth(Candidate) then
+            Dd := DaysInMonth(Candidate);
+          DecodeDate(Candidate, Y, M, Dd);
+          Candidate := EncodeDate(Y, M, Dd) + EncodeTime(E.Hour, E.Minute, 0, 0);
         end;
       end;
   else
     Exit(FromUnix + 60);
   end;
-  Result := DateTimeToUnix(Kandidat);
+  Result := DateTimeToUnix(Candidate);
 end;
 
 procedure TScheduler.Add(const AJob, APayload: string; AKind: TScheduleKind;

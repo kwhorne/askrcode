@@ -26,7 +26,7 @@ uses
   SysUtils;
 
 type
-  { Stubber. Bare formen betyr noe her. }
+  { Stubber. Only formen betyr noe her. }
   HWND = PtrUInt;
   TRect = record Left, Top, Right, Bottom: LongInt; end;
 

@@ -58,9 +58,9 @@ begin
   end;
 end;
 
-procedure Like(const What, Forventet, Fikk: string);
+procedure Like(const What, Expected, Got: string);
 begin
-  if Forventet = Fikk then
+  if Expected = Got then
   begin
     Inc(Bestatt);
     WriteLn('  ok    ', What);
@@ -69,8 +69,8 @@ begin
   begin
     Inc(Feilet);
     WriteLn('  FEIL  ', What);
-    WriteLn('        forventet: ', Forventet);
-    WriteLn('        fikk:      ', Fikk);
+    WriteLn('        forventet: ', Expected);
+    WriteLn('        fikk:      ', Got);
   end;
 end;
 
@@ -167,7 +167,7 @@ begin
   EcAdd(P1, P2, P2);
   Ok('G + (-G) er uendelig', EcIsInfinity(P2));
 
-  { Aliasing: R kan vaere samme variabel som P. Forrige utgave nullstilte
+  { Aliasing: R kan vaere samme variabel som P. Previous utgave nullstilte
     out-parameteren foerst, og da var punktet borte foer foerste runde. }
   U256SetU32(Kk, 21);
   EcSetAffine(EcGx, EcGy, P1);
@@ -234,7 +234,7 @@ var
   O: TWebAuthnOptions;
   Rg: TRegistration;
   Asr: TAssertion;
-  Wait, Fikk: Boolean;
+  Wait, Got: Boolean;
 begin
   Start('WebAuthn: hele seremonien, mot data bygget fra speken');
   RegOk := 0; RegNei := 0; AsrOk := 0; AsrNei := 0; Gale := 0;
@@ -277,20 +277,20 @@ begin
       begin
         Rg := VerifyRegistration(O, HexBytes(F[5]), HexBytes(F[6]),
                                  HexBytes(F[4]));
-        Fikk := Rg.Ok;
-        if Fikk and ((Length(Rg.PublicKeyX) <> 32) or
+        Got := Rg.Ok;
+        if Got and ((Length(Rg.PublicKeyX) <> 32) or
                      (Length(Rg.CredentialId) = 0)) then
-          Fikk := False;
+          Got := False;
       end
       else
       begin
         Asr := VerifyAssertion(O, HexBytes(F[5]), HexBytes(F[6]),
                  HexBytes(F[7]), HexBytes(F[4]), HexBytes(F[8]),
                  HexBytes(F[9]), 0);
-        Fikk := Asr.Ok;
+        Got := Asr.Ok;
       end;
 
-      if Fikk <> Wait then
+      if Got <> Wait then
         Inc(Gale)
       else if F[0] = 'REG' then
       begin

@@ -89,7 +89,7 @@ implementation
 
 { ------------------------------------------------------------ hjelpere -- }
 
-function Les(const Path: string; Maks: Integer): TBytes;
+function Read_(const Path: string; MaxSide: Integer): TBytes;
 var
   F: TFileStream;
   N: Integer;
@@ -102,8 +102,8 @@ begin
   F := TFileStream.Create(Path, fmOpenRead or fmShareDenyNone);
   try
     N := F.Size;
-    if (Maks > 0) and (N > Maks) then
-      N := Maks;
+    if (MaxSide > 0) and (N > MaxSide) then
+      N := MaxSide;
     SetLength(B, N);
     if N > 0 then
       F.ReadBuffer(B[0], N);
@@ -113,15 +113,15 @@ begin
   end;
 end;
 
-function Has_(const D: TBytes; Pos_: Integer; const Magisk: array of Byte): Boolean;
+function Has_(const D: TBytes; Pos_: Integer; const Magic: array of Byte): Boolean;
 var
   I: Integer;
 begin
   Result := False;
-  if Pos_ + Length(Magisk) > Length(D) then
+  if Pos_ + Length(Magic) > Length(D) then
     Exit;
-  for I := 0 to High(Magisk) do
-    if D[Pos_ + I] <> Magisk[I] then
+  for I := 0 to High(Magic) do
+    if D[Pos_ + I] <> Magic[I] then
       Exit;
   Result := True;
 end;
@@ -159,15 +159,15 @@ end;
 { A TStr is a slice into a buffer somebody else owns. It is copied here
   because the rest of the unit works in TBytes, and because the header is
   a few kilobytes anyway — not the whole upload. }
-function StrBytes(const S: TStr; Maks: Integer): TBytes;
+function StrBytes(const S: TStr; MaxSide: Integer): TBytes;
 var
   N: Integer;
   B: TBytes;
 begin
   B := nil;
   N := S.Len;
-  if (Maks > 0) and (N > Maks) then
-    N := Maks;
+  if (MaxSide > 0) and (N > MaxSide) then
+    N := MaxSide;
   SetLength(B, N);
   if N > 0 then
     Move(S.Data^, B[0], N);
@@ -222,7 +222,7 @@ end;
 
 function SniffFormat(const Path: string): TImageFormat;
 begin
-  Result := SniffFormat(Les(Path, 4096));
+  Result := SniffFormat(Read_(Path, 4096));
 end;
 
 function SniffFormat(const S: TStr): TImageFormat;
@@ -321,7 +321,7 @@ end;
 function ReadImageInfo(const Data: TBytes): TImageInfo;
 var
   P, Len: Integer;
-  Blokk: Int64;
+  Block: Int64;
 begin
   Result.Format := SniffFormat(Data);
   Result.Width := 0;
@@ -347,7 +347,7 @@ begin
         P := 8;
         while P + 8 <= Length(Data) do
         begin
-          Blokk := Be32(Data, P);
+          Block := Be32(Data, P);
           if Has_(Data, P + 4, [$61, $63, $54, $4C]) then
           begin
             Result.Animated := True;
@@ -355,9 +355,9 @@ begin
           end;
           if Has_(Data, P + 4, [$49, $44, $41, $54]) then
             Break;
-          if (Blokk < 0) or (Blokk > Length(Data)) then
+          if (Block < 0) or (Block > Length(Data)) then
             Break;
-          Inc(P, 12 + Integer(Blokk));
+          Inc(P, 12 + Integer(Block));
         end;
       end;
 
@@ -382,7 +382,7 @@ begin
 
     ifWebp:
       begin
-        { Tre varianter: VP8 (lossy), VP8L (lossless), VP8X (utvidet). }
+        { Three varianter: VP8 (lossy), VP8L (lossless), VP8X (utvidet). }
         if Has_(Data, 12, [$56, $50, $38, $20]) and (Length(Data) >= 30) then
         begin
           Result.Width := Le16(Data, 26) and $3FFF;
@@ -429,7 +429,7 @@ function ReadImageInfo(const Path: string): TImageInfo;
 begin
   { 64 kB is enough for the header in every format above. The GIF's
     NETSCAPE extension comes early, and the PNG's acTL before IDAT. }
-  Result := ReadImageInfo(Les(Path, 64 * 1024));
+  Result := ReadImageInfo(Read_(Path, 64 * 1024));
 end;
 
 function ReadImageInfo(const S: TStr): TImageInfo;
@@ -465,19 +465,19 @@ end;
 function JpegOrientation(const Data: TBytes): Integer;
 var
   P, Len, Tiff, Count_, I, Field_: Integer;
-  LilleEndian: Boolean;
+  LittleEndian: Boolean;
 
-  function Les16(Pos_: Integer): Integer;
+  function Read16(Pos_: Integer): Integer;
   begin
-    if LilleEndian then
+    if LittleEndian then
       Result := Le16(Data, Pos_)
     else
       Result := Be16(Data, Pos_);
   end;
 
-  function Les32(Pos_: Integer): Int64;
+  function Read32(Pos_: Integer): Int64;
   begin
-    if LilleEndian then
+    if LittleEndian then
       Result := Le32(Data, Pos_)
     else
       Result := Be32(Data, Pos_);
@@ -507,22 +507,22 @@ begin
       Tiff := P + 10;
       if Tiff + 8 > Length(Data) then
         Exit;
-      LilleEndian := Has_(Data, Tiff, [$49, $49]);
-      if not (LilleEndian or Has_(Data, Tiff, [$4D, $4D])) then
+      LittleEndian := Has_(Data, Tiff, [$49, $49]);
+      if not (LittleEndian or Has_(Data, Tiff, [$4D, $4D])) then
         Exit;
-      I := Tiff + Integer(Les32(Tiff + 4));
+      I := Tiff + Integer(Read32(Tiff + 4));
       if (I + 2 > Length(Data)) or (I < Tiff) then
         Exit;
-      Count_ := Les16(I);
+      Count_ := Read16(I);
       Inc(I, 2);
       { Hvert felt er tolv byte: tag, type, antall, verdi. }
       for Field_ := 0 to Count_ - 1 do
       begin
         if I + 12 > Length(Data) then
           Exit;
-        if Les16(I) = $0112 then          { Orientation }
+        if Read16(I) = $0112 then          { Orientation }
         begin
-          Result := Les16(I + 8);
+          Result := Read16(I + 8);
           if (Result < 1) or (Result > 8) then
             Result := 0;
           Exit;

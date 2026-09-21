@@ -201,7 +201,7 @@ end;
 function CsrfValid(Req: TRequest): Boolean;
 var
   S: TSession;
-  Forventet, Fikk: string;
+  Expected, Got: string;
 begin
   if not CsrfMethodNeedsCheck(Req.Method) then
     Exit(True);
@@ -212,20 +212,20 @@ begin
   if S = nil then
     Exit(False);
 
-  Forventet := S.Get(CsrfSessionKey);
+  Expected := S.Get(CsrfSessionKey);
   { No token in the session means the user has never been given a form by
     us. Then there is nothing to compare against, and the answer is
     no. }
-  if Forventet = '' then
+  if Expected = '' then
     Exit(False);
 
-  Fikk := TokenFromRequest(Req);
-  if Fikk = '' then
+  Got := TokenFromRequest(Req);
+  if Got = '' then
     Exit(False);
 
   { Constant time. An ordinary `=` stops at the first differing
     character, and the time it takes leaks how far a guess got. }
-  Result := ConstantTimeEquals(Forventet, Fikk);
+  Result := ConstantTimeEquals(Expected, Got);
 end;
 
 type

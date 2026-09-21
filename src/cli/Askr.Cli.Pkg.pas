@@ -88,7 +88,7 @@ function CmdOutdated(P: TProject): Integer;
   put a new directory on the search path — and the error would have been
   "unit not found", which points somewhere entirely different from the
   cause. The same role as bundle exec and ./gradlew. }
-function DelegateIfNeeded(P: TProject; out ExitKode: Integer): Boolean;
+function DelegateIfNeeded(P: TProject; out ExitCode: Integer): Boolean;
 
 function CmdVersionInfo(P: TProject): Integer;
 
@@ -358,7 +358,7 @@ function ResolveFramework(P: TProject; out Origin: TPkgOrigin;
   out Err: string): string;
 var
   L: TLock;
-  Dir, Onsket: string;
+  Dir, Wanted: string;
 begin
   Result := '';
   Err := '';
@@ -381,10 +381,10 @@ begin
 
   { 2. Otherwise the locked version from the cache. }
   L := ReadLock(P.Root);
-  Onsket := L.Version;
-  if Onsket = '' then
-    Onsket := P.AskrWantedVersion;
-  if Onsket = '' then
+  Wanted := L.Version;
+  if Wanted = '' then
+    Wanted := P.AskrWantedVersion;
+  if Wanted = '' then
   begin
     Err := 'this project does not say which Askr version it needs.' + LineEnding +
             LineEnding +
@@ -397,10 +397,10 @@ begin
     Exit;
   end;
 
-  Dir := CacheDirFor(Onsket);
+  Dir := CacheDirFor(Wanted);
   if not TreeIsComplete(Dir) then
   begin
-    Err := 'Askr ' + Onsket + ' is not installed.' + LineEnding +
+    Err := 'Askr ' + Wanted + ' is not installed.' + LineEnding +
             LineEnding +
             '  looked in  ' + Dir + LineEnding +
             LineEnding +
@@ -417,36 +417,36 @@ end;
 function InstalledVersions: TStringArray;
 var
   R: TSearchRec;
-  Rot, V: string;
+  Root, V: string;
   N: Integer;
-  Liste: TStringArray;
+  Items: TStringArray;
 begin
   { Built locally and assigned at the end. SetLength straight on Result
     gives "function result variable of a managed type does not seem to be
     initialized", and the suites here are warning free. }
-  Liste := nil;
-  SetLength(Liste, 0);
-  Result := Liste;
-  Rot := IncludeTrailingPathDelimiter(CacheRoot);
-  if not DirectoryExists(Rot) then
+  Items := nil;
+  SetLength(Items, 0);
+  Result := Items;
+  Root := IncludeTrailingPathDelimiter(CacheRoot);
+  if not DirectoryExists(Root) then
     Exit;
   N := 0;
-  if FindFirst(Rot + 'askrcode@*', faDirectory, R) = 0 then
+  if FindFirst(Root + 'askrcode@*', faDirectory, R) = 0 then
   try
     repeat
       if (R.Name = '.') or (R.Name = '..') then
         Continue;
-      V := TreeVersion(Rot + R.Name);
+      V := TreeVersion(Root + R.Name);
       if V = '' then
         Continue;
-      SetLength(Liste, N + 1);
-      Liste[N] := V;
+      SetLength(Items, N + 1);
+      Items[N] := V;
       Inc(N);
     until FindNext(R) <> 0;
   finally
     FindClose(R);
   end;
-  Result := Liste;
+  Result := Items;
 end;
 
 { The tags on the remote, newest last. Requires a network; an empty list
@@ -459,11 +459,11 @@ var
   I, P2, N: Integer;
   Tmp: string;
   J, K: Integer;
-  Liste: TStringArray;
+  Items: TStringArray;
 begin
-  Liste := nil;
-  SetLength(Liste, 0);
-  Result := Liste;
+  Items := nil;
+  SetLength(Items, 0);
+  Result := Items;
   if RunCapture('/usr/bin/env', ['git', 'ls-remote', '--tags', '--refs',
                                  Source], '', Ut) <> 0 then
     Exit;
@@ -480,13 +480,13 @@ begin
       Tag := Trim(Copy(Line_, P2 + Length('refs/tags/'), Length(Line_)));
       if not ParseSemVer(Tag).Valid then
         Continue;
-      SetLength(Liste, N + 1);
+      SetLength(Items, N + 1);
       { The 'v' is removed here, so that the rest of the code never has to
         know whether a version came from a tag or from askr.toml. }
       if (Tag <> '') and ((Tag[1] = 'v') or (Tag[1] = 'V')) then
-        Liste[N] := Copy(Tag, 2, Length(Tag))
+        Items[N] := Copy(Tag, 2, Length(Tag))
       else
-        Liste[N] := Tag;
+        Items[N] := Tag;
       Inc(N);
     end;
   finally
@@ -495,25 +495,25 @@ begin
 
   { Insertion sort. The list is short, and pulling in a generic sort for
     ten tags is the wrong trade. }
-  for J := 1 to High(Liste) do
+  for J := 1 to High(Items) do
   begin
-    Tmp := Liste[J];
+    Tmp := Items[J];
     K := J - 1;
-    while (K >= 0) and (CompareSemVer(Liste[K], Tmp) > 0) do
+    while (K >= 0) and (CompareSemVer(Items[K], Tmp) > 0) do
     begin
-      Liste[K + 1] := Liste[K];
+      Items[K + 1] := Items[K];
       Dec(K);
     end;
-    Liste[K + 1] := Tmp;
+    Items[K + 1] := Tmp;
   end;
-  Result := Liste;
+  Result := Items;
 end;
 
 { ------------------------------------------------------------- henting -- }
 
 function Fetch(const Source, Version: string; out Commit, Err: string): Boolean;
 var
-  Target, Midl, Ut, Fant, Klonelogg: string;
+  Target, Tmp, Ut, Fant, CloneLog: string;
 begin
   Result := False;
   Commit := '';
@@ -539,9 +539,9 @@ begin
   { Fetched into a temporary directory and moved into place at the end. An
     aborted download must not leave behind something that looks
     installed. }
-  Midl := Target + '.tmp';
-  if DirectoryExists(Midl) then
-    RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
+  Tmp := Target + '.tmp';
+  if DirectoryExists(Tmp) then
+    RunCapture('/usr/bin/env', ['rm', '-rf', Tmp], '', Ut);
 
   Si('  fetching Askr ' + Version + ' from ' + Source);
   { Caught rather than let out. An annotated tag makes git write
@@ -552,10 +552,10 @@ begin
     is precisely what you need. }
   if RunCapture('/usr/bin/env',
        ['git', '-c', 'advice.detachedHead=false', 'clone', '--depth', '1',
-        '--branch', 'v' + Version, '--quiet', Source, Midl], '', Klonelogg) <> 0 then
+        '--branch', 'v' + Version, '--quiet', Source, Tmp], '', CloneLog) <> 0 then
   begin
-    Si(Klonelogg);
-    RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
+    Si(CloneLog);
+    RunCapture('/usr/bin/env', ['rm', '-rf', Tmp], '', Ut);
     Err := 'could not fetch v' + Version + ' from ' + Source + '.' +
             LineEnding + LineEnding +
             '  the tag may not exist. see what is published with:' +
@@ -566,10 +566,10 @@ begin
   { The tree has to say that it IS the version we asked for. A tag that
     points at the wrong code is exactly the bug nobody notices until it is
     in production. }
-  Fant := TreeVersion(Midl);
+  Fant := TreeVersion(Tmp);
   if Fant <> Version then
   begin
-    RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
+    RunCapture('/usr/bin/env', ['rm', '-rf', Tmp], '', Ut);
     if Fant = '' then
       Err := 'the tag v' + Version + ' does not look like an Askr' +
               ' checkout: src/core/Askr.Core.Version.pas is missing.'
@@ -579,12 +579,12 @@ begin
     Exit;
   end;
 
-  RunCapture('/usr/bin/env', ['git', 'rev-parse', 'HEAD'], Midl, Ut);
+  RunCapture('/usr/bin/env', ['git', 'rev-parse', 'HEAD'], Tmp, Ut);
   Commit := Trim(Ut);
 
-  if not RenameFile(Midl, Target) then
+  if not RenameFile(Tmp, Target) then
   begin
-    RunCapture('/usr/bin/env', ['rm', '-rf', Midl], '', Ut);
+    RunCapture('/usr/bin/env', ['rm', '-rf', Tmp], '', Ut);
     Err := 'could not move the download into ' + Target;
     Exit;
   end;
@@ -637,10 +637,10 @@ end;
 
   Now the colon is found after the key, and only the quoted value after it
   is replaced. If the line does not look as expected, nothing is guessed:
-  the function says what it should say. The same rule as InstallerRuter in
+  the function says what it should say. The same rule as InstallRoutes in
   the scaffolding. }
 function SetLaufDependency(P: TProject; const LaufSpec: string;
-  out Endret: Boolean): Boolean;
+  out Changed: Boolean): Boolean;
 const
   Key_ = '"@askrcode/lauf"';
 var
@@ -648,7 +648,7 @@ var
   F: TStringList;
   I, PN, A, V1, V2: Integer;
 begin
-  Endret := False;
+  Changed := False;
   { FrontendDir is already absolute. Putting Root in front gave a path
     that never existed, and then this function did nothing and reported
     success. }
@@ -695,7 +695,7 @@ begin
       begin
         F[I] := Ny;
         F.SaveToFile(Path_);
-        Endret := True;
+        Changed := True;
       end;
       Exit(True);
     end;
@@ -712,37 +712,37 @@ begin
 end;
 
 { Sets [askr] version in askr.toml. If it does not find the line, it does
-  not guess — it says what should be there. The same rule as InstallerRuter
+  not guess — it says what should be there. The same rule as InstallRoutes
   in the scaffolding. }
-function SetPinnedVersion(P: TProject; const Versjon: string): Boolean;
+function SetPinnedVersion(P: TProject; const VersionStr: string): Boolean;
 var
   F: TStringList;
   I, A: Integer;
   S2, Path_: string;
-  ISeksjon: Boolean;
+  InSection: Boolean;
 begin
   Result := False;
   Path_ := IncludeTrailingPathDelimiter(P.Root) + 'askr.toml';
   F := TStringList.Create;
   try
     F.LoadFromFile(Path_);
-    ISeksjon := False;
+    InSection := False;
     for I := 0 to F.Count - 1 do
     begin
       S2 := Trim(F[I]);
       if (S2 <> '') and (S2[1] = '[') then
       begin
-        ISeksjon := LowerCase(S2) = '[askr]';
+        InSection := LowerCase(S2) = '[askr]';
         Continue;
       end;
-      if not ISeksjon then
+      if not InSection then
         Continue;
       if Pos('version', S2) <> 1 then
         Continue;
       A := Pos('=', F[I]);
       if A = 0 then
         Continue;
-      F[I] := Copy(F[I], 1, A) + ' "' + Versjon + '"';
+      F[I] := Copy(F[I], 1, A) + ' "' + VersionStr + '"';
       F.SaveToFile(Path_);
       Exit(True);
     end;
@@ -754,7 +754,7 @@ begin
   Si('  set it yourself, so the pin and the lock agree:');
   Si('');
   Si('    [askr]');
-  Si('    version = "' + Versjon + '"');
+  Si('    version = "' + VersionStr + '"');
   Si('');
 end;
 
@@ -805,8 +805,8 @@ end;
 function CmdInstall(P: TProject): Integer;
 var
   L: TLock;
-  Onsket, Dir, Commit, Err, Lauf: string;
-  Endret: Boolean;
+  Wanted, Dir, Commit, Err, Lauf: string;
+  Changed: Boolean;
 begin
   Result := 0;
 
@@ -820,10 +820,10 @@ begin
   end;
 
   L := ReadLock(P.Root);
-  Onsket := L.Version;
-  if Onsket = '' then
-    Onsket := P.AskrWantedVersion;
-  if Onsket = '' then
+  Wanted := L.Version;
+  if Wanted = '' then
+    Wanted := P.AskrWantedVersion;
+  if Wanted = '' then
   begin
     Si('askr.toml does not say which version to install.');
     Si('');
@@ -832,15 +832,15 @@ begin
     Exit(1);
   end;
 
-  Dir := CacheDirFor(Onsket);
+  Dir := CacheDirFor(Wanted);
   if TreeIsComplete(Dir) then
   begin
-    Si('Askr ' + Onsket + ' is already installed.');
+    Si('Askr ' + Wanted + ' is already installed.');
     { Read out of the checkout, not out of the lock file. That is the whole
       point of the check below. }
     Commit := CommitOf(Dir);
   end
-  else if not Fetch(P.AskrSource, Onsket, Commit, Err) then
+  else if not Fetch(P.AskrSource, Wanted, Commit, Err) then
   begin
     Si('askr: ' + Err);
     Exit(1);
@@ -853,7 +853,7 @@ begin
      (L.Commit <> Commit) then
   begin
     Si('askr: askr.lock pins commit ' + Copy(L.Commit, 1, 12) + ' for ' +
-       Onsket + ',');
+       Wanted + ',');
     Si('      but the copy in the cache is ' + Copy(Commit, 1, 12) + '.');
     Si('');
     Si('  the tag may have been moved. remove the cached copy to refetch:');
@@ -863,25 +863,25 @@ begin
 
   Lauf := TreeLaufVersion(Dir);
   if Lauf = '' then
-    Lauf := Onsket;
+    Lauf := Wanted;
 
   { Lauf is not published on npm yet, so the dependency points into the
     version we just installed. When the package is published, this becomes
     the version number and nothing else changes. }
-  if not SetLaufDependency(P, LaufPath(P, Dir), Endret) then
+  if not SetLaufDependency(P, LaufPath(P, Dir), Changed) then
     Result := 1;
 
-  L.Version := Onsket;
+  L.Version := Wanted;
   L.Commit := Commit;
   L.Lauf := Lauf;
   WriteLock(P.Root, L);
 
   Si('');
-  Si('Askr ' + Onsket + '  (' + Copy(Commit, 1, 12) + ')');
+  Si('Askr ' + Wanted + '  (' + Copy(Commit, 1, 12) + ')');
   Si('  framework  ' + Dir);
   Si('  lauf       ' + Lauf);
   Si('  lock       ' + LockPath(P.Root));
-  if Endret then
+  if Changed then
   begin
     Si('');
     Si('frontend/package.json changed. Run this to pick it up:');
@@ -893,7 +893,7 @@ function CmdUpdate(P: TProject; const Target: string): Integer;
 var
   L: TLock;
   Tags: TStringArray;
-  Now_, To_, Notater, Commit, Err: string;
+  Now_, To_, Notes, Commit, Err: string;
   I: Integer;
   Spec: string;
 begin
@@ -980,14 +980,14 @@ begin
     upgrade you have not read is an upgrade you debug afterwards. }
   if Now_ <> '' then
   begin
-    Notater := UpgradeNotes(CacheDirFor(To_), Now_, To_);
-    if Notater <> '' then
+    Notes := UpgradeNotes(CacheDirFor(To_), Now_, To_);
+    if Notes <> '' then
     begin
       Si('');
       Si('--- what changes between ' + Now_ + ' and ' + To_ +
          ' --------------------');
       Si('');
-      Si(Notater);
+      Si(Notes);
       Si('');
       Si('------------------------------------------------------------');
     end;
@@ -1022,7 +1022,7 @@ var
   Tags: TStringArray;
   Now_: string;
   I: Integer;
-  Nyeste: string;
+  Newest: string;
 begin
   Result := 0;
   L := ReadLock(P.Root);
@@ -1044,8 +1044,8 @@ begin
     Exit;
   end;
 
-  Nyeste := Tags[High(Tags)];
-  Si('latest      ' + Nyeste);
+  Newest := Tags[High(Tags)];
+  Si('latest      ' + Newest);
   Si('');
   Si('published releases:');
   for I := High(Tags) downto 0 do
@@ -1054,23 +1054,23 @@ begin
     else
       Si('  ' + Tags[I]);
 
-  if (Now_ <> '') and (CompareSemVer(Nyeste, Now_) > 0) then
+  if (Now_ <> '') and (CompareSemVer(Newest, Now_) > 0) then
   begin
     Si('');
-    Si('Askr ' + Nyeste + ' is available. Read what changes, then take it:');
+    Si('Askr ' + Newest + ' is available. Read what changes, then take it:');
     Si('  askr update');
   end;
 end;
 
-function DelegateIfNeeded(P: TProject; out ExitKode: Integer): Boolean;
+function DelegateIfNeeded(P: TProject; out ExitCode: Integer): Boolean;
 var
-  Dir, Err, Binaer, Skall, Bygglogg: string;
+  Dir, Err, Binary_, ShellScript, BuildLog: string;
   O: TPkgOrigin;
   Args: array of string;
   I: Integer;
 begin
   Result := False;
-  ExitKode := 0;
+  ExitCode := 0;
 
   { Without this the delegated process would have delegated onwards in a
     ring. }
@@ -1087,21 +1087,21 @@ begin
   if O = poPath then
     Exit;
 
-  Binaer := IncludeTrailingPathDelimiter(Dir) + '.build/bin/askr';
-  if not FileExists(Binaer) then
+  Binary_ := IncludeTrailingPathDelimiter(Dir) + '.build/bin/askr';
+  if not FileExists(Binary_) then
   begin
-    Skall := IncludeTrailingPathDelimiter(Dir) + 'askr';
-    if not FileExists(Skall) then
+    ShellScript := IncludeTrailingPathDelimiter(Dir) + 'askr';
+    if not FileExists(ShellScript) then
       Exit;   { no way to build it — let the old tool have a go }
     Si('Building the askr ' + TreeVersion(Dir) + ' tool once...');
     { Caught rather than let out. The build script in the framework is a
       working tool and writes Norwegian; it must not land in front of
       somebody who only wanted to run askr build. On an error everything is
       shown, because then the output is precisely what you need. }
-    if (RunCapture('/bin/sh', [Skall, 'cli'], Dir, Bygglogg) <> 0) or
-       not FileExists(Binaer) then
+    if (RunCapture('/bin/sh', [ShellScript, 'cli'], Dir, BuildLog) <> 0) or
+       not FileExists(Binary_) then
     begin
-      Si(Bygglogg);
+      Si(BuildLog);
       Si('askr: could not build the tool for Askr ' + TreeVersion(Dir) + '.');
       Si('      continuing with askr ' + AskrVersion + ' — if the build');
       Si('      fails on a unit it cannot find, this is why.');
@@ -1122,9 +1122,9 @@ begin
   for I := High(Args) downto 2 do
     Args[I] := Args[I - 2];
   Args[0] := 'ASKR_DELEGATED=1';
-  Args[1] := Binaer;
+  Args[1] := Binary_;
 
-  ExitKode := RunThrough('/usr/bin/env', Args, GetCurrentDir);
+  ExitCode := RunThrough('/usr/bin/env', Args, GetCurrentDir);
   Result := True;
 end;
 

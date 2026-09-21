@@ -11,12 +11,12 @@ uses
 var
   A: TArena;
   C: TDbConnection;
-  I, J, Ekstra: Integer;
+  I, J, Extra: Integer;
 begin
   { With_ et tall som argument legges det på så mange ekstra tabeller. Skjemaet
     en ekte app har er ikke to tabeller, og introspeksjonen kjører på hver
     eneste bygging — da må kostnaden måles på noe som likner. }
-  Ekstra := StrToIntDef(ParamStr(1), 0);
+  Extra := StrToIntDef(ParamStr(1), 0);
   ForceDirectories('.build/run');
   if FileExists('.build/run/shop.db') then
     DeleteFile('.build/run/shop.db');
@@ -60,7 +60,7 @@ begin
          DbParam(A, Currency(I * 37)),
          DbParam(A, I mod 2 = 0)]);
 
-    for I := 1 to Ekstra do
+    for I := 1 to Extra do
     begin
       C.Exec(A, Format(
         'CREATE TABLE tabell_%d (id INTEGER PRIMARY KEY, name TEXT NOT NULL, ' +
@@ -75,7 +75,7 @@ begin
     end;
 
     WriteLn(Format('setupdb: .build/run/shop.db klar (%d tabeller)',
-      [2 + Ekstra]));
+      [2 + Extra]));
   finally
     C.Free;
     A.Free;

@@ -66,7 +66,7 @@ type
       row that has been reserved for an hour says who took it. }
     FOwner: string;
     function SkipLocked: Boolean;
-    procedure FrigiForlatte(C: TDbConnection; A: TArena);
+    procedure ReleaseAbandoned(C: TDbConnection; A: TArena);
   public
     { Opens its own pool against the DSN. }
     constructor Create(const Dsn: string; AMaxConnections: Integer = 4); overload;
@@ -181,11 +181,11 @@ procedure TDbJobStore.EnsureSchema;
 var
   S: TSchemaBuilder;
   T: TTableBuilder;
-  Setninger: TStringArray;
+  Statements: TStringArray;
   I: Integer;
   A: TArena;
   C: TDbConnection;
-  Skjema: TDbSchema;
+  Schema_: TDbSchema;
   Finnes: Boolean;
 begin
   { Check first, rather than relying on the DDL being idempotent. `CREATE
@@ -197,10 +197,10 @@ begin
   try
     C := FPool.Acquire;
     try
-      Skjema := IntrospectSchema(C);
-      Finnes := (Skjema.Table(FJobsTable) <> nil) and
-                (Skjema.Table(FFailedTable) <> nil);
-      Skjema.Free;
+      Schema_ := IntrospectSchema(C);
+      Finnes := (Schema_.Table(FJobsTable) <> nil) and
+                (Schema_.Table(FFailedTable) <> nil);
+      Schema_.Free;
     finally
       FPool.Release(C);
     end;
@@ -238,7 +238,7 @@ begin
     T.Text('error');
     T.BigInt('failed_at');
 
-    Setninger := S.ToSql;
+    Statements := S.ToSql;
   finally
     S.Free;
   end;
@@ -247,8 +247,8 @@ begin
   try
     C := FPool.Acquire;
     try
-      for I := 0 to High(Setninger) do
-        C.Exec(A, Setninger[I]);
+      for I := 0 to High(Statements) do
+        C.Exec(A, Statements[I]);
     finally
       FPool.Release(C);
     end;
@@ -282,7 +282,7 @@ begin
   end;
 end;
 
-function Sitert(C: TDbConnection; A: TArena; const Name_: string): string;
+function Quoted(C: TDbConnection; A: TArena; const Name_: string): string;
 var
   B: TStrBuilder;
 begin
@@ -322,7 +322,7 @@ begin
   try
     C := FPool.Acquire;
     try
-      Sql := 'INSERT INTO ' + Sitert(C, A, FJobsTable) +
+      Sql := 'INSERT INTO ' + Quoted(C, A, FJobsTable) +
         ' (name, payload, attempts, available_at, created_at) VALUES (' +
         Phs(C, A, 1, 5) + ')';
       C.ExecParams(A, Sql, [
@@ -342,12 +342,12 @@ end;
 { Jobs that were reserved and never settled. The process that took them
   is gone — it was killed, or the machine disappeared. Without this they
   would stay there forever. }
-procedure TDbJobStore.FrigiForlatte(C: TDbConnection; A: TArena);
+procedure TDbJobStore.ReleaseAbandoned(C: TDbConnection; A: TArena);
 var
   R: TDbResult;
   Sql: string;
 begin
-  Sql := 'UPDATE ' + Sitert(C, A, FJobsTable) +
+  Sql := 'UPDATE ' + Quoted(C, A, FJobsTable) +
     ' SET reserved_at = NULL, reserved_by = NULL' +
     ' WHERE reserved_at IS NOT NULL AND reserved_at < ' + Ph(C, A, 1);
   R := C.ExecParams(A, Sql, [DbParam(A, UnixNowMs - FVisibilityMs)]);
@@ -373,7 +373,7 @@ begin
   try
     C := FPool.Acquire;
     try
-      FrigiForlatte(C, A);
+      ReleaseAbandoned(C, A);
       Now_ := UnixNowMs;
 
       { One transaction around "find and take". Two workers seeing the same
@@ -381,7 +381,7 @@ begin
       C.StartTransaction;
       try
         Sql := 'SELECT id, name, payload, attempts FROM ' +
-          Sitert(C, A, FJobsTable) +
+          Quoted(C, A, FJobsTable) +
           ' WHERE reserved_at IS NULL AND available_at <= ' + Ph(C, A, 1) +
           ' ORDER BY available_at, id LIMIT 1';
         if SkipLocked then
@@ -398,7 +398,7 @@ begin
         Payload := R.Value(0, 2).ToString;
         J.Attempt := Integer(R.AsInt64(0, 3));
 
-        Sql := 'UPDATE ' + Sitert(C, A, FJobsTable) +
+        Sql := 'UPDATE ' + Quoted(C, A, FJobsTable) +
           ' SET reserved_at = ' + Ph(C, A, 1) +
           ', reserved_by = ' + Ph(C, A, 2) +
           ' WHERE id = ' + Ph(C, A, 3) + ' AND reserved_at IS NULL';
@@ -441,7 +441,7 @@ end;
 
 { Releases what the worker was given. Called by each of the four
   endings. }
-procedure SlippMinne(var J: TReservedJob);
+procedure FreePayload(var J: TReservedJob);
 begin
   if J.Data <> nil then
     FreeMem(J.Data);
@@ -460,7 +460,7 @@ begin
   try
     C := FPool.Acquire;
     try
-      C.ExecParams(A, 'DELETE FROM ' + Sitert(C, A, FJobsTable) +
+      C.ExecParams(A, 'DELETE FROM ' + Quoted(C, A, FJobsTable) +
         ' WHERE id = ' + Ph(C, A, 1), [DbParam(A, J.Id)]);
     finally
       FPool.Release(C);
@@ -468,7 +468,7 @@ begin
   finally
     A.Free;
   end;
-  SlippMinne(J);
+  FreePayload(J);
 end;
 
 procedure TDbJobStore.Retry(var J: TReservedJob; DelayMs: Int64);
@@ -483,7 +483,7 @@ begin
       { The reservation is released and the time pushed out. The attempt
         counter is in the row, not in memory — it has to survive the
         process dying mid-job. }
-      C.ExecParams(A, 'UPDATE ' + Sitert(C, A, FJobsTable) +
+      C.ExecParams(A, 'UPDATE ' + Quoted(C, A, FJobsTable) +
         ' SET attempts = attempts + 1, reserved_at = NULL,' +
         ' reserved_by = NULL, available_at = ' + Ph(C, A, 1) +
         ' WHERE id = ' + Ph(C, A, 2),
@@ -494,7 +494,7 @@ begin
   finally
     A.Free;
   end;
-  SlippMinne(J);
+  FreePayload(J);
 end;
 
 procedure TDbJobStore.Fail(var J: TReservedJob; const Reason: string);
@@ -515,13 +515,13 @@ begin
       try
         { Moved, not deleted. A job that has given up is the only trace that
           something should have happened and did not. }
-        C.ExecParams(A, 'INSERT INTO ' + Sitert(C, A, FFailedTable) +
+        C.ExecParams(A, 'INSERT INTO ' + Quoted(C, A, FFailedTable) +
           ' (name, payload, attempts, error, failed_at) VALUES (' +
           Phs(C, A, 1, 5) + ')',
           [DbParam(A, J.Name), DbParam(A, Payload),
            DbParam(A, Int64(J.Attempt + 1)), DbParam(A, Reason),
            DbParam(A, UnixNowMs)]);
-        C.ExecParams(A, 'DELETE FROM ' + Sitert(C, A, FJobsTable) +
+        C.ExecParams(A, 'DELETE FROM ' + Quoted(C, A, FJobsTable) +
           ' WHERE id = ' + Ph(C, A, 1), [DbParam(A, J.Id)]);
         C.Commit;
       except
@@ -534,7 +534,7 @@ begin
   finally
     A.Free;
   end;
-  SlippMinne(J);
+  FreePayload(J);
 end;
 
 procedure TDbJobStore.Drop(var J: TReservedJob; const Reason: string);
@@ -556,7 +556,7 @@ begin
   try
     C := FPool.Acquire;
     try
-      R := C.Exec(A, 'SELECT count(*) FROM ' + Sitert(C, A, FJobsTable));
+      R := C.Exec(A, 'SELECT count(*) FROM ' + Quoted(C, A, FJobsTable));
       if (R <> nil) and not R.IsEmpty then
         Result := Integer(R.AsInt64(0, 0));
     finally
@@ -578,7 +578,7 @@ begin
   try
     C := FPool.Acquire;
     try
-      R := C.Exec(A, 'SELECT count(*) FROM ' + Sitert(C, A, FFailedTable));
+      R := C.Exec(A, 'SELECT count(*) FROM ' + Quoted(C, A, FFailedTable));
       if (R <> nil) and not R.IsEmpty then
         Result := R.AsInt64(0, 0);
     finally
@@ -598,7 +598,7 @@ begin
   try
     C := FPool.Acquire;
     try
-      C.Exec(A, 'DELETE FROM ' + Sitert(C, A, FFailedTable));
+      C.Exec(A, 'DELETE FROM ' + Quoted(C, A, FFailedTable));
     finally
       FPool.Release(C);
     end;
@@ -622,19 +622,19 @@ begin
     C := FPool.Acquire;
     try
       R := C.Exec(A, 'SELECT id, name, payload FROM ' +
-        Sitert(C, A, FFailedTable) + ' ORDER BY id');
+        Quoted(C, A, FFailedTable) + ' ORDER BY id');
       if (R = nil) or R.IsEmpty then
         Exit(0);
       C.StartTransaction;
       try
         for I := 0 to R.RowCount - 1 do
         begin
-          C.ExecParams(A, 'INSERT INTO ' + Sitert(C, A, FJobsTable) +
+          C.ExecParams(A, 'INSERT INTO ' + Quoted(C, A, FJobsTable) +
             ' (name, payload, attempts, available_at, created_at) VALUES (' +
             Phs(C, A, 1, 5) + ')',
             [DbParam(R.Value(I, 1)), DbParam(R.Value(I, 2)),
              DbParam(A, Int64(0)), DbParam(A, Now_), DbParam(A, Now_)]);
-          C.ExecParams(A, 'DELETE FROM ' + Sitert(C, A, FFailedTable) +
+          C.ExecParams(A, 'DELETE FROM ' + Quoted(C, A, FFailedTable) +
             ' WHERE id = ' + Ph(C, A, 1), [DbParam(A, R.AsInt64(I, 0))]);
           Inc(Result);
         end;

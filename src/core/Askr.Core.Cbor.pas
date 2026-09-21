@@ -53,7 +53,7 @@ type
     { Everything read and nothing left over. WebAuthn objects are meant to
       be consumed completely — if data remains, this is not what we thought
       we were reading. }
-    function Ferdig: Boolean;
+    function FullyConsumed: Boolean;
 
     { The major type of the next value, without moving the cursor. }
     function NextType(out Major: Byte): Boolean;
@@ -103,7 +103,7 @@ begin
   Result := FPos >= FSize;
 end;
 
-function TCborReader.Ferdig: Boolean;
+function TCborReader.FullyConsumed: Boolean;
 begin
   Result := FPos = FSize;
 end;
@@ -111,7 +111,7 @@ end;
 function TCborReader.ReadHeader(out Major: Byte; out Arg: UInt64): Boolean;
 var
   B: Byte;
-  Ekstra, I: Integer;
+  Extra, I: Integer;
 begin
   Major := 0;
   Arg := 0;
@@ -121,30 +121,30 @@ begin
   B := FBuf[FPos];
   Inc(FPos);
   Major := B shr 5;
-  Ekstra := B and $1F;
+  Extra := B and $1F;
 
-  if Ekstra < 24 then
+  if Extra < 24 then
   begin
-    Arg := Ekstra;
+    Arg := Extra;
     Exit(True);
   end;
 
   { 28, 29 and 30 are reserved. 31 is an indefinite length, which we do
     not accept. Both are an error, not something to interpret. }
-  case Ekstra of
-    24: Ekstra := 1;
-    25: Ekstra := 2;
-    26: Ekstra := 4;
-    27: Ekstra := 8;
+  case Extra of
+    24: Extra := 1;
+    25: Extra := 2;
+    26: Extra := 4;
+    27: Extra := 8;
   else
     Exit(False);
   end;
 
-  if FPos + Ekstra > FSize then
+  if FPos + Extra > FSize then
     Exit(False);
-  for I := 0 to Ekstra - 1 do
+  for I := 0 to Extra - 1 do
     Arg := (Arg shl 8) or UInt64(FBuf[FPos + I]);
-  Inc(FPos, Ekstra);
+  Inc(FPos, Extra);
   Result := True;
 end;
 

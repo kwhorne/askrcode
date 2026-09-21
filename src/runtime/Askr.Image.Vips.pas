@@ -85,7 +85,7 @@ implementation
 const
   { The order is deliberate: Debian and Homebrew first, then the generic
     names. Somebody who built it themselves usually has the latter. }
-  Kandidater: array[0..5] of string = (
+  Candidates: array[0..5] of string = (
     'libvips.so.42',
     'libvips.42.dylib',
     'libvips.so',
@@ -114,7 +114,7 @@ type
     OptionStr: PAnsiChar; out Img: Pointer): Integer; cdecl varargs;
 
 var
-  GLastet: Boolean = False;
+  GLoaded: Boolean = False;
   GOk: Boolean = False;
   GErr: string = '';
   GHandle: Pointer = nil;
@@ -145,18 +145,18 @@ procedure Last;
 {$IFDEF UNIX}
 var
   I: Integer;
-  Manglet: string;
+  Missing_: string;
 {$ENDIF}
 begin
-  if GLastet then
+  if GLoaded then
     Exit;
-  GLastet := True;
+  GLoaded := True;
   GOk := False;
 
 {$IFDEF UNIX}
-  for I := Low(Kandidater) to High(Kandidater) do
+  for I := Low(Candidates) to High(Candidates) do
   begin
-    GHandle := dlopen(PChar(Kandidater[I]), RTLD_NOW);
+    GHandle := dlopen(PChar(Candidates[I]), RTLD_NOW);
     if GHandle <> nil then
       Break;
   end;
@@ -173,20 +173,20 @@ begin
     Exit;
   end;
 
-  Manglet := '';
-  if not Symbol('vips_init', vips_init) then Manglet := 'vips_init';
-  if not Symbol('vips_error_buffer', vips_error_buffer) then Manglet := 'vips_error_buffer';
-  if not Symbol('vips_error_clear', vips_error_clear) then Manglet := 'vips_error_clear';
-  if not Symbol('vips_version', vips_version) then Manglet := 'vips_version';
-  if not Symbol('vips_thumbnail_buffer', vips_thumbnail_buffer) then Manglet := 'vips_thumbnail_buffer';
-  if not Symbol('vips_image_write_to_buffer', vips_image_write_to_buffer) then Manglet := 'vips_image_write_to_buffer';
-  if not Symbol('vips_image_new_from_buffer', vips_image_new_from_buffer) then Manglet := 'vips_image_new_from_buffer';
-  if not Symbol('g_object_unref', g_object_unref) then Manglet := 'g_object_unref';
-  if not Symbol('g_free', g_free) then Manglet := 'g_free';
+  Missing_ := '';
+  if not Symbol('vips_init', vips_init) then Missing_ := 'vips_init';
+  if not Symbol('vips_error_buffer', vips_error_buffer) then Missing_ := 'vips_error_buffer';
+  if not Symbol('vips_error_clear', vips_error_clear) then Missing_ := 'vips_error_clear';
+  if not Symbol('vips_version', vips_version) then Missing_ := 'vips_version';
+  if not Symbol('vips_thumbnail_buffer', vips_thumbnail_buffer) then Missing_ := 'vips_thumbnail_buffer';
+  if not Symbol('vips_image_write_to_buffer', vips_image_write_to_buffer) then Missing_ := 'vips_image_write_to_buffer';
+  if not Symbol('vips_image_new_from_buffer', vips_image_new_from_buffer) then Missing_ := 'vips_image_new_from_buffer';
+  if not Symbol('g_object_unref', g_object_unref) then Missing_ := 'g_object_unref';
+  if not Symbol('g_free', g_free) then Missing_ := 'g_free';
 
-  if Manglet <> '' then
+  if Missing_ <> '' then
   begin
-    GErr := 'libvips was found but does not export ' + Manglet +
+    GErr := 'libvips was found but does not export ' + Missing_ +
       '. It may be too old; Askr needs 8.9 or newer.';
     Exit;
   end;
@@ -269,22 +269,22 @@ end;
 { The extension libvips writes with, options included. The options go
   here rather than as varargs — one string is one pointer, and that is the
   safest thing across a variadic boundary. }
-function Suffix(F: TImageFormat; Kvalitet: Integer): string;
+function Suffix(F: TImageFormat; Quality: Integer): string;
 begin
   case F of
     ifJpeg:
       begin
         Result := '.jpg';
-        if Kvalitet > 0 then
-          Result := Result + '[Q=' + IntToStr(Kvalitet) + ',strip=true]'
+        if Quality > 0 then
+          Result := Result + '[Q=' + IntToStr(Quality) + ',strip=true]'
         else
           Result := Result + '[strip=true]';
       end;
     ifWebp:
       begin
         Result := '.webp';
-        if Kvalitet > 0 then
-          Result := Result + '[Q=' + IntToStr(Kvalitet) + ',strip=true]'
+        if Quality > 0 then
+          Result := Result + '[Q=' + IntToStr(Quality) + ',strip=true]'
         else
           Result := Result + '[strip=true]';
       end;
@@ -297,15 +297,15 @@ begin
     ifAvif:
       begin
         Result := '.avif';
-        if Kvalitet > 0 then
-          Result := Result + '[Q=' + IntToStr(Kvalitet) + ']';
+        if Quality > 0 then
+          Result := Result + '[Q=' + IntToStr(Quality) + ']';
       end;
   else
     raise EVipsError.Create('Cannot write that image format.');
   end;
 end;
 
-function Kopier(P: Pointer; N: NativeUInt): TBytes;
+function CopyOf(P: Pointer; N: NativeUInt): TBytes;
 var
   B: TBytes;
 begin
@@ -373,7 +373,7 @@ begin
     if vips_image_write_to_buffer(Img, PAnsiChar(S), Ut, Len, nil) <> 0 then
       raise EVipsError.Create('Could not write the image: ' + LastVipsError);
     try
-      Result := Kopier(Ut, Len);
+      Result := CopyOf(Ut, Len);
     finally
       { The buffer is libvips's, and has to be freed with g_free. Leaving
         it is a leak per resize. }

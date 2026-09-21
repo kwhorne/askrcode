@@ -191,7 +191,7 @@ begin
   Result := GFormat;
 end;
 
-procedure LukkFil;
+procedure CloseLogFile;
 begin
   if GFileOpen then
   begin
@@ -208,7 +208,7 @@ procedure SetLogFile(const Path: string);
 begin
   GLock.Acquire;
   try
-    LukkFil;
+    CloseLogFile;
     GPath := Path;
     if Path = '' then
       Exit;
@@ -419,7 +419,7 @@ begin
         begin
           { The disk is full or the file is gone. Fall back to stderr rather
             than losing the log entirely. }
-          LukkFil;
+          CloseLogFile;
           GPath := '';
         end;
       end;
@@ -436,7 +436,7 @@ procedure LogWrite(L: TLogLevel; const Msg: string;
 var
   B: string;
   I: Integer;
-  Noekkel, Value_: string;
+  Key_, Value_: string;
 begin
   if not LogEnabled(L) then
     Exit;
@@ -448,8 +448,8 @@ begin
     I := 0;
     while I <= High(Fields) do
     begin
-      Noekkel := ValueText(Fields[I]);
-      B := B + ',"' + JsonEscape(Noekkel) + '":';
+      Key_ := ValueText(Fields[I]);
+      B := B + ',"' + JsonEscape(Key_) + '":';
       if I + 1 > High(Fields) then
         B := B + '""'
       else if IsNumber(Fields[I + 1]) or ErBool(Fields[I + 1]) then
@@ -468,12 +468,12 @@ begin
     I := 0;
     while I <= High(Fields) do
     begin
-      Noekkel := ValueText(Fields[I]);
+      Key_ := ValueText(Fields[I]);
       if I + 1 <= High(Fields) then
         Value_ := ValueText(Fields[I + 1])
       else
         Value_ := '';
-      B := B + ' ' + Noekkel + '=' + TextValue(Value_);
+      B := B + ' ' + Key_ + '=' + TextValue(Value_);
       Inc(I, 2);
     end;
   end;
@@ -534,7 +534,7 @@ end;
 procedure LogException(E: Exception; const Context: string;
   const Fields: array of const);
 var
-  NKlasse, NErr, VKlasse, VErr: string;
+  NClass, NErr, VClass, VErr: string;
   All_: array of TVarRec;
   I: Integer;
 begin
@@ -553,14 +553,14 @@ begin
     A TVarRec only holds a pointer to the string. The four local variables
     are here precisely to keep them alive until LogWrite has read them —
     expressions in place would have been freed too early. }
-  NKlasse := 'class';
-  VKlasse := E.ClassName;
+  NClass := 'class';
+  VClass := E.ClassName;
   NErr := 'error';
   VErr := E.Message;
 
   SetLength(All_, Length(Fields) + 4);
-  All_[0].VType := vtAnsiString; All_[0].VAnsiString := Pointer(NKlasse);
-  All_[1].VType := vtAnsiString; All_[1].VAnsiString := Pointer(VKlasse);
+  All_[0].VType := vtAnsiString; All_[0].VAnsiString := Pointer(NClass);
+  All_[1].VType := vtAnsiString; All_[1].VAnsiString := Pointer(VClass);
   All_[2].VType := vtAnsiString; All_[2].VAnsiString := Pointer(NErr);
   All_[3].VType := vtAnsiString; All_[3].VAnsiString := Pointer(VErr);
   for I := 0 to High(Fields) do
@@ -573,7 +573,7 @@ initialization
   GLock := TCriticalSection.Create;
 
 finalization
-  LukkFil;
+  CloseLogFile;
   GLock.Free;
 
 end.

@@ -72,24 +72,24 @@ end;
 { The share of what is reserved, as a width in per cent. A hairline
   minimum, or a 400-byte request disappears entirely against 64 kB — and
   that difference is precisely what the bar is there to show. }
-function Andel(Del, Hele: PtrUInt): string;
+function Share(Del, Hele: PtrUInt): string;
 var
-  Tidels: Int64;
+  Tenths: Int64;
 begin
   { Integer arithmetic, not FormatFloat. Float formatting pulls in the
     system's decimal separator, and a comma here would make the width
     invalid CSS on a machine with a Norwegian locale. }
   if Hele = 0 then
     Exit('0.4');
-  Tidels := (Int64(Del) * 1000) div Int64(Hele);
-  if Tidels < 4 then
-    Tidels := 4;
-  if Tidels > 1000 then
-    Tidels := 1000;
-  Result := IntToStr(Tidels div 10) + '.' + IntToStr(Tidels mod 10);
+  Tenths := (Int64(Del) * 1000) div Int64(Hele);
+  if Tenths < 4 then
+    Tenths := 4;
+  if Tenths > 1000 then
+    Tenths := 1000;
+  Result := IntToStr(Tenths div 10) + '.' + IntToStr(Tenths mod 10);
 end;
 
-function Vert(Req: TRequest): string;
+function Host(Req: TRequest): string;
 var
   H: TStr;
 begin
@@ -250,15 +250,15 @@ begin
                                                                               #10 +
 '<p class="live"><span class="dot"></span>serving</p>'#10 +
 '<h1>' + Name_ + ' is running</h1>'#10 +
-'<p class="addr">on <b>' + Vert(Req) + '</b></p>'#10 +
+'<p class="addr">on <b>' + Host(Req) + '</b></p>'#10 +
                                                                               #10 +
 '<section class="gauge">'#10 +
 '<h2>Arena, this worker</h2>'#10 +
 '<div class="track">'#10 +
-'  <div class="fill peak" style="--w:' + Andel(A.HighWaterMark, A.BytesReserved) + '%"></div>'#10 +
-'  <div class="fill now" style="--w:' + Andel(A.BytesLive, A.BytesReserved) + '%"></div>'#10 +
+'  <div class="fill peak" style="--w:' + Share(A.HighWaterMark, A.BytesReserved) + '%"></div>'#10 +
+'  <div class="fill now" style="--w:' + Share(A.BytesLive, A.BytesReserved) + '%"></div>'#10 +
 '</div>'#10 +
-'<p class="legend"><b>' + Andel(A.HighWaterMark, A.BytesReserved) + '%</b>'#10 +
+'<p class="legend"><b>' + Share(A.HighWaterMark, A.BytesReserved) + '%</b>'#10 +
 ' of the <b>' + Number(A.BytesReserved) + ' B</b> this worker reserved once'#10 +
 ' and keeps reusing</p>'#10 +
                                                                               #10 +

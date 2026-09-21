@@ -43,9 +43,9 @@ begin
   end;
 end;
 
-procedure Like(const What, Forventet, Fikk: string);
+procedure Like(const What, Expected, Got: string);
 begin
-  if Forventet = Fikk then
+  if Expected = Got then
   begin
     Inc(Bestatt);
     WriteLn('  ok    ', What);
@@ -54,14 +54,14 @@ begin
   begin
     Inc(Feilet);
     WriteLn('  FEIL  ', What);
-    WriteLn('        forventet: ', Forventet);
-    WriteLn('        fikk:      ', Fikk);
+    WriteLn('        forventet: ', Expected);
+    WriteLn('        fikk:      ', Got);
   end;
 end;
 
-procedure LikeI(const What: string; Forventet, Fikk: Int64);
+procedure LikeI(const What: string; Expected, Got: Int64);
 begin
-  Like(What, IntToStr(Forventet), IntToStr(Fikk));
+  Like(What, IntToStr(Expected), IntToStr(Got));
 end;
 
 { Serverens eget syn på saken. Without denne kunne cachetellerne våre vært
@@ -71,7 +71,7 @@ begin
   Result := C.Exec(A, 'SELECT count(*) FROM pg_prepared_statements').AsInt64(0, 0);
 end;
 
-procedure Skjema(C: TDbConnection; A: TArena);
+procedure Schema_(C: TDbConnection; A: TArena);
 begin
   C.Exec(A, 'DROP TABLE IF EXISTS pg_order');
   C.Exec(A, 'DROP TABLE IF EXISTS pg_customer');
@@ -106,7 +106,7 @@ begin
     Ok('RETURNING finnes', C.SupportsReturning);
     WriteLn('        server: ', C.ServerVersion);
     C.Exec(A, 'DEALLOCATE ALL');
-    Skjema(C, A);
+    Schema_(C, A);
 
     Start('prepared statements');
     ForPrep := C.PreparedCount;
