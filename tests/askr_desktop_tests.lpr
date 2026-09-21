@@ -1,18 +1,18 @@
-{ Desktop-tester for webviewen.
+{ Desktop tests for the webview.
 
-  Dette er ikke en kompileringssjekk. Vinduet åpnes på ordentlig, WebKitGTK
-  henter siden fra den innebygde serveren, og JavaScript på siden gjør et
-  nytt kall tilbake. Blir begge kallene registrert, har hele kjeden virket:
-  vindu, nettmotor, lokal HTTP-server og ruter.
+  This is not a compile check. The window is opened for real, WebKitGTK
+  fetches the page from the embedded server, and JavaScript on the page
+  makes another call back. If both calls are registered, the whole chain
+  worked: window, web engine, local HTTP server and router.
 
     ./askr desktop:linux
 
-  Without GTK eller uten skjerm hopper suiten over seg selv og sier hvorfor.
+  Without GTK, or without a screen, the suite skips itself and says why.
 
-  macOS og Windows hopper over: begge åpner et vindu som må lukkes for hånd
-  (macOS mangler AutoCloseMs), og Windows-skallet har ingen maskin å kjøre
-  på herfra. Se tools/probes/webview2_vtable.lpr for det som faktisk er
-  verifisert av WebView2-bindingen. }
+  macOS and Windows skip: both open a window that has to be closed by hand
+  (macOS has no AutoCloseMs), and the Windows shell has no machine to run
+  on from here. See tools/probes/webview2_vtable.lpr for what actually is
+  verified of the WebView2 binding. }
 program askr_desktop_tests;
 
 {$mode Delphi}{$H+}
@@ -24,22 +24,22 @@ uses
   Askr.Http.Router, Askr.Desktop;
 
 var
-  Bestatt: Integer = 0;
-  Feilet: Integer = 0;
+  Passed: Integer = 0;
+  Failed: Integer = 0;
   Lock_: TCriticalSection;
   MatchPage: Integer = 0;
-  TreffPing: Integer = 0;
+  HitPing: Integer = 0;
 
 procedure Ok(const What: string; Value_: Boolean);
 begin
   if Value_ then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
   end;
 end;
@@ -52,12 +52,13 @@ begin
   finally
     Lock_.Release;
   end;
-  { Skriptet beviser at nettmotoren kjører, ikke bare at noe hentet HTML. }
+  { The script proves the web engine is running, not merely that
+    something fetched HTML. }
   Result := RespondHtml(
     '<!doctype html><html><head><meta charset="utf-8">' +
     '<title>Askr desktop</title></head><body>' +
     '<h1>Askr</h1>' +
-    '<script>fetch("/ping?fra=webview");</script>' +
+    '<script>fetch("/ping?from=webview");</script>' +
     '</body></html>');
 end;
 
@@ -65,14 +66,14 @@ function Ping(Req: TRequest): TResponse;
 begin
   Lock_.Acquire;
   try
-    Inc(TreffPing);
+    Inc(HitPing);
   finally
     Lock_.Release;
   end;
   Result := RespondText('pong', 200);
 end;
 
-procedure Ruter(R: TRouter);
+procedure Routes(R: TRouter);
 begin
   R.Get('/', Side);
   R.Get('/ping', Ping);
@@ -87,75 +88,81 @@ begin
 
 {$IFDEF WINDOWS}
   WriteLn;
-  WriteLn('HOPPET OVER: Windows-skallet er ikke kjørt av noen ennå.');
-  WriteLn('  Bindingen er skrevet, men aldri startet på en Windows-maskin.');
+  WriteLn('SKIPPED: nobody has run the Windows shell yet.');
+  WriteLn('  The binding is written, but never started on a Windows machine.');
   Halt(0);
 {$ENDIF}
 {$IFDEF DARWIN}
-  { På macOS åpner Run et NSWindow som blokkerer til noen lukker det, og
-    AutoCloseMs finnes ikke der. En suite som venter på et klikk er ingen
-    suite. macOS-skallet verifiseres for hånd med examples/desktop. }
+  { On macOS Run opens an NSWindow that blocks until somebody closes it,
+    and AutoCloseMs does not exist there. A suite that waits for a click is
+    no suite. The macOS shell is verified by hand with
+    examples/desktop. }
   WriteLn;
-  WriteLn('HOPPET OVER: denne suiten tester Linux-webviewen.');
-  WriteLn('  macOS-skallet åpner et vindu som må lukkes for hånd —');
-  WriteLn('  kjør examples/desktop for å se det.');
+  WriteLn('SKIPPED: this suite tests the Linux webview.');
+  WriteLn('  The macOS shell opens a window that has to be closed by hand —');
+  WriteLn('  run examples/desktop to see it.');
   Halt(0);
 {$ENDIF}
 
   if not WebviewAvailable then
   begin
     WriteLn;
-    WriteLn('HOPPET OVER: WebKitGTK finnes ikke her.');
+    WriteLn('SKIPPED: WebKitGTK is not here.');
     WriteLn('  ', WebviewError);
     Halt(0);
   end;
   WriteLn('backend: ', WebviewBackend);
-  Ok('backend-navnet nevner WebKitGTK',
+  Ok('the backend name mentions WebKitGTK',
     Pos('WebKitGTK', WebviewBackend) > 0);
-  Ok('ingen feil å melde når biblioteket er der', WebviewError = '');
+  Ok('nothing to report when the library is there', WebviewError = '');
 
   HasDisplay := (GetEnvironmentVariable('DISPLAY') <> '') or
                (GetEnvironmentVariable('WAYLAND_DISPLAY') <> '');
 
-  DesktopApp.RegisterRoutes(Ruter);
+  DesktopApp.RegisterRoutes(Routes);
   DesktopApp.Window('Askr desktop', 900, 600);
 
   if not HasDisplay then
   begin
-    { Without skjerm skal GTK gi en forklaring, ikke drepe prosessen.
-      gtk_init ville kalt exit() her; gtk_init_check gjør det ikke. }
+    { Without a screen GTK is to give an explanation, not kill the
+      process. gtk_init would have called exit() here; gtk_init_check does
+      not. }
     WriteLn;
-    WriteLn('— uten skjerm');
+    WriteLn('— without a screen');
     Err := '';
     try
       DesktopApp.Run;
     except
       on E: EDesktopError do Err := E.Message;
     end;
-    { At vi i det hele tatt er her, er poenget: gtk_init ville kalt exit().
-      Men det er de to neste som faktisk kan feile — en påstand som ikke kan
-      feile er ingen påstand. }
-    Ok('feilen nevner DISPLAY', Pos('DISPLAY', Err) > 0);
-    Ok('og sier at appen kjører som webtjeneste likevel',
-      Pos('webtjeneste', Err) > 0);
+    { That we are here at all is the point: gtk_init would have called
+      exit(). But it is the next two that can actually fail — an assertion
+      that cannot fail is no assertion. }
+    Ok('the error mentions DISPLAY', Pos('DISPLAY', Err) > 0);
+    { The framework's message is English now. This assertion was still
+      looking for 'webtjeneste' and would have failed the moment anyone
+      ran the suite without a display — which nobody had, because it skips
+      on macOS and wherever GTK is missing. }
+    Ok('and says the app is still serving over HTTP',
+      Pos('serving over HTTP', Err) > 0);
   end
   else
   begin
     WriteLn;
-    WriteLn('— med skjerm');
-    { Vinduet lukker seg selv. En suite kan ikke vente på et klikk. }
+    WriteLn('— with a screen');
+    { The window closes itself. A suite cannot wait for a click. }
     DesktopApp.AutoCloseMs := 6000;
     DesktopApp.Run;
 
-    Ok('serveren fikk en port', DesktopApp.Port > 0);
-    WriteLn('        treff: / = ', MatchPage, ', /ping = ', TreffPing);
-    Ok('webviewen hentet siden', MatchPage > 0);
-    Ok('og JavaScript på siden kalte tilbake', TreffPing > 0);
+    Ok('the server got a port', DesktopApp.Port > 0);
+    WriteLn('        hits: / = ', MatchPage, ', /ping = ', HitPing);
+    Ok('the webview fetched the page', MatchPage > 0);
+    Ok('and JavaScript on the page called back', HitPing > 0);
   end;
 
   WriteLn;
-  WriteLn('— ', Bestatt, ' bestått, ', Feilet, ' feilet');
+  WriteLn('— ', Passed, ' passed, ', Failed, ' failed');
   Lock_.Free;
-  if Feilet > 0 then
+  if Failed > 0 then
     Halt(1);
 end.

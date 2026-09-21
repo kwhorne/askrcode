@@ -1,12 +1,12 @@
-{ TLS-tester.
+{ TLS tests.
 
-  Disse kjører bare der OpenSSL finnes. På macOS betyr det etter
-  brew install openssl@3; uten den hopper suiten over og sier hvorfor,
-  i stedet for å melde grønt på noe den ikke har prøvd.
+  These run only where OpenSSL exists. On macOS that means after
+  brew install openssl@3; without it the suite skips and says why, rather
+  than reporting green on something it has not tried.
 
-  Sertifikatene ligger i .build/tls og lages av ./askr tls:certs. De er
-  selvsignerte og varer et år — de hører hjemme i en testmappe og ingen
-  andre steder. }
+  The certificates live in .build/tls and are made by ./askr tls:certs.
+  They are self-signed and last a year — they belong in a test directory
+  and nowhere else. }
 program askr_tls_tests;
 
 {$mode Delphi}{$H+}
@@ -19,8 +19,8 @@ uses
   Askr.Tls, Askr.Mail, Askr.Http.Client, Askr.Core.Log;
 
 var
-  Bestatt: Integer = 0;
-  Feilet: Integer = 0;
+  Passed: Integer = 0;
+  Failed: Integer = 0;
   Gruppe: string = '';
   CertDir: string;
 
@@ -35,12 +35,12 @@ procedure Ok(const What: string; Value_: Boolean);
 begin
   if Value_ then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
   end;
 end;
@@ -49,12 +49,12 @@ procedure Like(const What, Expected, Got: string);
 begin
   if Expected = Got then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Expected);
     WriteLn('        fikk:      ', Got);
@@ -93,7 +93,7 @@ begin
   Result := '';
   Sock := ConnectTo(Port);
   if Sock < 0 then
-    raise Exception.Create('fikk ikke koblet til');
+    raise Exception.Create('could not connect');
   Ctx := TTlsContext.Create(trClient);
   C := nil;
   try
@@ -120,12 +120,12 @@ end;
 function Behandler(Req: TRequest): TResponse;
 begin
   if Req.Path.Equals(Str('/hei')) then
-    Result := RespondText('hallo over tls', 200)
+    Result := RespondText('hello over tls', 200)
   else
     Result := RespondText('nei', 404);
 end;
 
-{ ---- en liten SMTP-server som kan STARTTLS ---- }
+{ ---- a small SMTP server that can do STARTTLS ---- }
 
 type
   TFakeSmtp = class(TThread)
@@ -140,8 +140,8 @@ type
     FKrypterteData: Boolean;
     FErr: string;
     procedure Si(const S: string);
-    { False betyr lukket forbindelse. En tom linje er ikke det samme — i
-      DATA er den skillet mellom hode og kropp. }
+    { False means a closed connection. An empty line is not the same — in
+      DATA it is the separator between the head and the body. }
     function Read_(out Line_: string): Boolean;
   protected
     procedure Execute; override;
@@ -150,7 +150,7 @@ type
     destructor Destroy; override;
     property Port: Word read FPort;
     property Mottatt: string read FMottatt;
-    { True hvis DATA-innholdet kom inn over TLS og ikke i klartekst. }
+    { True if the DATA content came in over TLS and not in the clear. }
     property KrypterteData: Boolean read FKrypterteData;
     property Err: string read FErr;
   end;
@@ -268,7 +268,7 @@ begin
         Si('250 OK')
       else if Line_ = 'DATA' then
       begin
-        Si('354 kom igjen');
+        Si('354 go ahead');
         IData := True;
         FKrypterteData := FTls <> nil;
       end
@@ -296,7 +296,7 @@ begin
   Start('binding');
   Ok('OpenSSL lastet', TlsAvailable);
   WriteLn('        ', TlsLibraryName, ' — ', TlsVersion);
-  Ok('serverkontekst lar seg lage',
+  Ok('a server context can be made',
     TTlsContext.Create(trServer).ClassName = 'TTlsContext');
 end;
 
@@ -324,13 +324,14 @@ begin
   try
     Message_ := '';
     try
-      { Sertifikat og nøkkel fra hvert sitt par. OpenSSL oppdager det,
-        men bare hvis noen spør — derfor check_private_key i UseCertificate. }
+      { A certificate and a key from two different pairs. OpenSSL notices,
+        but only if somebody asks — hence check_private_key in
+        UseCertificate. }
       Ctx.UseCertificate(CertDir + 'cert.pem', CertDir + 'other-key.pem');
     except
       on E: Exception do Message_ := E.Message;
     end;
-    Ok('nøkkel som ikke passer avvises ved oppstart', Message_ <> '');
+    Ok('a key that does not match is rejected at start-up', Message_ <> '');
   finally
     Ctx.Free;
   end;
@@ -360,27 +361,28 @@ begin
   try
     Srv.SetHandler(Behandler);
     Srv.Start;
-    Ok('serveren melder at den bruker TLS', Srv.UsesTls);
+    Ok('the server reports that it uses TLS', Srv.UsesTls);
 
     Reply := HttpsGet(Srv.BoundPort, '/hei', False);
-    Ok('svaret er 200', Pos('200 OK', Reply) > 0);
-    Ok('kroppen kom fram', Pos('hallo over tls', Reply) > 0);
+    Ok('the reply is 200', Pos('200 OK', Reply) > 0);
+    Ok('the body arrived', Pos('hello over tls', Reply) > 0);
 
     Reply := HttpsGet(Srv.BoundPort, '/borte', False);
-    Ok('404 virker også', Pos('404', Reply) > 0);
+    Ok('404 works too', Pos('404', Reply) > 0);
 
-    { Verifisering påslått mot et selvsignert sertifikat skal feile.
-      Without denne testen kunne SetVerifyPeer vært en tom prosedyre. }
+    { Verification switched on against a self-signed certificate is to
+      fail. Without this test SetVerifyPeer could have been an empty
+      procedure. }
     Err := '';
     try
       HttpsGet(Srv.BoundPort, '/hei', True);
     except
       on E: Exception do Err := E.Message;
     end;
-    Ok('selvsignert avvises når verifisering er på', Err <> '');
+    Ok('self-signed is rejected when verification is on', Err <> '');
 
-    { Klartekst mot en TLS-port skal ikke gi et HTTP-svar. Poenget er at
-      det ikke finnes en stille nedgradering. }
+    { Plaintext against a TLS port must not give an HTTP reply. The point
+      is that there is no silent downgrade. }
     Sock := ConnectTo(Srv.BoundPort);
     Req := 'GET /hei HTTP/1.1'#13#10'Host: x'#13#10#13#10;
     fpSend(Sock, PChar(Req), Length(Req), 0);
@@ -389,26 +391,26 @@ begin
     if N > 0 then
       Reply := Copy(PChar(@Buf[0]), 1, N);
     CloseSocket(Sock);
-    Ok('klartekst mot TLS-port gir ikke HTTP', Pos('HTTP/1.1 200', Reply) = 0);
+    Ok('plaintext against a TLS port gives no HTTP', Pos('HTTP/1.1 200', Reply) = 0);
 
-    { Og serveren skal fortsatt leve etterpå. En mislykket klient er ikke
-      en grunn til å ta ned en worker. }
+    { And the server is to still be alive afterwards. A client that fails
+      is not a reason to take down a worker. }
     Reply := HttpsGet(Srv.BoundPort, '/hei', False);
-    Ok('serveren svarer fortsatt etter et mislykket håndtrykk',
-      Pos('hallo over tls', Reply) > 0);
+    Ok('the server still answers after a failed handshake',
+      Pos('hello over tls', Reply) > 0);
   finally
     Srv.Stop;
     Srv.Free;
   end;
 end;
 
-{ Askr.Http.Client mot Askrs egen TLS-server.
+{ Askr.Http.Client against Askr's own TLS server.
 
-  Dette er en bedre prøve enn å ringe et ekte nettsted: den er hermetisk,
-  og den tester nettopp sikkerhetsegenskapen. Serveren har et selvsignert
-  sertifikat for 127.0.0.1, altså et sertifikat som **skal** avvises av en
-  klient som verifiserer. Går den likevel gjennom, er verifiseringen en
-  tom prosedyre. }
+  This is a better trial than calling a real website: it is hermetic, and
+  it tests precisely the security property. The server has a self-signed
+  certificate for 127.0.0.1 — that is, a certificate that **must** be
+  rejected by a client that verifies. If it goes through anyway, the
+  verification is an empty procedure. }
 procedure TestKlientOverTls;
 var
   Srv: TAskrServer;
@@ -417,7 +419,7 @@ var
   R: THttpResponse;
   Base, Err: string;
 begin
-  Start('http-klienten over tls');
+  Start('the http client over tls');
 
   Opts := DefaultServerOptions;
   Opts.Host := '127.0.0.1';
@@ -433,26 +435,27 @@ begin
     Srv.Start;
     Base := Format('https://127.0.0.1:%d', [Srv.BoundPort]);
 
-    { With_ verifisering på skal et selvsignert sertifikat avvises. }
+    { With verification on, a self-signed certificate is to be
+      rejected. }
     Err := '';
     try
       K.Get(Base + '/hei');
     except
       on E: Exception do Err := E.Message;
     end;
-    Ok('et selvsignert sertifikat avvises som standard', Err <> '');
-    Ok('og meldingen nevner håndtrykket',
+    Ok('a self-signed certificate is rejected by default', Err <> '');
+    Ok('and the message mentions the handshake',
       Pos('handshake', LowerCase(Err)) > 0);
 
-    { Insecure slår det av — og logger en advarsel hver gang. }
+    { Insecure turns it off — and logs a warning every time. }
     SetLogLevel(llNone);
     K.Insecure := True;
     R := K.Get(Base + '/hei');
     SetLogLevel(llInfo);
-    Ok('med Insecure går den gjennom', R.Status = 200);
-    Like('og kroppen kom over TLS', 'hallo over tls', Trim(R.Body));
+    Ok('with Insecure it goes through', R.Status = 200);
+    Like('and the body came over TLS', 'hello over tls', Trim(R.Body));
 
-    { Hele klienten skal virke over TLS, ikke bare GET. }
+    { The whole client is to work over TLS, not only GET. }
     R := K.Get(Base + '/borte');
     Ok('404 over TLS', R.Status = 404);
   finally
@@ -482,7 +485,7 @@ begin
     except
       on E: Exception do Message_ := E.Message;
     end;
-    Ok('bare sertifikat uten nøkkel stoppes ved oppstart',
+    Ok('a certificate without a key is stopped at start-up',
       Pos('only one is set', Message_) > 0);
   finally
     Srv.Stop;
@@ -525,14 +528,15 @@ begin
     Fake.WaitFor;
     if Fake.Err <> '' then
       WriteLn('        serverfeil: ', Fake.Err);
-    Ok('meldingen kom fram', Pos('hemmelig innhold', Fake.Mottatt) > 0);
-    Ok('DATA gikk over TLS, ikke klartekst', Fake.KrypterteData);
-    Ok('emnet kom med', Pos('Subject: kryptert', Fake.Mottatt) > 0);
+    Ok('the message arrived', Pos('hemmelig innhold', Fake.Mottatt) > 0);
+    Ok('DATA went over TLS, not in the clear', Fake.KrypterteData);
+    Ok('the subject came along', Pos('Subject: kryptert', Fake.Mottatt) > 0);
   finally
     Fake.Free;
   end;
 
-  { En server uten STARTTLS skal gi et avbrudd, ikke en stille nedgradering. }
+  { A server without STARTTLS is to give an abort, not a silent
+    downgrade. }
   Fake := TFakeSmtp.Create(False);
   try
     T := TSmtpTransport.Create('127.0.0.1', Fake.Port, smtpStartTls);
@@ -546,9 +550,9 @@ begin
         on E: Exception do Message_ := E.Message;
       end;
       M.Free;
-      Ok('server uten STARTTLS gir feil', Pos('does not offer STARTTLS', Message_) > 0);
-      Ok('feilen sier hva man gjør i stedet', Pos('smtpPlain', Message_) > 0);
-      Ok('ingenting ble sendt i klartekst', Pos('y', Fake.Mottatt) = 0);
+      Ok('a server without STARTTLS raises', Pos('does not offer STARTTLS', Message_) > 0);
+      Ok('the error says what to do instead', Pos('smtpPlain', Message_) > 0);
+      Ok('nothing was sent in the clear', Pos('y', Fake.Mottatt) = 0);
     finally
       T.Free;
     end;
@@ -564,22 +568,22 @@ var
   T: TSmtpTransport;
   M: TMailMessage;
 begin
-  Start('smtp uten tls');
+  Start('smtp without tls');
   Fake := TFakeSmtp.Create(True);
   try
     T := TSmtpTransport.Create('127.0.0.1', Fake.Port, smtpPlain);
     try
       M := TMailMessage.Create;
       M.From('a@example.com').AddTo('b@example.com')
-       .Subject('klartekst').Text('åpent');
+       .Subject('klartekst').Text('open');
       T.Send(M);
       M.Free;
     finally
       T.Free;
     end;
     Fake.WaitFor;
-    Ok('smtpPlain sender uten å kreve TLS', Pos('klartekst', Fake.Mottatt) > 0);
-    Ok('og den krypterte da ikke', not Fake.KrypterteData);
+    Ok('smtpPlain sends without requiring TLS', Pos('klartekst', Fake.Mottatt) > 0);
+    Ok('and it did not encrypt', not Fake.KrypterteData);
   finally
     Fake.Free;
   end;
@@ -592,8 +596,8 @@ var
   Message_: string;
 begin
   Start('navneoppslag');
-  { localhost står i /etc/hosts overalt. Den skal nå fram til connect og
-    feile der — ikke på oppslaget. }
+  { localhost is in /etc/hosts everywhere. It is to reach connect and
+    fail there — not at the lookup. }
   T := TSmtpTransport.Create('localhost', 1, smtpPlain);
   try
     T.TimeoutMs := 2000;
@@ -608,13 +612,13 @@ begin
     M.Free;
     if Pos('Could not connect', Message_) = 0 then
       WriteLn('        fikk: ', Message_);
-    Ok('localhost slås opp, feiler først på connect',
+    Ok('localhost resolves, fails first at connect',
       Pos('Could not connect', Message_) > 0);
   finally
     T.Free;
   end;
 
-  T := TSmtpTransport.Create('ikke.en.vert.som.finnes.invalid', 25, smtpPlain);
+  T := TSmtpTransport.Create('not.a.host.that.exists.invalid', 25, smtpPlain);
   try
     T.TimeoutMs := 3000;
     Message_ := '';
@@ -626,8 +630,8 @@ begin
       on E: Exception do Message_ := E.Message;
     end;
     M.Free;
-    Ok('ukjent vert gir en feil som nevner verten',
-      Pos('ikke.en.vert.som.finnes.invalid', Message_) > 0);
+    Ok('an unknown host gives an error naming the host',
+      Pos('not.a.host.that.exists.invalid', Message_) > 0);
   finally
     T.Free;
   end;
@@ -645,7 +649,7 @@ begin
   if not TlsAvailable then
   begin
     WriteLn;
-    WriteLn('HOPPET OVER: OpenSSL er ikke tilgjengelig her.');
+    WriteLn('SKIPPED: OpenSSL is not available here.');
     try
       TTlsContext.Create(trServer);
     except
@@ -657,8 +661,8 @@ begin
   if not FileExists(CertDir + 'cert.pem') then
   begin
     WriteLn;
-    WriteLn('HOPPET OVER: fant ikke ', CertDir, 'cert.pem');
-    WriteLn('  Kjør ./askr tls:certs først.');
+    WriteLn('SKIPPED: could not find ', CertDir, 'cert.pem');
+    WriteLn('  Run ./askr tls:certs first.');
     Halt(0);
   end;
 
@@ -672,7 +676,7 @@ begin
   TestNavneoppslag;
 
   WriteLn;
-  WriteLn('— ', Bestatt, ' bestått, ', Feilet, ' feilet');
-  if Feilet > 0 then
+  WriteLn('— ', Passed, ' passed, ', Failed, ' failed');
+  if Failed > 0 then
     Halt(1);
 end.

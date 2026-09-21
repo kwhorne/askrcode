@@ -1,11 +1,11 @@
-{ Rún-tester.
+{ Rún tests.
 
-  Oversetteren kjøres mot en ekte database, og den genererte Pascal-koden
-  kompileres og kjøres. Det er ikke nok at transpileren ikke kaster — koden
-  den skriver ut må virke.
+  The translator is run against a real database, and the generated Pascal
+  is compiled and run. It is not enough that the transpiler does not raise
+  — the code it writes out has to work.
 
-  Feilfilene i tests/run/ er like viktige som den som virker: en
-  comptime-typesjekk som ikke fanger noe er bare seremoni. }
+  The failure files in tests/run/ matter as much as the one that works: a
+  comptime type check that catches nothing is only ceremony. }
 program askr_run_tests;
 
 {$mode Delphi}{$H+}
@@ -18,8 +18,8 @@ uses
   Askr.Run;
 
 var
-  Bestatt: Integer = 0;
-  Feilet: Integer = 0;
+  Passed: Integer = 0;
+  Failed: Integer = 0;
   Db: string;
 
 procedure Start(const Name_: string);
@@ -32,12 +32,12 @@ procedure Ok(const What: string; Value_: Boolean);
 begin
   if Value_ then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
   end;
 end;
@@ -46,12 +46,12 @@ procedure Like(const What, Expected, Got: string);
 begin
   if Expected = Got then
   begin
-    Inc(Bestatt);
+    Inc(Passed);
     WriteLn('  ok    ', What);
   end
   else
   begin
-    Inc(Feilet);
+    Inc(Failed);
     WriteLn('  FEIL  ', What);
     WriteLn('        forventet: ', Expected);
     WriteLn('        fikk:      ', Got);
@@ -105,44 +105,44 @@ begin
   end;
 end;
 
-{ Skriver en .run-fil og oversetter den. Returnerer feilmeldingen, eller
-  tom streng hvis det gikk. }
-function Oversett(const Source_, UtFil: string; out Stats: TRunStats): string;
+{ Writes a .run file and translates it. Returns the error message, or an
+  empty string if it went well. }
+function Translate(const Source_, OutFile: string; out Stats: TRunStats): string;
 var
   L: TStringList;
-  Inn: string;
+  InFile: string;
 begin
-  Inn := '.build/run/case.run';
+  InFile := '.build/run/case.run';
   L := TStringList.Create;
   try
     L.Text := StringReplace(Source_, '@DB@', Db, [rfReplaceAll]);
-    L.SaveToFile(Inn);
+    L.SaveToFile(InFile);
   finally
     L.Free;
   end;
   Result := '';
   try
-    Stats := Transpile(Inn, UtFil, 'Case');
+    Stats := Transpile(InFile, OutFile, 'Case');
   except
     on E: ERunError do Result := E.Message;
     on E: Exception do Result := E.ClassName + ': ' + E.Message;
   end;
 end;
 
-function ReadOut(const Fil: string): string;
+function ReadOut(const FileName_: string): string;
 var
   L: TStringList;
 begin
   L := TStringList.Create;
   try
-    L.LoadFromFile(Fil);
+    L.LoadFromFile(FileName_);
     Result := L.Text;
   finally
     L.Free;
   end;
 end;
 
-function Feilmelding(const Fixture: string): string;
+function ErrorFrom(const Fixture: string): string;
 var
   L: TStringList;
   Source_: string;
@@ -155,11 +155,11 @@ begin
   finally
     L.Free;
   end;
-  Result := Oversett(Source_, '.build/run/out.pas', S);
+  Result := Translate(Source_, '.build/run/out.pas', S);
 end;
 
 var
-  Ut: string;
+  Out_: string;
   S: TRunStats;
   Message_: string;
 begin
@@ -167,24 +167,24 @@ begin
   MakeDatabase;
 
   Start('generics');
-  Message_ := Oversett(
+  Message_ := Translate(
     'db "sqlite:@DB@"'#10 +
     'model Customer from customers'#10 +
     'model Order from orders'#10 +
     'query<M> ById(id: int) -> M for Customer, Order'#10,
     '.build/run/out.pas', S);
-  Like('oversetter uten feil', '', Message_);
-  Ut := ReadOut('.build/run/out.pas');
-  Like('to modeller', '2', IntToStr(S.Models));
-  Like('to spørringer ut av én erklæring', '2', IntToStr(S.Queries));
-  Ok('CustomerById ble skrevet ut', Pos('function CustomerById', Ut) > 0);
-  Ok('OrderById ble skrevet ut', Pos('function OrderById', Ut) > 0);
-  Ok('hver med sin egen radtype',
-    (Pos('): TCustomerRow;', Ut) > 0) and (Pos('): TOrderRow;', Ut) > 0));
-  Ok('enkeltrad gir out Found', Pos('out Found: Boolean', Ut) > 0);
+  Like('translates without an error', '', Message_);
+  Out_ := ReadOut('.build/run/out.pas');
+  Like('two models', '2', IntToStr(S.Models));
+  Like('two queries out of one declaration', '2', IntToStr(S.Queries));
+  Ok('CustomerById was written out', Pos('function CustomerById', Out_) > 0);
+  Ok('OrderById was written out', Pos('function OrderById', Out_) > 0);
+  Ok('each with its own row type',
+    (Pos('): TCustomerRow;', Out_) > 0) and (Pos('): TOrderRow;', Out_) > 0));
+  Ok('a single row gives out Found', Pos('out Found: Boolean', Out_) > 0);
 
-  Start('relasjoner fra skjemaet');
-  Message_ := Oversett(
+  Start('relations from the schema');
+  Message_ := Translate(
     'db "sqlite:@DB@"'#10 +
     'model Customer from customers'#10 +
     'model Order from orders'#10 +
@@ -192,68 +192,68 @@ begin
     '  from Customer'#10 +
     '  with orders'#10,
     '.build/run/out.pas', S);
-  Like('oversetter uten feil', '', Message_);
-  Ut := ReadOut('.build/run/out.pas');
-  Ok('radtypen fikk et relasjonsfelt',
-    Pos('Orders: TOrderRowArray', Ut) > 0);
-  Ok('og det står hvor det kom fra',
-    Pos('orders.customer_id', Ut) > 0);
-  { Eager loading skal være én ekstra spørring, ikke én per rad. }
-  Ok('relasjonen hentes med IN, ikke i en løkke',
-    Pos('IN (', Ut) > 0);
-  Ok('TOrderRow kommer før TCustomerRow',
-    (Pos('TOrderRow = record', Ut) > 0) and
-    (Pos('TOrderRow = record', Ut) < Pos('TCustomerRow = record', Ut)));
+  Like('translates without an error', '', Message_);
+  Out_ := ReadOut('.build/run/out.pas');
+  Ok('the row type got a relation field',
+    Pos('Orders: TOrderRowArray', Out_) > 0);
+  Ok('and it says where it came from',
+    Pos('orders.customer_id', Out_) > 0);
+  { Eager loading is to be one extra query, not one per row. }
+  Ok('the relation is fetched with IN, not in a loop',
+    Pos('IN (', Out_) > 0);
+  Ok('TOrderRow comes before TCustomerRow',
+    (Pos('TOrderRow = record', Out_) > 0) and
+    (Pos('TOrderRow = record', Out_) < Pos('TCustomerRow = record', Out_)));
 
-  Start('typer leses av databasen');
-  Ok('NUMERIC(12,2) blir Currency', Pos('Balance: Currency', Ut) > 0);
-  Ok('TINYINT(1) blir Boolean', Pos('Active: Boolean', Ut) > 0);
-  Ok('REAL blir Double', Pos('Weight: Double', Ut) > 0);
-  Ok('customer_id blir CustomerId: Int64',
-    Pos('CustomerId: Int64', Ut) > 0);
+  Start('types are read from the database');
+  Ok('NUMERIC(12,2) becomes Currency', Pos('Balance: Currency', Out_) > 0);
+  Ok('TINYINT(1) becomes Boolean', Pos('Active: Boolean', Out_) > 0);
+  Ok('REAL becomes Double', Pos('Weight: Double', Out_) > 0);
+  Ok('customer_id becomes CustomerId: Int64',
+    Pos('CustomerId: Int64', Out_) > 0);
 
-  Start('comptime fanger feilene');
-  Message_ := Feilmelding('bad-unknown-table');
-  Ok('ukjent tabell', Pos('does not exist', Message_) > 0);
-  Ok('med forslag', Pos('Did you mean "customers"', Message_) > 0);
+  Start('comptime catches the errors');
+  Message_ := ErrorFrom('bad-unknown-table');
+  Ok('unknown table', Pos('does not exist', Message_) > 0);
+  Ok('with a suggestion', Pos('Did you mean "customers"', Message_) > 0);
 
-  Message_ := Feilmelding('bad-unknown-column');
-  Ok('ukjent kolonne', Pos('has no column', Message_) > 0);
-  Ok('med forslag', Pos('Did you mean "email"', Message_) > 0);
+  Message_ := ErrorFrom('bad-unknown-column');
+  Ok('unknown column', Pos('has no column', Message_) > 0);
+  Ok('with a suggestion', Pos('Did you mean "email"', Message_) > 0);
 
-  Message_ := Feilmelding('bad-type-mismatch');
-  Ok('typekonflikt mot skjemaet', Pos('is money', Message_) > 0);
-  Ok('og sier hvor skjemaet ble lest', Pos('The schema was read', Message_) > 0);
+  Message_ := ErrorFrom('bad-type-mismatch');
+  Ok('a type clash against the schema', Pos('is money', Message_) > 0);
+  Ok('and says where the schema was read', Pos('The schema was read', Message_) > 0);
 
-  Message_ := Feilmelding('bad-unknown-relation');
-  Ok('ukjent relasjon', Pos('has no relation', Message_) > 0);
-  Ok('med forslag', Pos('Did you mean "orders"', Message_) > 0);
+  Message_ := ErrorFrom('bad-unknown-relation');
+  Ok('unknown relation', Pos('has no relation', Message_) > 0);
+  Ok('with a suggestion', Pos('Did you mean "orders"', Message_) > 0);
 
-  Message_ := Feilmelding('bad-generic-without-for');
-  Ok('generisk uten for', Pos('is missing "for"', Message_) > 0);
+  Message_ := ErrorFrom('bad-generic-without-for');
+  Ok('generic without for', Pos('is missing "for"', Message_) > 0);
 
-  Message_ := Feilmelding('bad-relation-without-model');
-  Ok('relasjon uten modell', Pos('has no model', Message_) > 0);
+  Message_ := ErrorFrom('bad-relation-without-model');
+  Ok('a relation without a model', Pos('has no model', Message_) > 0);
 
-  Start('feil nevner fil og linje');
-  Message_ := Feilmelding('bad-unknown-column');
-  Ok('linjenummer er med', Pos('.run:', Message_) > 0);
-  Ok('og ingen verdi lekker ut', Pos('@example.com', Message_) = 0);
+  Start('errors name the file and the line');
+  Message_ := ErrorFrom('bad-unknown-column');
+  Ok('the line number is there', Pos('.run:', Message_) > 0);
+  Ok('and no value leaks out', Pos('@example.com', Message_) = 0);
 
-  Start('kostnad');
-  Message_ := Oversett(
+  Start('cost');
+  Message_ := Translate(
     'db "sqlite:@DB@"'#10 +
     'model Customer from customers'#10 +
     'model Order from orders'#10 +
     'query<M> ById(id: int) -> M for Customer, Order'#10,
     '.build/run/out.pas', S);
-  WriteLn(Format('        parse %d ms, skjema %d ms, utskrift %d ms, i alt %d ms',
+  WriteLn(Format('        parse %d ms, schema %d ms, emit %d ms, %d ms in all',
     [S.ParseMs, S.SchemaMs, S.EmitMs, S.TotalMs]));
-  Ok('oversettelsen får plass i utviklerløkka', S.TotalMs < 50);
-  Like('dialekten kom fra DSN-en', 'sqlite', S.Dialect);
+  Ok('the translation fits inside the developer loop', S.TotalMs < 50);
+  Like('the dialect came from the DSN', 'sqlite', S.Dialect);
 
   WriteLn;
-  WriteLn('— ', Bestatt, ' bestått, ', Feilet, ' feilet');
-  if Feilet > 0 then
+  WriteLn('— ', Passed, ' passed, ', Failed, ' failed');
+  if Failed > 0 then
     Halt(1);
 end.

@@ -1,16 +1,16 @@
-{ Varig kø under samtidighet — felles for Postgres og MySQL.
+{ The durable queue under concurrency — shared by Postgres and MySQL.
 
-  Dette er det SQLite ikke kan teste. `SKIP LOCKED` finnes bare i Postgres
-  og MySQL 8, og den ene feilen som betyr noe her er at to workere tar den
-  samme jobben. Da kjører den to ganger, og den e-posten blir sendt to
-  ganger, eller den betalingen trukket to ganger.
+  This is what SQLite cannot test. `SKIP LOCKED` exists only in Postgres
+  and MySQL 8, and the one failure that matters here is two workers taking
+  the same job. Then it runs twice, and that email is sent twice, or that
+  payment taken twice.
 
-  Fila inkluderes i begge suitene i stedet for å skrives to ganger. Begge
-  har Start, Ok og LikeI med samme signatur. }
+  The file is included in both suites rather than written twice. Both have
+  Start, Ok and LikeI with the same signature. }
 
 var
   QueueLock: TRTLCriticalSection;
-  QueueSet: array of Integer;   { hvor mange ganger hver jobb kjørte }
+  QueueSet: array of Integer;   { how many times each job ran }
   QueueTotal: Integer;
 
 procedure KoeJobb(const Ctx: TJobContext);
@@ -36,14 +36,14 @@ var
   Q: TQueue;
   A: TArena;
   C: TDbConnection;
-  I, Dobbelt, Manglende: Integer;
+  I, RanTwice, Manglende: Integer;
 begin
-  Start('varig kø');
+  Start('the durable queue');
   InitCriticalSection(QueueLock);
   A := TArena.Create(16 * 1024);
   try
-    { Rydd fra forrige kjøring. Tabellene er rammeverkets egne og skal
-      kunne stå mellom kjøringer. }
+    { Clean up from the previous run. The tables are the framework's own and
+      have to survive between runs. }
     C := OpenDbConnection(QueueDsn);
     try
       try
@@ -60,9 +60,9 @@ begin
     Storage.Poll := 10;
     Storage.EnsureSchema;
 
-    { EnsureSchema skal kunne kalles ved hver oppstart. }
+    { EnsureSchema has to be callable on every start-up. }
     Storage.EnsureSchema;
-    Ok('EnsureSchema kan kalles to ganger', True);
+    Ok('EnsureSchema can be called twice', True);
 
     SetLength(QueueSet, Jobs_);
     for I := 0 to Jobs_ - 1 do
@@ -77,18 +77,18 @@ begin
       LikeI('alle jobbene ligger i tabellen', Jobs_, Q.Pending);
 
       Q.Start;
-      Ok('køen ble tom', Q.WaitUntilEmpty(60000));
+      Ok('the queue drained', Q.WaitUntilEmpty(60000));
       Sleep(300);
       Q.Stop(True);
 
-      Dobbelt := 0;
+      RanTwice := 0;
       Manglende := 0;
       EnterCriticalSection(QueueLock);
       try
         for I := 0 to Jobs_ - 1 do
         begin
           if QueueSet[I] > 1 then
-            Inc(Dobbelt);
+            Inc(RanTwice);
           if QueueSet[I] = 0 then
             Inc(Manglende);
         end;
@@ -96,24 +96,25 @@ begin
         LeaveCriticalSection(QueueLock);
       end;
 
-      { Den ene feilen som betyr noe: seks workere som slåss om de samme
-        radene skal ikke kunne gi den samme jobben til to av dem.
+      { The one failure that matters: six workers fighting over the same
+        rows must not be able to hand the same job to two of them.
 
-        Merk hva denne testen **ikke** beviser. Fjerner man både
-        `FOR UPDATE SKIP LOCKED` og vakten `AND reserved_at IS NULL`, er
-        den fortsatt grønn — vinduet mellom SELECT og UPDATE er for smalt
-        til at den treffer det. Legger man en Sleep(5) inn i det vinduet,
-        kjører seks av to hundre jobber dobbelt. Det er prøvd.
+        Note what this test does **not** prove. Remove both
+        `FOR UPDATE SKIP LOCKED` and the guard `AND reserved_at IS NULL`
+        and it is still green — the window between SELECT and UPDATE is
+        too narrow for it to hit. Put a Sleep(5) into that window and six
+        jobs out of two hundred run twice. That has been tried.
 
-        At sperrene er nødvendige, er altså vist ved å utvide vinduet, og
-        at reservasjonen holder er vist deterministisk i SQLite-delen av
-        askr_runtime_tests. Denne testen viser at det virker under ekte
-        samtidighet — ikke at hver enkelt sperre er uunnværlig. }
-      LikeI('ingen jobb kjørte to ganger', 0, Dobbelt);
-      LikeI('og ingen ble hoppet over', 0, Manglende);
-      LikeI('alle kjøringene er talt', Jobs_, QueueTotal);
-      LikeI('køen er tom', 0, Q.Pending);
-      Ok('køen vet at den er varig', Q.Durable);
+        So the locks are shown to be necessary by widening the window,
+        and that the reservation holds is shown deterministically in the
+        SQLite part of askr_runtime_tests. This test shows that it works
+        under real concurrency — not that each individual lock is
+        indispensable. }
+      LikeI('no job ran twice', 0, RanTwice);
+      LikeI('and none was skipped', 0, Manglende);
+      LikeI('every run is accounted for', Jobs_, QueueTotal);
+      LikeI('the queue is empty', 0, Q.Pending);
+      Ok('the queue knows it is durable', Q.Durable);
     finally
       Q.Free;
     end;
