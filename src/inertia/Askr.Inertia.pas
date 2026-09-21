@@ -1,8 +1,8 @@
-{ Askr.Inertia — Inertia-protokollen, slik den allerede er definert.
+{ Askr.Inertia — the Inertia protocol, the way it is already defined.
 
-  Askr finner ikke opp noe eget her. Kontrakten er den samme JSON-strukturen
-  Inertia bruker — component, props, url og version — så de offisielle
-  adapterne og resten av verktøykjeden virker uendret.
+  Askr invents nothing of its own here. The contract is the same JSON
+  structure Inertia uses — component, props, url and version — so the
+  official adapters and the rest of the toolchain work unchanged.
 
       function TCustomerController.Index(Req: TRequest): TResponse;
       begin
@@ -10,31 +10,35 @@
           ['customers', TQuery<TCustomer>.New.Paginate(Req.Page, 25)]);
       end;
 
-  Dette er Inertia 3. Den viktigste forskjellen fra 2 er hvor payloaden
-  ligger i HTML-skallet: den er flyttet fra et data-page-attributt på
-  rot-diven til et eget script-element av typen application/json. Klienten i
-  3 leter bare etter script-elementet, så attributtformen boot-er ikke.
+  This is Inertia 3. The most important difference from 2 is where the
+  payload sits in the HTML shell: it has moved from a data-page attribute
+  on the root div to a script element of its own, of type
+  application/json. The client in 3 looks only for the script element, so
+  the attribute form does not boot.
 
-  Protokollen har fire deler som må stemme, ellers oppfører frontend seg rart
-  på måter som er vonde å feilsøke:
+  The protocol has four parts that have to line up, or the frontend
+  behaves oddly in ways that are painful to debug:
 
-    * Without X-Inertia i requesten svares det med hele HTML-skallet, med
-      payloaden i et <script data-page type="application/json">-element.
-    * With_ X-Inertia svares det med ren JSON, og X-Inertia: true tilbake.
-      Vary: X-Inertia må med, ellers cacher mellomledd feil svar.
-    * Er X-Inertia-Version ulik serverens, svares 409 med X-Inertia-Location.
-      Klienten laster da siden på nytt, i stedet for å bytte til en versjon
-      av frontend som ikke finnes lenger.
-    * Ved delvis oppdatering sendes bare de propsene klienten ba om.
+    * Without X-Inertia in the request the answer is the whole HTML shell,
+      with the payload in a <script data-page type="application/json">
+      element.
+    * With X-Inertia the answer is plain JSON, and X-Inertia: true back.
+      Vary: X-Inertia has to be there, or intermediaries cache the wrong
+      reply.
+    * If X-Inertia-Version differs from the server's, the answer is a 409
+      with X-Inertia-Location. The client then loads the page again,
+      rather than switching to a version of the frontend that no longer
+      exists.
+    * On a partial reload only the props the client asked for are sent.
 
-  En detalj som er lett å overse: en omdirigering etter PUT, PATCH eller
-  DELETE må være 303, ikke 302. Ellers gjentar nettleseren metoden mot den
-  nye adressen.
+  One detail that is easy to miss: a redirect after PUT, PATCH or DELETE
+  has to be a 303, not a 302. Otherwise the browser repeats the method
+  against the new address.
 
-  Ikke implementert ennå, og bevisst utelatt fra fase 1: sammenslåing av
-  props for uendelig rulling (mergeProps, deepMergeProps, matchPropsOn,
-  X-Inertia-Reset). De hører til et mønster appen må be om, ikke til
-  grunnprotokollen. }
+  Not implemented yet, and deliberately left out of phase 1: merging props
+  for infinite scrolling (mergeProps, deepMergeProps, matchPropsOn,
+  X-Inertia-Reset). They belong to a pattern the app has to ask for, not
+  to the base protocol. }
 unit Askr.Inertia;
 
 {$mode Delphi}{$H+}
@@ -49,92 +53,100 @@ uses
 type
   EInertiaError = class(Exception);
 
-  { Kalles når payloaden bygges, og kan legge til props som skal være med på
-    hver side — innlogget bruker, flash-meldinger, valideringsfeil. }
+  { Called when the payload is built, and can add props that are to be on
+    every page — the signed-in user, flash messages, validation
+    errors. }
   TInertiaShare = procedure(var W: TJsonWriter);
 
   TInertia = class
   public
-    { Frontend-versjonen. Endres denne, tvinges en full omlasting neste gang
-      klienten navigerer. Sett den til hashen av bygget. }
+    { The frontend version. Change it and a full reload is forced the next
+      time the client navigates. Set it to the hash of the build. }
     class procedure SetVersion(const AVersion: string); static;
     class function Version: string; static;
 
-    { Id-en på elementet klienten monterer i, og som script-elementet peker
-      på med data-page. Standard er 'app'. }
+    { The id of the element the client mounts into, and which the script
+      element points at with data-page. The default is 'app'. }
     class procedure SetRootId(const AId: string); static;
     class function RootId: string; static;
 
-    { Legges i payloaden som clearHistory og encryptHistory. }
+    { Put in the payload as clearHistory and encryptHistory. }
     class procedure SetHistory(AEncrypt, AClear: Boolean); static;
 
-    (* HTML-skallet. Må inneholde plassholderen {{page}} der payloaden skal
-       inn. Denne kommentaren bruker stjerneform fordi klammeparentesene
-       ellers ville lukket en vanlig Pascal-kommentar for tidlig. *)
+    (* The HTML shell. It has to contain the placeholder {{page}} where the
+       payload goes. This comment uses the star form because the braces
+       would otherwise close an ordinary Pascal comment too early. *)
     class procedure SetRootTemplate(const AHtml: string); static;
     class function RootTemplate: string; static;
 
     class procedure SetShare(AHandler: TInertiaShare); static;
 
-    { Tittelen i HTML-skallet, der malen har plassholderen title.
-      Klienten setter vanligvis sin egen per side; denne er den som står
-      der til den gjør det, og den som står der hvis den aldri gjør det. }
+    { The title in the HTML shell, where the template has the title
+      placeholder. The client usually sets its own per page; this is the
+      one that stands there until it does, and the one that stands there
+      if it never does. }
     class procedure SetTitle(const ATitle: string); static;
     class function Title: string; static;
 
-    (* Taggene som settes inn der malen har plassholderen {{head}} — typisk
-       script- og link-taggene fra Vite. Without dette blir plassholderen
-       stående i HTML-en, og frontend laster aldri. *)
+    (* The tags that go in where the template has the placeholder {{head}} —
+       typically the script and link tags from Vite. Without this the
+       placeholder is left standing in the HTML, and the frontend never
+       loads. *)
     class procedure SetHead(const AHtml: string); static;
     class function Head: string; static;
   end;
 
-{ Bygger responsen. Props er par av navn og verdi:
+{ Builds the response. Props are pairs of name and value:
 
-    Inertia('Customers/Index', ['customers', Liste, 'total', 42])
+    Inertia('Customers/Index', ['customers', List, 'total', 42])
 
-  Verdien kan være en TModel, en TModelListBase, en streng, et heltall, et
-  desimaltall, en Currency eller en Boolean. nil blir null. }
+  The value can be a TModel, a TModelListBase, a string, an integer, a
+  floating-point number, a Currency or a Boolean. nil becomes null. }
 function Inertia(const Component: string;
   const Props: array of const): TResponse; overload;
 
-{ Som over, men propsene i Deferred sendes ikke med i første svar. De
-  oppføres under deferredProps, og klienten henter dem i en egen runde. Bruk
-  det til noe som er dyrt å regne ut og ikke trengs for første maling. }
+{ As above, but the props in Deferred are not sent in the first reply.
+  They are listed under deferredProps, and the client fetches them in a
+  round of its own. Use it for something that is expensive to work out and
+  is not needed for the first paint. }
 function Inertia(const Component: string; const Props: array of const;
   const Deferred: array of string): TResponse; overload;
 
-{ Omdirigering innenfor appen. Bruker 303 etter PUT, PATCH og DELETE. }
+{ A redirect within the app. Uses 303 after PUT, PATCH and DELETE. }
 function InertiaRedirect(const Url: string): TResponse;
 
-{ Tilbake dit klienten kom fra, etter Referer. Without Referer: til Fallback. }
+{ Back where the client came from, following Referer. Without a Referer:
+  to Fallback. }
 function Back(const Fallback: string = '/'): TResponse;
 
-{ Formen PRD-en skriver: Exit(Back.WithErrors(C.Errors)).
+{ The form the PRD writes: Exit(Back.WithErrors(C.Errors)).
 
-  Feilene legges i sesjonens flash og er props.errors i neste request. Without
-  en omgivende sesjon kastes det, fordi alternativet — å miste feilene i
-  stillhet — er verre enn en tydelig feilmelding. }
+  The errors are put in the session's flash and are props.errors in the
+  next request. Without a surrounding session it raises, because the
+  alternative — losing the errors in silence — is worse than a clear error
+  message. }
 function BackWithErrors(E: TErrors;
   const Fallback: string = '/'): TResponse;
 
-{ Flash-melding på det svaret som bygges nå. Inertia 3 har flash som et eget
-  felt på page-objektet, ikke som en prop, og klienten fyrer et flash-event.
+{ A flash message on the reply being built right now. Inertia 3 has flash
+  as a field of its own on the page object, not as a prop, and the client
+  fires a flash event.
 
-  Meldingen overlever **ikke** en omdirigering. Det krever at den lagres et
-  sted mellom de to requestene, altså sesjoner, og de hører til fase 2. Enda
-  viktigere: de to requestene betjenes gjerne av hver sin worker, så selv en
-  trådlokal verdi ville vært feil.
+  The message does **not** survive a redirect. That would require storing
+  it somewhere between the two requests, that is, sessions, and those
+  belong to phase 2. More importantly: the two requests are often served
+  by different workers, so even a thread-local value would be wrong.
 
-  Mønsteret som virker i fase 1 er å rendre siden direkte etter en vellykket
-  lagring, i stedet for å omdirigere til den. }
+  The pattern that works in phase 1 is to render the page directly after a
+  successful save, instead of redirecting to it. }
 procedure InertiaFlash(const AKey, AValue: string);
 
-{ Ut av appen — til en ekstern adresse eller et helt nytt dokument.
-  Inertia krever 409 med X-Inertia-Location for at klienten skal forstå det. }
+{ Out of the app — to an external address or an entirely new document.
+  Inertia requires a 409 with X-Inertia-Location for the client to
+  understand it. }
 function InertiaLocation(const Url: string): TResponse;
 
-{ True når requesten kom fra Inertia-klienten. }
+{ True when the request came from the Inertia client. }
 function IsInertiaRequest(Req: TRequest): Boolean;
 
 implementation
@@ -142,14 +154,16 @@ implementation
 const
   (* Inertia 3-formen: payloaden i et script-element, og en tom
      monteringsdiv. Plassholderen {{root}} byttes ut med rot-id-en. *)
-  { lang er `en`, ikke `no`. Askr er et internasjonalt rammeverk, og et
-    hardkodet norsk språk får en skjermleser til å uttale engelsk tekst med
-    norske fonemer. Appen setter sitt eget språk med SetRootTemplate.
+  { lang is `en`, not `no`. Askr is an international framework, and a
+    hard-coded Norwegian language makes a screen reader pronounce English
+    text with Norwegian phonemes. The app sets its own language with
+    SetRootTemplate.
 
-    <title> må stå her. Without den mangler hver eneste Inertia-side en
-    tittel til klienten har rukket å sette en — og gjør den det aldri, har
-    siden ingen. axe kaller det document-title og regnerdet som alvorlig;
-    det ble oppdaget ved å kjøre axe mot et nettsted bygget med Askr. }
+    <title> has to be here. Without it every single Inertia page is
+    missing a title until the client has had time to set one — and if it
+    never does, the page has none. axe calls it document-title and counts
+    it as serious; it was found by running axe against a site built with
+    Askr. }
   DefaultRootTemplate =
     '<!DOCTYPE html>' + #10 +
     '<html lang="en">' + #10 +
@@ -165,8 +179,8 @@ const
     '</body>' + #10 +
     '</html>' + #10;
 
-{ Flash er per tråd, ikke delt. Workerne betjener hver sin request, og en
-  global ville latt den ene tråden sende den andres melding. }
+{ Flash is per thread, not shared. The workers each serve their own
+  request, and a global would let one thread send the other's message. }
 threadvar
   GFlashKeys: array of string;
   GFlashValues: array of string;
@@ -175,8 +189,8 @@ var
   GVersion: string = '1';
   GRootTemplate: string = '';
   GRootId: string = 'app';
-  { Standarden er rammeverkets navn, ikke tomt: en tom <title> er det
-    samme bruddet som ingen <title>. `askr new` setter appens eget. }
+  { The default is the framework's name, not empty: an empty <title> is
+    the same violation as no <title>. `askr new` sets the app's own. }
   GTitle: string = 'Askr';
   GHead: string = '';
   GEncryptHistory: Boolean = False;
@@ -245,9 +259,9 @@ begin
   Result := (Req <> nil) and Req.Header('x-inertia').SameTextStr('true');
 end;
 
-{ Ved delvis oppdatering sender klienten X-Inertia-Partial-Component sammen
-  med navnene den vil ha. Gjelder bare når komponenten er den samme — ellers
-  er det en vanlig navigering og alt skal med. }
+{ On a partial reload the client sends X-Inertia-Partial-Component along
+  with the names it wants. It applies only when the component is the same —
+  otherwise it is an ordinary navigation and everything goes along. }
 function InList(const Header: TStr; const Name_: string): Boolean;
 var
   Rest, Item: TStr;
@@ -269,8 +283,8 @@ begin
   if Req = nil then
     Exit(True);
 
-  { Props klienten allerede har som «once» skal ikke sendes på nytt. Dette
-    gjelder uavhengig av om det er en delvis oppdatering. }
+  { Props the client already holds as "once" must not be sent again. That
+    applies whether or not it is a partial reload. }
   if InList(Req.Header('x-inertia-except-once-props'), PropName) then
     Exit(False);
 
@@ -286,8 +300,8 @@ begin
   Result := InList(Only, PropName);
 end;
 
-{ En utsatt prop sendes ikke med i første svar, men hentes når klienten ber
-  eksplisitt om den i en delvis oppdatering. }
+{ A deferred prop is not sent in the first reply, but is fetched when the
+  client asks for it explicitly in a partial reload. }
 function IsDeferredNow(Req: TRequest; const Component, PropName: string;
   const Deferred: array of string): Boolean;
 var
@@ -337,14 +351,14 @@ begin
         if O = nil then
           W.Null
         else if O is TErrors then
-          { Inertia 3 leser props.errors fra hvilket som helst svar, ikke bare
-            fra en sesjonsbåret omdirigering. Derfor kan en validering som
-            feiler rendre siden på nytt med feilene som prop. }
+          { Inertia 3 reads props.errors from any reply at all, not only from
+            a session-carried redirect. So a validation that fails can
+            render the page again with the errors as a prop. }
           TErrors(O).WriteJson(W)
         else if O is TJsonWritable then
-          { Appens eget objekt. Festet ligger i Askr.Core.Json, slik at
-            Inertia slipper å kjenne hver type som kan være en prop —
-            TGrid var den første, og lista skal ikke vokse her. }
+          { The app's own object. The hook lives in Askr.Core.Json, so that
+            Inertia does not have to know every type that can be a prop —
+            TGrid was the first, and the list must not grow here. }
           TJsonWritable(O).WriteJson(W)
         else if O is TModelListBase then
           WriteModelList(W, TModelListBase(O))
@@ -395,8 +409,8 @@ begin
   W.Key('props');
   W.BeginObject;
 
-  { Valideringsfeil fra forrige request. Inertia leser props.errors, så
-    dette er alt som skal til for at Back.WithErrors virker. }
+  { Validation errors from the previous request. Inertia reads
+    props.errors, so this is all it takes for Back.WithErrors to work. }
   Sess := CurrentSession;
   if (Sess <> nil) and Sess.HasErrors then
     W.FieldRaw('errors', Askr.Core.Text.Str(Sess.ErrorsJson));
@@ -462,12 +476,14 @@ begin
   W.Field('clearHistory', GClearHistory);
   W.Field('encryptHistory', GEncryptHistory);
 
-  { To kilder til flash: det som ble satt på dette svaret, og det som kom
-    fra forrige request gjennom sesjonen. Begge skrives i samme objekt.
+  { Two sources of flash: what was set on this reply, and what came from
+    the previous request through the session. Both are written into the
+    same object.
 
-    Vakten må spørre om det samme som WriteFlashInto skriver. Den spurte før
-    etter én hardkodet nøkkel, og da ble enhver annen flash — for eksempel
-    Session.Flash('error', ...) fra auth-stillaset — stille forkastet. }
+    The guard has to ask about the same thing WriteFlashInto writes. It
+    used to ask about one hard-coded key, and then any other flash — for
+    instance Session.Flash('error', ...) from the auth scaffolding — was
+    silently discarded. }
   if (Length(GFlashKeys) > 0) or
      ((Sess <> nil) and (Sess.HasAnyFlash or Sess.HasErrors)) then
   begin
@@ -510,8 +526,8 @@ begin
   Tpl := StringReplace(Tpl, '{{title}}',
     HtmlAttrEscape(A, Askr.Core.Text.Str(TInertia.Title)).ToString,
     [rfReplaceAll]);
-  { Inne i et script-element er det JSON-escaping som gjelder, ikke
-    HTML-escaping. Se JsonScriptEscape. }
+  { Inside a script element it is JSON escaping that applies, not HTML
+    escaping. See JsonScriptEscape. }
   Escaped := JsonScriptEscape(A, Payload);
   P := Pos('{{page}}', Tpl);
   B.Init(A, Length(Tpl) + Escaped.Len + 64);
@@ -539,8 +555,8 @@ begin
   if A = nil then
     raise EInertiaError.Create('Inertia requires an ambient arena');
 
-  { Versjonssjekk før noe bygges. Klienten skal laste på nytt, ikke få en
-    payload den ikke kan bruke. }
+  { The version check before anything is built. The client is to reload,
+    not to get a payload it cannot use. }
   if (Req <> nil) and IsInertiaRequest(Req) and (Req.Method = hmGet) and
      Req.HasHeader('x-inertia-version') and
      not Req.Header('x-inertia-version').EqualsStr(TInertia.Version) then
@@ -571,8 +587,8 @@ var
 begin
   Req := CurrentRequest;
   Code := 302;
-  { 303 tvinger nettleseren over på GET. Without dette gjentas PUT eller DELETE
-    mot den nye adressen. }
+  { 303 forces the browser over to GET. Without this a PUT or DELETE is
+    repeated against the new address. }
   if (Req <> nil) and
      ((Req.Method = hmPut) or (Req.Method = hmPatch) or (Req.Method = hmDelete)) then
     Code := 303;

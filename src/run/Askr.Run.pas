@@ -1,30 +1,31 @@
-{ Askr.Run — Rún, oversatt til Pascal.
+{ Askr.Run — Rún, translated into Pascal.
 
-  Rún finnes fordi Free Pascal ikke kan uttrykke to ting Askr trenger:
-  en generisk metode (`Where<T>`), og `with` som navn på eager loading —
-  `with` er et reservert ord. Begge er ekte grenser, verifisert på både
-  3.2.2 og trunk, og de forsvinner ikke ved å vente.
+  Rún exists because Free Pascal cannot express two things Askr needs: a
+  generic method (`Where<T>`), and `with` as the name for eager loading —
+  `with` is a reserved word. Both are real limits, verified on both 3.2.2
+  and trunk, and they do not go away by waiting.
 
-  Svaret er ikke en ny kompilator. Det er en transpiler som skriver ut de
-  konkrete variantene Pascal kan ta imot:
+  The answer is not a new compiler. It is a transpiler that writes out the
+  concrete variants Pascal can accept:
 
     query<M> ById(id: int) -> M for Customer, Order
 
-  blir `CustomerById` og `OrderById`, hver med sin egen radtype.
+  becomes `CustomerById` and `OrderById`, each with its own row type.
 
-  Skjemaet leses fra databasen **mens kilden oversettes**. Kolonner, typer
-  og relasjoner står ingen steder i Rún-kilden — `with orders` virker fordi
-  `orders.customer_id` peker på `customers.id`, og det vet databasen
-  allerede.
+  The schema is read from the database **while the source is being
+  translated**. Columns, types and relations appear nowhere in the Rún
+  source — `with orders` works because `orders.customer_id` points at
+  `customers.id`, and the database knows that already.
 
-  Kostnaden er målt: 3–4 ms mot SQLite med opptil 62 tabeller. Mot Postgres
-  er den 70 ms ved 61 tabeller, som er mer enn utviklerløkka har å gå på —
-  se LARAVEL.md og Rún-dokumentet. En produksjonsvariant må cache skjemaet.
+  The cost is measured: 3–4 ms against SQLite with up to 62 tables.
+  Against Postgres it is 70 ms at 61 tables, which is more than the
+  developer loop has to spare — see LARAVEL.md and the Rún document. A
+  production variant has to cache the schema.
 
-  Uniten holder tilstand i globale variabler. Det er med vilje: en
-  oversettelse er én kjøring fra start til slutt, og en kontekst-record
-  hadde bare flyttet den samme tilstanden et annet sted. Den er ikke
-  trådsikker, og skal ikke brukes fra flere tråder. }
+  The unit keeps state in global variables. That is deliberate: a
+  translation is one run from start to finish, and a context record would
+  only have moved the same state somewhere else. It is not thread safe,
+  and is not to be used from several threads. }
 unit Askr.Run;
 
 {$mode Delphi}{$H+}
@@ -40,8 +41,8 @@ uses
 type
   ERunError = class(Exception);
 
-  { Det oversettelsen kostet og hva den fant. To_ logging og til å måle
-    at Rún fortsatt får plass i utviklerløkka. }
+  { What the translation cost and what it found. For logging, and for
+    measuring that Rún still fits inside the developer loop. }
   TRunStats = record
     Models: Integer;
     Queries: Integer;
@@ -52,18 +53,19 @@ type
     TotalMs: Int64;
   end;
 
-{ Oversetter én .run-fil til én Pascal-unit. Kaster ERunError med fil, linje
-  og hva som var galt. }
+{ Translates one .run file into one Pascal unit. Raises ERunError with
+  the file, the line and what was wrong. }
 function Transpile(const InFile, OutFile, UnitName: string): TRunStats;
 
-{ Unit-navnet en .run-fil skal gi, etter filnavnet: app/Queries.run blir
-  App.Queries. }
+{ The unit name a .run file is to give, after the file name:
+  app/Queries.run becomes App.Queries. }
 function UnitNameFor(const RunFile, Namespace: string): string;
 
 implementation
 
 type
-  { Typene språket kjenner. De kommer fra skjemaet, ikke fra kilden. }
+  { The types the language knows. They come from the schema, not from the
+    source. }
   TRunKind = (rkInt, rkText, rkBool, rkMoney, rkFloat, rkTime);
 
   TToken = record
@@ -80,7 +82,7 @@ type
   TCmp = record
     Col: string;
     Op: string;           { ==, !=, <, <=, >, >=, like, is, is not }
-    HasOperand: Boolean;  { «is null» har ingen høyreside }
+    HasOperand: Boolean;  { "is null" has no right-hand side }
     IsParam: Boolean;
     Operand: string;      { parameternavn, eller literalen slik den sto }
     LitKind: TRunKind;
@@ -96,29 +98,30 @@ type
   TQueryDecl = record
     Name: string;
     Params: array of TParamDecl;
-    { Tom når spørringen er konkret. Er den satt, er ModelName navnet på
-      typeparameteren, og For_ listen den skal instansieres for. }
+    { Empty when the query is concrete. When it is set, ModelName is the
+      name of the type parameter, and For_ the list it is to be
+      instantiated for. }
     TypeParam: string;
     For_: array of string;
     ModelName: string;
     Single: Boolean;      { -> M gir én rad, -> [M] gir mange }
     Wheres: array of TCmp;
-    Withs: array of string;   { relasjoner å hente med, fra skjemaet }
+    Withs: array of string;   { relations to fetch along, from the schema }
     Orders: array of TOrderTerm;
     Limit: Integer;
     Offset: Integer;
     Line: Integer;
   end;
 
-  { En relasjon utledet av en fremmednøkkel i databasen. Ingen erklæring
-    i Rún-kilden — skjemaet vet det allerede. }
+  { A relation derived from a foreign key in the database. No declaration
+    in the Rún source — the schema knows it already. }
   TRelation = record
     Name: string;         { navnet man skriver etter «with» }
     Table: string;        { tabellen som peker hit }
     ForeignKey: string;   { kolonnen i den som peker }
-    LocalKey: string;     { kolonnen her den peker på }
+    LocalKey: string;     { the column here that it points at }
   end;
-  { Pascal tar ikke en anonym dynamisk array som returtype. }
+  { Pascal does not take an anonymous dynamic array as a return type. }
   TRelationArray = array of TRelation;
 
   TModelDecl = record
@@ -137,7 +140,7 @@ var
   GDsn: string;
   GModels: array of TModelDecl;
   GQueries: array of TQueryDecl;
-  { Spørringer etter monomorfisering: én per instansiering. }
+  { Queries after monomorphization: one per instantiation. }
   GConcrete: array of TQueryDecl;
 
 { ------------------------------------------------------------- feil -- }
@@ -147,8 +150,9 @@ begin
   raise ERunError.CreateFmt('%s:%d: %s', [GFile, Line, Msg]);
 end;
 
-{ Nærmeste navn, til «mente du». En feilmelding som bare sier at noe ikke
-  finnes er halve jobben når skjemaet står rett ved siden av. }
+{ The nearest name, for "did you mean". An error message that only says
+  something does not exist is half the job when the schema is sitting right
+  next to it. }
 function Avstand(const A, B: string): Integer;
 var
   D: array of array of Integer;
@@ -253,7 +257,7 @@ begin
     Exit;
   end;
 
-  { Tegn som kan være to tegn lange. }
+  { Characters that can be two characters long. }
   Start := GPos;
   if (GPos + 1 <= Length(GSrc)) then
   begin
@@ -331,9 +335,9 @@ begin
   Q.Line := GTok.Line;
   NextToken;
 
-  { query<M> er en generisk spørring. Én erklæring, én konkret funksjon per
-    modell i for-lista. Det er dette Pascal ikke kan uttrykke, og grunnen
-    til at Rún finnes. }
+  { query<M> is a generic query. One declaration, one concrete function per
+    model in the for list. This is what Pascal cannot express, and the
+    reason Rún exists. }
   if GTok.Text_ = '<' then
   begin
     NextToken;
@@ -391,8 +395,8 @@ begin
     Err(Q.Line, Format('the generic query "%s" is missing "for". ' +
       'Write "for Customer, Order" after the return type.', [Q.Name]));
 
-  { En generisk spørring som bare henter på primærnøkkel trenger ingen
-    kropp — «from M where id == id» er underforstått. }
+  { A generic query that only fetches on the primary key needs no body —
+    "from M where id == id" is understood. }
   if (Q.TypeParam <> '') and (GTok.Text_ <> ':') then
   begin
     Q.ModelName := Q.TypeParam;
@@ -429,7 +433,7 @@ begin
         W.Line := GTok.Line;
         W.Col := ExpectIdent;
 
-        { «is null» og «is not null» har ingen høyreside. }
+        { "is null" and "is not null" have no right-hand side. }
         if ErIdent('is') then
         begin
           NextToken;
@@ -507,9 +511,9 @@ begin
     end
     else if GTok.Text_ = 'with' then
     begin
-      { «with» er reservert i Pascal og kan ikke brukes til eager loading
-        der. Her kan det. Relasjonen slås opp i fremmednøklene i skjemaet —
-        den erklæres ikke. }
+      { "with" is reserved in Pascal and cannot be used for eager loading
+        there. Here it can. The relation is looked up in the foreign keys
+        in the schema — it is not declared. }
       NextToken;
       repeat
         SetLength(Q.Withs, Length(Q.Withs) + 1);
@@ -603,8 +607,8 @@ function KindFromSql(const SqlType: string; Scale: Integer): TRunKind;
 var
   A: string;
 begin
-  { Samme oversettelse Norn bruker til kodegenerering. Poenget med spiken er
-    ikke hvordan skjemaet leses, men når. }
+  { The same translation Norn uses for code generation. The point of the
+    spike is not how the schema is read, but when. }
   A := ColAliasFor(SqlType, Scale);
   if A = 'TColInt64' then Exit(rkInt);
   if A = 'TColBool' then Exit(rkBool);
@@ -630,7 +634,7 @@ begin
   Result := N[K];
 end;
 
-{ « Mente du X?» bare når gjettet er verdt noe. }
+{ " Did you mean X?" only when the guess is worth something. }
 function IfThenText(const Gjett: string): string;
 begin
   if Gjett = '' then
@@ -695,8 +699,8 @@ end;
 
 function Plassholder(N: Integer): string;
 begin
-  { Dialekten er kjent ved comptime, fordi DSN-en står i kilden. Rún-koden
-    nevner den aldri. }
+  { The dialect is known at comptime, because the DSN is in the source.
+    The Rún code never mentions it. }
   if GDialect = sdPostgres then
     Result := '$' + IntToStr(N)
   else
@@ -741,9 +745,10 @@ begin
   Result := rkText;
 end;
 
-{ Den avgjørende sjekken. Typen på venstresiden kommer fra databasen, typen
-  på høyresiden fra kilden — og de må stemme. Det er dette Pascal ikke kan
-  gjøre uten enten kodegenerering eller tjueen overlastinger. }
+{ The decisive check. The type on the left-hand side comes from the
+  database, the type on the right from the source — and they have to match.
+  This is what Pascal cannot do without either code generation or twenty-one
+  overloads. }
 procedure CheckComparison(T: TDbTable; const Q: TQueryDecl;
   const W: TCmp);
 var
@@ -755,7 +760,8 @@ begin
   else
     Hoyre := W.LitKind;
 
-  { int mot money og float er greit — tallene er tall. Alt annet er det ikke. }
+  { int against money and float is fine — numbers are numbers. Anything
+    else is not. }
   if Venstre = Hoyre then
     Exit;
   if (Venstre in [rkInt, rkMoney, rkFloat]) and
@@ -768,10 +774,11 @@ begin
     [W.Col, KindName(Venstre), T.Name, KindName(Hoyre), GDsn]));
 end;
 
-{ Relasjoner utledes av fremmednøklene i databasen. Ingen erklæring i
-  Rún-kilden: peker orders.customer_id på customers.id, så har Customer en
-  relasjon som heter «orders». Det er hele poenget med comptime — skjemaet
-  vet dette allerede, og da skal ingen skrive det en gang til. }
+{ Relations are derived from the foreign keys in the database. No
+  declaration in the Rún source: if orders.customer_id points at
+  customers.id, then Customer has a relation called "orders". That is the
+  whole point of comptime — the schema knows this already, and then nobody
+  should write it a second time. }
 function RelasjonerFor(T: TDbTable): TRelationArray;
 var
   I, J: Integer;
@@ -821,8 +828,8 @@ begin
   Result.Name := '';
 end;
 
-{ Modellnavnet for en tabell, slik at en relasjon kan peke på en radtype
-  som faktisk blir skrevet ut. }
+{ The model name for a table, so that a relation can point at a row type
+  that is actually written out. }
 function ModelForTable(const Table: string): string;
 var
   I: Integer;
@@ -833,15 +840,16 @@ begin
   Result := '';
 end;
 
-{ Radtypene må skrives ut i avhengighetsrekkefølge. En Customer-record som
-  har et felt av typen TOrderRowArray må komme etter TOrderRow, fordi Pascal
-  ikke tillater fremoverreferanse til en record. Relasjonene peker motsatt
-  vei av fremmednøklene, så rekkefølgen følger av skjemaet — og en syklus
-  mellom to tabeller er en ekte begrensning som må sies fra om, ikke skjules.
-  Dybdeførst med de tre vanlige markørene. }
+{ The row types have to be written out in dependency order. A Customer
+  record that has a field of type TOrderRowArray must come after TOrderRow,
+  because Pascal does not allow a forward reference to a record. The
+  relations point the opposite way from the foreign keys, so the order
+  follows from the schema — and a cycle between two tables is a real
+  limitation that has to be reported, not hidden. Depth first with the three
+  usual marks. }
 procedure SortModels(out Order_: TStringArray);
 var
-  Mark: array of Byte;   { 0 urørt, 1 under arbeid, 2 ferdig }
+  Mark: array of Byte;   { 0 untouched, 1 in progress, 2 done }
   Ut: TStringArray;
 
   function IndeksFor(const Name: string): Integer;
@@ -898,10 +906,10 @@ begin
   Order_ := Ut;
 end;
 
-{ Monomorfisering. En generisk spørring blir én konkret per modell i
-  for-lista, med typeparameteren byttet ut. Dette er svaret på at
-  Where<T> er umulig i Pascal: vi skriver ut de konkrete variantene i
-  stedet for å kreve dem av kompilatoren. }
+{ Monomorphization. A generic query becomes one concrete query per model
+  in the for list, with the type parameter substituted. This is the answer
+  to Where<T> being impossible in Pascal: we write out the concrete variants
+  instead of demanding them of the compiler. }
 procedure Monomorfiser;
 var
   I, J: Integer;
@@ -1085,9 +1093,9 @@ begin
   Ut.Add('  for I := 0 to R.RowCount - 1 do');
   Ut.Add('    Rows[I] := Read' + Q.ModelName + 'Row(R, I);');
 
-  { Eager loading: én spørring per relasjon, ikke én per rad. Det er
-    forskjellen på «with» og en løkke, og grunnen til at den er verdt et
-    eget nøkkelord. }
+  { Eager loading: one query per relation, not one per row. That is the
+    difference between "with" and a loop, and the reason it is worth a
+    keyword of its own. }
   for I := 0 to High(Q.Withs) do
   begin
     Rel := FindRelation(T, Q.Withs[I], Q.Line);
@@ -1213,10 +1221,11 @@ begin
   Result := 0;
 end;
 
-{ Som engangsprogram spilte global tilstand ingen rolle — prosessen døde
-  etter én oversettelse. Som unit kalles Transpile én gang per .run-fil, og
-  da må alt nullstilles først. Without dette arver fil nummer to modellene fra
-  fil nummer én, og feilmeldingene blir meningsløse. }
+{ As a one-shot program global state did not matter — the process died
+  after one translation. As a unit, Transpile is called once per .run file,
+  and then everything has to be reset first. Without this the second file
+  inherits the models from the first, and the error messages become
+  meaningless. }
 procedure ResetState;
 begin
   GSrc := '';
@@ -1229,8 +1238,8 @@ begin
   GConcrete := nil;
   GSchema := nil;
   GConn := nil;
-  { TToken har et strengfelt. FillChar over den ville etterlatt en
-    referanse som ingen slipper. }
+  { TToken has a string field. FillChar over it would have left a
+    reference nobody releases. }
   GTok.Text_ := '';
   GTok.Line := 0;
   GTok.Kind := tkEnd;
@@ -1254,8 +1263,9 @@ begin
     Parse(Source_.Text);
     TWasRead := MonotonicMs - T0;
 
-    { **Comptime.** Databasen åpnes mens kilden oversettes, og skjemaet
-      leses derfra. Ingenting av dette finnes på disk etterpå. }
+    { **Comptime.** The database is opened while the source is being
+      translated, and the schema is read from there. None of this exists on
+      disk afterwards. }
     GConn := OpenDbConnection(GDsn);
     GDialect := GConn.Dialect;
     GSchema := IntrospectSchema(GConn);
