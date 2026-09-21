@@ -47,15 +47,40 @@ feil i notatet to ganger.
 **`./askr mcp:check` er porten for MCP-lagets arkitektoniske innsats.**
 Serveren ligger i verktøyet og ikke i appbinæren, motsatt av Laravel Boost,
 fordi en app som ikke kompilerer ikke finnes — og det er nettopp da en agent
-trenger å få vite hva som er galt. Porten skriver et prosjekt som ikke lar
-seg kompilere, sender ekte rammer gjennom `askr mcp`, og krever håndtrykket
-likevel. Så en gang til uten prosjekt i det hele tatt.
+trenger å få vite hva som er galt. Porten kjører fire scenarier: et prosjekt
+som ikke lar seg kompilere, et som gjør det, en `[askr] path` som ikke er en
+utsjekking, og ingen prosjekt i det hele tatt.
 
 `McpServe` kjøres **før `FindProject`**. Den skriver til stdout og avslutter
 uten askr.toml, og for en klient er det ikke «ingen prosjekt» — det er en
 parse-feil på protokollkanalen. Alt under `McpServe` eier stdout; én WriteLn
 på feil side, og klienten ser søppel uten noe som sier hvor det kom fra.
-Porten sjekker at hver linje er ett JSON-objekt.
+Porten sjekker at hver linje er ett JSON-objekt, i alle fire scenariene.
+
+**`Halt` finnes ikke på noen sti et verktøykall kan nå.** `FindCompiler` og
+`BuildFlags` skrev meldingen sin til stdout og haltet — riktig i en terminal,
+og under `askr mcp` både søppel på kanalen og en server som forsvant midt i
+et svar. De kaster nå `ECliFatal`, som terminalen fanger øverst og skriver ut
+akkurat som før, og som verktøyet svarer med. Den avgjørende asserten er en
+`ping` etter kallet: uten den var to av de tre andre grønne likevel.
+
+**En mislykket bygging er et vellykket kall.** `isError` er sann bare når
+verktøyet ikke kunne kjøre — ingen prosjekt, ingen kompilator, en
+rammeverkssti som ikke er en utsjekking. Blandes de to, prøver agenten å
+rette feil ting. Begge retninger er mutasjonssjekket.
+
+**En omdirigering av stdout inne i prosessen ble prøvd og forkastet.**
+`TextRec(Output).Handle := StdErrorHandle` flytter hvor *denne* prosessens
+Text skriver, ikke hvor fildeskriptor 1 peker — et barn ville skrevet rett
+på kanalen likevel. Og ingenting i porten fanget at den ble fjernet, fordi
+ingen sti under et verktøykall skriver til stdout lenger. En vakt ingenting
+måler, som dessuten ikke dekker det den ser ut til å dekke, er verre enn
+ingen. Trengs den, er det `dup2` på deskriptoren — og et scenario som viser
+at den virker. Et verktøy som kjører noe ut, skal fange barnets utdata: det
+trenger teksten til svaret uansett.
+
+**`cmd_mcp_check` i `./askr` er skrevet på engelsk.** Resten av byggskriptet
+er norsk fra før og blir stående; ny kode skrives ut engelsk, også her.
 
 `tools/probes/run.sh <fpc>` kjører generics-probene mot en gitt kompilator.
 Det er sju filer — seks grenser (p1–p6) og kallstedet (p7) som avhenger av

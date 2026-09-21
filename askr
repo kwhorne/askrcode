@@ -494,27 +494,53 @@ cmd_mcp_check() {
   rm -rf "$dir"
   mkdir -p "$dir"
 
-  # Et prosjekt som med vilje ikke lar seg kompilere.
-  cat > "$dir/askr.toml" <<TOML
-name = "mcpcheck"
+  # Two projects: one that deliberately does not compile, and one that does.
+  # Both directions have to hold -- a build tool that always says FAILED is
+  # as useless as one that always says OK.
+  mkdir -p "$dir/ok"
+  # The framework path has to be the one the building process actually sees.
+  # Natively that is $ROOT; in the container the repo is mounted at /work,
+  # and a host path there gives "not an Askr checkout" instead of a compile.
+  if have_local_fpc; then fwpath="$ROOT"; else fwpath=/work; fi
+  write_toml() {  # $1 = directory, $2 = name
+    cat > "$1/askr.toml" <<TOML
+name = "$2"
 main = "app.lpr"
 units = "app"
 
 [askr]
-path = "$ROOT"
+path = "$fwpath"
 TOML
+  }
+  write_toml "$dir" mcpcheck
+  write_toml "$dir/ok" mcpok
+
+  # A type error, not a syntax error: that is the shape Askr actually
+  # promises to catch -- the wrong type against a typed column is the same
+  # mechanism.
   cat > "$dir/app.lpr" <<'LPR'
 program app;
+var
+  I: Integer;
 begin
-  this is not pascal
+  I := 'not an integer';
+  WriteLn(I);
+end.
+LPR
+  cat > "$dir/ok/app.lpr" <<'LPR'
+program app;
+begin
+  WriteLn('ok');
 end.
 LPR
 
   frames='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"build","arguments":{}}}
+{"jsonrpc":"2.0","id":4,"method":"ping"}'
 
-  run_mcp_in() {  # $1 = katalog relativt til ROOT
+  run_mcp_in() {  # $1 = directory, relative to ROOT
     if have_local_fpc; then
       ( cd "$ROOT/$1" && printf '%s\n' "$frames" | "$BIN/askr" mcp )
     else
@@ -525,54 +551,99 @@ LPR
   }
 
   fail=0
-  check() {  # $1 = beskrivelse, $2 = utdata, $3 = mønster
+  check() {  # $1 = description, $2 = output, $3 = pattern
     if printf '%s' "$2" | grep -q "$3"; then
       echo "  ok    $1"
     else
-      echo "  FEIL  $1"
-      echo "        fant ikke: $3"
+      echo "  FAIL  $1"
+      echo "        did not find: $3"
       fail=1
     fi
   }
 
-  echo "askr — mcp"
+  pure_json() {  # $1 = output
+    if printf '%s\n' "$1" | grep -vq '^{.*}$'; then
+      echo "  FAIL  stdout is nothing but JSON"
+      printf '%s\n' "$1" | grep -vn '^{.*}$' | sed 's/^/        /'
+      fail=1
+    else
+      echo "  ok    stdout is nothing but JSON"
+    fi
+  }
+
+  echo "askr - mcp"
   echo
-  echo "— i et prosjekt som ikke kompilerer"
-  # `|| true` fordi set -e ellers dreper skriptet i stillhet når serveren
-  # avslutter med feilkode — og da rapporterer porten ingenting om hva som
-  # var galt. En port som feiler uten å si hvorfor er verre enn ingen.
+  echo "- in a project that does not compile"
+  # `|| true` because set -e would otherwise kill the script in silence when
+  # the server exits non-zero -- and then the gate reports nothing about what
+  # was wrong. A gate that fails without saying why is worse than none.
   out=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck" 2>/dev/null || true)
-  check "håndtrykket svarer"        "$out" '"serverInfo"'
-  check "med klientens protokollversjon" "$out" '"protocolVersion":"2025-06-18"'
-  check "verktøylista svarer"       "$out" '"tools":\[\]'
-  # To svar, ikke tre: notifikasjonen skal ikke ha ett. Svarer man på den,
-  # matcher klienten det mot en forespørsel den aldri sendte.
-  check "notifikasjonen fikk intet svar" \
-    "$(printf '%s\n' "$out" | grep -c '^{')" '^2$'
-
-  # Hver linje på stdout skal være ett JSON-objekt. En eneste menneskelig
-  # linje her gjør hele strømmen ugyldig for klienten.
-  if printf '%s\n' "$out" | grep -vq '^{.*}$'; then
-    echo "  FEIL  stdout er ren JSON"
-    printf '%s\n' "$out" | grep -vn '^{.*}$' | sed 's/^/        /'
-    fail=1
-  else
-    echo "  ok    stdout er ren JSON"
-  fi
+  check "the handshake answers"            "$out" '"serverInfo"'
+  check "with the client's protocol version" "$out" '"protocolVersion":"2025-06-18"'
+  check "the tool list answers"            "$out" '"name":"build"'
+  # The schema has to come out as JSON, not as a string with quotes in it.
+  # That is the whole reason ToolsListReply uses W.Raw.
+  check "with the schema as an object"     "$out" '"inputSchema":{"type":"object"'
+  # Four replies, not five: the notification gets none. Answer it and the
+  # client matches it against a request it never sent.
+  check "the notification got no reply" \
+    "$(printf '%s\n' "$out" | grep -c '^{')" '^4$'
+  check "build reports that it failed"     "$out" 'FAILED'
+  # What the tool is for: a position to go to, not a wall of text.
+  check "with file, line and column"       "$out" 'app.lpr:5:8'
+  check "and the severity"                 "$out" 'Error: '
+  # A failed build is a successful tool call reporting bad news. Conflate the
+  # two and the agent tries to fix the wrong thing.
+  check "but the call itself went fine"    "$out" '"isError":false'
+  # Every line on stdout is one JSON object. A single human line here makes
+  # the whole stream invalid for the client.
+  pure_json "$out"
 
   echo
-  echo "— uten et prosjekt i det hele tatt"
+  echo "- in a project that compiles"
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpcheck/ok" 2>/dev/null || true)
+  check "build reports that it worked"     "$out" 'OK  built'
+  check "and no errors"                    "$out" '"isError":false'
+
+  echo
+  echo "- with a framework path that is not a checkout"
+  # This is the case that found both the stdout leak and the Halt: BuildFlags
+  # wrote the message to stdout and killed the process halfway through a
+  # reply. The client saw the pipe close with nothing to report.
+  bad="$BUILD/mcpbadpath"
+  mkdir -p "$bad"
+  write_toml "$bad" mcpbadpath
+  # Pointing at itself: a directory that exists but is not Askr.
+  if have_local_fpc; then selfpath="$bad"; else selfpath="/work/${bad#$ROOT/}"; fi
+  sed -i.bak "s|^path = .*|path = \"$selfpath\"|" "$bad/askr.toml"
+  rm -f "$bad/askr.toml.bak"
+  cp "$dir/ok/app.lpr" "$bad/app.lpr"
+  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpbadpath" 2>/dev/null || true)
+  check "the tool says what is wrong"      "$out" 'not an Askr checkout'
+  check "and that it was the tool that could not run" "$out" '"isError":true'
+  # The decisive one: the server is still standing. Halt(1) here answered the
+  # handshake and vanished, and the two above would still have been green.
+  check "and the server is still standing" "$out" '"id":4'
+  pure_json "$out"
+
+  echo
+  echo "- with no project at all"
   mkdir -p "$BUILD/mcpnone"
   out=$(run_mcp_in "${BUILD#$ROOT/}/mcpnone" 2>/dev/null || true)
-  check "håndtrykket svarer likevel" "$out" '"serverInfo"'
-  check "og ingenting lekket til stdout" "$out" '^{'
+  check "the handshake answers anyway"     "$out" '"serverInfo"'
+  check "and nothing leaked to stdout"     "$out" '^{'
+  # Without a project the tool cannot run at all -- and that is the one case
+  # where isError is actually true.
+  check "build says a project is missing"  "$out" 'No askr.toml'
+  check "and that is a real tool error"    "$out" '"isError":true'
+  pure_json "$out"
 
   echo
   if [ "$fail" -ne 0 ]; then
-    echo "mcp:check feilet."
+    echo "mcp:check failed."
     return 1
   fi
-  echo "mcp:check holder: serveren svarer uten et prosjekt som bygger."
+  echo "mcp:check holds: the server answers without a project that builds."
 }
 
 cmd_test() {

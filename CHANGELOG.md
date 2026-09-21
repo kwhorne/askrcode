@@ -17,9 +17,7 @@ with the zero-major caveat that minor releases may break things until
 ### Added
 
 - **`askr mcp` — an MCP server for AI agents, over stdio.** JSON-RPC 2.0
-  with `initialize`, `tools/list`, `tools/call` and `ping`. The tool list is
-  empty in this release: what it establishes is the transport and the
-  handshake, and the tools arrive on top of it.
+  with `initialize`, `tools/list`, `tools/call` and `ping`.
 
   **It runs in the tool, not in the app**, which is the opposite of what
   Laravel Boost does and for a reason specific to a compiled framework: if
@@ -29,10 +27,24 @@ with the zero-major caveat that minor releases may break things until
 
   `./askr mcp:check` is the gate for that. It writes a project that cannot
   compile, pipes real frames through the server, and requires the handshake
-  anyway — then does it again with no project at all. It also asserts every
-  line on stdout is a JSON object: one stray `WriteLn` and a client sees a
-  parse error with nothing to say where it came from. It runs as part of
-  `./askr test`.
+  anyway — then does it again with a project that does compile, with a
+  framework path that is not a checkout, and with no project at all. It runs
+  as part of `./askr test`.
+
+- **The `build` tool.** Runs the Rún transpiler and the compiler over the
+  project and answers with `file:line:column  Severity: message` — the shape
+  every editor and every agent already follows — after a first line saying
+  whether a binary came out and how many warnings it cost.
+
+  **A failed build is a successful call that reports bad news**, not a tool
+  error. `isError` is true only when the tool could not run at all: no
+  project, no compiler, a framework path that is not a checkout. Conflating
+  the two makes an agent retry the wrong thing, and the gate checks both
+  directions.
+
+  `askr build` and the tool share one `CompileProject`. Two paths to the
+  compiler would drift, and then the agent and the developer would be
+  looking at different errors.
 
 - **`Askr.Cli.Diag` — compiler diagnostics as structure.** The first step
   towards `askr mcp`: fpc's output parsed into file, line, column and
@@ -53,6 +65,22 @@ with the zero-major caveat that minor releases may break things until
   stands before the colon", so `Target OS: Darwin for AArch64` is not a
   diagnostic; and that warnings and notes do **not** stop a build — the
   distinction an exit code cannot make.
+
+### Fixed
+
+- **A build failure in the tool no longer kills the MCP server.** A missing
+  compiler, an `ASKR_FPC` that points at nothing, or an `[askr] path` that
+  is not a checkout used to print to stdout and `Halt`. Under `askr mcp`
+  that wrote a human sentence onto the protocol channel and then ended the
+  process halfway through a reply: the client saw the pipe close with
+  nothing to say why.
+
+  Those four failures are now raised as `ECliFatal` and carried to whoever
+  asked. A terminal prints the same text and exits non-zero, exactly as
+  before; a tool call answers with it and the server stays up. Found by
+  `./askr mcp:check`, not by reading — and mutation-checked by putting the
+  `Halt` back, which fails three assertions including that a `ping` after
+  the call still gets a reply.
 
 ### Changed
 

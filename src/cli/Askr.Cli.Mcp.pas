@@ -20,7 +20,27 @@
 
   Every byte on stdout is a JSON-RPC message. One stray WriteLn anywhere
   under McpServe and the client sees a parse error instead of a reply, with
-  nothing to say where it came from. Diagnostics go to stderr.
+  nothing to say where it came from.
+
+  That is not a style rule, it is the one way this layer breaks silently.
+  The tool path reaches code written for a terminal, where writing to stdout
+  is the right thing to do: the package layer used to say `askr.toml points
+  at X but that is not an Askr checkout` and then Halt, which both corrupted
+  the stream and killed the server mid-reply. Both are gone — those failures
+  are raised as ECliFatal and answered as tool errors — and no path a tool
+  can reach writes to stdout any more.
+
+  `./askr mcp:check` is what holds that: four scenarios, each requiring
+  every line on stdout to be one JSON object. It is the only measurement of
+  it, because the hazard needs a real process with real pipes.
+
+  A tool that shells out has to capture the child's output, not let it
+  inherit — it needs the text for the reply anyway, so the two requirements
+  point the same way. Redirecting `Output` inside this process would look
+  like a guard and not be one: it moves where this process's Text writes,
+  not where file descriptor 1 points, so a child would still write straight
+  onto the channel. If a blanket guard is ever wanted, it has to be dup2 at
+  the descriptor, and it has to come with a scenario that proves it.
 
   THE PROTOCOL VERSION
 
@@ -38,6 +58,24 @@ interface
 uses
   SysUtils,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json;
+
+type
+  { A tool. Returns the text the agent sees; sets IsError when the tool
+    could not run at all — no project, no compiler — as opposed to running
+    and reporting bad news. A failing build is a successful call with a
+    result that says it failed, and conflating the two would make an agent
+    retry the wrong thing. }
+  TMcpTool = function(A: TArena; Args: PJsonValue;
+    out IsError: Boolean): string;
+
+{ Makes a tool available. The registry is a record array with a linear
+  search, for the same reason the queue's handler table is: a procedure
+  variable cannot be cast to TObject in Delphi mode.
+
+  Tools register themselves from wherever they belong — the build tool
+  knows about projects and compilers, and this unit must not. }
+procedure RegisterMcpTool(const Name_, Description_, InputSchema: string;
+  Fn: TMcpTool);
 
 { One JSON-RPC line in, one line out. Returns an empty string for a
   notification, which by the specification gets no reply at all.
@@ -61,6 +99,40 @@ implementation
 
 uses
   Askr.Core.Version;
+
+type
+  TMcpToolEntry = record
+    Name_: string;
+    Description_: string;
+    InputSchema: string;
+    Fn: TMcpTool;
+  end;
+
+var
+  Tools: array of TMcpToolEntry;
+
+procedure RegisterMcpTool(const Name_, Description_, InputSchema: string;
+  Fn: TMcpTool);
+var
+  N: Integer;
+begin
+  N := Length(Tools);
+  SetLength(Tools, N + 1);
+  Tools[N].Name_ := Name_;
+  Tools[N].Description_ := Description_;
+  Tools[N].InputSchema := InputSchema;
+  Tools[N].Fn := Fn;
+end;
+
+function FindTool(const Name_: string): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to High(Tools) do
+    if Tools[I].Name_ = Name_ then
+      Exit(I);
+end;
 
 { Writes a JSON-RPC id back with the type it arrived as. A string id echoed
   back as a number is a different id, and the client will not match it to
@@ -136,6 +208,7 @@ end;
 function ToolsListReply(A: TArena; Id: PJsonValue): string;
 var
   W: TJsonWriter;
+  I: Integer;
 begin
   W.Init(A, 128);
   W.BeginObject;
@@ -145,8 +218,18 @@ begin
   W.BeginObject;
   W.Key('tools');
   W.BeginArray;
-  { Empty on purpose. The tools arrive in the steps after this one; the
-    point of this one is that the handshake and the transport hold. }
+  for I := 0 to High(Tools) do
+  begin
+    W.BeginObject;
+    W.Field('name', Tools[I].Name_);
+    W.Field('description', Tools[I].Description_);
+    W.Key('inputSchema');
+    { Raw, because the schema is written once where the tool is registered
+      and copied through unchanged. Rebuilding it here would be a second
+      place for it to be wrong. }
+    W.Raw(Str(Tools[I].InputSchema));
+    W.EndObject;
+  end;
   W.EndArray;
   W.EndObject;
   W.EndObject;
@@ -163,6 +246,53 @@ begin
   WriteId(W, Id);
   W.Key('result');
   W.BeginObject;
+  W.EndObject;
+  W.EndObject;
+  Result := W.ToString;
+end;
+
+{ A tool result. `content` with one text block is what every revision of
+  the protocol has understood; structuredContent needs an outputSchema
+  negotiated per revision, and the text is what an agent reads anyway. }
+function ToolsCallReply(A: TArena; Id, Params: PJsonValue): string;
+var
+  W: TJsonWriter;
+  Name_, Text_: string;
+  Idx: Integer;
+  IsError: Boolean;
+begin
+  Name_ := JsonAsString(JsonMember(Params, 'name'));
+  Idx := FindTool(Name_);
+  if Idx < 0 then
+    Exit(ErrorReply(A, Id, -32602, 'No such tool: ' + Name_));
+
+  IsError := False;
+  try
+    Text_ := Tools[Idx].Fn(A, JsonMember(Params, 'arguments'), IsError);
+  except
+    { A tool that raises must not take down the server: the client would
+      see the pipe close and have nothing to report. }
+    on E: Exception do
+    begin
+      IsError := True;
+      Text_ := E.ClassName + ': ' + E.Message;
+    end;
+  end;
+
+  W.Init(A, 1024);
+  W.BeginObject;
+  W.Field('jsonrpc', '2.0');
+  WriteId(W, Id);
+  W.Key('result');
+  W.BeginObject;
+  W.Key('content');
+  W.BeginArray;
+  W.BeginObject;
+  W.Field('type', 'text');
+  W.Field('text', Text_);
+  W.EndObject;
+  W.EndArray;
+  W.Field('isError', IsError);
   W.EndObject;
   W.EndObject;
   Result := W.ToString;
@@ -209,8 +339,7 @@ begin
   else if Method = 'tools/list' then
     Result := ToolsListReply(A, Id)
   else if Method = 'tools/call' then
-    Result := ErrorReply(A, Id, -32602,
-      'No such tool: ' + JsonAsString(JsonMember(Params, 'name')))
+    Result := ToolsCallReply(A, Id, Params)
   else
     Result := ErrorReply(A, Id, -32601, 'Method not found: ' + Method);
 end;

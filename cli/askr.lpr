@@ -16,7 +16,8 @@ uses
   SysUtils, Classes, Process, TermIO,
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
-  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp;
+  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag,
+  Askr.Core.Arena, Askr.Core.Json;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
   ved siden av binæren. En fpcupdeluxe-installasjon legger den ved binæren,
@@ -80,6 +81,37 @@ begin
   WriteLn(S);
 end;
 
+type
+  { A condition that stops the command, carried to whoever asked instead of
+    ending the process where it happened.
+
+    The four failures below — ASKR_FPC pointing at nothing, a `compiler` in
+    askr.toml that is not there, no fpc on PATH, an `[askr] path` that is
+    not a checkout — have two audiences now. A terminal prints them and
+    exits, which is what `Halt` did. An MCP tool call has to answer with the
+    same text and leave the server standing: `Halt` there ended the process
+    halfway through a reply, and the client saw the pipe close with nothing
+    to say why. That is the exact case this layer exists to survive. }
+  ECliFatal = class(Exception);
+
+{ The messages say what was looked for, where, and what to do about it, and
+  that does not fit on one line. Raising them as one string keeps them
+  identical for both audiences. }
+procedure Fatal(const Lines: array of string);
+var
+  I: Integer;
+  S: string;
+begin
+  S := '';
+  for I := Low(Lines) to High(Lines) do
+  begin
+    if I > Low(Lines) then
+      S := S + #10;
+    S := S + Lines[I];
+  end;
+  raise ECliFatal.Create(S);
+end;
+
 { Finner Pascal-kompilatoren, eller sier hvorfor den ikke ble funnet.
 
   Den gamle oppførselen var at TProcess kastet EProcess og prosessen døde
@@ -94,7 +126,7 @@ end;
   samme variabel som rammeverkets eget byggskript bruker. To_ slutt PATH. }
 function FindCompiler(P: TProject): string;
 var
-  Chosen, FromEnv, Full: string;
+  Chosen, FromEnv, Full, EnvLine: string;
 begin
   Chosen := P.Compiler;
   FromEnv := GetEnvironmentVariable('ASKR_FPC');
@@ -104,12 +136,11 @@ begin
   begin
     if FileExists(FromEnv) then
       Exit(FromEnv);
-    Si('askr: ASKR_FPC points at a compiler that is not there.');
-    Si('');
-    Si('  ASKR_FPC   ' + FromEnv);
-    Si('');
-    Si('Fix the path, or unset it to use fpc from PATH.');
-    Halt(1);
+    Fatal(['askr: ASKR_FPC points at a compiler that is not there.',
+           '',
+           '  ASKR_FPC   ' + FromEnv,
+           '',
+           'Fix the path, or unset it to use fpc from PATH.']);
   end;
 
   { En sti med katalog i skal finnes som den er; et bart navn slås opp. }
@@ -117,35 +148,37 @@ begin
   begin
     if FileExists(Chosen) then
       Exit(Chosen);
-    Si('askr: the compiler in askr.toml is not there.');
-    Si('');
-    Si('  compiler   ' + Chosen);
-    Si('');
-    Si('Fix the path in askr.toml, or remove the line to use fpc from PATH.');
-    Halt(1);
+    Fatal(['askr: the compiler in askr.toml is not there.',
+           '',
+           '  compiler   ' + Chosen,
+           '',
+           'Fix the path in askr.toml, or remove the line to use fpc from ' +
+           'PATH.']);
   end;
 
   Full := FindOnPath(Chosen);
   if Full <> '' then
     Exit(Full);
 
-  Si('askr: cannot find the Pascal compiler.');
-  Si('');
-  Si('  looked for   ' + Chosen + '   on PATH');
   if FromEnv = '' then
-    Si('  ASKR_FPC     not set')
+    EnvLine := '  ASKR_FPC     not set'
   else
-    Si('  ASKR_FPC     ' + FromEnv + '   (ignored: askr.toml sets compiler)');
-  Si('');
-  Si('Askr builds your app with Free Pascal. Install it, then either put it');
-  Si('on PATH or point at it:');
-  Si('');
-  Si('  export ASKR_FPC=/path/to/fpc');
-  Si('');
-  Si('or set it for this project only, in askr.toml:');
-  Si('');
-  Si('  compiler = "/path/to/fpc"');
-  Halt(1);
+    EnvLine := '  ASKR_FPC     ' + FromEnv +
+      '   (ignored: askr.toml sets compiler)';
+  Fatal(['askr: cannot find the Pascal compiler.',
+         '',
+         '  looked for   ' + Chosen + '   on PATH',
+         EnvLine,
+         '',
+         'Askr builds your app with Free Pascal. Install it, then either ' +
+         'put it',
+         'on PATH or point at it:',
+         '',
+         '  export ASKR_FPC=/path/to/fpc',
+         '',
+         'or set it for this project only, in askr.toml:',
+         '',
+         '  compiler = "/path/to/fpc"']);
 end;
 
 procedure Bruk;
@@ -271,10 +304,7 @@ begin
     vite forskjellen. }
   Frame := ResolveFramework(P, Origin, Err);
   if Frame = '' then
-  begin
-    Si('askr: ' + Err);
-    Halt(1);
-  end;
+    Fatal(['askr: ' + Err]);
   if Frame <> '' then
     for I := Low(AskrUnits) to High(AskrUnits) do
       Result := Result + ' -Fu' + IncludeTrailingPathDelimiter(Frame) +
@@ -323,7 +353,10 @@ end;
   .build/run, som legges på søkestien. Kjøres før kompilatoren, slik at
   `askr build` og `askr serve` bare virker — språket skal ikke kreve et
   eget steg man må huske. }
-function RunRun(P: TProject; Quiet: Boolean): Boolean;
+{ ErrMsg rather than Si: under `askr mcp` stdout carries JSON-RPC, and a
+  transpiler error printed there is a parse error at the client with nothing
+  to say where it came from. The caller decides where it goes. }
+function RunRun(P: TProject; Quiet: Boolean; out ErrMsg: string): Boolean;
 var
   Filer: TStringList;
   Rec: TSearchRec;
@@ -333,6 +366,7 @@ var
   Stats: TRunStats;
 begin
   Result := True;
+  ErrMsg := '';
   UtDir := IncludeTrailingPathDelimiter(P.Root) + '.build' + PathDelim + 'run';
   Filer := TStringList.Create;
   try
@@ -368,7 +402,7 @@ begin
       except
         on E: ERunError do
         begin
-          Si(E.Message);
+          ErrMsg := E.Message;
           Exit(False);
         end;
       end;
@@ -378,18 +412,18 @@ begin
   end;
 end;
 
-procedure CmdBuild(P: TProject);
+{ Runs the compiler over the project and hands back everything it said.
+  Shared by `askr build` and the MCP `build` tool — two paths to the
+  compiler would drift, and then the agent and the developer would be
+  looking at different errors. }
+function CompileProject(P: TProject; out Output_: string): Integer;
 var
   Proc: TProcess;
   Lines: TStringList;
-  Flagg: TStringArray;
-  I: Integer;
   Params: TStringList;
-  Main_: string;
+  I: Integer;
 begin
-  Main_ := ChooseMainFile(P);
-  if not RunRun(P, False) then
-    Halt(1);
+  Output_ := '';
   ForceDirectories(IncludeTrailingPathDelimiter(P.Root) + '.build/units');
   ForceDirectories(IncludeTrailingPathDelimiter(P.Root) + '.build/bin');
 
@@ -407,22 +441,36 @@ begin
     Proc.Parameters.Add('-Fu.build' + PathDelim + 'run');
     Proc.Parameters.Add('-FU.build/units');
     Proc.Parameters.Add('-FE.build/bin');
-    Proc.Parameters.Add(Main_);
+    Proc.Parameters.Add(ChooseMainFile(P));
     Proc.CurrentDirectory := P.Root;
     Proc.Options := [poWaitOnExit, poUsePipes, poStderrToOutPut];
     Proc.Execute;
     Lines.LoadFromStream(Proc.Output);
-    if Proc.ExitStatus <> 0 then
-    begin
-      Write(Lines.Text);
-      Halt(1);
-    end;
-    Si('Built .build/bin/' + ChangeFileExt(ExtractFileName(Main_), ''));
+    Output_ := Lines.Text;
+    Result := Proc.ExitStatus;
   finally
     Params.Free;
     Lines.Free;
     Proc.Free;
   end;
+end;
+
+procedure CmdBuild(P: TProject);
+var
+  Main_, Ut, Err: string;
+begin
+  Main_ := ChooseMainFile(P);
+  if not RunRun(P, False, Err) then
+  begin
+    Si(Err);
+    Halt(1);
+  end;
+  if CompileProject(P, Ut) <> 0 then
+  begin
+    Write(Ut);
+    Halt(1);
+  end;
+  Si('Built .build/bin/' + ChangeFileExt(ExtractFileName(Main_), ''));
 end;
 
 { Bygger og kjører prosjektets testprogram. Rammeverket er Askr.Testing;
@@ -602,11 +650,130 @@ begin
   end;
 end;
 
+{ ------------------------------------------------- the MCP tools -- }
+
+{ `build` — the one tool no interpreted framework can offer.
+
+  Askr's claim is that a typo in a column name is a compile error. This is
+  what turns that into something an agent can use: it can verify rather
+  than claim, and it gets a position to go to rather than a wall of text.
+
+  The project is found here and not at start-up. The server answers the
+  handshake wherever it was started; a tool that needs a project says so
+  through the protocol, which is the only channel a client can read. }
+function McpToolBuild(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  P: TProject;
+  Ut, Err, Line_: string;
+  Code: Integer;
+  Diags: TDiagArray;
+  I, Errors, Warnings: Integer;
+  B: TStringList;
+begin
+  IsError := False;
+  P := TProject.Find(GetCurrentDir);
+  if P = nil then
+  begin
+    IsError := True;
+    Exit('No askr.toml in the working directory or above it. ' +
+         'The build tool needs a project; create one with: askr new <name>');
+  end;
+
+  B := TStringList.Create;
+  try
+    if not RunRun(P, True, Err) then
+    begin
+      { A Rún error comes before the compiler sees anything, and it already
+        names the file and the line. Passing it through unchanged is more
+        use than wrapping it. }
+      IsError := False;
+      Exit('FAILED  the Rún transpiler stopped before the compiler ran'#10#10 +
+           Err);
+    end;
+
+    try
+      Code := CompileProject(P, Ut);
+    except
+      { No compiler, or an `[askr] path` that is not a checkout. The message
+        already says what to do; the tool could not run, so this is the
+        other kind of failure — not a build that reported bad news. }
+      on E: ECliFatal do
+      begin
+        IsError := True;
+        Exit(E.Message);
+      end;
+    end;
+    Diags := ParseDiagnostics(Ut);
+
+    Errors := 0;
+    Warnings := 0;
+    for I := 0 to High(Diags) do
+      if Diags[I].Severity >= dsError then
+        Inc(Errors)
+      else if Diags[I].Severity = dsWarning then
+        Inc(Warnings);
+
+    { The exit code decides, not the diagnostic count: a build can fail for
+      a reason the compiler did not attach to a line, and a build that only
+      emitted notes still produced a binary. }
+    if Code = 0 then
+      B.Add(Format('OK  built .build/bin/%s  (%d warnings)',
+        [ChangeFileExt(ExtractFileName(ChooseMainFile(P)), ''), Warnings]))
+    else
+      B.Add(Format('FAILED  %d errors, %d warnings', [Errors, Warnings]));
+
+    { file:line:col is the shape every editor and every agent already
+      knows how to follow. }
+    for I := 0 to High(Diags) do
+    begin
+      if Diags[I].Severity < dsWarning then
+        Continue;
+      if Diags[I].FileName_ = '' then
+        Line_ := ''
+      else if Diags[I].Col = 0 then
+        Line_ := Format('%s:%d  ', [Diags[I].FileName_, Diags[I].Line])
+      else
+        Line_ := Format('%s:%d:%d  ',
+          [Diags[I].FileName_, Diags[I].Line, Diags[I].Col]);
+      B.Add(Line_ + DiagSeverityName(Diags[I].Severity) + ': ' +
+        Diags[I].Message_);
+    end;
+
+    if (Code <> 0) and (Errors = 0) then
+      { The compiler failed without attaching a diagnostic to a line — a
+        missing compiler, a linker error. Hiding its output here would
+        leave the agent with a failure and nothing to read. }
+      B.Add(Trim(Ut));
+
+    Result := B.Text;
+  finally
+    B.Free;
+    P.Free;
+  end;
+end;
+
+const
+  { No arguments. `additionalProperties: false` so that a client which
+    invents one is told, rather than having it silently ignored. }
+  BuildSchema = '{"type":"object","properties":{},' +
+    '"additionalProperties":false}';
+
+  BuildDescription =
+    'Compile the Askr project in the working directory and return the ' +
+    'compiler diagnostics as file:line:column with a severity. Use this ' +
+    'to verify a change rather than assuming it is correct: in Askr a ' +
+    'wrong column name, a wrong type in a query, or a misspelled route ' +
+    'parameter is a compile error, not a runtime one. Run it after ' +
+    'editing Pascal sources and before saying the work is done.';
+
 var
   Kommando: string;
   P: TProject;
   Delegert: Integer;
+  RunErr: string;
 begin
+ try
   Kommando := LowerCase(ParamStr(1));
 
   if (Kommando = '') or (Kommando = 'help') or (Kommando = '-h') or
@@ -663,6 +830,7 @@ begin
     through the protocol, which is the only place a client can read it. }
   if Kommando = 'mcp' then
   begin
+    RegisterMcpTool('build', BuildDescription, BuildSchema, @McpToolBuild);
     McpServe;
     Exit;
   end;
@@ -710,8 +878,11 @@ begin
     begin
       { Oversetter .run-filene uten å kompilere. Nyttig når man vil se på
         Pascal-koden som kommer ut. }
-      if not RunRun(P, False) then
+      if not RunRun(P, False, RunErr) then
+      begin
+        Si(RunErr);
         Halt(1);
+      end;
     end
     else if Kommando = 'repl' then
     begin
@@ -729,4 +900,13 @@ begin
   finally
     P.Free;
   end;
+ except
+   { A terminal gets the message and a non-zero exit, which is what Halt
+     used to do from inside FindCompiler and BuildFlags. }
+   on E: ECliFatal do
+   begin
+     Si(E.Message);
+     Halt(1);
+   end;
+ end;
 end.
