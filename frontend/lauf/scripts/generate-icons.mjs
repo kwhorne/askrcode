@@ -95,10 +95,22 @@ async function main() {
     )
   }
 
-  console.log(`lauf: ${total} ikoner i ${VARIANTS.length} varianter`)
+  console.log(`lauf: ${total} icons in ${VARIANTS.length} variants`)
 }
 
 main().catch((e) => {
-  console.error('lauf: ikongenereringen feilet —', e.message)
+  // What a user of the framework sees, so: English, and it says what to do.
+  // The icons are generated from heroicons and are not in git, so a freshly
+  // fetched release has neither the icons nor the package to make them from
+  // -- and the failure points at a path inside the package cache, which
+  // explains nothing on its own.
+  console.error('lauf: could not generate the icons --', e.message)
+  console.error('')
+  console.error('  The icons are generated from heroicons and are not in')
+  console.error('  git. A freshly fetched release has to make them once:')
+  console.error('')
+  console.error('    (cd ' + new URL('..', import.meta.url).pathname +
+    ' && npm install)')
+  console.error('')
   process.exit(1)
 })
