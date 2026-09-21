@@ -1170,9 +1170,19 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
   fortsette å virke uten npm, uten nett og uten filer ved siden av binæren —
   det er testet, og det er ikke en tilfeldighet. «Frontendlaget» handler om
   sidene appen bygger, ikke om at binæren slutter å svare alene.
-* **`askr new` skriver `file:`-stien til rammeverket**, fordi `@askrcode/lauf`
-  ikke er publisert. Den kommer fra samme `Rammeverk` som askr.toml bruker.
-  Når pakken publiseres, er det én linje i `Askr.Cli.Scaffold` som endres.
+* **Lauf skal IKKE på npm, og det er et valg.** Den ligger inne i
+  utgivelsen, så versjonen bor ett sted: taggen. Et register ville vært
+  et andre sted, som kan ligge bak eller være bygget fra feil commit —
+  nøyaktig den feilen testen `lauf har samme versjon som rammeverket`
+  finnes for, og et register er der den testen ikke ser.
+* **`askr install` lager en symlink, ikke en absolutt sti.**
+  `frontend/.askr/lauf` peker inn i cachen og er gitignorert; i
+  `package.json` står `file:./.askr/lauf`, som er lik på alle maskiner.
+  Før dette ga fila en diff som fulgte den som sist kjørte `install`.
+  Uten symlinker faller den tilbake til den absolutte stien.
+* **`askr new` skriver `file:`-stien direkte når den finner en lokal
+  utsjekking.** Det er rammeverksutvikling, og da er stien
+  maskinspesifikk uansett.
 * **En `file:`-avhengighet krever `resolve.dedupe`** på `svelte`,
   `@inertiajs/svelte` og `@inertiajs/core` i den genererte vite.config.
   Uten den får appen og Lauf hver sin kopi. Malen har den.

@@ -35,13 +35,25 @@ trap rather than an optimisation.
 
 This is the part that has no equivalent in Composer or Bundler.
 
-An Askr release is the Pascal source **and** `@askrcode/lauf` on npm.
-If those drift apart you get a `DataGrid.svelte` whose server half is a
-different version of `Askr.Urd.Grid`, and nothing says so until a column
-stops sorting.
+An Askr release is the Pascal source **and** `@askrcode/lauf`. If those
+drift apart you get a `DataGrid.svelte` whose server half is a different
+version of `Askr.Urd.Grid`, and nothing says so until a column stops
+sorting.
 
-So `askr.lock` pins both, and `askr install` writes the matching Lauf
-version into `frontend/package.json`:
+Lauf therefore ships **inside the release**, not on npm. `askr install`
+points `frontend/package.json` at it through a gitignored symlink:
+
+```json
+"@askrcode/lauf": "file:./.askr/lauf"
+```
+
+That path is the same on every machine; the symlink under
+`frontend/.askr/` is what differs, and it is not in git. Publishing to
+npm would add a second place the version lives, which can lag behind the
+tag or be built from the wrong commit — the exact failure this design
+removes.
+
+`askr.lock` records both halves anyway, so you can see what you have:
 
 ```toml
 version = "0.6.0"
@@ -51,7 +63,7 @@ lauf = "0.6.0"
 
 `askr version` warns if a checkout's two halves disagree. That check
 exists because they *had* already drifted — the tool said 0.6.0 while
-the npm package said 0.1.0 — and nothing had noticed.
+`frontend/lauf/package.json` said 0.1.0 — and nothing had noticed.
 
 ## Working on the framework itself
 

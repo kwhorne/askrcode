@@ -23,6 +23,9 @@ unit Askr.Cli.Pkg;
 interface
 
 uses
+{$IFDEF UNIX}
+  BaseUnix,
+{$ENDIF}
   SysUtils, Classes, Process,
   Askr.Core.Config, Askr.Core.Version, Askr.Cli.Project;
 
@@ -585,6 +588,39 @@ begin
   Result := True;
 end;
 
+{ Peker frontend/.askr/lauf paa den installerte utgivelsen.
+
+  Uten den maa package.json baere en absolutt sti inn i DIN cache, og da
+  gir fila en diff som endrer seg per maskin. Symlinken er gitignorert
+  og lages av install, saa den committede stien er `file:./.askr/lauf`
+  og lik overalt.
+
+  Returnerer stien som skal staa i package.json. Kan symlinken ikke
+  lages -- et filsystem uten dem, eller Windows -- faller den tilbake
+  til den absolutte stien, som virker like godt lokalt. }
+function LaufSti(P: TProject; const Dir: string): string;
+var
+  Mappe, Lenke, Maal: string;
+begin
+  Maal := IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf';
+  Result := 'file:' + Maal;
+  if P.FrontendDir = '' then
+    Exit;
+
+  Mappe := IncludeTrailingPathDelimiter(P.FrontendDir) + '.askr';
+  Lenke := IncludeTrailingPathDelimiter(Mappe) + 'lauf';
+  if not ForceDirectories(Mappe) then
+    Exit;
+
+{$IFDEF UNIX}
+  { En gammel lenke kan peke paa forrige versjon. fpUnlink bryr seg ikke
+    om at den ikke finnes. }
+  fpUnlink(PChar(Lenke));
+  if fpSymlink(PChar(Maal), PChar(Lenke)) = 0 then
+    Result := 'file:./.askr/lauf';
+{$ENDIF}
+end;
+
 { -------------------------------------------------- Lauf i takt med -- }
 
 { Skriver @askrcode/lauf-versjonen inn i frontend/package.json.
@@ -830,8 +866,7 @@ begin
   { Lauf er ikke publisert på npm ennå, så avhengigheten peker inn i den
     versjonen vi nettopp installerte. Naar pakka er publisert, blir dette
     versjonsnummeret og ingenting annet endrer seg. }
-  if not SettLaufAvhengighet(P, 'file:' +
-       IncludeTrailingPathDelimiter(Dir) + 'frontend/lauf', Endret) then
+  if not SettLaufAvhengighet(P, LaufSti(P, Dir), Endret) then
     Result := 1;
 
   L.Version := Onsket;

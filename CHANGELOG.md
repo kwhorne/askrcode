@@ -16,6 +16,34 @@ with the zero-major caveat that minor releases may break things until
 
 Nothing yet.
 
+## 0.6.4 — 2026-09-21
+
+### Changed
+
+- **`askr install` writes a machine-independent path for Lauf.** It used
+  to put an absolute path into your own `~/.askr/pkg` in
+  `frontend/package.json`, which made that file produce a diff that
+  followed whoever last ran `install`. It now creates a gitignored
+  symlink at `frontend/.askr/lauf` and writes:
+
+  ```json
+  "@askrcode/lauf": "file:./.askr/lauf"
+  ```
+
+  The scaffold's `.gitignore` covers `frontend/.askr/`. On a system
+  without symlinks it falls back to the absolute path, which works the
+  same locally.
+
+- **Lauf will not be published to npm, and the docs now say so as a
+  decision rather than a gap.** It ships inside the framework release,
+  so the version lives in exactly one place: the tag. A registry would
+  add a second one that can lag behind it or be built from a different
+  commit — which is the failure the release-wide version test exists to
+  catch, and a registry is where that test cannot see.
+
+  The cost is real and narrow: you cannot `npm install @askrcode/lauf`
+  into a project that is not an Askr project.
+
 ## 0.6.3 — 2026-09-21
 
 `askr make auth` wires passkeys up. 0.6.2 could verify them; this one

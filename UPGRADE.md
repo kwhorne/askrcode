@@ -8,6 +8,11 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.6.4
+
+Nothing can break. Run `askr install` once to pick up the new Lauf path;
+until you do, the absolute one in `frontend/package.json` keeps working.
+
 ## 0.6.3
 
 **`askr make auth --force` now writes a third migration** and a

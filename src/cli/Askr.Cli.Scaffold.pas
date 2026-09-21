@@ -645,6 +645,9 @@ begin
     '.build/' + #10 +
     '.env' + #10 +
     'node_modules/' + #10 +
+    { Symlinken askr install lager inn i ~/.askr/pkg. Den peker paa en
+      sti som er ulik per maskin, og hoerer derfor ikke i git. }
+    'frontend/.askr/' + #10 +
     'public/build/' + #10 +
     'storage/*' + #10 +
     '!storage/.gitkeep' + #10 +

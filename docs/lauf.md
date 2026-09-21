@@ -29,6 +29,27 @@ askr serve
 - `vite.config.js` — the Tailwind plugin, and the `dedupe` a linked package
   needs
 
+## It is not on npm, and that is deliberate
+
+Lauf ships inside the framework release. `askr install` points your
+`frontend/package.json` at it through a gitignored symlink:
+
+```json
+"@askrcode/lauf": "file:./.askr/lauf"
+```
+
+The path is identical on every machine, so the file does not produce a
+diff that follows whoever last ran `install`.
+
+Publishing to npm would put the version in a second place — one that can
+lag behind the tag, or be built from a different commit. A release is
+supposed to be one number across both halves, and there is a test that
+fails if the framework and `frontend/lauf/package.json` disagree. Adding
+a registry adds a third copy that test cannot see.
+
+What you give up: `npm install @askrcode/lauf` in a project that is not
+an Askr project. That is a real cost, and a narrow one.
+
 ## Three layers
 
 **Tokens.** `--color-surface`, `--color-fg`, `--color-accent` and the rest,

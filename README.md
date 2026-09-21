@@ -130,9 +130,10 @@ if a checkout's two halves disagree.
 [`UPGRADE.md`](UPGRADE.md) has what changes between releases, and
 `askr update` prints the relevant part of it before touching anything.
 
-> `@askrcode/lauf` is not published to npm yet, so `askr install` points
-> the frontend at the release it just fetched rather than at a version
-> number. Everything else about versioning works as described.
+> `@askrcode/lauf` is **not on npm, by design.** Lauf ships inside the
+> framework release, and `askr install` points your frontend at it
+> through a gitignored symlink — so the version lives in exactly one
+> place: the tag. Publishing would add a second one that can lag.
 
 ## Documentation
 
