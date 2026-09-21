@@ -1,31 +1,33 @@
-{ Askr.Queue.Db — jobber som overlever at prosessen dør.
+{ Askr.Queue.Db — jobs that survive the process dying.
 
-  Køen i `Askr.Queue` ligger i prosessen. Det er riktig for det meste: ingen
-  Redis, ingen supervisor, ingen Horizon. Men jobbene forsvinner ved en
-  omstart, og en velkomst-e-post som aldri ble sendt fordi noen rullet ut en
-  ny versjon er ikke en ytelsesdetalj — det er data som er borte.
+  The queue in `Askr.Queue` lives in the process. That is right for most
+  things: no Redis, no supervisor, no Horizon. But the jobs vanish on a
+  restart, and a welcome email that was never sent because somebody
+  deployed a new version is not a performance detail — it is data that is
+  gone.
 
-  Dette lageret legger jobbene i databasen appen allerede har. Ingen ny
-  tjeneste, og transaksjonen som lagret ordren kan være den samme som la
-  jobben i kø.
+  This store puts the jobs in the database the app already has. No new
+  service, and the transaction that saved the order can be the same one
+  that queued the job.
 
-  **Utførelsen er den samme.** `TQueue` og workerne er uendret; det eneste
-  som byttes er hvor jobbene ligger. Et eget worker-løp for varige jobber
-  ville gitt to sett regler for backoff, forsøkstelling og arena-levetid,
-  og de to ville drevet fra hverandre.
+  **The execution is the same.** `TQueue` and the workers are unchanged;
+  the only thing swapped is where the jobs live. A separate worker loop
+  for durable jobs would give two sets of rules for backoff, attempt
+  counting and arena lifetime, and the two would drift apart.
 
-  Tre ting som er verdt å vite:
+  Three things worth knowing:
 
-    * **Payloaden lagres som tekst.** I praksis JSON, som er det jobber
-      sender. Rå bytes avvises med en gang i stedet for å bli ødelagt av
-      tegnsettkonvertering på vei inn i en TEXT-kolonne.
-    * **En reservert jobb slippes igjen etter et tidsavbrudd.** Dør
-      prosessen midt i en jobb, blir den liggende reservert for alltid uten
-      det. Standard er fem minutter.
-    * **`SKIP LOCKED` brukes der dialekten har det.** Postgres og MySQL 8
-      lar to workere hente hver sin jobb uten å vente på hverandre. SQLite
-      har det ikke, men har bare én skriver, og der er en umiddelbar
-      transaksjon nok. }
+    * **The payload is stored as text.** In practice JSON, which is what
+      jobs send. Raw bytes are refused immediately rather than being
+      corrupted by character set conversion on the way into a TEXT
+      column.
+    * **A reserved job is released again after a timeout.** If the process
+      dies mid-job it would otherwise stay reserved forever. The default
+      is five minutes.
+    * **`SKIP LOCKED` is used where the dialect has it.** Postgres and
+      MySQL 8 let two workers each take a job without waiting for each
+      other. SQLite does not have it, but has only one writer, and there
+      an immediate transaction is enough. }
 unit Askr.Queue.Db;
 
 {$mode Delphi}{$H+}
@@ -42,9 +44,9 @@ uses
 const
   DefaultJobsTable = 'askr_jobs';
   DefaultFailedTable = 'askr_failed_jobs';
-  { Where_ lenge en jobb får være reservert før noen andre kan ta den. Dette
-    er ikke en tidsfrist for jobben — det er hvor lenge vi venter før vi
-    antar at workeren som tok den er borte. }
+  { How long a job may stay reserved before somebody else can take it.
+    This is not a deadline for the job — it is how long we wait before
+    assuming the worker that took it is gone. }
   DefaultVisibilityMs = 5 * 60 * 1000;
 
 type
@@ -60,28 +62,30 @@ type
     FVisibilityMs: Int64;
     FPollMs: Integer;
     FLock: TCriticalSection;
-    { Name_ på denne prosessens workere i reserved_by. To_ diagnostikk: en
-      rad som har stått reservert i en time sier hvem som tok den. }
+    { The name of this process's workers in reserved_by. For diagnostics: a
+      row that has been reserved for an hour says who took it. }
     FOwner: string;
     function SkipLocked: Boolean;
     procedure FrigiForlatte(C: TDbConnection; A: TArena);
   public
-    { Åpner sin egen pool mot DSN-en. }
+    { Opens its own pool against the DSN. }
     constructor Create(const Dsn: string; AMaxConnections: Integer = 4); overload;
-    { Parts_ pool med appen. Poolen må tåle minst én forbindelse per
-      køworker — ellers står workerne og venter på hverandre. }
+    { Shares a pool with the app. The pool has to tolerate at least one
+      connection per queue worker — otherwise the workers sit waiting for
+      each other. }
     constructor Create(APool: TDbPool; AOwnsPool: Boolean = False); overload;
     destructor Destroy; override;
 
-    { Storage tabellene hvis de ikke finnes. Trygg å kalle ved hver oppstart.
-      Kalles ikke av seg selv: en app som kjører migrasjoner vil ha
-      kontroll på når skjemaet endres. }
+    { Creates the tables if they do not exist. Safe to call at every
+      startup. Not called by itself: an app that runs migrations wants
+      control over when the schema changes. }
     procedure EnsureSchema;
-    { Count_ jobber som har gitt opp. To_ et statusendepunkt. }
+    { How many jobs have given up. For a status endpoint. }
     function FailedCount: Int64;
-    { Tømmer feiltabellen. }
+    { Empties the failed-jobs table. }
     procedure ClearFailed;
-    { Legger de feilede tilbake i køen. After_ at det som var galt er rettet. }
+    { Puts the failed ones back in the queue. After whatever was wrong has
+      been fixed. }
     function RetryFailed: Integer;
 
     procedure Push(const JobName: string; Data: PByte; Len: SizeInt;
@@ -126,15 +130,15 @@ begin
   FJobsTable := DefaultJobsTable;
   FFailedTable := DefaultFailedTable;
   FVisibilityMs := DefaultVisibilityMs;
-  { 250 ms, ikke 20. En worker uten arbeid spør databasen hver gang den
-    våkner, og fire workere på 20 ms er 200 spørringer i sekundet mot en
-    tom tabell. }
+  { 250 ms, not 20. An idle worker asks the database every time it wakes,
+    and four workers at 20 ms is 200 queries a second against an empty
+    table. }
   FPollMs := 250;
   FLock := TCriticalSection.Create;
   FOwner := Format('%s:%d', [ExtractFileName(ParamStr(0)), GetProcessID]);
 
-  { Dialekten må vites før første spørring, og den kan bare leses av en
-    forbindelse. }
+  { The dialect has to be known before the first query, and it can only
+    be read off a connection. }
   A := TArena.Create(4 * 1024);
   try
     C := FPool.Acquire;
@@ -168,8 +172,8 @@ end;
 
 function TDbJobStore.SkipLocked: Boolean;
 begin
-  { SQLite har ikke SKIP LOCKED, og trenger det ikke: den har én skriver,
-    og en umiddelbar transaksjon serialiserer uttaket. }
+  { SQLite has no SKIP LOCKED, and does not need it: it has one writer,
+    and an immediate transaction serialises the claim. }
   Result := FDialect in [sdPostgres, sdMySql];
 end;
 
@@ -184,10 +188,11 @@ var
   Skjema: TDbSchema;
   Finnes: Boolean;
 begin
-  { Check først, i stedet for å la DDL-en være idempotent. `CREATE TABLE IF
-    NOT EXISTS` finnes i alle tre, men `CREATE INDEX IF NOT EXISTS` finnes
-    ikke i MySQL — og uten sjekken feilet andre oppstart på indeksen. Å
-    svelge «already exists» i stedet ville skjult ekte feil. }
+  { Check first, rather than relying on the DDL being idempotent. `CREATE
+    TABLE IF NOT EXISTS` exists in all three, but `CREATE INDEX IF NOT
+    EXISTS` does not exist in MySQL — and without the check the second
+    startup failed on the index. Swallowing "already exists" instead would
+    have hidden real errors. }
   A := TArena.Create(64 * 1024);
   try
     C := FPool.Acquire;
@@ -213,15 +218,15 @@ begin
     T.Text('name', 128);
     T.Text('payload');
     T.Int('attempts').Default(0);
-    { Tidspunktene er unix-millisekunder, ikke TIMESTAMP. More prosesser
-      deler tabellen, og et heltall betyr det samme uansett hvilken
-      tidssone den enkelte serveren tror den står i. }
+    { The times are unix milliseconds, not TIMESTAMP. Several processes
+      share the table, and an integer means the same thing whatever time
+      zone each server believes it is in. }
     T.BigInt('available_at');
     T.BigInt('reserved_at').Nullable;
     T.Text('reserved_by', 128).Nullable;
     T.BigInt('created_at');
-    { Uttaket sorterer på available_at innenfor det som ikke er reservert.
-      Without indeksen blir hver poll en full skanning. }
+    { The claim sorts on available_at among what is not reserved. Without
+      the index every poll becomes a full scan. }
     T.Index(['available_at']);
 
     T := S.Create(FFailedTable);
@@ -263,7 +268,7 @@ begin
   Result := B.ToString;
 end;
 
-{ Bygger «$1, $2, …» eller «?, ?, …» etter dialekt. }
+{ Builds "$1, $2, ..." or "?, ?, ..." depending on the dialect. }
 function Phs(C: TDbConnection; A: TArena; From_, To_: Integer): string;
 var
   I: Integer;
@@ -301,9 +306,10 @@ begin
   if Len > 0 then
     Move(Data^, Payload[1], Len);
 
-  { En nullbyte kan ikke stå i en TEXT-kolonne i noen av de tre. Å oppdage
-    det her gir en feil på kallstedet; å la den gå videre gir en jobb som
-    er stille ødelagt, eller en driverfeil langt unna den som skrev den. }
+  { A null byte cannot sit in a TEXT column in any of the three. Catching
+    it here gives an error at the call site; letting it through gives a
+    job that is silently corrupt, or a driver error a long way from
+    whoever wrote it. }
   for I := 1 to Length(Payload) do
     if Payload[I] = #0 then
       raise EQueueDbError.CreateFmt(
@@ -333,9 +339,9 @@ begin
   end;
 end;
 
-{ Jobs_ som ble reservert og aldri gjort opp. Prosessen som tok dem er
-  borte — den ble drept, eller maskinen forsvant. Without dette ville de blitt
-  liggende for alltid. }
+{ Jobs that were reserved and never settled. The process that took them
+  is gone — it was killed, or the machine disappeared. Without this they
+  would stay there forever. }
 procedure TDbJobStore.FrigiForlatte(C: TDbConnection; A: TArena);
 var
   R: TDbResult;
@@ -370,8 +376,8 @@ begin
       FrigiForlatte(C, A);
       Now_ := UnixNowMs;
 
-      { Én transaksjon rundt «finn og ta». To workere som ser den samme
-        raden skal ikke begge få den. }
+      { One transaction around "find and take". Two workers seeing the same
+        row must not both get it. }
       C.StartTransaction;
       try
         Sql := 'SELECT id, name, payload, attempts FROM ' +
@@ -398,8 +404,9 @@ begin
           ' WHERE id = ' + Ph(C, A, 3) + ' AND reserved_at IS NULL';
         R := C.ExecParams(A, Sql,
           [DbParam(A, Now_), DbParam(A, FOwner), DbParam(A, Id)]);
-        { Without SKIP LOCKED kan en annen ha rukket å ta den mellom SELECT
-          og UPDATE. Da er AffectedRows null, og vi lar den være. }
+        { Without SKIP LOCKED another one may have taken it between the
+          SELECT and the UPDATE. Then AffectedRows is zero and we leave it
+          alone. }
         if (R = nil) or (R.AffectedRows = 0) then
         begin
           C.Commit;
@@ -418,9 +425,9 @@ begin
     A.Free;
   end;
 
-  { Payloaden kopieres til heapen, ikke til arenaen: arenaen over dør her,
-    og workeren kopierer videre inn i sin egen. Det er den samme grensen
-    som i minnelageret. }
+  { The payload is copied to the heap, not to the arena: the arena above
+    dies here, and the worker copies on into its own. It is the same
+    boundary as in the in-process store. }
   J.Id := Id;
   J.Len := Length(Payload);
   if J.Len > 0 then
@@ -432,7 +439,8 @@ begin
   Result := True;
 end;
 
-{ Frigjør det workeren fikk. Kalles av hver av de fire avslutningene. }
+{ Releases what the worker was given. Called by each of the four
+  endings. }
 procedure SlippMinne(var J: TReservedJob);
 begin
   if J.Data <> nil then
@@ -472,8 +480,9 @@ begin
   try
     C := FPool.Acquire;
     try
-      { Reservasjonen slippes og tidspunktet skyves. Forsøkstelleren står i
-        raden, ikke i minnet — den skal overleve at prosessen dør midt i. }
+      { The reservation is released and the time pushed out. The attempt
+        counter is in the row, not in memory — it has to survive the
+        process dying mid-job. }
       C.ExecParams(A, 'UPDATE ' + Sitert(C, A, FJobsTable) +
         ' SET attempts = attempts + 1, reserved_at = NULL,' +
         ' reserved_by = NULL, available_at = ' + Ph(C, A, 1) +
@@ -504,8 +513,8 @@ begin
     try
       C.StartTransaction;
       try
-        { Flyttes, ikke slettes. En jobb som har gitt opp er det eneste
-          sporet av at noe skulle ha skjedd og ikke gjorde det. }
+        { Moved, not deleted. A job that has given up is the only trace that
+          something should have happened and did not. }
         C.ExecParams(A, 'INSERT INTO ' + Sitert(C, A, FFailedTable) +
           ' (name, payload, attempts, error, failed_at) VALUES (' +
           Phs(C, A, 1, 5) + ')',
@@ -530,9 +539,9 @@ end;
 
 procedure TDbJobStore.Drop(var J: TReservedJob; const Reason: string);
 begin
-  { Ingen handler registrert. Den kan aldri kjøre, men den skal ikke
-    forsvinne i stillhet — en app som har mistet en Handle-linje skal kunne
-    se hva som lå der. }
+  { No handler registered. It can never run, but it must not disappear
+    silently — an app that has lost a Handle line should be able to see
+    what was there. }
   Fail(J, Reason);
 end;
 

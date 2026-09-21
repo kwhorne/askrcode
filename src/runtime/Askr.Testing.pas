@@ -1,21 +1,23 @@
-{ Askr.Testing — testrammeverket PRD-en lister.
+{ Askr.Testing — the test framework the PRD lists.
 
-  Et generisk assert-bibliotek hadde ikke vært verdt en egen unit. Det som
-  gjør dette verdt å ha, er de tre tingene som er spesielle for Askr:
+  A generic assertion library would not have been worth a unit of its own.
+  What makes this worth having is the three things that are specific to
+  Askr:
 
-    * **Ruteren testes uten socket.** TTestClient bygger en TRequest i minnet
-      og kaller ruteren direkte. Ingen porter, ingen ventetid, ingen
-      flakete tester — og hele veien gjennom middleware, ruting, kontroller
-      og respons er dekket.
-    * **Databasen er sqlite::memory:.** Migrasjonene kjøres per test. Ingen
-      server å starte, ingen opprydding å glemme.
-    * **Arenaen kan hevdes om.** AssertArenaStable kjører noe hundre ganger
-      og krever at arenaen slutter å vokse. Det er den påstanden hele
-      prosjektet hviler på, og den bør testes av apper også — ikke bare av
-      rammeverket.
+    * **The router is tested without a socket.** TTestClient builds a
+      TRequest in memory and calls the router directly. No ports, no
+      waiting, no flaky tests — and the whole path through middleware,
+      routing, controller and response is covered.
+    * **The database is sqlite::memory:.** The migrations run per test. No
+      server to start, no cleanup to forget.
+    * **The arena can be asserted about.** AssertArenaStable runs
+      something a few hundred times and requires the arena to stop
+      growing. That is the claim the whole project rests on, and apps
+      should be testing it too — not just the framework.
 
-  Formen er bevisst flat. En hierarkisk suite med fixtures og arv er mer
-  maskineri enn en test trenger, og gjør feilmeldinger vanskeligere å lese. }
+  The shape is deliberately flat. A hierarchical suite with fixtures and
+  inheritance is more machinery than a test needs, and it makes error
+  messages harder to read. }
 unit Askr.Testing;
 
 {$mode Delphi}{$H+}
@@ -33,7 +35,7 @@ type
 
   TTestProc = procedure;
 
-  { Bygger en request i minnet og kjører den gjennom ruteren. }
+  { Builds a request in memory and runs it through the router. }
   TTestClient = class
   private
     FRouter: TRouter;
@@ -44,9 +46,10 @@ type
     constructor Create(ARouter: TRouter);
     destructor Destroy; override;
 
-    { Headere som følger med på neste kall, og bare det. }
+    { Headers that go along on the next call, and only that one. }
     function WithHeader(const Name_, Value: string): TTestClient;
-    { Setter X-Inertia, slik at svaret blir JSON og ikke HTML-skallet. }
+    { Sets X-Inertia, so the response is JSON rather than the HTML
+      shell. }
     function AsInertia: TTestClient;
 
     function Get(const Path: string): TResponse;
@@ -63,7 +66,8 @@ type
 procedure Group(const Name: string);
 procedure Test(const Name: string; P: TTestProc);
 
-{ Påstander. All_ kaster ETestFailure, som løperen fanger. }
+{ Assertions. All of them raise ETestFailure, which the runner
+  catches. }
 procedure AssertTrue(Cond: Boolean; const What: string);
 procedure AssertFalse(Cond: Boolean; const What: string);
 procedure AssertEqual(const Actual, Expected, What: string); overload;
@@ -77,9 +81,9 @@ procedure AssertNil(Obj: TObject; const What: string);
 procedure AssertStatus(R: TResponse; Expected: Integer; const What: string);
 procedure Fail(const What: string);
 
-{ Askr-spesifikt: kjører P så mange ganger, med Reset mellom, og krever at
-  arenaen slutter å be OS om mer minne. Varmer opp først, fordi de første
-  rundene alltid vokser. }
+{ Askr-specific: runs P that many times, with a Reset between, and
+  requires the arena to stop asking the OS for more memory. Warms up
+  first, because the first rounds always grow. }
 procedure AssertArenaStable(A: TArena; P: TTestProc; Iterations: Integer = 200;
   const What: string = 'arenaen flater ut');
 
@@ -87,9 +91,10 @@ procedure AssertArenaStable(A: TArena; P: TTestProc; Iterations: Integer = 200;
 function UseTestDatabase: TDbConnection;
 procedure CloseTestDatabase;
 
-{ Kjører alt som er registrert. Returnerer antall feil; 0 betyr grønt. }
+{ Runs everything registered. Returns the number of failures; 0 means
+  green. }
 function RunTests: Integer;
-{ Kjører og avslutter prosessen med riktig exit-kode. }
+{ Runs and exits the process with the right exit code. }
 procedure RunTestsAndHalt;
 
 implementation
@@ -315,8 +320,8 @@ begin
     if Body <> '' then
       Req.SetBody(StrDup(FArena, Body));
 
-    { Requesten gjøres omgivende, som verten gjør, slik at Inertia og
-      liknende hjelpere finner den. }
+    { The request is made ambient, as the host does, so Inertia and
+      similar helpers find it. }
     PrevReq := UseRequest(Req);
     try
       Result := FRouter.Handle(Req);
@@ -351,7 +356,7 @@ begin
   Result := Run('DELETE', Path, '', '');
 end;
 
-{ Løperen }
+{ The runner }
 
 function RunTests: Integer;
 var

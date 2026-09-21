@@ -1,27 +1,30 @@
-{ Askr.Http.Client — å snakke med noen andre over HTTP.
+{ Askr.Http.Client — talking to somebody else over HTTP.
 
-  Askr har hatt en server siden steg 1 og ingen klient. Det har vært greit
-  helt til noe skal ut: et webhook, en fil til S3, et varsel til Slack, et
-  kall til Anthropics API. All_ fire står og venter på denne fila.
+  Askr has had a server since step 1 and no client. That has been fine
+  right up until something has to go out: a webhook, a file to S3, a
+  notification to Slack, a call to Anthropic's API. All four were waiting
+  on this file.
 
-  **TLS er på, og sertifikatet sjekkes.** En klient som ikke verifiserer er
-  verre enn ingen klient — den ser ut til å virke, og den gjør det helt til
-  noen står i mellom. `Askr.Tls` gjør både kjeden og vertsnavnet, og
-  `Insecure` finnes for et selvsignert sertifikat i utvikling. Den sier fra
-  i loggen hver gang den brukes, med vilje.
+  **TLS is on, and the certificate is checked.** A client that does not
+  verify is worse than no client — it looks as though it works, and it
+  does until somebody stands in the middle. `Askr.Tls` does both the chain
+  and the host name, and `Insecure` exists for a self-signed certificate
+  in development. It says so in the log every single time it is used,
+  deliberately.
 
-  **Kroppen er en vanlig streng, ikke et arena-utsnitt.** Klienten kalles
-  også fra køarbeidere og fra oppstart, der det ikke finnes noen omgivende
-  arena, og et svar som skal overleve requesten er det vanlige. Kall
-  `StrDup` selv hvis det skal inn i en arena.
+  **The body is an ordinary string, not an arena slice.** The client is
+  also called from queue workers and from start-up, where there is no
+  surrounding arena, and a reply that has to outlive the request is the
+  usual case. Call `StrDup` yourself if it is to go into an arena.
 
-  **Ingen komprimering.** Klienten ber ikke om gzip, og da får den det
-  ikke. Å binde zlib for å spare båndbredde på et API-kall er feil bytte —
-  det er en avhengighet til, og Askr skal starte på en maskin uten den.
+  **No compression.** The client does not ask for gzip, and so it does not
+  get it. Binding zlib to save bandwidth on an API call is the wrong
+  trade — it is one more dependency, and Askr has to start on a machine
+  without it.
 
-  Det som **ikke** er her: HTTP/2, proxy-støtte, cookie-jar, automatisk
-  retry. All_ fire er reelle behov for noen; ingen av dem er det for det
-  som står i kø bak denne fila. }
+  What is **not** here: HTTP/2, proxy support, a cookie jar, automatic
+  retries. All four are real needs for somebody; none of them are for what
+  is queued up behind this file. }
 unit Askr.Http.Client;
 
 {$mode Delphi}{$H+}
@@ -36,11 +39,11 @@ uses
 const
   DefaultConnectTimeoutMs = 10000;
   DefaultReadTimeoutMs = 30000;
-  { En omdirigeringskjede som ikke tar slutt er enten en feil hos motparten
-    eller en felle. }
+  { A redirect chain that never ends is either a bug at the other end or a
+    trap. }
   DefaultMaxRedirects = 5;
-  { Et svar uten Content-Length kan i prinsippet vare evig. Taket er ikke
-    en optimalisering, det er en sperre. }
+  { A reply without a Content-Length can in principle last forever. The
+    cap is not an optimization, it is a stop. }
   DefaultMaxResponseBytes = 32 * 1024 * 1024;
 
 type
@@ -51,7 +54,8 @@ type
     Value: string;
   end;
 
-  { Svaret. Headernavn sammenlignes uten hensyn til kasus, slik HTTP sier. }
+  { The reply. Header names are compared case-insensitively, the way HTTP
+    says. }
   THttpResponse = record
     Status: Integer;
     Reason: string;
@@ -70,12 +74,12 @@ type
     function Ok: Boolean;
   end;
 
-  { Kalles for hver bit som kommer inn når svaret strømmes. Returner False
-    for å avbryte — det er slik en SSE-lytter slutter å lytte.
+  { Called for every chunk that comes in when the reply is streamed.
+    Return False to abort — that is how an SSE listener stops listening.
 
-    Strømming finnes fordi et langt svar ellers må ligge helt i minnet før
-    kalleren ser noe av det, og fordi et API som sender hendelser aldri
-    lukker forbindelsen av seg selv. }
+    Streaming exists because a long reply otherwise has to sit entirely in
+    memory before the caller sees any of it, and because an API that sends
+    events never closes the connection by itself. }
   TStreamCallback = function(const Chunk: string): Boolean of object;
   TStreamCallbackProc = function(const Chunk: string): Boolean;
 
@@ -89,7 +93,7 @@ type
     FInsecure: Boolean;
     FUserAgent: string;
     FLastUrl: string;
-    { Under strømming settes én av disse. }
+    { While streaming, one of these is set. }
     FStream: TStreamCallback;
     FStreamProc: TStreamCallbackProc;
     function Send(const Method, Url, Body, ContentType: string;
@@ -98,10 +102,10 @@ type
   public
     constructor Create;
 
-    { Header som følger med hver request fra denne klienten. Samme navn to
-      ganger erstatter. }
+    { A header that goes along with every request from this client. The
+      same name twice replaces. }
     function WithHeader(const AName, AValue: string): THttpClient;
-    { Authorization: Bearer … — den vanligste av dem alle. }
+    { Authorization: Bearer … — the most common of them all. }
     function WithBearer(const Token: string): THttpClient;
     procedure ClearHeaders;
 
@@ -115,8 +119,8 @@ type
       const ContentType: string = 'application/json'): THttpResponse;
     function Request(const Method, Url, Body, ContentType: string): THttpResponse;
 
-    { Som Post, men kroppen leveres bit for bit til callbacken etter hvert
-      som den kommer. Svarets Body er da tom. }
+    { Like Post, but the body is delivered chunk by chunk to the callback
+      as it arrives. The reply's Body is then empty. }
     function Stream(const Method, Url, Body, ContentType: string;
       Cb: TStreamCallback): THttpResponse; overload;
     function Stream(const Method, Url, Body, ContentType: string;
@@ -128,18 +132,18 @@ type
     property MaxRedirects: Integer read FMaxRedirects write FMaxRedirects;
     property MaxResponseBytes: Int64 read FMaxResponseBytes
       write FMaxResponseBytes;
-    { Slår av sertifikatsjekken. To_ et selvsignert sertifikat i utvikling,
-      og ingenting annet. Hver request logger en advarsel. }
+    { Turns off the certificate check. For a self-signed certificate in
+      development, and nothing else. Every request logs a warning. }
     property Insecure: Boolean read FInsecure write FInsecure;
     property UserAgent: string read FUserAgent write FUserAgent;
   end;
 
-{ Parts_ en URL. Returnerer False på noe som ikke er en http- eller
-  https-adresse. Port settes til 80 eller 443 når den ikke står der. }
+{ Splits a URL. Returns False on anything that is not an http or https
+  address. Port is set to 80 or 443 when it is not there. }
 function ParseUrl(const Url: string; out Scheme, Host: string;
   out Port: Word; out PathAndQuery: string): Boolean;
 
-{ Prosentkoding av én verdi til en query-streng eller et skjema. }
+{ Percent-encoding of one value for a query string or a form. }
 function UrlEncodeValue(const S: string): string;
 
 implementation
@@ -168,7 +172,7 @@ begin
   if Rest = '' then
     Exit;
 
-  { Verten slutter ved første / ? eller #. }
+  { The host ends at the first / ? or #. }
   P := 1;
   while (P <= Length(Rest)) and (Rest[P] <> '/') and (Rest[P] <> '?') and
         (Rest[P] <> '#') do
@@ -177,7 +181,7 @@ begin
   if P <= Length(Rest) then
   begin
     PathAndQuery := Copy(Rest, P, MaxInt);
-    { Fragmentet sendes aldri til serveren. }
+    { The fragment is never sent to the server. }
     P := Pos('#', PathAndQuery);
     if P > 0 then
       PathAndQuery := Copy(PathAndQuery, 1, P - 1);
@@ -187,8 +191,8 @@ begin
       PathAndQuery := '/' + PathAndQuery;
   end;
 
-  { Brukerinfo i adressen ignoreres — den hører ikke hjemme i en URL, og å
-    late som den ikke er der er tryggere enn å sende den videre. }
+  { User info in the address is ignored — it does not belong in a URL, and
+    pretending it is not there is safer than passing it on. }
   P := Pos('@', Vert);
   if P > 0 then
     Vert := Copy(Vert, P + 1, MaxInt);
@@ -275,8 +279,9 @@ end;
 { ------------------------------------------------------------ forbindelse -- }
 
 type
-  { Én forbindelse, med eller uten TLS. Samler socket og TLS slik at
-    lesing og skriving ser like ut for resten av koden. }
+  { One connection, with or without TLS. It gathers the socket and the TLS
+    together so that reading and writing look the same to the rest of the
+    code. }
   TConn = class
   private
     FSock: TSocket;
@@ -291,16 +296,17 @@ type
     function Read(Max: Integer): string;
   end;
 
-{ getaddrinfo fra libc, ikke FPCs netdb.
+{ getaddrinfo from libc, not FPC's netdb.
 
-  netdb har sin egen DNS-implementasjon som leser /etc/resolv.conf og
-  snakker UDP selv. Den bommer der systemet klarer seg: i en container med
-  Docker Desktops navnetjener svarte `getent hosts` mens netdb ga opp helt.
-  getaddrinfo går veien systemet selv går — nsswitch, /etc/hosts, DNS,
-  mDNS — og er det ethvert annet program bruker.
+  netdb has its own DNS implementation that reads /etc/resolv.conf and
+  speaks UDP itself. It misses where the system manages: in a container
+  with Docker Desktop's name server `getent hosts` answered while netdb
+  gave up entirely. getaddrinfo goes the way the system itself goes —
+  nsswitch, /etc/hosts, DNS, mDNS — and it is what every other program
+  uses.
 
-  netdb beholdes som reserve for et system uten fungerende getaddrinfo,
-  og fordi /etc/hosts-stien der er prøvd. }
+  netdb is kept as a fallback for a system without a working getaddrinfo,
+  and because the /etc/hosts path there has been tried. }
 const
   AI_ADDRCONFIG = {$IFDEF DARWIN} $00000400 {$ELSE} $0020 {$ENDIF};
 
@@ -327,11 +333,11 @@ function getaddrinfo(Node, Service: PAnsiChar; Hints: PAddrInfo;
   out Res: PAddrInfo): cint; cdecl; external 'c' name 'getaddrinfo';
 procedure freeaddrinfo(Res: PAddrInfo); cdecl; external 'c' name 'freeaddrinfo';
 
-{ Første IPv4-adresse for navnet. False når oppslaget ikke ga noen.
+{ The first IPv4 address for the name. False when the lookup gave none.
 
-  Bare IPv4: resten av Askr bruker TInetSockAddr, og IPv6 krever en annen
-  adressefamilie hele veien. Det er en dokumentert grense i serveren fra
-  steg 1, og klienten arver den. }
+  IPv4 only: the rest of Askr uses TInetSockAddr, and IPv6 requires a
+  different address family the whole way through. It is a documented limit
+  in the server from step 1, and the client inherits it. }
 function SlaaOppIPv4(const Host: string; out Addr: TInAddr): Boolean;
 var
   Hints: TAddrInfo;
@@ -390,10 +396,10 @@ begin
   Addr.sin_addr := StrToNetAddr(Host);
   if Addr.sin_addr.s_addr = 0 then
   begin
-    { getaddrinfo først — den gjør det systemet gjør. netdb som reserve;
-      der returnerer GetHostByName adressen i vertens byteorden og
-      ResolveHostByName i nettets, og å bomme på det gir en adresse som
-      ser gyldig ut og peker feil vei. }
+    { getaddrinfo first — it does what the system does. netdb as a
+      fallback; there GetHostByName returns the address in the host's byte
+      order and ResolveHostByName in the network's, and getting that wrong
+      gives an address that looks valid and points the wrong way. }
     if not SlaaOppIPv4(Host, Addr.sin_addr) then
     begin
       if GetHostByName(Host, Vert) then
@@ -436,8 +442,8 @@ begin
     FCtx := TTlsContext.Create(trClient);
     if NoVerify then
       FCtx.SetVerifyPeer(False);
-    { Vertsnavnet sendes både som SNI og som forventet navn i
-      sertifikatet. TTlsConn gjør begge deler. }
+    { The host name is sent both as SNI and as the expected name in the
+      certificate. TTlsConn does both. }
     FTls := TTlsConn.Create(FCtx, FSock, Host);
   except
     FTls.Free;
@@ -461,18 +467,18 @@ end;
 
 procedure TConn.SendAll(const S: string);
 var
-  Sendt, N: SizeInt;
+  SentBytes, N: SizeInt;
 begin
-  Sendt := 0;
-  while Sendt < Length(S) do
+  SentBytes := 0;
+  while SentBytes < Length(S) do
   begin
     if FTls <> nil then
-      N := FTls.Write(PByte(@S[1]) + Sendt, Length(S) - Sendt)
+      N := FTls.Write(PByte(@S[1]) + SentBytes, Length(S) - SentBytes)
     else
-      N := fpSend(FSock, PByte(@S[1]) + Sendt, Length(S) - Sendt, 0);
+      N := fpSend(FSock, PByte(@S[1]) + SentBytes, Length(S) - SentBytes, 0);
     if N <= 0 then
       raise EHttpClientError.Create('The connection closed while sending');
-    Inc(Sendt, N);
+    Inc(SentBytes, N);
   end;
 end;
 
@@ -541,8 +547,8 @@ begin
   Result := True;
 end;
 
-{ Leser en linje som slutter på CRLF ut av bufferet. False når linja ikke
-  er hel ennå. }
+{ Reads a line ending in CRLF out of the buffer. False when the line is
+  not whole yet. }
 function TakeLine(var Buf: string; out Line: string): Boolean;
 var
   P: Integer;
@@ -568,9 +574,9 @@ var
   WasRead: Int64;
   T0: Int64;
 begin
-  { Ikke FillChar: THttpResponse har både strenger og et dynamisk array,
-    og FillChar over managed felter etterlater referanser ingen slipper.
-    Samme felle som i Askr.Run. }
+  { Not FillChar: THttpResponse has both strings and a dynamic array, and
+    FillChar over managed fields leaves references nobody releases. The
+    same trap as in Askr.Run. }
   Result.Status := 0;
   Result.Reason := '';
   Result.Headers := nil;
@@ -588,14 +594,14 @@ begin
       '"%s" is not an http or https URL', [Url]);
 
   if FInsecure and (Scheme = 'https') then
-    { Hver gang, ikke bare første. Et oppsett som stille lot være å
-      verifisere er nøyaktig den feilen som ikke oppdages. }
+    { Every time, not only the first. A setup that quietly stopped
+      verifying is exactly the bug that goes unnoticed. }
     LogWarn('TLS certificate verification is off', ['host', Host]);
 
   T0 := MonotonicMs;
 
-  { Requesten. Host er påkrevd i HTTP/1.1. Connection: close fordi
-    klienten ikke gjenbruker forbindelser — én request, én socket. }
+  { The request. Host is required in HTTP/1.1. Connection: close because
+    the client does not reuse connections — one request, one socket. }
   Req := Method + ' ' + Path_ + ' HTTP/1.1'#13#10;
   if ((Scheme = 'https') and (Port <> 443)) or
      ((Scheme = 'http') and (Port <> 80)) then
@@ -604,8 +610,8 @@ begin
     Req := Req + 'Host: ' + Host + #13#10;
   Req := Req + 'User-Agent: ' + FUserAgent + #13#10 +
     'Connection: close'#13#10 +
-    { Ingen gzip: uten zlib kan vi ikke pakke ut, og en klient som ber om
-      noe den ikke kan lese er en feil som venter. }
+    { No gzip: without zlib we cannot unpack it, and a client that asks
+      for something it cannot read is a bug waiting to happen. }
     'Accept-Encoding: identity'#13#10;
   for I := 0 to High(FHeaders) do
     Req := Req + FHeaders[I].Name + ': ' + FHeaders[I].Value + #13#10;
@@ -680,7 +686,7 @@ begin
     end;
 
     { --- omdirigering --- }
-    { `in [301, …]` går ikke: et Pascal-sett rommer 0..255. }
+    { `in [301, …]` does not work: a Pascal set holds 0..255. }
     if ((Result.Status = 301) or (Result.Status = 302) or
         (Result.Status = 303) or (Result.Status = 307) or
         (Result.Status = 308)) and (FMaxRedirects > 0) then
@@ -697,8 +703,8 @@ begin
             Ny := Scheme + '://' + Host + ':' + IntToStr(Port) + '/' + Ny;
         end;
         FLastUrl := Url;
-        { 303 — og i praksis 301 og 302 — blir GET. 307 og 308 beholder
-          metoden, og det er hele grunnen til at de finnes. }
+        { 303 — and in practice 301 and 302 — become GET. 307 and 308 keep
+          the method, and that is the whole reason they exist. }
         if (Result.Status = 307) or (Result.Status = 308) then
           Result := Send(Method, Ny, Body, ContentType, Depth + 1)
         else
@@ -710,15 +716,16 @@ begin
 
     { --- kroppen --- }
     if (ContentLength < 0) and not Chunked then
-      { Verken lengde eller chunked: kroppen varer til forbindelsen
-        lukkes. Det er lovlig i HTTP/1.1 sammen med Connection: close. }
+      { Neither a length nor chunked: the body lasts until the connection
+        closes. That is legal in HTTP/1.1 together with Connection:
+        close. }
       LukkVedSlutt := True;
 
     if Chunked then
     begin
       repeat
-        { Størrelseslinja er heksadesimal, og kan ha en semikolon med
-          utvidelser etter seg. }
+        { The size line is hexadecimal, and may have a semicolon with
+          extensions after it. }
         while not TakeLine(Buf, Line_) do
         begin
           Bit := C.Read(16 * 1024);
@@ -737,7 +744,7 @@ begin
         if Chunk = 0 then
           Break;
 
-        { Biten pluss CRLF-en etter den. }
+        { The chunk plus the CRLF after it. }
         while Length(Buf) < Chunk + 2 do
         begin
           Bit := C.Read(16 * 1024);
@@ -763,16 +770,16 @@ begin
     end
     else
     begin
-      { Det som alt ligger i bufferet er begynnelsen på kroppen. }
+      { What is already in the buffer is the beginning of the body. }
       Avbrutt := False;
       if Buf <> '' then
       begin
         Inc(WasRead, Length(Buf));
         if Assigned(FStream) or Assigned(FStreamProc) then
-          { Svaret fra den første biten teller like mye som fra de andre.
-            Ble det ignorert her, leste klienten videre etter at
-            callbacken hadde sagt stopp — og for en SSE-strøm betyr det at
-            den aldri slutter. }
+          { The answer from the first chunk counts just as much as from the
+            others. If it were ignored here, the client read on after the
+            callback had said stop — and for an SSE stream that means it
+            never stops. }
           Avbrutt := not Emit(Buf)
         else
           Result.Body := Buf;

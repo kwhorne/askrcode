@@ -1,21 +1,22 @@
-{ Askr.Scheduler — planlagte jobber i samme prosess.
+{ Askr.Scheduler — scheduled jobs in the same process.
 
-  Ingen crontab, ingen systemd-timer, ingen supervisor. Scheduleren er en
-  tråd som våkner hvert sekund, ser hva som er forfalt, og dytter det på
-  køen. Selve arbeidet gjøres av køworkerne, med deres arenaer — scheduleren
-  utfører aldri noe selv.
+  No crontab, no systemd timer, no supervisor. The scheduler is a thread
+  that wakes every second, sees what is due, and pushes it onto the queue.
+  The work itself is done by the queue workers, with their arenas — the
+  scheduler never executes anything itself.
 
-  Det er et bevisst valg. En scheduler som også kjører jobbene blir en andre
-  utførelsesvei med egne levetidsregler, og da må alt som kan kjøres skrives
-  for to verdener. Her finnes det bare én.
+  That is a deliberate choice. A scheduler that also runs the jobs becomes
+  a second execution path with its own lifetime rules, and then everything
+  runnable has to be written for two worlds. Here there is only one.
 
-  Uttrykkene er bevisst enklere enn cron. Cron-syntaks er kompakt å skrive og
-  vond å lese, og en plan man må dekode i hodet er en plan som blir feil:
+  The expressions are deliberately simpler than cron. Cron syntax is
+  compact to write and painful to read, and a schedule you have to decode
+  in your head is a schedule that ends up wrong:
 
-      Schedule.EveryMinutes(5, 'rydd-opp');
-      Schedule.Hourly('hent-kurser');
-      Schedule.DailyAt(3, 30, 'nattjobb');
-      Schedule.WeeklyAt(dowMonday, 8, 0, 'ukesrapport'); }
+      Schedule.EveryMinutes(5, 'cleanup');
+      Schedule.Hourly('fetch-rates');
+      Schedule.DailyAt(3, 30, 'nightly');
+      Schedule.WeeklyAt(dowMonday, 8, 0, 'weekly-report'); }
 unit Askr.Scheduler;
 
 {$mode Delphi}{$H+}
@@ -37,14 +38,14 @@ type
     JobName: string;
     Payload: string;
     Kind: TScheduleKind;
-    { For skInterval: sekunder mellom kjøringer. }
+    { For skInterval: seconds between runs. }
     IntervalSec: Integer;
     Hour, Minute: Integer;
     Day: Integer;          { ukedag for skWeekly, dato for skMonthly }
     NextRun: Int64;        { unix-sekunder }
     LastRun: Int64;
     Runs: QWord;
-    { Hindrer at en treg jobb stables oppå seg selv. }
+    { Keeps a slow job from stacking on top of itself. }
     SkipIfPending: Boolean;
     Skipped: QWord;
   end;
@@ -78,14 +79,14 @@ type
     procedure MonthlyAt(DayOfMonth, Hour, Minute: Integer;
       const JobName: string; const Payload: string = '');
 
-    { Hopper over kjøringen hvis en jobb med samme navn allerede venter.
-      Gjelder oppføringen som ble lagt til sist. }
+    { Skips the run if a job with the same name is already waiting.
+      Applies to the entry added last. }
     procedure SkipWhenPending;
 
     procedure Start;
     procedure Stop;
-    { Kjører ett tikk manuelt. Finnes for tester, som ikke vil vente på
-      veggklokka. }
+    { Runs one tick by hand. It exists for tests, which do not want to
+      wait on the wall clock. }
     function Tick(NowUnix: Int64 = 0): Integer;
 
     procedure Describe(Lines: TStrings);
@@ -136,15 +137,15 @@ end;
 
 procedure TSchedulerThread.Execute;
 var
-  Neste: Int64;
+  NextAt: Int64;
 begin
   while FOwner.IsRunning do
   begin
     FOwner.Tick;
-    { Våkner på hele sekunder. En scheduler med sekundoppløsning trenger
-      ikke finere granularitet, og et helt sekund er billig å vente. }
-    Neste := UnixNowMs;
-    Sleep(1000 - (Neste mod 1000));
+    { Wakes on whole seconds. A scheduler with second resolution needs no
+      finer granularity, and a whole second is cheap to wait. }
+    NextAt := UnixNowMs;
+    Sleep(1000 - (NextAt mod 1000));
   end;
 end;
 
@@ -171,8 +172,9 @@ begin
   Result := InterLockedExchangeAdd(FRunning, 0) <> 0;
 end;
 
-{ Neste tidspunkt etter FromUnix. Regnes i UTC, som alt annet i Askr —
-  lokaltid ville gitt to kjøringer eller null ved sommertidsskifte. }
+{ The next time after FromUnix. Computed in UTC, like everything else in
+  Askr — local time would give two runs or none at a daylight-saving
+  change. }
 function TScheduler.NextAfter(const E: TScheduleEntry; FromUnix: Int64): Int64;
 var
   D: TDateTime;
@@ -195,7 +197,7 @@ begin
       end;
     skWeekly:
       begin
-        { DayOfWeek i FPC er 1 = søndag. TDayOfWeek er 0 = søndag. }
+        { DayOfWeek in FPC is 1 = Sunday. TDayOfWeek is 0 = Sunday. }
         DayNow := DayOfWeek(D) - 1;
         Diff := E.Day - DayNow;
         if Diff < 0 then
@@ -208,8 +210,8 @@ begin
     skMonthly:
       begin
         Kandidat := EncodeDate(Y, M, 1) + EncodeTime(E.Hour, E.Minute, 0, 0);
-        { En dato som ikke finnes i måneden — 31. februar — skyves til
-          siste dag i måneden i stedet for å hoppes over. }
+        { A date that does not exist in the month — 31 February — is moved to
+          the last day of the month rather than skipped. }
         Dd := E.Day;
         if Dd > DaysInMonth(Kandidat) then
           Dd := DaysInMonth(Kandidat);
@@ -318,8 +320,8 @@ begin
       if FEntries[I].NextRun > Now_ then
         Continue;
 
-      { En jobb som allerede venter skal ikke stables. Without dette vokser
-        køen i det uendelige når jobben er tregere enn intervallet. }
+      { A job already waiting must not stack. Without this the queue grows
+        without bound when the job is slower than the interval. }
       if FEntries[I].SkipIfPending and (FQueue.Pending > 0) then
       begin
         Inc(FEntries[I].Skipped);

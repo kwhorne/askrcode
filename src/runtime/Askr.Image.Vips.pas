@@ -1,31 +1,31 @@
-{ Askr.Image.Vips — skalering og formatkonvertering, med libvips.
+{ Askr.Image.Vips — resizing and format conversion, with libvips.
 
-  Askr.Image sier hva et bilde ER uten å dekode det. Denne gjør det
-  arbeidet som krever piksler, og det krever et bibliotek: å skrive en
-  JPEG- og WebP-dekoder i Pascal ville vært flere tusen linjer og
-  likevel tregere og mindre korrekt enn libvips.
+  Askr.Image says what an image IS without decoding it. This does the work
+  that needs pixels, and that needs a library: writing a JPEG and WebP
+  decoder in Pascal would be several thousand lines and still slower and
+  less correct than libvips.
 
-  LASTES MED DLOPEN, SOM ALT ANNET NATIVT
+  LOADED WITH DLOPEN, LIKE EVERYTHING ELSE NATIVE
 
-  Samme mønster som OpenSSL, libpq, libmariadb og sqlite3: binæren
-  starter uten libvips, og en app som aldri skalerer et bilde betaler
-  ingenting. Missing biblioteket, sier `VipsError` hva som skal
-  installeres — den lister ikke bare stier den lette i.
+  The same pattern as OpenSSL, libpq, libmariadb and sqlite3: the binary
+  starts without libvips, and an app that never resizes an image pays
+  nothing. If the library is missing, `VipsError` says what to install —
+  it does not merely list the paths it looked in.
 
-  Det er også grunnen til at dette IKKE er ren Pascal slik kryptoen er.
-  Kryptoen må være det fordi enhver app med brukere trenger
-  passordhashing; et rammeverk som legger den på libcrypto kan ikke
-  kalle avhengigheten valgfri. Bildebehandling trenger ikke alle.
+  It is also why this is NOT pure Pascal the way the crypto is. The crypto
+  has to be, because every app with users needs password hashing; a
+  framework that puts that on libcrypto cannot call the dependency
+  optional. Image processing is not needed by everyone.
 
-  OPSJONER GÅR I STRENGEN, IKKE I VARARGS
+  OPTIONS GO IN THE STRING, NOT IN VARARGS
 
-  Hele libvips' C-API er variadisk: valgfrie parametre sendes som
-  NULL-terminerte navn/verdi-par. Der det går, unngås det ved at
-  libvips også tar opsjoner i selve formatstrengen — `.jpg[Q=80]` —
-  som er én vanlig peker. Det som gjenstår av varargs er erklært med
-  FPCs `varargs`, slik at kompilatoren bruker plattformens egen
-  konvensjon. Å telle argumenter for hånd på arm64 er nettopp feilen
-  objc_msgSend allerede har lært oss. }
+  The whole libvips C API is variadic: optional parameters are passed as
+  NULL-terminated name/value pairs. Where possible that is avoided,
+  because libvips also takes options in the format string itself —
+  `.jpg[Q=80]` — which is one ordinary pointer. What remains of the
+  varargs is declared with FPC's `varargs`, so the compiler uses the
+  platform's own convention. Counting arguments by hand on arm64 is
+  exactly the mistake objc_msgSend has already taught us. }
 unit Askr.Image.Vips;
 
 {$mode Delphi}{$H+}
@@ -41,40 +41,41 @@ uses
 type
   EVipsError = class(Exception);
 
-  { Hvordan et bilde skal passe inn i boksen. }
+  { How an image is to fit in the box. }
   TFitMode = (
-    { Skalér ned til det får plass. Bevarer forholdet, fyller ikke
-      nødvendigvis boksen. Standard, og det man vil ha til et bilde i
-      en artikkel. }
+    { Scale down until it fits. Preserves the ratio, does not necessarily
+      fill the box. The default, and what you want for a picture in an
+      article. }
     fmInside,
-    { Fill boksen og beskjær det som stikker ut. To_ avatarer og
-      kort, der alle rutene skal være like store. }
+    { Fill the box and crop what sticks out. For avatars and cards, where
+      every tile has to be the same size. }
     fmCover
   );
 
-{ Er libvips tilgjengelig? Laster det ved første kall. }
+{ Is libvips available? Loads it on the first call. }
 function VipsAvailable: Boolean;
-{ Hvorfor ikke, hvis ikke. Tom streng når alt er i orden. }
+{ Why not, if not. An empty string when all is well. }
 function VipsError: string;
-{ Versjonen, som '8.14.1'. Tom streng når biblioteket mangler. }
+{ The version, as '8.14.1'. An empty string when the library is
+  missing. }
 function VipsVersion: string;
 
-{ Skalerer et bilde og gir det tilbake i Format.
+{ Resizes an image and returns it in Format.
 
-  Width_ eller høyde kan være 0, og betyr da «regn den ut». Er begge
-  satt, avgjør Fit hva som skjer med forholdet.
+  Width or height may be 0, which means "work it out". With both set, Fit
+  decides what happens to the ratio.
 
-  Kvalitet gjelder JPEG og WebP, og ignoreres for PNG. 0 betyr
-  bibliotekets standard.
+  Quality applies to JPEG and WebP, and is ignored for PNG. 0 means the
+  library's default.
 
-  Skalerer aldri opp: et bilde som alt er mindre enn boksen kommer ut
-  som det er. Å blåse opp en thumbnail gir et uskarpt bilde og en
-  større fil, og er aldri det noen ba om. }
+  Never scales up: an image already smaller than the box comes back as it
+  is. Blowing up a thumbnail gives a blurry picture and a bigger file, and
+  is never what anyone asked for. }
 function ResizeImage(const Data: TBytes; Width, Height: Integer;
   Format: TImageFormat; Quality: Integer = 0;
   Fit: TFitMode = fmInside): TBytes;
 
-{ Bare formatkonvertering, uten å endre størrelsen. }
+{ Format conversion only, without changing the size. }
 function ConvertImage(const Data: TBytes; Format: TImageFormat;
   Quality: Integer = 0): TBytes;
 
@@ -82,8 +83,8 @@ implementation
 
 {$IFDEF UNIX}
 const
-  { Rekkefølgen er med vilje: Debian og Homebrew først, så de generiske
-    navnene. En som har bygget selv har som regel det siste. }
+  { The order is deliberate: Debian and Homebrew first, then the generic
+    names. Somebody who built it themselves usually has the latter. }
   Kandidater: array[0..5] of string = (
     'libvips.so.42',
     'libvips.42.dylib',
@@ -102,9 +103,9 @@ type
   TGObjectUnref = procedure(Obj: Pointer); cdecl;
   TGFree = procedure(P: Pointer); cdecl;
 
-  { Variadiske. FPCs varargs lar kompilatoren bruke plattformens egen
-    konvensjon; å erklære dem med faste parametre ville vært feil på
-    arm64. Siste argument er alltid nil. }
+  { Variadic. FPC's varargs lets the compiler use the platform's own
+    convention; declaring them with fixed parameters would be wrong on
+    arm64. The last argument is always nil. }
   TVipsThumbnailBuffer = function(Buf: Pointer; Len: NativeUInt;
     out Img: Pointer; Width: Integer): Integer; cdecl varargs;
   TVipsWriteToBuffer = function(Img: Pointer; Suffix: PAnsiChar;
@@ -190,20 +191,22 @@ begin
     Exit;
   end;
 
-  { Flyttallsunntakene MÅ maskeres før første libvips-kall.
+  { The floating-point exceptions MUST be masked before the first libvips
+    call.
 
-    Free Pascal slår dem på; GLib, som libvips bygger på, regner
-    rutinemessig med verdier som utløser dem. Without masken dør prosessen
-    med EInvalidOp inne i vips_init, og stakksporet peker på biblioteker
-    man ikke har skrevet — det ser ut som en feil i libvips.
+    Free Pascal turns them on; GLib, which libvips is built on, routinely
+    computes values that trigger them. Without the mask the process dies
+    with EInvalidOp inside vips_init, and the stack trace points at
+    libraries you did not write — it looks like a bug in libvips.
 
-    Nøyaktig samme felle som Cocoa og GTK i Askr.Desktop. Den er ikke
-    valgfri, og den er funnet her ved at prosessen døde. }
+    Exactly the same trap as Cocoa and GTK in Askr.Desktop. It is not
+    optional, and it was found here by the process dying. }
   SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide,
                     exOverflow, exUnderflow, exPrecision]);
 
-  { vips_init må kalles før noe annet. Feiler den, er biblioteket der,
-    men ubrukelig — og da skal vi si det, ikke krasje senere. }
+  { vips_init has to be called before anything else. If it fails, the
+    library is there but unusable — and then we should say so rather than
+    crash later. }
   if vips_init('askr') <> 0 then
   begin
     GErr := 'libvips failed to initialise.';
@@ -263,9 +266,9 @@ begin
     vips_error_clear;
 end;
 
-{ Endelsen libvips skriver med, inkludert opsjoner. Opsjonene går her
-  og ikke som varargs — én streng er én peker, og det er det tryggeste
-  over en variadisk grense. }
+{ The extension libvips writes with, options included. The options go
+  here rather than as varargs — one string is one pointer, and that is the
+  safest thing across a variadic boundary. }
 function Suffix(F: TImageFormat; Kvalitet: Integer): string;
 begin
   case F of
@@ -286,8 +289,8 @@ begin
           Result := Result + '[strip=true]';
       end;
     ifPng:
-      { PNG er tapsfritt, så Q betyr ingenting. strip=true tar
-        metadata, som er hele grunnen til at det står her. }
+      { PNG is lossless, so Q means nothing. strip=true removes metadata,
+        which is the whole reason it is here. }
       Result := '.png[strip=true]';
     ifGif:
       Result := '.gif';
@@ -329,8 +332,8 @@ begin
   if Length(Data) = 0 then
     raise EVipsError.Create('The image is empty.');
 
-  { Askr.Image leser dimensjonene uten å dekode, og det er nok til å
-    avgjøre om det i det hele tatt er noe å gjøre. }
+  { Askr.Image reads the dimensions without decoding, and that is enough
+    to decide whether there is anything to do at all. }
   Inn := ReadImageInfo(Data);
   if Inn.Format = ifUnknown then
     raise EVipsError.Create('That file is not an image Askr recognises.');
@@ -340,10 +343,10 @@ begin
   if Width <= 0 then
     raise EVipsError.Create('Could not work out a target width.');
 
-  { Aldri opp. Et bilde som alt er mindre enn boksen kommer ut som det
-    er — oppblåsing gir uskarphet og en større fil, og er aldri det
-    noen ba om. Formatet kan likevel være et annet, så konverteringen
-    gjøres uansett. }
+  { Never up. An image already smaller than the box comes out as it is —
+    blowing it up gives blur and a bigger file, and is never what anyone
+    asked for. The format may still be a different one, so the conversion
+    is done regardless. }
   if Inn.Ok and (Inn.Width > 0) and (Width > Inn.Width) then
     Width := Inn.Width;
 
@@ -351,8 +354,8 @@ begin
   S := AnsiString(Suffix(Format, Quality));
 
   if (Height > 0) and (Fit = fmCover) then
-    { crop=centre fyller boksen og beskjærer resten. VIPS_INTERESTING_CENTRE
-      er 2. }
+    { crop=centre fills the box and crops the rest.
+      VIPS_INTERESTING_CENTRE is 2. }
     Res := vips_thumbnail_buffer(@Data[0], Length(Data), Img, Width,
              PAnsiChar('height'), Height, PAnsiChar('crop'), 2, nil)
   else if Height > 0 then
@@ -372,8 +375,8 @@ begin
     try
       Result := Kopier(Ut, Len);
     finally
-      { Bufferet er libvips sitt, og må frigjøres med g_free. Å la det
-        stå er en lekkasje per skalering. }
+      { The buffer is libvips's, and has to be freed with g_free. Leaving
+        it is a leak per resize. }
       if Ut <> nil then
         g_free(Ut);
     end;
@@ -391,8 +394,8 @@ begin
   Inn := ReadImageInfo(Data);
   if not Inn.Ok then
     raise EVipsError.Create('Could not read the image dimensions.');
-  { Samme vei som skalering, med bredden bildet alt har. Én kodesti er
-    én kodesti å teste. }
+  { The same route as resizing, with the width the image already has. One
+    code path is one code path to test. }
   Result := ResizeImage(Data, Inn.Width, 0, Format, Quality, fmInside);
 end;
 

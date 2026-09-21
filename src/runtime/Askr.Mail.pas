@@ -1,20 +1,21 @@
-{ Askr.Mail — e-post, med transporter man kan bytte.
+{ Askr.Mail — mail, with transports you can swap.
 
-  En melding bygges likt uansett hvor den havner. Transporten avgjør hva som
-  faktisk skjer: i utvikling skrives den til en fil eller til terminalen, i
-  produksjon går den over SMTP.
+  A message is built the same way wherever it ends up. The transport
+  decides what actually happens: in development it is written to a file or
+  to the terminal, in production it goes over SMTP or a provider's HTTP
+  API.
 
-  SMTP-transporten krever STARTTLS som standard. Vil man ha klartekst — mot
-  en relé på loopback, eller mot Mailpit i utvikling — sier man smtpPlain.
-  Det er den veien rundt med vilje: et oppsett som stille faller tilbake til
-  klartekst når serveren ikke tilbyr kryptering, er verre enn et som stopper
-  og sier fra.
+  The SMTP transport requires STARTTLS by default. If you want plaintext —
+  against a relay on loopback, or against Mailpit in development — you say
+  smtpPlain. That way round is deliberate: a setup that quietly falls back
+  to plaintext when the server does not offer encryption is worse than one
+  that stops and says so.
 
-  TLS forutsetter at OpenSSL finnes på maskinen. Se Askr.Tls; på macOS må den
-  installeres selv.
+  TLS assumes OpenSSL is on the machine. See Askr.Tls; on macOS it has to
+  be installed by hand.
 
-  Køen er det naturlige stedet å sende fra: SMTP er tregt, og en request skal
-  ikke vente på en fremmed server. }
+  The queue is the natural place to send from: SMTP is slow, and a request
+  should not wait on somebody else's server. }
 unit Askr.Mail;
 
 {$mode Delphi}{$H+}
@@ -34,9 +35,9 @@ type
     Name_: string;
   end;
 
-  { Navngitt, fordi en property ikke kan ha en anonym arraytype — og
-    transporter utenfor denne uniten trenger å lese mottakerne
-    strukturert, ikke bare som ferdig rendret tekst. }
+  { Named, because a property cannot have an anonymous array type — and
+    transports outside this unit need to read the recipients structurally,
+    not only as finished rendered text. }
   TMailAddressArray = array of TMailAddress;
 
   TMailMessage = class
@@ -69,29 +70,30 @@ type
     function Html(const S: string): TMailMessage;
     function Header(const Name_, Value: string): TMailMessage;
 
-    { En nøkkel som gjør det trygt å sende meldingen om igjen. Providere
-      som støtter det avviser den andre sendingen i stedet for å levere
-      to eposter; SMTP-transporten bryr seg ikke om den.
+    { A key that makes it safe to send the message again. Providers that
+      support it refuse the second send rather than delivering two emails;
+      the SMTP transport ignores it.
 
-      Poenget er køen: en jobb som feiler etter at providern tok imot
-      meldingen, prøves på nytt, og uten en nøkkel som overlever den
-      retten får mottakeren to. Sett den til noe som er likt over et
-      gjenforsøk — jobb-id-en, ordrenummeret — ikke til noe tilfeldig. }
+      The point is the queue: a job that fails after the provider accepted
+      the message is retried, and without a key that survives the retry
+      the recipient gets two. Set it to something that is the same across
+      a retry — the job id, the order number — never to anything
+      random. }
     function Idempotency(const Key: string): TMailMessage;
 
-    { Message-ID-en, laget om den ikke finnes ennå. Render bruker den
-      samme, slik at det ikke finnes to måter å få tak i den på. }
+    { The Message-ID, created if it does not exist yet. Render uses the same
+      one, so there are not two ways of getting at it. }
     function EnsureMessageId: string;
 
-    { Hele meldingen som RFC 5322-tekst. Bcc utelates fra hodet, men er med
-      i mottakerlista — det er hele poenget med Bcc. }
+    { The whole message as RFC 5322 text. Bcc is left out of the head but is
+      in the recipient list — that is the whole point of Bcc. }
     function Render: string;
     property AllRecipients: TStringArray read Recipients;
     property Sender: TMailAddress read FFrom;
 
-    { Lesetilgang for transporter som bygger sitt eget format i stedet
-      for å sende RFC 5322-teksten. Navnene er ikke de samme som
-      byggemetodenes — Subject er allerede en setter. }
+    { Read access for transports that build their own format rather than
+      sending the RFC 5322 text. The names are not the same as the
+      builders' — Subject is already a setter. }
     property ToList: TMailAddressArray read FTo;
     property CcList: TMailAddressArray read FCc;
     property BccList: TMailAddressArray read FBcc;
@@ -108,8 +110,8 @@ type
     function Describe: string; virtual; abstract;
   end;
 
-  { Skriver meldingen til en fil, eller til stdout hvis stien er tom.
-    Standardvalget i utvikling: ingenting sendes, alt kan leses. }
+  { Writes the message to a file, or to stdout when the path is empty. The
+    default in development: nothing is sent, everything can be read. }
   TLogTransport = class(TMailTransport)
   private
     FPath: string;
@@ -121,7 +123,8 @@ type
     property Count: Integer read FCount;
   end;
 
-  { Forkaster alt. Finnes for tester som ikke vil ha bivirkninger. }
+  { Discards everything. It exists for tests that want no side
+    effects. }
   TNullTransport = class(TMailTransport)
   private
     FCount: Integer;
@@ -133,17 +136,20 @@ type
     property LastMessage: string read FLast;
   end;
 
-  { Hvordan forbindelsen sikres.
+  { How the connection is secured.
 
-    smtpStartTls er standard fordi det er det riktige svaret i nesten alle
-    tilfeller, og fordi et opplegg som stille faller tilbake til klartekst
-    er verre enn et som sier fra. Vil man ha klartekst, sier man det. }
+    smtpStartTls is the default because it is the right answer in nearly
+    every case, and because an arrangement that quietly falls back to
+    plaintext is worse than one that says so. If you want plaintext, you
+    say so. }
   TSmtpSecurity = (
-    { Ingen kryptering. To_ en lokal relé på loopback, og ikke ellers. }
+    { No encryption. For a local relay on loopback, and nowhere else. }
     smtpPlain,
-    { Expect STARTTLS. Tilbyr ikke serveren det, avbrytes sendingen. }
+    { Require STARTTLS. If the server does not offer it, the send is
+      aborted. }
     smtpStartTls,
-    { TLS fra første byte, uten klartekstfase. Vanligvis port 465. }
+    { TLS from the first byte, with no plaintext phase. Usually port
+      465. }
     smtpTlsDirect);
 
   TSmtpTransport = class(TMailTransport)
@@ -167,7 +173,7 @@ type
     procedure SendLine(const S: string);
     procedure Connect;
     procedure StartTls;
-    { EHLO og oppsamling av det serveren svarer at den kan. }
+    { EHLO, and collecting what the server says it can do. }
     procedure Greet;
     function Offers(const Capability: string): Boolean;
   public
@@ -177,20 +183,20 @@ type
     procedure Send(M: TMailMessage); override;
     function Describe: string; override;
 
-    { Brukernavn og passord til relayet. Tomt brukernavn betyr ingen
-      AUTH — en relé på loopback vil ofte ikke ha den.
+    { The username and password for the relay. An empty username means no
+      AUTH — a relay on loopback often does not have it.
 
-      AUTH sendes aldri over en ukryptert forbindelse. Passordet i PLAIN
-      og LOGIN går i klartekst på lufta, og et oppsett som sender det
-      likevel har gitt bort passordet til alle som ser trafikken. Vil man
-      ha smtpPlain og AUTH samtidig, må det være mot loopback, og da sier
-      AllowPlainAuth det eksplisitt. }
+      AUTH is never sent over an unencrypted connection. The password in
+      PLAIN and LOGIN goes over the wire in the clear, and a setup that
+      sends it anyway has given the password to everyone watching the
+      traffic. If you want smtpPlain and AUTH at the same time, it has to
+      be against loopback, and then AllowPlainAuth says so explicitly. }
     procedure Credentials(const AUser, APassword: string);
     property TimeoutMs: Integer read FTimeoutMs write FTimeoutMs;
     property AllowPlainAuth: Boolean read FAllowPlainAuth
       write FAllowPlainAuth;
-    { Av bare til selvsignerte sertifikater i test. En klient som ikke
-      verifiserer har kryptering, men ingen visshet om hvem den snakker med. }
+    { Off only for self-signed certificates in tests. A client that does not
+      verify has encryption, but no idea who it is talking to. }
     property VerifyPeer: Boolean read FVerifyPeer write FVerifyPeer;
     property Security: TSmtpSecurity read FSecurity;
   end;
@@ -214,31 +220,33 @@ type
 function Mail: TMailer;
 procedure SetMail(AMailer: TMailer);
 
-{ Adressen slik den skal stå i et hode: «Name_» <adresse>, eller bare
-  adressen. Eksportert fordi transporter utenfor uniten trenger nøyaktig
-  den samme siteringen — et komma i et usitert navn deler adressefeltet i
-  to, og da får feil person e-posten. }
+{ The address as it should appear in a header: "Name" <address>, or just
+  the address. Exported because transports outside this unit need exactly
+  the same quoting — a comma in an unquoted name splits the address field
+  in two, and then the wrong person gets the mail. }
 function FormatMailAddress(const A: TMailAddress): string;
 
 type
-  { Én transport bygget ut av konfigurasjonen. Navnet den registreres
-    under er det mail.transport settes til. }
+  { One transport built out of the configuration. The name it registers
+    under is what mail.transport is set to. }
   TMailTransportFactory = function: TMailTransport;
 
-{ Gjør et transportnavn tilgjengelig for MailFromConfig. Askr.Mail.Resend
-  registrerer 'resend' i sin initialization — en app som ikke bruker den
-  uniten linker ikke HTTP-klienten, og mail.transport = resend sier da hva
-  som mangler i stedet for å falle stille tilbake til noe annet. }
+{ Makes a transport name available to MailFromConfig. Askr.Mail.Resend
+  registers 'resend' in its initialization — an app that does not use that
+  unit does not link the HTTP client, and mail.transport = resend then
+  says what is missing rather than quietly falling back to something
+  else. }
 procedure RegisterMailTransport(const Name_: string;
   F: TMailTransportFactory);
 
-{ Transporten mail.transport peker på. 'log' er standarden, fordi det er
-  det riktige svaret i utvikling: ingenting sendes, alt kan leses.
+{ The transport mail.transport points at. 'log' is the default, because
+  it is the right answer in development: nothing is sent, everything can
+  be read.
 
-  'smtp' leser mail.host, mail.port, mail.username, mail.password og
-  mail.encryption; 'null' forkaster alt. Et ukjent navn kaster og sier
-  hvilke som finnes — en stavefeil her ville ellers sendt produksjonsposten
-  til en loggfil. }
+  'smtp' reads mail.host, mail.port, mail.username, mail.password and
+  mail.encryption; 'null' discards everything. An unknown name raises and
+  says which ones exist — a typo here would otherwise send the production
+  mail to a log file. }
 function MailFromConfig: TMailTransport;
 
 implementation
@@ -263,8 +271,8 @@ begin
   if A.Name_ = '' then
     Result := A.Address
   else
-    { Navnet siteres alltid. Et komma i et navn uten anførselstegn deler
-      adressefeltet i to, og da får feil person e-posten. }
+    { The name is always quoted. A comma in an unquoted name splits the
+      address field in two, and then the wrong person gets the mail. }
     Result := '"' + StringReplace(A.Name_, '"', '''', [rfReplaceAll]) +
       '" <' + A.Address + '>';
 end;
@@ -363,9 +371,9 @@ function TMailMessage.Header(const Name_, Value: string): TMailMessage;
 var
   I: Integer;
 begin
-  { Ikke Values[Name_] := Value: en tom verdi sletter oppføringen på
-    3.3.1 og blir liggende på 3.2.2. Header('X-Foo', '') skal bety det
-    samme på begge. }
+  { Not Values[Name_] := Value: an empty value deletes the entry on 3.3.1
+    and stays on 3.2.2. Header('X-Foo', '') has to mean the same on
+    both. }
   I := FHeaders.IndexOfName(Name_);
   if I >= 0 then
     FHeaders[I] := Name_ + '=' + Value
@@ -400,8 +408,9 @@ begin
   for I := 0 to High(FBcc) do begin Result[N] := FBcc[I].Address; Inc(N); end;
 end;
 
-{ Kodet som quoted-printable ville vært riktigere, men 8bit med UTF-8 er
-  akseptert av alt som er i bruk, og det holder teksten lesbar i loggen. }
+{ Encoding as quoted-printable would be more correct, but 8bit with
+  UTF-8 is accepted by everything in use, and it keeps the text readable
+  in the log. }
 function TMailMessage.Render: string;
 var
   A: TArena;
@@ -488,9 +497,9 @@ begin
     Write(Text_);
     Exit;
   end;
-  { Katalogen lages. En loggtransport som feiler fordi storage/ ikke
-    finnes er ubrukelig akkurat der den skal hjelpe — første gang noen
-    prøver en passordtilbakestilling i utvikling. }
+  { The directory is created. A log transport that fails because storage/
+    does not exist is useless exactly where it is supposed to help — the
+    first time somebody tries a password reset in development. }
   ForceDirectories(ExtractFilePath(ExpandFileName(FPath)));
   L := TStringList.Create;
   try
@@ -593,7 +602,8 @@ function TSmtpTransport.Expect(const Code: string): string;
 var
   All_: string;
 begin
-  { Flerlinjes svar: «250-noe» fortsetter, «250 noe» avslutter. }
+  { A multi-line reply: "250-something" continues, "250 something"
+    ends. }
   All_ := '';
   repeat
     Result := ReadLine;
@@ -601,16 +611,16 @@ begin
       raise EMailError.CreateFmt('SMTP expected %s, got: %s', [Code, Result]);
     All_ := All_ + Result + #10;
   until (Length(Result) < 4) or (Result[4] <> '-');
-  { Hele svaret tas vare på, ikke bare siste linje: det er i de foregående
-    linjene serveren lister hva den kan, STARTTLS iberegnet. }
+  { The whole reply is kept, not only the last line: it is the preceding
+    lines where the server lists what it can do, STARTTLS included. }
   FEhlo := All_;
 end;
 
 function TSmtpTransport.Offers(const Capability: string): Boolean;
 begin
-  { Linjene ser ut som «250-STARTTLS». Et enkelt delstrengsøk ville også
-    truffet «250-SIZE 35651584» hvis noen het SIZE; derfor krever vi at
-    navnet står rett etter koden og skilletegnet. }
+  { The lines look like "250-STARTTLS". A plain substring search would
+    also hit "250-SIZE 35651584" if anything were called SIZE; so we
+    require the name to come right after the code and the separator. }
   Result := (Pos(#10'250-' + Capability, #10 + FEhlo) > 0) or
             (Pos(#10'250 ' + Capability, #10 + FEhlo) > 0);
 end;
@@ -627,9 +637,10 @@ var
   I, P: Integer;
   L: string;
 begin
-  { Mekanismene står som en ordliste på AUTH-linja: «250-AUTH PLAIN LOGIN».
-    Et rått delstrengsøk ville sagt ja til LOGIN på grunn av XOAUTH2-LOGIN
-    eller lignende, så vi leter etter hele ordet på nettopp den linja. }
+  { The mechanisms are a word list on the AUTH line: "250-AUTH PLAIN
+    LOGIN". A raw substring search would say yes to LOGIN because of
+    XOAUTH2-LOGIN or similar, so we look for the whole word on that
+    particular line. }
   Result := False;
   Lines := TStringList.Create;
   try
@@ -639,7 +650,7 @@ begin
       L := UpperCase(Lines[I]);
       if (Copy(L, 1, 8) <> '250-AUTH') and (Copy(L, 1, 8) <> '250 AUTH') then
         Continue;
-      { Mellomrom rundt, slik at ordet må stå alene. }
+      { Spaces around it, so the word has to stand alone. }
       P := Pos(' ' + UpperCase(Mech) + ' ', Copy(L, 9, MaxInt) + ' ');
       if P > 0 then
         Exit(True);
@@ -669,8 +680,8 @@ begin
       'or set AllowPlainAuth if this really is a relay on loopback.',
       [FHost, FPort]);
 
-  { PLAIN foretrekkes: én tur-retur i stedet for tre. LOGIN er med fordi
-    noen eldre relayer bare har den. }
+  { PLAIN is preferred: one round trip instead of three. LOGIN is here
+    because some older relays only have that. }
   if OffersMechanism('PLAIN') then
   begin
     SendLine('AUTH PLAIN ' + Base64Encode(
@@ -699,8 +710,9 @@ begin
     FCtx := TTlsContext.Create(trClient);
     FCtx.SetVerifyPeer(FVerifyPeer);
   end;
-  { Vertsnavnet går med som SNI. Er FHost en IP-adresse, hopper vi over
-    det — SNI med IP er ikke lov, og servere som får det svarer surt. }
+  { The host name goes along as SNI. If FHost is an IP address we skip it
+    — SNI with an IP is not allowed, and servers given one answer
+    badly. }
   if StrToNetAddr(FHost).s_addr <> 0 then
     FTls := TTlsConn.Create(FCtx, FSock)
   else
@@ -728,10 +740,11 @@ begin
   Addr.sin_addr := StrToNetAddr(FHost);
   if Addr.sin_addr.s_addr = 0 then
   begin
-    { To oppslag, i den rekkefølgen systemet selv bruker: først /etc/hosts,
-      så DNS. netdb deler dem i to funksjoner som returnerer adressen i hver
-      sin byteorden — GetHostByName i vertens, ResolveHostByName i nettets.
-      Å bomme på det gir en adresse som ser gyldig ut og peker feil vei. }
+    { Two lookups, in the order the system itself uses: /etc/hosts first,
+      then DNS. netdb splits them into two functions that return the
+      address in different byte orders — GetHostByName in the host's,
+      ResolveHostByName in the network's. Getting that wrong gives an
+      address that looks valid and points the wrong way. }
     if GetHostByName(FHost, Vert) then
       Addr.sin_addr.s_addr := HToNL(Vert.Addr.s_addr)
     else if ResolveHostByName(FHost, Vert) then
@@ -753,7 +766,7 @@ begin
   Connect;
   try
     if FSecurity = smtpTlsDirect then
-      { Ingen klartekstfase i det hele tatt: håndtrykket først, så 220. }
+      { No plaintext phase at all: the handshake first, then the 220. }
       StartTls;
 
     Expect('220');
@@ -768,8 +781,8 @@ begin
       SendLine('STARTTLS');
       Expect('220');
       StartTls;
-      { RFC 3207: alt serveren sa før håndtrykket er ubeskyttet og skal
-        glemmes. Derfor ny EHLO. }
+      { RFC 3207: everything the server said before the handshake is
+        unprotected and has to be forgotten. Hence a fresh EHLO. }
       Greet;
     end;
 
@@ -788,8 +801,8 @@ begin
     SendLine('DATA');
     Expect('354');
     Body := M.Render;
-    { En linje som bare er et punktum avslutter DATA. En slik linje i
-      innholdet må dobles, ellers kuttes meldingen der. }
+    { A line that is only a full stop ends DATA. Such a line in the
+      content has to be doubled, or the message is cut off there. }
     Body := StringReplace(Body, #13#10'.'#13#10, #13#10'..'#13#10,
       [rfReplaceAll]);
     SendLine(Body);
@@ -867,10 +880,10 @@ var
   I: Integer;
   Nkl: string;
 begin
-  { En vanlig record-array med lineært søk, ikke et TStringList med
-    Objects: en prosedyrevariabel kan ikke castes til TObject i
-    Delphi-modus — kompilatoren leser det som et kall. Samme grunn som
-    handler-tabellen i køen. }
+  { An ordinary record array with a linear search, not a TStringList with
+    Objects: a procedure variable cannot be cast to TObject in Delphi mode
+    — the compiler reads it as a call. The same reason as the handler
+    table in the queue. }
   Nkl := LowerCase(Name_);
   for I := 0 to High(GFactories) do
     if GFactories[I].Name_ = Nkl then
@@ -933,9 +946,9 @@ begin
     if GFactories[I].Name_ = Name_ then
       Exit(GFactories[I].Factory());
 
-  { Ikke fall tilbake til log. En stavefeil i produksjon ville da sett ut
-    som at posten gikk ut, og den eneste som visste noe annet var en fil
-    ingen leser. Samme regel som for en gate som ikke finnes. }
+  { Do not fall back to log. A typo in production would then look like the
+    mail going out, and the only thing that knew otherwise was a file
+    nobody reads. The same rule as for a gate that does not exist. }
   raise EMailError.CreateFmt(
     'Unknown mail transport %s. Available: %s. A transport from another ' +
     'unit has to be linked in before it can be named here.',

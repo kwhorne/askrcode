@@ -1,26 +1,30 @@
-{ Askr.Cache — delt cache i samme prosess.
+{ Askr.Cache — a shared cache in the same process.
 
-  PRD-ens første regel sier at verdier som skal overleve requesten ikke må
-  ligge i request-arenaen, og at slike API-er tar sin egen allokator:
+  The PRD's first rule says values that are to outlive the request must
+  not live in the request arena, and that such APIs take their own
+  allocator:
 
       Cache.Put(Key, Value.CloneTo(App.Heap))
 
-  Denne implementasjonen går lenger: kopieringen er ikke noe kalleren gjør,
-  den er noe API-et gjør. Put kopierer inn i cachens eget minne, og Get
-  kopierer ut i kallerens arena.
+  This implementation goes further: the copying is not something the
+  caller does, it is something the API does. Put copies into the cache's
+  own memory, and Get copies out into the caller's arena.
 
-  Det er ikke pynt. To ting følger av det, og begge er nødvendige:
+  That is not decoration. Two things follow from it, and both are
+  necessary:
 
-    * Cachen kan kaste ut en post når som helst uten at noen sitter med en
-      peker inn i minnet som forsvant.
-    * Verdien kalleren får, dør med requesten. Den kan ikke ved et uhell bli
-      liggende og peke inn i cachen etter at låsen er sluppet.
+    * The cache can evict an entry at any time without anyone holding a
+      pointer into memory that went away.
+    * The value the caller gets dies with the request. It cannot
+      accidentally be left pointing into the cache after the lock is
+      released.
 
-  With_ en arena som bare er en konvensjon ville begge deler vært opp til den
-  som skriver kontrolleren. Her er de umulige å gjøre feil.
+  With an arena that is only a convention, both of those would be up to
+  whoever writes the controller. Here they are impossible to get wrong.
 
-  Låsene er delt i shards. Én lås for hele cachen ville serialisert alle
-  workerne mot hverandre, og da er en cache verre enn ingen cache. }
+  The locks are split into shards. One lock for the whole cache would
+  serialise every worker against every other, and then a cache is worse
+  than no cache. }
 unit Askr.Cache;
 
 {$mode Delphi}{$H+}
@@ -43,7 +47,7 @@ type
     ExpiresAt: Int64;   { unix-sekunder; 0 = aldri }
     { LRU-kjede innenfor sharden. }
     Prev, Next: PCacheEntry;
-    { Kjede for hash-bøtta. }
+    { The chain for the hash bucket. }
     HashNext: PCacheEntry;
   end;
 
@@ -55,7 +59,7 @@ type
     MaxCount: Integer;
   end;
 
-  { Regner ut verdien når den ikke finnes. Skriver til B. }
+  { Computes the value when it is missing. Writes into B. }
   TCacheCompute = procedure(var B: TStrBuilder);
 
   TCache = class
@@ -72,17 +76,19 @@ type
       Hash: Cardinal): PCacheEntry;
     procedure EvictIfNeeded(var S: TCacheShard);
   public
-    { MaxEntries er totalt, fordelt likt på shards. }
+    { MaxEntries is the total, divided evenly across the shards. }
     constructor Create(AMaxEntries: Integer = 8192; AShards: Integer = 16);
     destructor Destroy; override;
 
-    { Verdien kopieres inn i cachens minne. TtlSeconds 0 = uten utløp. }
+    { The value is copied into the cache's memory. TtlSeconds 0 = no
+      expiry. }
     procedure Put(const Key: string; const Value: TStr;
       TtlSeconds: Integer = 0); overload;
     procedure Put(const Key, Value: string;
       TtlSeconds: Integer = 0); overload;
 
-    { Verdien kopieres ut i A. False når den ikke finnes eller er utløpt. }
+    { The value is copied out into A. False when it is missing or
+      expired. }
     function Get(A: TArena; const Key: string; out Value: TStr): Boolean; overload;
     function Get(const Key: string; out Value: string): Boolean; overload;
 
@@ -90,7 +96,7 @@ type
     procedure Forget(const Key: string);
     procedure Flush;
 
-    { Henter, eller regner ut og lagrer. Resultatet ligger i A. }
+    { Fetches, or computes and stores. The result lives in A. }
     function Remember(A: TArena; const Key: string; TtlSeconds: Integer;
       Compute: TCacheCompute): TStr;
 
@@ -101,23 +107,23 @@ type
     property Expired: QWord read FExpired;
   end;
 
-{ Prosessens cache. Verten lager den ved oppstart. }
+{ The process's cache. The host creates it at startup. }
 function Cache: TCache;
 procedure SetCache(ACache: TCache);
 
 implementation
 
-{ FNV-1a er tuftet på at multiplikasjonen flyter over og brytes modulo
-  ordstørrelsen — det er ikke et uhell, det er algoritmen. Bygger noen med
-  -Cr eller -Co, som er helt rimelig i en debug-bygging, blir den tilsiktede
-  wraparounden til en ERangeError. Avhengigheten står derfor her i stedet for
-  å være stilltiende. }
+{ FNV-1a rests on the multiplication overflowing and wrapping modulo the
+  word size — that is not an accident, it is the algorithm. If somebody
+  builds with -Cr or -Co, which is perfectly reasonable in a debug build,
+  the intended wraparound becomes an ERangeError. The dependency is
+  therefore written down here rather than being tacit. }
 {$push}{$R-}{$Q-}
-{ FNV-1a er tuftet på at multiplikasjonen flyter over og brytes modulo
-  ordstørrelsen — det er ikke et uhell, det er algoritmen. Bygger noen med
-  -Cr eller -Co, som er helt rimelig i en debug-bygging, blir den tilsiktede
-  wraparounden til en ERangeError. Avhengigheten står derfor her i stedet for
-  å være stilltiende. }
+{ FNV-1a rests on the multiplication overflowing and wrapping modulo the
+  word size — that is not an accident, it is the algorithm. If somebody
+  builds with -Cr or -Co, which is perfectly reasonable in a debug build,
+  the intended wraparound becomes an ERangeError. The dependency is
+  therefore written down here rather than being tacit. }
 {$push}{$R-}{$Q-}
 function HashKey(const S: string): Cardinal;
 var
@@ -158,8 +164,8 @@ var
   I, N, PerShard, Buckets: Integer;
 begin
   inherited Create;
-  { Count_ shards rundes opp til en toerpotens, slik at valget blir en
-    maskering og ikke en divisjon. }
+  { The shard count is rounded up to a power of two, so the choice is a
+    mask and not a division. }
   N := 1;
   while N < AShards do
     N := N * 2;
@@ -195,8 +201,8 @@ end;
 
 function TCache.ShardFor(Hash: Cardinal): Integer;
 begin
-  { Høye bitene til shard, lave til bøtte — ellers havner alt i samme bøtte
-    innenfor sharden. }
+  { The high bits pick the shard, the low ones the bucket — otherwise
+    everything lands in the same bucket within the shard. }
   Result := Integer((Hash shr 24) and FShardMask);
 end;
 
@@ -281,7 +287,7 @@ procedure TCache.EvictIfNeeded(var S: TCacheShard);
 begin
   while (S.Count >= S.MaxCount) and (S.Tail <> nil) do
   begin
-    { Minst nylig brukt ryker først. }
+    { Least recently used goes first. }
     RemoveEntry(S, S.Tail);
     Inc(FEvictions);
   end;
@@ -320,8 +326,9 @@ begin
       Inc(FShards[Idx].Count);
     end;
 
-    { Her er grensen. Bytene kopieres ut av kallerens arena og inn i minne
-      cachen eier, fordi arenaen nullstilles ved neste request. }
+    { This is the boundary. The bytes are copied out of the caller's arena
+      and into memory the cache owns, because the arena is reset at the
+      next request. }
     if Value.Len > 0 then
     begin
       E^.Data := GetMem(Value.Len);
@@ -376,8 +383,9 @@ begin
     end;
     Touch(FShards[Idx], E);
 
-    { Kopieres ut mens låsen holdes, inn i kallerens arena. Da kan cachen
-      kaste ut posten et mikrosekund senere uten at noen merker det. }
+    { Copied out while the lock is held, into the caller's arena. Then the
+      cache can evict the entry a microsecond later without anyone
+      noticing. }
     Len := E^.Len;
     if Len > 0 then
     begin
@@ -399,8 +407,8 @@ var
   S: TStr;
 begin
   Value := '';
-  { Egen arena: denne formen finnes for oppstartskode og bakgrunnsjobber som
-    ikke har en request-arena for hånden. }
+  { Its own arena: this form exists for startup code and background jobs
+    that have no request arena to hand. }
   A := TArena.Create(4096);
   try
     Result := Get(A, Key, S);

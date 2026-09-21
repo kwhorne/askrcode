@@ -1,25 +1,26 @@
-{ Askr.Session — sesjoner i samme prosess.
+{ Askr.Session — sessions in the same process.
 
-  Dette lukker avviket fra steg 5. PRD-en skriver
+  This closes the gap from step 5. The PRD writes
 
       Exit(Back.WithErrors(C.Errors));
-      Redirect('/customers').With('flash', 'Kunde opprettet');
+      Redirect('/customers').With('flash', 'Customer created');
 
-  og begge forutsetter at noe overlever en omdirigering. Without sesjoner gjorde
-  det ikke det, og valideringen måtte rendre siden på nytt i stedet.
+  and both assume something survives a redirect. Without sessions it did
+  not, and validation had to re-render the page instead.
 
-  Lageret ligger i prosessen, som køen og cachen. Det er en bevisst
-  begrensning og ikke en forglemmelse: én binær, ingen sidevogn. Skaleres
-  appen til flere noder, må lageret byttes — grensesnittet er skilt ut slik
-  at det er én klasse, ikke et gjennomgripende inngrep.
+  The store lives in the process, like the queue and the cache. That is a
+  deliberate limit and not an oversight: one binary, no sidecar. If the
+  app scales to several nodes the store has to be replaced — the interface
+  is separated out so that is one class, not a pervasive change.
 
-  Flash har den klassiske semantikken: det som skrives i én request kan leses
-  i den neste, og er borte etter det. Det er derfor det er to kart og ikke
-  ett — det som kan leses nå, og det som skrives for neste gang.
+  Flash has the classic semantics: what is written in one request can be
+  read in the next, and is gone after that. That is why there are two maps
+  and not one — what can be read now, and what is being written for next
+  time.
 
-  Sesjonsobjektet er et arena-objekt. Verdiene kopieres inn i lageret ved
-  Commit og ut i arenaen ved Start, samme grense som i cachen og av samme
-  grunn. }
+  The session object is an arena object. The values are copied into the
+  store at Commit and out into the arena at Start, the same boundary as in
+  the cache and for the same reason. }
 unit Askr.Session;
 
 {$mode Delphi}{$H+}
@@ -40,13 +41,13 @@ type
     Value: string;
   end;
 
-  { Sesjonen slik en request ser den. Lever i request-arenaen. }
+  { The session as a request sees it. Lives in the request arena. }
   TSession = class(TArenaObject)
   private
     FId: string;
     FData: array of TSessionPair;
-    FFlashIn: array of TSessionPair;    { lesbart nå }
-    FFlashOut: array of TSessionPair;   { skrives for neste request }
+    FFlashIn: array of TSessionPair;    { readable now }
+    FFlashOut: array of TSessionPair;   { written for next request }
     FDirty: Boolean;
     FNew: Boolean;
     function IndexIn(const Arr: array of TSessionPair;
@@ -58,24 +59,24 @@ type
     procedure Forget(const Key: string);
     procedure Clear;
 
-    { Lesbart i neste request, så borte. }
+    { Readable in the next request, then gone. }
     procedure Flash(const Key, Value: string);
     function GetFlash(const Key: string; const Default: string = ''): string;
     function HasFlash(const Key: string): Boolean;
-    { Om det finnes noe lesbart flash i det hele tatt. Valideringsfeilene
-      teller ikke med — de er en egen prop i Inertia-payloaden, ikke en
-      melding, og HasErrors svarer for dem. }
+    { Whether there is any readable flash at all. The validation errors do
+      not count — they are their own prop in the Inertia payload, not a
+      message, and HasErrors answers for them. }
     function HasAnyFlash: Boolean;
-    { Beholder det som kom inn, slik at det også er der neste gang. }
+    { Keeps what came in, so it is there next time as well. }
     procedure Reflash;
 
-    { Valideringsfeil som JSON, lagret som flash. Det er dette som gjør
-      Back.WithErrors mulig. }
+    { Validation errors as JSON, stored as flash. This is what makes
+      Back.WithErrors possible. }
     procedure FlashErrorsJson(const Json: TStr);
     function ErrorsJson: string;
     function HasErrors: Boolean;
 
-    { Skriver flash-parene inn i et objekt som allerede er åpnet. }
+    { Writes the flash pairs into an object that is already open. }
     procedure WriteFlashInto(var W: TJsonWriter);
 
     property Id: string read FId;
@@ -105,27 +106,29 @@ type
     constructor Create(ALifetimeSeconds: Integer = 7200);
     destructor Destroy; override;
 
-    { Leser sesjonskaka, henter tilstanden inn i arenaen. Storage en ny
-      sesjon hvis kaka mangler eller er utløpt. }
+    { Reads the session cookie and fetches the state into the arena.
+      Creates a new session when the cookie is missing or expired. }
     function Start(Req: TRequest): TSession;
-    { Skriver tilstanden tilbake og setter kaka på responsen. Roterer
-      flash: det som ble lest er borte, det som ble skrevet blir lesbart. }
+    { Writes the state back and sets the cookie on the response. Rotates
+      the flash: what was read is gone, what was written becomes
+      readable. }
     procedure Commit(S: TSession; Res: TResponse);
 
-    { Gir sesjonen en ny id og kaster den gamle. Dataene blir med.
+    { Gives the session a new id and throws the old one away. The data
+      comes along.
 
-      Dette må skje ved innlogging. Ellers: en angriper setter kaka di til
-      en id han selv kjenner *før* du logger inn, du logger inn i akkurat
-      den sesjonen, og han er innlogget som deg. Det heter session fixation,
-      og det eneste som stopper det er at id-en byttes i det privilegiene
-      endrer seg. }
+      This has to happen at sign-in. Otherwise: an attacker sets your
+      cookie to an id he knows *before* you sign in, you sign in to that
+      very session, and he is signed in as you. It is called session
+      fixation, and the only thing that stops it is the id changing at the
+      moment the privileges do. }
     procedure Regenerate(S: TSession);
 
     procedure Destroy_(const Id: string);
     function Count: Integer;
 
     property CookieName: string read FCookieName write FCookieName;
-    { Sett denne når appen kjører bak HTTPS. }
+    { Set this when the app runs behind HTTPS. }
     property Secure: Boolean read FSecure write FSecure;
     property Lifetime: Integer read FLifetime write FLifetime;
     property Created: QWord read FCreated;
@@ -136,26 +139,27 @@ type
 function Sessions: TSessionStore;
 procedure SetSessions(AStore: TSessionStore);
 
-{ Kobler sesjonene på ruteren: starter sesjonen før middleware og skriver
-  den tilbake etter at svaret er laget.
+{ Wires the sessions onto the router: starts the session before
+  middleware and writes it back after the response is made.
 
-  Før dette måtte hver app kalle Start, UseSession og Commit for hånd rundt
-  hver request, og glemte man Commit ble ingenting lagret — uten en feil
-  noe sted. Krever at SetSessions er kalt først. }
+  Before this, every app had to call Start, UseSession and Commit by hand
+  around each request, and if you forgot Commit nothing was saved — with
+  no error anywhere. Requires SetSessions to have been called first. }
 procedure UseSessions(R: TRouter);
 
-{ Omgivende sesjon for gjeldende tråd, etter samme mønster som UseArena,
-  UseDb og UseRequest. Verten setter den etter Start og fjerner den etter
-  Commit. }
+{ The ambient session for the current thread, following the same pattern
+  as UseArena, UseDb and UseRequest. The host sets it after Start and
+  clears it after Commit. }
 function CurrentSession: TSession;
 function UseSession(S: TSession): TSession;
 
-{ Én navngitt kake ut av Cookie-headeren. Den står her fordi sesjonen
-  trenger den først; Askr.Auth bruker den samme til «husk meg»-kaka, og to
-  parsere av samme header ville før eller siden vært uenige. }
+{ One named cookie out of the Cookie header. It lives here because the
+  session needs it first; Askr.Auth uses the same one for the "remember
+  me" cookie, and two parsers of the same header would sooner or later
+  disagree. }
 function CookieValue(Req: TRequest; const Name_: string): string;
 
-{ Nøkkelen valideringsfeil lagres under. }
+{ The key validation errors are stored under. }
 const
   ErrorsFlashKey = '_errors';
 
@@ -191,12 +195,12 @@ begin
   GStore := AStore;
 end;
 
-{ 128 tilfeldige bit fra kjernen, hex-kodet. En sesjons-id som kan gjettes
-  er ingen sesjons-id.
+{ 128 random bits from the kernel, hex encoded. A session id that can be
+  guessed is not a session id.
 
-  Tilfeldigheten kommer fra Askr.Core.Crypto, ikke fra en egen urandom-
-  lesning her. Det er én ting i rammeverket som snakker med kjernens CSPRNG,
-  og den har testene. }
+  The randomness comes from Askr.Core.Crypto, not from a separate urandom
+  read here. There is one thing in the framework that talks to the
+  kernel's CSPRNG, and it has the tests. }
 function NewSessionId: string;
 begin
   Result := RandomHex(16);
@@ -323,8 +327,8 @@ function TSession.HasAnyFlash: Boolean;
 var
   I: Integer;
 begin
-  { Samme utvalg som WriteFlashInto skriver. Skiller de to lag, blir vakten
-    stående og si nei til noe som ville blitt skrevet. }
+  { The same selection WriteFlashInto writes. If the two drift apart, the
+    guard ends up saying no to something that would have been written. }
   for I := 0 to High(FFlashIn) do
     if FFlashIn[I].Key <> ErrorsFlashKey then
       Exit(True);
@@ -438,8 +442,9 @@ begin
 
   FLock.Acquire;
   try
-    { Feiing her, ikke i en egen tråd: en sesjonsstore som trenger sin egen
-      tråd for å rydde er mer maskineri enn problemet fortjener. }
+    { Sweeping here, not in a thread of its own: a session store that needs
+      its own thread to tidy up is more machinery than the problem
+      deserves. }
     if (FKeys.Count > 0) and (Random(64) = 0) then
       Sweep;
 
@@ -502,8 +507,8 @@ begin
     for I := 0 to High(S.FData) do
       FSlots[Slot].Data[I] := S.FData[I];
 
-    { Flash roteres: det som ble lest denne gangen er borte, det som ble
-      skrevet blir lesbart neste gang. }
+    { The flash rotates: what was read this time is gone, what was written
+      becomes readable next time. }
     SetLength(FSlots[Slot].Flash, Length(S.FFlashOut));
     for I := 0 to High(S.FFlashOut) do
       FSlots[Slot].Flash[I] := S.FFlashOut[I];
@@ -513,10 +518,11 @@ begin
     FLock.Release;
   end;
 
-  { WithCookie, ikke WithHeader: den siste lar siste verdi vinne per
-    headernavn, og da ville CSRF-kaka og sesjonskaka slått hverandre i hjel.
-    HttpOnly og SameSite=Lax er standard fordi alternativet er å huske det.
-    Secure settes av appen når den vet at den står bak HTTPS. }
+  { WithCookie, not WithHeader: the latter lets the last value win per
+    header name, and then the CSRF cookie and the session cookie would
+    cancel each other out. HttpOnly and SameSite=Lax are the defaults
+    because the alternative is remembering them. Secure is set by the app
+    when it knows it is behind HTTPS. }
   Res.WithCookie(FCookieName, S.Id, FLifetime, FSecure);
 end;
 
@@ -530,8 +536,8 @@ begin
   S.FId := NewSessionId;
   S.FNew := True;
   S.FDirty := True;
-  { Den gamle slotten slettes, ikke bare forlates. En id som fortsatt
-    virker etter at den er byttet ut er nøyaktig det angrepet vi stopper. }
+  { The old slot is deleted, not merely abandoned. An id that still works
+    after being replaced is exactly the attack we are stopping. }
   if Old <> '' then
     Destroy_(Old);
 end;
@@ -570,8 +576,9 @@ begin
 end;
 
 type
-  { Middleware er funksjonspekere, og Pascal har ingen lukninger. Lageret
-    hentes derfor fra Sessions, ikke fra en fanget variabel. }
+  { Middleware are function pointers, and Pascal has no closures. The
+    store is therefore fetched from Sessions rather than from a captured
+    variable. }
   TSessionHook = class
     class function Start(Req: TRequest): TResponse;
     class function Commit(Req: TRequest; Res: TResponse): TResponse;
@@ -591,30 +598,31 @@ begin
   Result := Res;
   S := CurrentSession;
 
-  { Threadvar-en ryddes FØRST, ikke til slutt.
+  { The threadvar is cleared FIRST, not last.
 
-    Sesjonen lever i request-arenaen og forsvinner ved Reset; threadvar-en
-    gjør ikke det. Sto oppryddingen nederst, slapp to utganger forbi den —
-    og den ene er helt vanlig: en anonym besøkende som starter en sesjon
-    uten å skrive til den. Neste request på den workeren fikk da en peker
-    inn i minne arenaen hadde gjenbrukt.
+    The session lives in the request arena and goes away at Reset; the
+    threadvar does not. With the cleanup at the bottom, two exits slipped
+    past it — and one of them is entirely ordinary: an anonymous visitor
+    who starts a session without writing to it. The next request on that
+    worker then got a pointer into memory the arena had reused.
 
-    Den feilen viste seg som EAccessViolation når en nettleser hentet en
-    css-fil rett etter en side på samme tilkobling — og bare når fila fikk
-    plass i blokka som alt var i bruk. En stor fil fikk en ny blokk, det
-    gamle minnet lå urørt, og den samme feilen gikk stille forbi. }
+    That bug showed up as an EAccessViolation when a browser fetched a CSS
+    file right after a page on the same connection — and only when the
+    file fitted in the block that was already in use. A large file got a
+    new block, the old memory lay untouched, and the same bug went
+    silently past. }
   UseSession(nil);
 
   if S = nil then
     Exit;
-  { En ny sesjon ingen skrev til, lagres ikke og får ingen kake. Without dette
-    ville hver anonyme besøkende — hver robot, hvert helsesjekk-kall — fått
-    en plass i lageret og en kake å sende tilbake. Lageret ligger i
-    prosessen, så det er hukommelse som vokser med trafikk og ikke med
-    brukere.
+  { A new session nobody wrote to is not stored and gets no cookie.
+    Without this, every anonymous visitor — every robot, every health
+    check — would get a slot in the store and a cookie to send back. The
+    store lives in the process, so that is memory growing with traffic
+    rather than with users.
 
-    Sessions.Commit kalt direkte gjør fortsatt som den blir bedt om. Det er
-    bare den automatiske veien som er tilbakeholden. }
+    Sessions.Commit called directly still does as it is told. It is only
+    the automatic path that holds back. }
   if S.IsNew and not S.Dirty then
     Exit;
   Sessions.Commit(S, Res);
@@ -622,8 +630,8 @@ end;
 
 procedure UseSessions(R: TRouter);
 begin
-  { Sessions kaster selv hvis ingen lager er satt. Kallet står her for at
-    feilen skal komme ved oppstart, ikke ved første request. }
+  { Sessions raises by itself if no store is set. The call is here so the
+    error comes at startup rather than at the first request. }
   Sessions;
   R.Use(TSessionHook.Start);
   R.After(TSessionHook.Commit);

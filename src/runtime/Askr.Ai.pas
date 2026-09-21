@@ -1,37 +1,40 @@
-{ Askr.Ai — Claude som en del av rammeverket.
+{ Askr.Ai — Claude as part of the framework.
 
-  Det finnes ingen offisiell Pascal-SDK, så dette er rå HTTP mot
-  `POST /v1/messages`. Protokollen er dokumentert og stabil; det vi eier
-  selv er serialiseringen, og `Askr.Core.Json` duger til begge veier.
+  There is no official Pascal SDK, so this is raw HTTP against
+  `POST /v1/messages`. The protocol is documented and stable; what we own
+  ourselves is the serialization, and `Askr.Core.Json` is good for both
+  directions.
 
-  **Standardmodellen er `claude-opus-5`.** Ikke fordi den er billigst, men
-  fordi modellvalg er appens avgjørelse og ikke rammeverkets.
-  `claude-sonnet-5` og `claude-haiku-4-5` er der for den som vil ned i pris.
+  **The default model is `claude-opus-5`.** Not because it is the
+  cheapest, but because the choice of model is the app's decision and not
+  the framework's. `claude-sonnet-5` and `claude-haiku-4-5` are there for
+  anyone who wants to come down in price.
 
-  **Tenkning settes som `adaptive`, aldri med `budget_tokens`.** Den gamle
-  formen er avviklet på 4.6-modellene og blir **avvist med 400** på Opus 5,
-  Sonnet 5 og Fable 5. Det er en felle akkurat fordi den gamle formen er
-  den man husker.
+  **Thinking is set as `adaptive`, never with `budget_tokens`.** The old
+  form is deprecated on the 4.6 models and is **rejected with a 400** on
+  Opus 5, Sonnet 5 and Fable 5. It is a trap precisely because the old
+  form is the one you remember.
 
-  **Nøkkelen kommer fra miljøet, aldri fra kildekoden**, og logges ikke.
-  Samme regel som resten av `.env`-laget.
+  **The key comes from the environment, never from the source code**, and
+  is not logged. The same rule as the rest of the `.env` layer.
 
-  Fire ting i rekkefølge, slik LARAVEL.md setter dem opp: tekstgenerering,
-  strømming, verktøykall, strukturert utdata. Embeddings og vektorsøk er
-  ikke her — de hører til etter disse fire, og de krever `pgvector`, som
-  SQLite ikke har.
+  Four things in order, the way LARAVEL.md sets them up: text generation,
+  streaming, tool calls, structured output. Embeddings and vector search
+  are not here — they come after those four, and they need `pgvector`,
+  which SQLite does not have.
 
-  ## What som IKKE er prøvd
+  ## What has NOT been tried
 
-  **Ingen kall til det ekte API-et er gjort fra dette repoet.** Det finnes
-  ingen API-nøkkel her. Formen på requesten er bygget etter dokumentasjonen
-  og testet mot en fake som holder JSON-en opp mot det den skal være, og
-  den ene tingen som *er* prøvd mot api.anthropic.com er at TLS, DNS og
-  feilhåndteringen virker — et kall uten nøkkel som kommer tilbake som en
-  ekte 401 med Anthropics egen feil-JSON.
+  **No call to the real API has been made from this repository.** There is
+  no API key here. The shape of the request is built from the
+  documentation and tested against a fake that holds the JSON up against
+  what it is supposed to be, and the one thing that *has* been tried
+  against api.anthropic.com is that TLS, DNS and the error handling work —
+  a call without a key that comes back as a real 401 with Anthropic's own
+  error JSON.
 
-  Det er det samme forbeholdet som står på Windows-skallet, og det skal stå
-  til noen har kjørt det med en nøkkel. }
+  That is the same caveat as the one on the Windows shell, and it stays
+  until somebody has run it with a key. }
 unit Askr.Ai;
 
 {$mode Delphi}{$H+}
@@ -45,13 +48,13 @@ uses
   Askr.Http.Client;
 
 const
-  { Den nyeste og mest kapable. Byttes med Model-propertyen. }
+  { The newest and most capable. Swapped with the Model property. }
   DefaultAiModel = 'claude-opus-5';
   AnthropicVersion = '2023-06-01';
   DefaultAiBaseUrl = 'https://api.anthropic.com';
   DefaultAiMaxTokens = 4096;
-  { En verktøyløkke som ikke tar slutt er enten en feil i verktøyene eller
-    en modell som har gått i ring. Taket er en sperre. }
+  { A tool loop that never ends is either a bug in the tools or a model
+    that has gone in circles. The cap is a stop. }
   DefaultAiMaxTurns = 8;
 
 type
@@ -61,22 +64,23 @@ type
     FKind: string;
   public
     constructor Create(AStatus: Integer; const AKind, AMessage: string);
-    { HTTP-statusen. 0 når feilen ikke kom fra tjeneren. }
+    { The HTTP status. 0 when the error did not come from the server. }
     property Status: Integer read FStatus;
-    { Anthropics egen feiltype: invalid_request_error, rate_limit_error,
-      overloaded_error og resten. Tom når svaret ikke var en feil-JSON. }
+    { Anthropic's own error type: invalid_request_error, rate_limit_error,
+      overloaded_error and the rest. Empty when the reply was not an error
+      JSON. }
     property Kind: string read FKind;
   end;
 
   TAiRole = (arUser, arAssistant);
-  { adaptive lar modellen selv avgjøre hvor mye den tenker. Den gamle
-    formen med budget_tokens avvises med 400 av modellene her. }
+  { adaptive lets the model decide for itself how much it thinks. The old
+    form with budget_tokens is rejected with a 400 by the models here. }
   TAiThinking = (atOff, atAdaptive);
 
   TAiMessage = record
     Role: TAiRole;
     Text: string;
-    { Satt når meldingen er svaret på et verktøykall. }
+    { Set when the message is the answer to a tool call. }
     ToolUseId: string;
     IsToolResult: Boolean;
     IsError: Boolean;
@@ -85,7 +89,7 @@ type
   TAiToolCall = record
     Id: string;
     Name: string;
-    { Argumentene som JSON, slik modellen sendte dem. }
+    { The arguments as JSON, the way the model sent them. }
     InputJson: string;
   end;
 
@@ -96,39 +100,41 @@ type
 
   TAiResponse = record
     Text: string;
-    { Tenkningen, når den er slått på og modellen viser den. }
+    { The thinking, when it is switched on and the model shows it. }
     Thinking: string;
     StopReason: string;
     Model: string;
     Usage: TAiUsage;
     ToolCalls: array of TAiToolCall;
-    { Hele svaret, til det API-et gir som vi ikke har plukket ut. }
+    { The whole reply, for what the API gives that we have not picked
+      out. }
     Raw: string;
     function WantsTool: Boolean;
     function ToolCallCount: Integer;
   end;
 
-  { Et verktøy modellen kan kalle. Handleren får argumentene som JSON og
-    gir resultatet tilbake som tekst — modellen leser det som tekst
-    uansett, og å kreve JSON ut ville vært en regel uten grunn. }
+  { A tool the model can call. The handler gets the arguments as JSON and
+    gives the result back as text — the model reads it as text either way,
+    and demanding JSON out would have been a rule without a reason. }
   TAiToolHandler = function(const InputJson: string): string of object;
   TAiToolHandlerProc = function(const InputJson: string): string;
 
   TAiTool = record
     Name: string;
     Description: string;
-    { `input_schema`-objektet, rått. Et JSON Schema av typen object. }
+    { The `input_schema` object, raw. A JSON Schema of type object. }
     SchemaJson: string;
     Handler: TAiToolHandler;
     HandlerProc: TAiToolHandlerProc;
   end;
 
-  { Kalles for hver tekstbit som kommer. False avbryter strømmen. }
+  { Called for every chunk of text that arrives. False aborts the
+    stream. }
   TAiDeltaCallback = function(const Delta: string): Boolean of object;
   TAiDeltaCallbackProc = function(const Delta: string): Boolean;
 
-  { Hvordan requesten kommer seg ut. Finnes som egen type for at tester
-    skal slippe nett — samme grep som TNullTransport i Askr.Mail. }
+  { How the request gets out. It exists as its own type so that tests can
+    avoid the network — the same move as TNullTransport in Askr.Mail. }
   TAiTransport = class abstract
   public
     function Post(const Url, ApiKey, Body: string;
@@ -148,26 +154,26 @@ type
       Cb: TStreamCallback; out Status: Integer): string; override;
   end;
 
-  { To_ tester. Svarene legges inn på forhånd; requestene tas vare på slik
-    at en test kan hevde om hva som faktisk ble sendt. }
+  { For tests. The replies are put in beforehand; the requests are kept so
+    that a test can assert what was actually sent. }
   TFakeAiTransport = class(TAiTransport)
   private
     FReplies: array of string;
-    FStatuser: array of Integer;
+    FStatuses: array of Integer;
     FNext: Integer;
-    FSendt: TStringList;
+    FRequests: TStringList;
   public
     constructor Create;
     destructor Destroy; override;
     procedure Enqueue(const Body: string; Status: Integer = 200);
-    { SSE-strøm: teksten leveres som den er, i én bit. }
+    { An SSE stream: the text is delivered as it is, in one chunk. }
     procedure EnqueueStream(const SseBody: string);
     function Post(const Url, ApiKey, Body: string;
       out Status: Integer): string; override;
     function PostStream(const Url, ApiKey, Body: string;
       Cb: TStreamCallback; out Status: Integer): string; override;
-    { JSON-en som ble sendt, i rekkefølge. }
-    property Sent: TStringList read FSendt;
+    { The JSON that was sent, in order. }
+    property Sent: TStringList read FRequests;
   end;
 
   TAiClient = class
@@ -200,19 +206,21 @@ type
     function SendForcing(const Messages: array of TAiMessage;
       const ForceTool: string): TAiResponse;
   public
-    { Nøkkelen fra ANTHROPIC_API_KEY, gjennom konfigurasjonslaget. Kaster
-      når den mangler — meldingen nevner nøkkelen, aldri en verdi. }
+    { The key from ANTHROPIC_API_KEY, through the configuration layer.
+      Raises when it is missing — the message names the key, never a
+      value. }
     constructor Create; overload;
     constructor Create(const AApiKey: string); overload;
     destructor Destroy; override;
 
-    { Det enkleste kallet som finnes. }
+    { The simplest call there is. }
     function Ask(const Prompt: string): string;
     { Én runde med hele meldingslista. }
     function Send(const Messages: array of TAiMessage): TAiResponse;
 
-    { Strømmer svaret. Callbacken får tekstbitene etter hvert; svaret som
-      returneres har hele teksten samlet, slik at begge deler er der. }
+    { Streams the reply. The callback gets the chunks of text as they
+      arrive; the reply that is returned has the whole text collected, so
+      both are there. }
     function Stream(const Prompt: string;
       Cb: TAiDeltaCallback): TAiResponse; overload;
     function Stream(const Prompt: string;
@@ -220,7 +228,7 @@ type
     function StreamMessages(const Messages: array of TAiMessage;
       Cb: TAiDeltaCallbackProc): TAiResponse;
 
-    { Verktøy. Navnet må være det samme som i skjemaet. }
+    { Tools. The name has to be the same as in the schema. }
     procedure AddTool(const Name_, Description, SchemaJson: string;
       H: TAiToolHandler); overload;
     procedure AddTool(const Name_, Description, SchemaJson: string;
@@ -228,17 +236,17 @@ type
     procedure ClearTools;
     function ToolCount: Integer;
 
-    { Kjører løkka: send, utfør verktøyene modellen ba om, send resultatene
-      tilbake, gjenta. Stopper når modellen er ferdig eller MaxTurns er
-      brukt opp. }
+    { Runs the loop: send, run the tools the model asked for, send the
+      results back, repeat. Stops when the model is finished or MaxTurns
+      is used up. }
     function RunTools(const Prompt: string): TAiResponse;
 
-    { Strukturert utdata gjennom et verktøy modellen tvinges til å bruke.
+    { Structured output through a tool the model is forced to use.
 
-      Det er den formen som virker på tvers av modeller og som ikke kan
-      svare med prosa ved siden av. Resultatet er JSON som følger skjemaet.
-      Skjemaet er `input_schema`-objektet, altså et JSON Schema av typen
-      object. }
+      That is the shape that works across models and that cannot answer
+      with prose alongside it. The result is JSON that follows the schema.
+      The schema is the `input_schema` object, that is, a JSON Schema of
+      type object. }
     function Structured(const Prompt, SchemaJson: string): string;
 
     property Model: string read FModel write FModel;
@@ -247,14 +255,14 @@ type
     property Thinking: TAiThinking read FThinking write FThinking;
     property MaxTurns: Integer read FMaxTurns write FMaxTurns;
     property BaseUrl: string read FBaseUrl write FBaseUrl;
-    { Settes den ikke, sendes ingen temperature og API-et bruker sin egen. }
+    { If it is not set, no temperature is sent and the API uses its own. }
     procedure SetTemperature(V: Double);
     procedure ClearTemperature;
     { Byttes ut i tester. Klienten overtar eierskapet. }
     procedure UseTransport(T: TAiTransport; Owns: Boolean = True);
   end;
 
-{ Hjelpere til å bygge meldingslister. }
+{ Helpers for building message lists. }
 function UserMsg(const Text: string): TAiMessage;
 function AssistantMsg(const Text: string): TAiMessage;
 function ToolResultMsg(const ToolUseId, Result_: string;
@@ -291,8 +299,9 @@ end;
 function ToolResultMsg(const ToolUseId, Result_: string;
   IsError: Boolean): TAiMessage;
 begin
-  { Et verktøyresultat er en user-melding med en tool_result-blokk. Det er
-    ikke åpenbart, og det er den vanligste feilen når man bygger løkka selv. }
+  { A tool result is a user message with a tool_result block. That is not
+    obvious, and it is the most common mistake when you build the loop
+    yourself. }
   Result := UserMsg(Result_);
   Result.ToolUseId := ToolUseId;
   Result.IsToolResult := True;
@@ -323,8 +332,8 @@ function LagKlient(const ApiKey: string; TimeoutMs: Integer): THttpClient;
 begin
   Result := THttpClient.Create;
   Result.ReadTimeoutMs := TimeoutMs;
-  { x-api-key, ikke Authorization: Bearer. Anthropic bruker sin egen
-    header, og en Bearer-token her gir 401 uten forklaring. }
+  { x-api-key, not Authorization: Bearer. Anthropic uses its own header,
+    and a Bearer token here gives a 401 with no explanation. }
   Result.WithHeader('x-api-key', ApiKey);
   Result.WithHeader('anthropic-version', AnthropicVersion);
   Result.WithHeader('content-type', 'application/json');
@@ -356,8 +365,8 @@ begin
   try
     R := K.Stream('POST', Url, Body, 'application/json', Cb);
     Status := R.Status;
-    { Ved feil er kroppen ikke en strøm, men en vanlig feil-JSON — og den
-      har callbacken allerede fått. Den returneres ikke her. }
+    { On an error the body is not a stream but an ordinary error JSON — and
+      the callback has already had it. It is not returned here. }
     Result := R.Body;
   finally
     K.Free;
@@ -367,12 +376,12 @@ end;
 constructor TFakeAiTransport.Create;
 begin
   inherited Create;
-  FSendt := TStringList.Create;
+  FRequests := TStringList.Create;
 end;
 
 destructor TFakeAiTransport.Destroy;
 begin
-  FSendt.Free;
+  FRequests.Free;
   inherited Destroy;
 end;
 
@@ -382,9 +391,9 @@ var
 begin
   N := Length(FReplies);
   SetLength(FReplies, N + 1);
-  SetLength(FStatuser, N + 1);
+  SetLength(FStatuses, N + 1);
   FReplies[N] := Body;
-  FStatuser[N] := Status;
+  FStatuses[N] := Status;
 end;
 
 procedure TFakeAiTransport.EnqueueStream(const SseBody: string);
@@ -395,11 +404,11 @@ end;
 function TFakeAiTransport.Post(const Url, ApiKey, Body: string;
   out Status: Integer): string;
 begin
-  FSendt.Add(Body);
+  FRequests.Add(Body);
   if FNext > High(FReplies) then
     raise EAiError.Create(0, 'fake',
       'The fake transport has no more queued responses.');
-  Status := FStatuser[FNext];
+  Status := FStatuses[FNext];
   Result := FReplies[FNext];
   Inc(FNext);
 end;
@@ -409,15 +418,16 @@ function TFakeAiTransport.PostStream(const Url, ApiKey, Body: string;
 var
   S: string;
 begin
-  FSendt.Add(Body);
+  FRequests.Add(Body);
   if FNext > High(FReplies) then
     raise EAiError.Create(0, 'fake',
       'The fake transport has no more queued responses.');
-  Status := FStatuser[FNext];
+  Status := FStatuses[FNext];
   S := FReplies[FNext];
   Inc(FNext);
-  { Hele strømmen i én bit. Det holder til å teste SSE-parseren, og
-    oppdelingen på tvers av biter testes for seg i HTTP-klienten. }
+  { The whole stream in one chunk. That is enough to test the SSE parser,
+    and the splitting across chunks is tested separately in the HTTP
+    client. }
   if Assigned(Cb) then
     Cb(S);
   if Status <> 200 then
@@ -429,8 +439,8 @@ end;
 
 constructor TAiClient.Create;
 begin
-  { Nøkkelen fra konfigurasjonslaget: miljø, så .env. CfgOrFail nevner
-    nøkkelen og hvor det ble lett, aldri en verdi. }
+  { The key from the configuration layer: environment, then .env. CfgOrFail
+    names the key and where it looked, never a value. }
   Create(CfgOrFail('anthropic.api.key'));
 end;
 
@@ -542,8 +552,9 @@ begin
 
     if FThinking = atAdaptive then
     begin
-      { `adaptive`, ikke `budget_tokens`. Den gamle formen avvises med 400
-        av modellene her, og den er akkurat den man husker. }
+      { `adaptive`, not `budget_tokens`. The old form is rejected with a
+        400 by the models here, and it is exactly the one you
+        remember. }
       W.Key('thinking');
       W.BeginObject;
       W.Field('type', 'adaptive');
@@ -565,9 +576,9 @@ begin
       W.EndArray;
       if ForceTool <> '' then
       begin
-        { tool_choice med et navn tvinger modellen til nettopp det
-          verktøyet. Det er slik strukturert utdata blir strukturert og
-          ikke prosa. }
+        { tool_choice with a name forces the model to that particular tool.
+          That is how structured output becomes structured and not
+          prose. }
         W.Key('tool_choice');
         W.BeginObject;
         W.Field('type', 'tool');
@@ -587,8 +598,8 @@ begin
         W.Field('role', 'assistant');
       if Messages[I].IsToolResult then
       begin
-        { Et verktøyresultat er en blokk i en user-melding, ikke en egen
-          rolle. }
+        { A tool result is a block in a user message, not a role of its
+          own. }
         W.Key('content');
         W.BeginArray;
         W.BeginObject;
@@ -638,15 +649,15 @@ begin
     A.Free;
   end;
   if Msg = '' then
-    { Kroppen kan være HTML fra en mellomliggende proxy. Da er de første
-      tegnene mer nyttig enn ingenting, men ikke hele siden. }
+    { The body may be HTML from an intermediate proxy. Then the first few
+      characters are more useful than nothing, but not the whole page. }
     Msg := Trim(Copy(Body, 1, 300));
   if Msg = '' then
     Msg := 'The request failed with no message';
-  { Parentesene hører til meldingsteksten. Kind skal være typen slik
-    API-et skriver den, slik at kallende kode kan sammenligne på den —
-    `overloaded_error` for å prøve igjen, `invalid_request_error` for å
-    la være. }
+  { The parentheses belong to the message text. Kind is to be the type the
+    way the API writes it, so that calling code can compare against it —
+    `overloaded_error` to try again, `invalid_request_error` to leave it
+    alone. }
   if Kind <> '' then
     Suffix := ' (' + Kind + ')'
   else
@@ -707,9 +718,9 @@ begin
           Result.ToolCalls[N].Id := JsonAsString(JsonMember(Blokk, 'id'));
           Result.ToolCalls[N].Name := JsonAsString(JsonMember(Blokk, 'name'));
           Inp := JsonMember(Blokk, 'input');
-          { Argumentene gis videre som JSON-tekst. Å plukke dem fra
-            hverandre her ville krevd at rammeverket visste hvilke felter
-            verktøyet har — og det er nettopp det verktøyet vet selv. }
+          { The arguments are passed on as JSON text. Taking them apart here
+            would have required the framework to know which fields the tool
+            has — and that is precisely what the tool knows itself. }
           if Inp <> nil then
             Result.ToolCalls[N].InputJson := JsonToString(A, Inp)
           else
@@ -749,7 +760,7 @@ begin
   Result := Send([UserMsg(Prompt)]).Text;
 end;
 
-{ ---------------------------------------------------------- strømming -- }
+{ ---------------------------------------------------------- streaming -- }
 
 function TAiClient.OnChunk(const Chunk: string): Boolean;
 var
@@ -757,10 +768,10 @@ var
   P: Integer;
 begin
   Result := True;
-  { SSE er linjebasert, og en linje kan bli delt mellom to biter. Resten
-    tas vare på til neste gang — uten det mister man hver linje som
-    tilfeldigvis krysser en buffergrense, og det ser ut som at modellen
-    hopper over ord. }
+  { SSE is line based, and a line can be split between two chunks. The
+    remainder is kept until next time — without it you lose every line that
+    happens to cross a buffer boundary, and it looks as if the model is
+    skipping words. }
   Buf := FSseRest + Chunk;
   FSseRest := '';
   repeat
@@ -776,9 +787,9 @@ begin
     if (Line <> '') and (Line[Length(Line)] = #13) then
       System.Delete(Line, Length(Line), 1);
     HandleSseLine(Line);
-    { Sjekken må stå inne i løkka. En hel SSE-strøm kan komme i én bit,
-      og da ville et stopp etter første delta ikke fått virke før alle
-      de andre alt var levert. }
+    { The check has to be inside the loop. A whole SSE stream can arrive in
+      one chunk, and then a stop after the first delta would not get to
+      take effect before all the others had already been delivered. }
     if FStreamStop = 'abort' then
     begin
       FSseRest := '';
@@ -796,8 +807,8 @@ var
   T, Bit: string;
   Fortsett: Boolean;
 begin
-  { Bare data-linjer betyr noe. `event:`-linjene gjentar det som står i
-    JSON-ens egen `type`, og kommentarlinjer (`:`) er holdepulser. }
+  { Only data lines mean anything. The `event:` lines repeat what is in
+    the JSON's own `type`, and comment lines (`:`) are heartbeats. }
   if Copy(Line, 1, 5) <> 'data:' then
     Exit;
   Data := Trim(Copy(Line, 6, MaxInt));
@@ -879,8 +890,8 @@ begin
     Reply := FTransport.PostStream(FBaseUrl + '/v1/messages', FApiKey, Body,
       OnChunk, Status);
     if (Status < 200) or (Status > 299) then
-      { Ved feil er kroppen ikke en strøm. Den har callbacken fått, men den
-        er ikke tekst modellen har skrevet — den er en feil. }
+      { On an error the body is not a stream. The callback has had it, but
+        it is not text the model has written — it is an error. }
       RaiseFor(Status, FStreamText + Reply);
   finally
     FDeltaProc := nil;
@@ -932,7 +943,7 @@ begin
   Result.Raw := '';
 end;
 
-{ ---------------------------------------------------------- verktøy -- }
+{ ------------------------------------------------------------ tools -- }
 
 function TAiClient.RunTool(const Call: TAiToolCall): string;
 var
@@ -947,8 +958,9 @@ begin
         Exit(FTools[I].HandlerProc(Call.InputJson));
       Break;
     end;
-  { Modellen ba om et verktøy som ikke finnes. Å kaste her ville tatt ned
-    hele løkka; å si fra til modellen lar den rette seg selv. }
+  { The model asked for a tool that does not exist. Raising here would
+    have taken down the whole loop; telling the model lets it correct
+    itself. }
   Result := 'Error: no such tool "' + Call.Name + '".';
 end;
 
@@ -968,9 +980,9 @@ begin
     if not Reply.WantsTool then
       Exit(Reply);
 
-    { Modellens egen tur må med i historikken, ellers vet den ikke hva den
-      selv ba om. Teksten holder: verktøykallene gjentas ikke, og
-      tool_result-blokkene peker tilbake med id. }
+    { The model's own turn has to be in the history, or it does not know
+      what it asked for itself. The text is enough: the tool calls are not
+      repeated, and the tool_result blocks point back with an id. }
     N := Length(Msgs);
     SetLength(Msgs, N + 1 + Length(Reply.ToolCalls));
     Msgs[N] := AssistantMsg(Reply.Text);
@@ -981,8 +993,8 @@ begin
         Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id, Resultat);
       except
         on E: Exception do
-          { Et verktøy som kaster er ikke en grunn til å ta ned løkka.
-            Modellen får feilen og kan prøve noe annet. }
+          { A tool that raises is not a reason to take down the loop. The
+            model gets the error and can try something else. }
           Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id,
             E.ClassName + ': ' + E.Message, True);
       end;
@@ -1002,16 +1014,16 @@ var
   Stored: array of TAiTool;
   Reply: TAiResponse;
 begin
-  { Verktøyene legges til side og settes tilbake. Structured skal ikke
-    endre klienten den ble kalt på. }
+  { The tools are set aside and put back. Structured must not change the
+    client it was called on. }
   Stored := Copy(FTools, 0, Length(FTools));
   try
     SetLength(FTools, 0);
     AddTool(Verktoey,
       'Respond with the requested structured data. Use this tool and ' +
       'nothing else.', SchemaJson, TAiToolHandlerProc(nil));
-    { Send bygger uten tool_choice. Without det kan modellen svare med prosa
-      i stedet, og da er «strukturert» bare et håp. }
+    { Send builds without tool_choice. Without it the model can answer with
+      prose instead, and then "structured" is only a hope. }
     Reply := SendForcing([UserMsg(Prompt)], Verktoey);
     if not Reply.WantsTool then
       raise EAiError.Create(0, 'no_structured_output',

@@ -1,22 +1,23 @@
-{ Askr.Mail.Resend — e-post over Resends HTTP-API.
+{ Askr.Mail.Resend — mail over Resend's HTTP API.
 
-  En transport som gjør det SMTP-transporten gjør, men over HTTPS mot
-  api.resend.com i stedet for over port 587. Meldingen bygges likt: det er
-  den samme TMailMessage, og appen ser ingen forskjell.
+  A transport that does what the SMTP transport does, but over HTTPS to
+  api.resend.com instead of over port 587. The message is built the same
+  way: it is the same TMailMessage, and the app sees no difference.
 
-  Hvorfor en egen unit, og ikke i Askr.Mail: denne trenger HTTP-klienten,
-  og HTTP-klienten trenger OpenSSL. En app som sender over SMTP eller
-  skriver til en fil skal ikke linke inn noe av det. Samme regel som for
+  Why a unit of its own rather than part of Askr.Mail: this one needs the
+  HTTP client, and the HTTP client needs OpenSSL. An app that sends over
+  SMTP or writes to a file should link none of that. The same rule as for
   Askr.Image.Vips.
 
-  Hvorfor HTTP og ikke bare SMTP mot smtp.resend.com: providern svarer med
-  en id med én gang, feilene er maskinlesbare i stedet for en tresifret
-  kode med fritekst, og det finnes en idempotensnøkkel. Det siste er det
-  som betyr noe i en kø: en jobb som feiler etter at Resend tok imot
-  meldingen prøves på nytt, og uten en nøkkel får mottakeren to eposter.
+  Why HTTP rather than simply SMTP to smtp.resend.com: the provider
+  answers with an id immediately, the errors are machine readable rather
+  than a three-digit code with free text, and there is an idempotency key.
+  The last is the one that matters in a queue: a job that fails after
+  Resend accepted the message is retried, and without a key the recipient
+  gets two emails.
 
-  Nøkkelen kommer fra RESEND_API_KEY gjennom konfigurasjonslaget, og
-  logges aldri. }
+  The key comes from RESEND_API_KEY through the configuration layer, and
+  is never logged. }
 unit Askr.Mail.Resend;
 
 {$mode Delphi}{$H+}
@@ -33,12 +34,13 @@ const
   DefaultResendTimeoutMs = 15000;
 
 type
-  { Feilen slik Resend skriver den, uten pynt.
+  { The error as Resend writes it, unadorned.
 
-    Name_ er providerens egen type — 'validation_error',
-    'rate_limit_exceeded', 'missing_api_key'. Retryable er vår tolkning av
-    den, og den er med fordi det er det kallstedet faktisk trenger å vite:
-    skal jobben prøves igjen, eller skal den til feiltabellen. }
+    Name_ is the provider's own type — 'validation_error',
+    'rate_limit_exceeded', 'missing_api_key'. Retryable is our reading of
+    it, and it is here because it is what the call site actually needs to
+    know: should the job be retried, or should it go to the failed
+    table. }
   EResendError = class(EMailError)
   private
     FStatus: Integer;
@@ -52,11 +54,12 @@ type
     property Retryable: Boolean read FRetryable;
   end;
 
-  { HTTP-laget under transporten.
+  { The HTTP layer underneath the transport.
 
-    Det ligger bak en abstrakt klasse av samme grunn som i Askr.Ai: uten
-    den kan ikke forespørselsformen prøves uten å sende en ekte epost, og
-    det er nettopp formen som er lett å ta feil av. }
+    It sits behind an abstract class for the same reason as in Askr.Ai:
+    without it the shape of the request cannot be checked without sending
+    a real email, and it is precisely the shape that is easy to get
+    wrong. }
   TResendHttp = class
   public
     function Post(const Url, ApiKey, IdempotencyKey, Body: string;
@@ -72,14 +75,14 @@ type
       out Status: Integer): string; override;
   end;
 
-  { Svarer med det den har fått i kø, og tar vare på det den ble bedt om
-    å sende. Testene leser Sent for å sjekke JSON-en. }
+  { Answers with whatever has been queued, and keeps what it was asked to
+    send. The tests read Sent to check the JSON. }
   TFakeResendHttp = class(TResendHttp)
   private
     FReplies: TStringList;
-    FStatuser: array of Integer;
+    FStatuses: array of Integer;
     FNext: Integer;
-    FSendt: TStringList;
+    FRequests: TStringList;
     FLastKey: string;
     FLastIdem: string;
     FLastUrl: string;
@@ -89,7 +92,7 @@ type
     procedure Queue(const Body: string; Status: Integer = 200);
     function Post(const Url, ApiKey, IdempotencyKey, Body: string;
       out Status: Integer): string; override;
-    property Sent: TStringList read FSendt;
+    property Sent: TStringList read FRequests;
     property LastApiKey: string read FLastKey;
     property LastIdempotency: string read FLastIdem;
     property LastUrl: string read FLastUrl;
@@ -106,8 +109,9 @@ type
     function BuildJson(M: TMailMessage): string;
     procedure Err(Status: Integer; const Body: string);
   public
-    { Tom nøkkel betyr RESEND_API_KEY fra miljøet eller .env. Missing den
-      også der, kastes det ved oppsett — ikke ved første epost. }
+    { An empty key means RESEND_API_KEY from the environment or .env. If it
+      is missing there too, it raises at setup — not at the first
+      email. }
     constructor Create(const AApiKey: string = '');
     destructor Destroy; override;
     procedure Send(M: TMailMessage); override;
@@ -116,8 +120,9 @@ type
     { Byttes ut i tester. Standarden er TRealResendHttp. }
     procedure UseHttp(H: TResendHttp; Owns: Boolean = True);
 
-    { Id-en Resend ga den siste meldingen. Den er det man slår opp på i
-      providerens egen logg når noen spør om eposten gikk ut. }
+    { The id Resend gave the last message. That is what you look up in the
+      provider's own log when somebody asks whether the email went
+      out. }
     property LastId: string read FLastId;
     property BaseUrl: string read FBaseUrl write FBaseUrl;
     property Count: QWord read FCount;
@@ -167,34 +172,34 @@ constructor TFakeResendHttp.Create;
 begin
   inherited Create;
   FReplies := TStringList.Create;
-  FSendt := TStringList.Create;
+  FRequests := TStringList.Create;
 end;
 
 destructor TFakeResendHttp.Destroy;
 begin
   FReplies.Free;
-  FSendt.Free;
+  FRequests.Free;
   inherited Destroy;
 end;
 
 procedure TFakeResendHttp.Queue(const Body: string; Status: Integer);
 begin
   FReplies.Add(Body);
-  SetLength(FStatuser, Length(FStatuser) + 1);
-  FStatuser[High(FStatuser)] := Status;
+  SetLength(FStatuses, Length(FStatuses) + 1);
+  FStatuses[High(FStatuses)] := Status;
 end;
 
 function TFakeResendHttp.Post(const Url, ApiKey, IdempotencyKey,
   Body: string; out Status: Integer): string;
 begin
-  FSendt.Add(Body);
+  FRequests.Add(Body);
   FLastKey := ApiKey;
   FLastIdem := IdempotencyKey;
   FLastUrl := Url;
   if FNext >= FReplies.Count then
     raise EResendError.Create(0, 'fake',
       'The fake Resend transport has no more queued responses.', False);
-  Status := FStatuser[FNext];
+  Status := FStatuses[FNext];
   Result := FReplies[FNext];
   Inc(FNext);
 end;
@@ -234,8 +239,8 @@ end;
 
 function TResendTransport.Describe: string;
 begin
-  { Aldri nøkkelen. Utskriften skal være trygg å lime inn i en
-    feilrapport, akkurat som askr config. }
+  { Never the key. The output has to be safe to paste into a bug report,
+    just like askr config. }
   Result := 'resend (' + FBaseUrl + ')';
 end;
 
@@ -266,9 +271,9 @@ begin
   if Length(M.ToList) + Length(M.CcList) + Length(M.BccList) = 0 then
     raise EMailError.Create('The message has no recipients');
   if (M.TextBody = '') and (M.HtmlBody = '') then
-    { SMTP ville sendt en tom text/plain. Resend avviser den med 422 og en
-      melding om at html eller text må være satt, og den feilen er lettere
-      å forstå her enn over nettet. }
+    { SMTP would send an empty text/plain. Resend refuses it with a 422 and
+      a message saying html or text has to be set, and that error is
+      easier to understand here than over the network. }
     raise EMailError.Create(
       'The message has neither a text nor an html body');
 
@@ -286,18 +291,20 @@ begin
     if M.TextBody <> '' then
       W.Field('text', M.TextBody);
 
-    { Reply-To settes i Askr med Header('Reply-To', …), fordi det er et
-      hode. Resend har et eget felt for det og avviser det som hode, så
-      det flyttes over — og tas ut av headers-objektet nedenfor. }
+    { Reply-To is set in Askr with Header('Reply-To', ...), because it is a
+      header. Resend has a field of its own for it and refuses it as a
+      header, so it is moved over — and taken out of the headers object
+      below. }
     Reply := '';
     for I := 0 to M.ExtraHeaders.Count - 1 do
       if SameText(M.ExtraHeaders.Names[I], 'Reply-To') then
         Reply := M.ExtraHeaders.ValueFromIndex[I];
     if Reply <> '' then
     begin
-      { Resend tar reply_to som streng eller liste. Vi sender alltid
-        lista: flere Reply-To er lov i RFC 5322, og én adresse i en
-        ettelementsliste betyr det samme som adressen alene. }
+      { Resend takes reply_to as a string or a list. We always send the
+        list: several Reply-To addresses are legal in RFC 5322, and one
+        address in a single-element list means the same as the address
+        alone. }
       W.Key('reply_to');
       W.BeginArray;
       for K := 1 to WordCount(Reply, [',']) do
@@ -333,10 +340,11 @@ end;
 
 function CanRetry(Status: Integer; const Name_: string): Boolean;
 begin
-  { 5xx og et ekte rate limit går over av seg selv. Kvote gjør det ikke —
-    ikke innenfor noen backoff en kø har — så den skal til feiltabellen
-    der et menneske ser den, ikke rundt i løkka til forsøkene er brukt
-    opp. En valideringsfeil blir aldri riktigere av å sendes igjen. }
+  { 5xx and a real rate limit pass by themselves. A quota does not — not
+    within any backoff a queue has — so it goes to the failed table where
+    a person sees it, rather than round the loop until the attempts are
+    used up. A validation error never becomes more correct by being sent
+    again. }
   if Status >= 500 then
     Exit(True);
   if Status = 408 then
@@ -361,10 +369,10 @@ begin
   try
     if JsonParse(A, Str(Body), Root, ErrPos) then
     begin
-      { Feltet har hatt flere navn: name i den eldre formen, error_type i
-        den nyere. Begge leses, og type for sikkerhets skyld — en feil vi
-        ikke klarer å navngi skal fortsatt komme fram med status og
-        tekst. }
+      { The field has had several names: name in the older form, error_type
+        in the newer. Both are read, and type for good measure — an error
+        we cannot name should still come through with its status and
+        text. }
       Name_ := JsonAsString(JsonMember(Root, 'name'));
       if Name_ = '' then
         Name_ := JsonAsString(JsonMember(Root, 'error_type'));
@@ -403,9 +411,10 @@ var
 begin
   Body := BuildJson(M);
 
-  { Kallerens egen nøkkel når den finnes. Ellers Message-ID-en, som er
-    stabil så lenge det er samme objekt — men ikke over en kø som bygger
-    meldingen på nytt. Det er derfor Idempotency finnes å sette. }
+  { The caller's own key when there is one. Otherwise the Message-ID,
+    which is stable as long as it is the same object — but not across a
+    queue that rebuilds the message. That is why Idempotency exists to be
+    set. }
   Idem := M.IdempotencyKey;
   if Idem = '' then
     Idem := M.EnsureMessageId;
@@ -416,9 +425,9 @@ begin
     on E: EResendError do
       raise;
     on E: EHttpClientError do
-      { Nettverket, ikke providern. Alltid verdt et nytt forsøk: vi vet
-        ikke om meldingen kom fram, og idempotensnøkkelen gjør det trygt
-        å spørre igjen. }
+      { The network, not the provider. Always worth another attempt: we do
+        not know whether the message arrived, and the idempotency key
+        makes it safe to ask again. }
       raise EResendError.Create(0, 'network',
         'Could not reach the Resend API: ' + E.Message, True);
   end;
@@ -436,24 +445,25 @@ begin
   end;
 
   Inc(FCount);
-  { Id-en og antall mottakere, ikke adressene og aldri nøkkelen. Det er
-    nok til å finne meldingen igjen hos providern, og en epostadresse er
-    personopplysning som ikke hører hjemme i en driftslogg. }
+  { The id and the number of recipients, not the addresses and never the
+    key. That is enough to find the message again at the provider, and an
+    email address is personal data that does not belong in an operations
+    log. }
   LogInfo('mail sent', ['provider', 'resend', 'id', FLastId,
     'recipients', Length(M.AllRecipients)]);
 end;
 
 { --------------------------------------------------------- registrering -- }
 
-function LagResend: TMailTransport;
+function MakeResend: TMailTransport;
 begin
   Result := TResendTransport.Create;
 end;
 
 initialization
-  { Gjør mail.transport = resend mulig. Uniten må være linket inn for at
-    navnet skal finnes — MailFromConfig sier fra når det ikke er det, i
-    stedet for å falle tilbake til loggfila. }
-  RegisterMailTransport('resend', @LagResend);
+  { Makes mail.transport = resend possible. The unit has to be linked in
+    for the name to exist — MailFromConfig says so when it is not, rather
+    than falling back to the log file. }
+  RegisterMailTransport('resend', @MakeResend);
 
 end.

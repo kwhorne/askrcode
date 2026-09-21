@@ -1,29 +1,32 @@
-{ Askr.Csrf — beskyttelse mot cross-site request forgery.
+{ Askr.Csrf — protection against cross-site request forgery.
 
-  Angrepet: en side på et annet domene får nettleseren din til å sende en
-  POST til denne appen. Nettleseren legger ved sesjonskaka helt av seg selv,
-  fordi det er det kaker gjør, og serveren ser en fullt legitim forespørsel
-  fra en innlogget bruker. Without et mottiltak er hvert eneste skjema i appen
-  et endepunkt hvem som helst kan kalle på brukerens vegne.
+  The attack: a page on another domain makes your browser send a POST to
+  this app. The browser attaches the session cookie all by itself, because
+  that is what cookies do, and the server sees a perfectly legitimate
+  request from a signed-in user. Without a countermeasure, every form in
+  the app is an endpoint anybody can call on the user's behalf.
 
-  Mottiltaket er en hemmelighet som ligger i **sesjonen** og må sendes med i
-  **requesten**. Et annet domene kan få nettleseren til å sende kaka, men
-  det kan ikke lese sesjonen din og kan derfor ikke gjette tokenet.
+  The countermeasure is a secret that lives in the **session** and has to
+  be sent along in the **request**. Another domain can make the browser
+  send the cookie, but it cannot read your session and therefore cannot
+  guess the token.
 
-  Tokenet tas imot tre steder, i denne rekkefølgen:
+  The token is accepted in three places, in this order:
 
-    1. skjemafeltet `_token`        — vanlige HTML-skjemaer
-    2. headeren `X-CSRF-Token`     — fetch/XHR som selv legger det på
-    3. headeren `X-XSRF-Token`     — axios og Inertia, som leser kaka
-                                      `XSRF-TOKEN` og speiler den hit
+    1. the form field `_token`      — ordinary HTML forms
+    2. the header `X-CSRF-Token`    — fetch/XHR that adds it itself
+    3. the header `X-XSRF-Token`    — axios and Inertia, which read the
+                                      `XSRF-TOKEN` cookie and mirror it here
 
-  Den tredje er grunnen til at `UseCsrf` også setter en `XSRF-TOKEN`-kake
-  som JavaScript får lese. Det er trygt: den kaka er ikke det som
-  autentiserer noen — sesjonskaka er fortsatt HttpOnly — og verdien i den
-  sammenlignes med den i sesjonen, som et annet domene ikke når.
+  The third is why `UseCsrf` also sets an `XSRF-TOKEN` cookie that
+  JavaScript is allowed to read. That is safe: that cookie is not what
+  authenticates anyone — the session cookie is still HttpOnly — and its
+  value is compared against the one in the session, which another domain
+  cannot reach.
 
-  GET, HEAD og OPTIONS sjekkes ikke. De skal per definisjon ikke endre noe,
-  og en app som endrer tilstand i en GET har et større problem enn CSRF. }
+  GET, HEAD and OPTIONS are not checked. By definition they change
+  nothing, and an app that changes state in a GET has a bigger problem
+  than CSRF. }
 unit Askr.Csrf;
 
 {$mode Delphi}{$H+}
@@ -37,57 +40,60 @@ uses
   Askr.Session;
 
 const
-  { Nøkkelen tokenet ligger under i sesjonen. Understreken markerer at det
-    er rammeverkets, ikke appens. }
+  { The key the token lives under in the session. The underscore marks it
+    as the framework's, not the app's. }
   CsrfSessionKey = '_csrf';
-  { Feltet et skjema sender det i. Samme navn som Laravel bruker, fordi det
-    er det folk allerede har i fingrene. }
+  { The field a form sends it in. The same name Laravel uses, because
+    that is what people already have in their fingers. }
   CsrfFieldName = '_token';
   CsrfHeaderName = 'X-CSRF-Token';
   CsrfCookieName = 'XSRF-TOKEN';
 
-  { 419 Page Expired er ikke i noen RFC — den er Laravels, og Inertia-
-    klienten kjenner den igjen og laster siden på nytt i stedet for å vise
-    en feil. Det er den riktige oppførselen: et utløpt token betyr som
-    regel at brukeren har hatt fanen åpen for lenge, ikke at noen angriper
-    dem. En ren 403 ville gitt en blindvei. }
+  { 419 Page Expired is in no RFC — it is Laravel's, and the Inertia
+    client recognises it and reloads the page rather than showing an
+    error. That is the right behaviour: an expired token usually means the
+    user has had the tab open too long, not that somebody is attacking
+    them. A plain 403 would be a dead end. }
   CsrfFailStatus = 419;
 
-{ Tokenet for denne requestens sesjon. Lages første gang det spørres etter
-  og blir liggende i sesjonen. Kaster hvis det ikke finnes en sesjon — et
-  CSRF-token uten sesjon å binde det til beskytter ingenting, og å returnere
-  tom streng ville gjort den feilen usynlig. }
+{ The token for this request's session. Created the first time it is
+  asked for and then kept in the session. Raises if there is no session —
+  a CSRF token with no session to bind it to protects nothing, and
+  returning an empty string would make that mistake invisible. }
 function CsrfToken: string;
 
 { Hidden felt til et HTML-skjema. Skrives rett inn i markupen:
 
-      <form method="post">
-        <%= CsrfField %>
-        ... }
+  <form method="post">
+    <%= CsrfField %>
+    ... }
 function CsrfField: string;
 
-{ Sjekker en request uten å svare på den. To_ kode som vil ta avgjørelsen
-  selv. `UseCsrf` bruker den. }
+{ Checks a request without answering it. For code that wants to make the
+  decision itself. `UseCsrf` uses it. }
 function CsrfValid(Req: TRequest): Boolean;
 
-{ True for metodene som skal sjekkes. GET, HEAD og OPTIONS er unntatt. }
+{ True for the methods that are checked. GET, HEAD and OPTIONS are
+  exempt. }
 function CsrfMethodNeedsCheck(M: THttpMethod): Boolean;
 
-{ Unnta en sti fra sjekken. To_ webhooks, som kommer fra en tredjepart som
-  umulig kan ha tokenet, og som må autentiseres på en annen måte — en
-  signatur i en header. Mønsteret matcher enten eksakt eller med `*` til
-  slutt: `/webhooks/*`.
+{ Exempt a path from the check. For webhooks, which come from a third
+  party that cannot possibly have the token, and which have to be
+  authenticated another way — a signature in a header. The pattern matches
+  either exactly or with a trailing `*`: `/webhooks/*`.
 
-  Dette er et hull man lager med vilje, og derfor må det skrives ned. }
+  This is a hole you make on purpose, and that is why it has to be written
+  down. }
 procedure CsrfExempt(const PathPattern: string);
 function CsrfIsExempt(const Path: TStr): Boolean;
 
-{ Kobler beskyttelsen på ruteren: en middleware som avviser en request uten
-  gyldig token, og et etterfilter som setter XSRF-TOKEN-kaka.
+{ Wires the protection onto the router: a middleware that refuses a
+  request without a valid token, and an after-filter that sets the
+  XSRF-TOKEN cookie.
 
-  Krever at sesjonene er koblet på først — CSRF uten sesjon er meningsløst,
-  og `UseCsrf` sier fra om det med en gang i stedet for å slippe gjennom
-  hver request. }
+  Requires the sessions to be wired up first — CSRF without a session is
+  meaningless, and `UseCsrf` says so immediately rather than letting every
+  request through. }
 procedure UseCsrf(R: TRouter);
 
 implementation
@@ -138,16 +144,16 @@ begin
   Result := S.Get(CsrfSessionKey);
   if Result = '' then
   begin
-    { 32 byte fra kjernens CSPRNG, base64url. Et token som kan gjettes er
-      ikke et token. }
+    { 32 bytes from the kernel's CSPRNG, base64url. A token that can be
+      guessed is not a token. }
     Result := RandomToken(32);
     S.Put(CsrfSessionKey, Result);
   end;
 end;
 
-{ Tokenet er base64url og inneholder per konstruksjon ingenting som må
-  escapes. Det escapes likevel: den dagen noen bytter kodingen skal ikke
-  et skjemafelt bli et hull. }
+{ The token is base64url and by construction contains nothing that needs
+  escaping. It is escaped anyway: the day somebody changes the encoding, a
+  form field must not become a hole. }
 function AttrEscape(const S: string): string;
 var
   I: Integer;
@@ -171,9 +177,9 @@ begin
     AttrEscape(CsrfToken) + '">';
 end;
 
-{ Leter etter tokenet der klienten kan ha lagt det. Ingen av stedene er
-  autoritative hver for seg — det er sammenligningen med sesjonen som
-  avgjør. }
+{ Looks for the token wherever the client may have put it. None of the
+  places is authoritative on its own — it is the comparison against the
+  session that decides. }
 function TokenFromRequest(Req: TRequest): string;
 var
   V: TStr;
@@ -184,7 +190,8 @@ begin
   V := Req.Header(CsrfHeaderName);
   if not V.IsEmpty then
     Exit(V.ToString);
-  { axios og Inertia leser XSRF-TOKEN-kaka og sender den tilbake her. }
+  { axios and Inertia read the XSRF-TOKEN cookie and send it back
+    here. }
   V := Req.Header('X-XSRF-Token');
   if not V.IsEmpty then
     Exit(V.ToString);
@@ -206,8 +213,9 @@ begin
     Exit(False);
 
   Forventet := S.Get(CsrfSessionKey);
-  { Ingen token i sesjonen betyr at brukeren aldri har fått et skjema fra
-    oss. Da er det ingenting å sammenligne med, og svaret er nei. }
+  { No token in the session means the user has never been given a form by
+    us. Then there is nothing to compare against, and the answer is
+    no. }
   if Forventet = '' then
     Exit(False);
 
@@ -215,15 +223,16 @@ begin
   if Fikk = '' then
     Exit(False);
 
-  { Konstant tid. En vanlig `=` stopper ved første ulike tegn, og tiden det
-    tar lekker hvor langt en gjetning kom. }
+  { Constant time. An ordinary `=` stops at the first differing
+    character, and the time it takes leaks how far a guess got. }
   Result := ConstantTimeEquals(Forventet, Fikk);
 end;
 
 type
-  { Middleware og filter er funksjonspekere. Pascal har ingen lukninger, så
-    tilstanden — her ingen — ville måttet ligge globalt uansett; en klasse
-    med klassemetoder er den formen resten av Askr bruker. }
+  { The middleware and the filter are function pointers. Pascal has no
+    closures, so the state — none, here — would have had to be global
+    anyway; a class with class methods is the shape the rest of Askr
+    uses. }
   TCsrfGuard = class
     class function Check(Req: TRequest): TResponse;
     class function SetCookie(Req: TRequest; Res: TResponse): TResponse;
@@ -233,9 +242,9 @@ class function TCsrfGuard.Check(Req: TRequest): TResponse;
 begin
   if CsrfValid(Req) then
     Exit(nil);
-  { Meldingen sier hva som er galt uten å røpe hva som var forventet.
-    «Token mismatch» med det riktige tokenet i teksten har vært en ekte
-    sårbarhet i andre rammeverk. }
+  { The message says what is wrong without revealing what was expected.
+    "Token mismatch" with the correct token in the text has been a real
+    vulnerability in other frameworks. }
   Result := RespondText('CSRF token missing or invalid.', CsrfFailStatus);
 end;
 
@@ -249,22 +258,23 @@ begin
   if S = nil then
     Exit;
   Token := S.Get(CsrfSessionKey);
-  { Kaka settes bare når tokenet finnes fra før. Å lage et her ville gitt
-    hver eneste request — også statiske filer og helsesjekker — en skriving
-    til sesjonen, og dermed en sesjon per anonym besøkende. }
+  { The cookie is set only when the token already exists. Creating one
+    here would give every single request — static files and health checks
+    included — a write to the session, and so a session per anonymous
+    visitor. }
   if Token = '' then
     Exit;
-  { ReadableByJs: dette er den ene kaka frontend skal lese. Den er ikke det
-    som autentiserer noen. }
+  { ReadableByJs: this is the one cookie the frontend is meant to read. It
+    is not what authenticates anyone. }
   Res.WithCookie(CsrfCookieName, Token, Sessions.Lifetime,
     Sessions.Secure, True);
 end;
 
 procedure UseCsrf(R: TRouter);
 begin
-  { Sessions kaster selv hvis ingen lager er satt, og meldingen der sier
-    det som skal sies. Kallet står her for at feilen skal komme ved
-    oppstart og ikke ved første POST. }
+  { Sessions raises by itself if no store is set, and the message there
+    says what needs saying. The call is here so the error comes at startup
+    and not at the first POST. }
   Sessions;
   R.Use(TCsrfGuard.Check);
   R.After(TCsrfGuard.SetCookie);

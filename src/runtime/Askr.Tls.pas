@@ -1,24 +1,24 @@
 { Askr.Tls — TLS over OpenSSL.
 
-  Én binding, to brukere: HTTPS i web-skallet og STARTTLS i e-posten. De
-  hører sammen, og det er grunnen til at ingen av dem fikk en halvveis
-  variant før denne fantes.
+  One binding, two users: HTTPS in the web shell and STARTTLS in the mail
+  layer. They belong together, and that is why neither of them got a
+  half-done variant before this existed.
 
-  Biblioteket lastes med dlopen, som libpq og libsqlite3, av samme grunn:
-  binæren skal starte på en maskin uten OpenSSL. En app som bare snakker
-  HTTP bak en reverse proxy trenger den aldri.
+  The library is loaded with dlopen, like libpq and libsqlite3, for the
+  same reason: the binary has to start on a machine with no OpenSSL. An
+  app that only speaks HTTP behind a reverse proxy never needs it.
 
-  **macOS trenger en OpenSSL brukeren installerer.** Systemets libssl er
-  LibreSSL, og Apple blokkerer dlopen mot den fra tredjeparts binærer —
-  forsøket gir «loading libcrypto in an unsafe way» og prosessen dør. Det er
-  ikke noe Askr kan omgå. Feilmeldingen sier hvilke stier som ble forsøkt,
-  og Homebrews openssl@3 er blant dem.
+  **macOS needs an OpenSSL the user installs.** The system libssl is
+  LibreSSL, and Apple blocks dlopen against it from third-party binaries —
+  the attempt gives "loading libcrypto in an unsafe way" and the process
+  dies. That is not something Askr can work around. The error message
+  names the paths that were tried, and Homebrew's openssl@3 is among them.
 
-  Linux virker rett ut av boksen: libssl.so.3 ligger der allerede.
+  Linux works out of the box: libssl.so.3 is already there.
 
-  API-et er bevisst lite. Alt som ikke trengs for en server-socket og en
-  klient-socket er utelatt — en tynn binding man kan lese er tryggere enn en
-  fullstendig man ikke kan. }
+  The API is deliberately small. Everything not needed for a server socket
+  and a client socket is left out — a thin binding you can read is safer
+  than a complete one you cannot. }
 unit Askr.Tls;
 
 {$mode Delphi}{$H+}
@@ -41,11 +41,11 @@ type
   public
     constructor Create(ARole: TTlsRole);
     destructor Destroy; override;
-    { PEM-filer. Kjedet sertifikat i den første. }
+    { PEM files. The chained certificate goes in the first. }
     procedure UseCertificate(const CertFile, KeyFile: string);
-    { Verifiser motpartens sertifikat mot systemets rotlager. På av
-      standard for klienter; en klient som ikke verifiserer er en klient
-      som later som den har TLS. }
+    { Verify the peer's certificate against the system root store. On by
+      default for clients; a client that does not verify is a client
+      pretending to have TLS. }
     procedure SetVerifyPeer(Verify: Boolean);
     property Handle: Pointer read FCtx;
     property Role: TTlsRole read FRole;
@@ -57,7 +57,7 @@ type
     FSock: TSocket;
     FClosed: Boolean;
   public
-    { Overtar ikke eierskap til socketen. }
+    { Does not take ownership of the socket. }
     constructor Create(Ctx: TTlsContext; ASock: TSocket;
       const ServerName: string = '');
     destructor Destroy; override;
@@ -65,7 +65,7 @@ type
     { Returnerer antall bytes, 0 ved ryddig lukking, -1 ved feil. }
     function Read(Buf: Pointer; Len: Integer): Integer;
     function Write(Buf: Pointer; Len: Integer): Integer;
-    { Skriver alt eller returnerer False. }
+    { Writes everything or returns False. }
     function WriteAll(Buf: Pointer; Len: Integer): Boolean;
     procedure Shutdown;
 
@@ -73,11 +73,11 @@ type
     property Socket: TSocket read FSock;
   end;
 
-{ True når OpenSSL lot seg laste. Kaster ikke. }
+{ True when OpenSSL could be loaded. Does not raise. }
 function TlsAvailable: Boolean;
 function TlsLibraryName: string;
 function TlsVersion: string;
-{ Siste feil fra OpenSSL, tømt fra feilkøen. }
+{ The last error from OpenSSL, drained from its error queue. }
 function TlsLastError: string;
 
 implementation
@@ -128,10 +128,10 @@ type
   TSSL_ctrl = function(S: Pointer; Cmd: Integer; Larg: LongInt;
     Parg: Pointer): LongInt; cdecl;
   TSSL_get_verify_result = function(S: Pointer): LongInt; cdecl;
-  { SSL_set1_host finnes fra OpenSSL 1.1.0. Without den sjekker
-    SSL_VERIFY_PEER bare at kjeden er gyldig — ikke at sertifikatet
-    gjelder verten vi snakker med. Et gyldig sertifikat for et hvilket
-    som helst domene ville passert. }
+  { SSL_set1_host exists from OpenSSL 1.1.0. Without it, SSL_VERIFY_PEER
+    only checks that the chain is valid — not that the certificate applies
+    to the host we are talking to. A valid certificate for any domain at
+    all would pass. }
   TSSL_set1_host = function(S: Pointer; H: PAnsiChar): LongInt; cdecl;
   TERR_get_error = function: QWord; cdecl;
   TERR_error_string_n = procedure(E: QWord; Buf: PAnsiChar; Len: PtrUInt); cdecl;
@@ -174,8 +174,8 @@ var
 function SslCandidates: TStringArray;
 begin
 {$IFDEF DARWIN}
-  { Systemets libssl er LibreSSL, og Apple blokkerer dlopen mot den.
-    Derfor bare stier brukeren selv kan ha installert. }
+  { The system libssl is LibreSSL, and Apple blocks dlopen against it. So
+    only paths the user could have installed themselves. }
   Result := [
     '/opt/homebrew/opt/openssl@3/lib/libssl.3.dylib',
     '/usr/local/opt/openssl@3/lib/libssl.3.dylib',
@@ -193,8 +193,8 @@ end;
 
 function CryptoFor(const SslPath: string): string;
 begin
-  { libcrypto ligger ved siden av libssl og må lastes først, ellers finner
-    ikke dynamisk linking symbolene. }
+  { libcrypto sits beside libssl and has to be loaded first, or dynamic
+    linking does not find the symbols. }
   Result := StringReplace(SslPath, 'libssl', 'libcrypto', [rfReplaceAll]);
 end;
 
@@ -357,8 +357,8 @@ begin
   if FCtx = nil then
     raise ETlsError.Create('SSL_CTX_new failed: ' + TlsLastError);
 
-  { TLS 1.0 og 1.1 er avviklet. Å tillate dem er å tilby et nedgraderingsmål
-    ingen har bruk for. }
+  { TLS 1.0 and 1.1 are retired. Allowing them is offering a downgrade
+    target nobody has any use for. }
   SSL_CTX_ctrl(FCtx, SSL_CTRL_SET_MIN_PROTO_VERSION, TLS1_2_VERSION, nil);
 
   if ARole = trClient then
@@ -393,8 +393,9 @@ begin
      SSL_FILETYPE_PEM) <> 1 then
     raise ETlsError.CreateFmt('Could not read the key %s: %s',
       [KeyFile, TlsLastError]);
-  { Sjekker at nøkkelen hører til sertifikatet. Without dette feiler første
-    håndtrykk i stedet for oppstarten, og feilen blir mye vanskeligere. }
+  { Checks that the key belongs to the certificate. Without this the
+    first handshake fails instead of startup, and the error becomes much
+    harder. }
   if SSL_CTX_check_private_key(FCtx) <> 1 then
     raise ETlsError.Create('The key does not match the certificate');
 end;
@@ -431,13 +432,15 @@ begin
 
   if (Ctx.Role = trClient) and (ServerName <> '') then
   begin
-    { SNI. Without dette får man feil sertifikat fra enhver vert som har flere. }
+    { SNI. Without this you get the wrong certificate from any host that
+      has several. }
     SSL_ctrl(FSsl, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
       PAnsiChar(AnsiString(ServerName)));
-    { Og navnesjekken. SNI sier hvilket sertifikat vi vil ha; denne sier at
-      det vi fikk faktisk gjelder verten. SSL_VERIFY_PEER alene sjekker bare
-      at kjeden er gyldig — et ekte sertifikat for et annet domene ville
-      passert, og det er hele man-in-the-middle-angrepet. }
+    { And the name check. SNI says which certificate we want; this says
+      that what we got actually applies to the host. SSL_VERIFY_PEER alone
+      only checks that the chain is valid — a real certificate for another
+      domain would pass, and that is the whole man-in-the-middle
+      attack. }
     if SSL_set1_host(FSsl, PAnsiChar(AnsiString(ServerName))) <> 1 then
     begin
       SSL_free(FSsl);
@@ -456,8 +459,8 @@ begin
     if Rc = 1 then
       Break;
     Err := SSL_get_error(FSsl, Rc);
-    { Socketen er blokkerende, men WANT_READ kan likevel oppstå ved
-      renegotiering. Da er det bare å prøve igjen. }
+    { The socket is blocking, but WANT_READ can still come up during
+      renegotiation. Then it is simply a matter of trying again. }
     if (Err <> SSL_ERROR_WANT_READ) and (Err <> SSL_ERROR_WANT_WRITE) then
     begin
       SSL_free(FSsl);

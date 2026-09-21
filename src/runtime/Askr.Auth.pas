@@ -1,25 +1,28 @@
-{ Askr.Auth — hvem er dette, og får de lov?
+{ Askr.Auth — who is this, and are they allowed?
 
-  To ting som ofte blandes sammen:
+  Two things that often get conflated:
 
-    * **Autentisering** er å vite hvem noen er. Den lever i sesjonen.
-    * **Autorisasjon** er å avgjøre om de får lov. Den lever i gates.
+    * **Authentication** is knowing who somebody is. It lives in the
+      session.
+    * **Authorisation** is deciding whether they may. It lives in gates.
 
-  Askr eier ikke brukermodellen din. Rammeverket lagrer én ting — brukerens
-  id, som tekst — og lar appen slå opp resten selv gjennom en loader den
-  registrerer. Det er med vilje: en `TUser` fra rammeverket ville tvunget
-  fram et bestemt skjema, en bestemt tabell og et bestemt sett kolonner, og
-  det første enhver ekte app gjør er å trenge en kolonne til.
+  Askr does not own your user model. The framework stores one thing — the
+  user's id, as text — and lets the app look up the rest itself through a
+  loader it registers. That is deliberate: a `TUser` from the framework
+  would force a particular schema, a particular table and a particular set
+  of columns, and the first thing any real app does is need one more
+  column.
 
-  Passordene ligger i `Askr.Core.Crypto`. Denne uniten ser aldri et passord;
-  appen verifiserer selv og kaller `Login` med en id.
+  Passwords live in `Askr.Core.Crypto`. This unit never sees a password;
+  the app verifies it itself and calls `Login` with an id.
 
-      if VerifyPassword(Req.Form('password').ToString, Bruker.PasswordHash) then
-        Login(IntToStr(Bruker.Id));
+      if VerifyPassword(Req.Form('password').ToString, User.PasswordHash) then
+        Login(IntToStr(User.Id));
 
-  Det høres ut som en omvei, men det er den ene rekkefølgen som ikke kan gå
-  galt: rammeverket kan ikke vite hvilken kolonne hashen står i, og et API
-  som gjettet på det ville måttet gjette på hvordan brukeren slås opp også. }
+  It sounds like a detour, but it is the one order that cannot go wrong:
+  the framework cannot know which column the hash is in, and an API that
+  guessed at that would have to guess at how the user is looked up as
+  well. }
 unit Askr.Auth;
 
 {$mode Delphi}{$H+}
@@ -34,76 +37,78 @@ uses
 
 type
   EAuthError = class(Exception);
-  { Kastes av `Authorize`. Verten oversetter den til 403. }
+  { Raised by `Authorize`. The host translates it into a 403. }
   EForbidden = class(EAuthError);
 
-  { Appens oppslag fra id til brukerobjekt. Kalles høyst én gang per
-    request; resultatet caches for den requesten. Returner nil når id-en
-    ikke finnes lenger — en slettet bruker med en gyldig sesjonskake skal
-    bli utlogget, ikke gi en feil. }
+  { The app's lookup from id to user object. Called at most once per
+    request; the result is cached for that request. Return nil when the id
+    no longer exists — a deleted user with a valid session cookie should
+    be signed out, not given an error. }
   TUserLoader = function(const Id: string): TObject;
 
-  { En gate: får denne brukeren lov til dette, på denne tingen?
-    `Resource` er nil for gates som ikke gjelder et bestemt objekt
-    («admin», «view-dashboard»). }
+  { A gate: is this user allowed to do this, to this thing? `Resource` is
+    nil for gates that are not about a particular object ("admin",
+    "view-dashboard"). }
   TGateFunc = function(const UserId: string; Resource: TObject): Boolean;
 
 const
-  { Nøkkelen brukerens id ligger under i sesjonen. }
+  { The key the user's id lives under in the session. }
   AuthSessionKey = '_user';
-  { «Husk meg»-kaka. Egen kake, ikke sesjonskaka: den skal overleve at
-    sesjonen utløper, og det er hele poenget med den. }
+  { The "remember me" cookie. Its own cookie, not the session cookie: it
+    has to survive the session expiring, and that is the whole point of
+    it. }
   RememberCookieName = 'askr_remember';
   { 30 dager. Lenger enn det er en kake folk har glemt at de har. }
   RememberLifetime = 30 * 24 * 60 * 60;
 
 { --------------------------------------------------------- innlogging -- }
 
-{ Logger inn. Id-en er appens egen — en primærnøkkel som tekst, en uuid,
-  hva som helst, så lenge loaderen forstår den.
+{ Signs in. The id is the app's own — a primary key as text, a uuid,
+  anything at all, as long as the loader understands it.
 
-  Sesjons-id-en byttes ut her. Without det ville en angriper som fikk satt
-  kaka di på forhånd vært innlogget som deg etterpå. }
+  The session id is replaced here. Without that, an attacker who managed
+  to set your cookie beforehand would be signed in as you afterwards. }
 procedure Login(const UserId: string; Remember: Boolean = False);
-{ Logger ut: tømmer sesjonen helt og sletter «husk meg»-kaka. Hele sesjonen,
-  ikke bare brukernøkkelen — det som lå der hørte til den innloggede. }
+{ Signs out: clears the session entirely and deletes the "remember me"
+  cookie. The whole session, not only the user key — whatever was in there
+  belonged to whoever was signed in. }
 procedure Logout;
 
 function Check: Boolean;
 { Id-en, eller tom streng. }
 function Id: string;
-{ Brukerobjektet fra loaderen, eller nil. Slår opp høyst én gang per
+{ The user object from the loader, or nil. Looks up at most once per
   request. }
 function User: TObject;
 
-{ Appens oppslag. Settes én gang ved oppstart. Without den virker Login, Check
-  og Id fortsatt — bare ikke User. }
+{ The app's lookup. Set once at startup. Without it, Login, Check and Id
+  still work — only User does not. }
 procedure SetUserLoader(L: TUserLoader);
 
 { ------------------------------------------------------- autorisasjon -- }
 
-{ Definerer en gate. Samme navn to ganger erstatter den forrige, slik at en
-  app kan overstyre en gate fra et bibliotek. }
+{ Defines a gate. The same name twice replaces the previous one, so an
+  app can override a gate from a library. }
 procedure DefineGate(const Name: string; F: TGateFunc);
-{ Får den innloggede brukeren lov? False når ingen er logget inn, og False
-  for en gate som ikke finnes — en stavefeil i et gate-navn skal stenge
-  døra, ikke åpne den. }
+{ Is the signed-in user allowed? False when nobody is signed in, and
+  False for a gate that does not exist — a typo in a gate name should shut
+  the door, not open it. }
 function Allows(const Name: string; Resource: TObject = nil): Boolean;
 function Denies(const Name: string; Resource: TObject = nil): Boolean;
-{ Samme, men kaster EForbidden. To_ kode som ikke skal fortsette. }
+{ The same, but raises EForbidden. For code that must not carry on. }
 procedure Authorize(const Name: string; Resource: TObject = nil);
 function GateExists(const Name: string): Boolean;
 
 { ---------------------------------------------------------- middleware -- }
 
-{ Gjenoppretter innlogging fra «husk meg»-kaka når sesjonen er tom. Må stå
-  etter UseSessions. Without den virker «husk meg» ikke — kaka blir liggende
-  og bli ignorert. }
+{ Restores the sign-in from the "remember me" cookie when the session is
+  empty. Has to come after UseSessions. Without it "remember me" does not
+  work — the cookie simply sits there and is ignored. }
 procedure UseAuth(R: TRouter);
 
-{ Stenger alt bak innlogging fra og med her. En vanlig request sendes til
-  `LoginPath`; en Inertia- eller JSON-request får 401, fordi en 302 til en
-  HTML-side er ubrukelig for en klient som ventet JSON. }
+{ Closes everything behind a sign-in from here on. An ordinary request
+  is sent to `LoginPath`; an Inertia or JSON request gets a 401, because a
+  302 to an HTML page is useless to a client expecting JSON. }
 procedure RequireAuth(R: TRouter; const LoginPath: string = '/login');
 
 implementation
@@ -114,8 +119,8 @@ var
     Name: string;
     Func: TGateFunc;
   end;
-  { Loaderen kalles høyst én gang per request. Cachen ligger trådlokalt,
-    som resten av request-tilstanden i Askr. }
+  { The loader is called at most once per request. The cache is
+    thread-local, like the rest of the request state in Askr. }
 
 threadvar
   GUser: TObject;
@@ -137,15 +142,15 @@ begin
       'before UseAuth.');
 end;
 
-{ Innholdet i «husk meg»-kaka: id og utløp, signert med appnøkkelen.
-  Verdien er **lesbar** — signaturen beviser bare at vi laget den. Det er
-  greit: en bruker-id er ikke en hemmelighet, og kaka alene gir ingen
-  tilgang uten at signaturen stemmer.
+{ What is in the "remember me" cookie: an id and an expiry, signed with
+  the app key. The value is **readable** — the signature only proves we
+  made it. That is fine: a user id is not a secret, and the cookie alone
+  grants nothing unless the signature checks out.
 
-  Kaka kan ikke trekkes tilbake enkeltvis. Skal den kunne det, må tokenet
-  lagres per bruker i databasen, og det krever en kolonne rammeverket ikke
-  kan vite om. Det er en reell begrensning, og den står her i stedet for å
-  bli oppdaget. }
+  The cookie cannot be revoked individually. For that, the token would
+  have to be stored per user in the database, and that needs a column the
+  framework cannot know about. It is a real limitation, and it is written
+  here rather than being discovered. }
 function RememberValue(const UserId: string): string;
 begin
   Result := Sign(UserId + '|' + IntToStr(UnixNow + RememberLifetime));
@@ -168,17 +173,18 @@ begin
   UtloepStr := Copy(Payload, P + 1, MaxInt);
   if not TryStrToInt64(UtloepStr, Utloep) then
     Exit(False);
-  { Utløpet står inne i det signerte, ikke bare i kakas Max-Age. En klient
-    som beholder kaka lenger enn vi ba om skal ikke komme inn. }
+  { The expiry is inside the signed part, not only in the cookie's
+    Max-Age. A client that keeps the cookie longer than we asked must not
+    get in. }
   if UnixNow > Utloep then
     Exit(False);
   UserId := Copy(Payload, 1, P - 1);
   Result := UserId <> '';
 end;
 
-{ Kaka settes og slettes på svaret, og svaret finnes først etter at
-  handleren har kjørt. Ønsket parkeres derfor trådlokalt og utføres av
-  etterfilteret. }
+{ The cookie is set and deleted on the response, and the response only
+  exists after the handler has run. The intent is therefore parked
+  thread-locally and carried out by the after-filter. }
 threadvar
   GSetRemember: string;
   GClearRemember: Boolean;
@@ -190,8 +196,8 @@ begin
   if UserId = '' then
     raise EAuthError.Create('Login needs a user id.');
   S := RequiresSession;
-  { Ny sesjons-id i det privilegiene endrer seg. Dette er hele forsvaret
-    mot session fixation, og det er én linje. }
+  { A new session id the moment the privileges change. This is the whole
+    defence against session fixation, and it is one line. }
   Sessions.Regenerate(S);
   S.Put(AuthSessionKey, UserId);
   GUser := nil;
@@ -207,8 +213,8 @@ begin
   S := CurrentSession;
   if S <> nil then
   begin
-    { Hele sesjonen, ikke bare brukernøkkelen: en handlekurv eller et
-      halvferdig skjema hørte til den som var logget inn. }
+    { The whole session, not only the user key: a shopping cart or a
+      half-filled form belonged to whoever was signed in. }
     S.Clear;
     Sessions.Regenerate(S);
   end;
@@ -297,9 +303,9 @@ begin
   if Uid = '' then
     Exit(False);
   I := GateIndex(Name);
-  { En gate som ikke finnes svarer nei. Det motsatte ville gjort en
-    stavefeil i et gate-navn til en åpen dør, og den feilen ser ut som at
-    alt virker. }
+  { A gate that does not exist says no. The opposite would turn a typo in
+    a gate name into an open door, and that mistake looks like everything
+    working. }
   if I < 0 then
     Exit(False);
   Result := GGates[I].Func(Uid, Resource);
@@ -313,8 +319,9 @@ end;
 procedure Authorize(const Name: string; Resource: TObject);
 begin
   if not Allows(Name, Resource) then
-    { Meldingen nevner gaten, ikke brukeren eller ressursen. Den havner
-      i en logg, og en 403 skal ikke fortelle noen hva de nesten fikk. }
+    { The message names the gate, not the user or the resource. It ends up
+      in a log, and a 403 should not tell anybody what they nearly
+      got. }
     raise EForbidden.CreateFmt('Not authorized: %s', [Name]);
 end;
 
@@ -344,9 +351,9 @@ begin
   S := CurrentSession;
   if S = nil then
     Exit;
-  { Kaka brukes bare når sesjonen er tom. En innlogget sesjon vinner
-    alltid — ellers ville en gammel kake kunnet overstyre en nyere
-    innlogging. }
+  { The cookie is only used when the session is empty. A signed-in
+    session always wins — otherwise an old cookie could override a newer
+    sign-in. }
   if S.Get(AuthSessionKey) <> '' then
     Exit;
 
@@ -355,11 +362,12 @@ begin
   if not ReadRemember(CookieValue(Req, RememberCookieName), Uid) then
     Exit;
 
-  { Ny sesjons-id også her: dette er en innlogging, bare uten skjema. }
+  { A new session id here too: this is a sign-in, just without a
+    form. }
   Sessions.Regenerate(S);
   S.Put(AuthSessionKey, Uid);
-  { Kaka fornyes, slik at en bruker som er innom ikke plutselig blir kastet
-    ut på dag 30. }
+  { The cookie is renewed, so a user who keeps dropping in is not
+    suddenly thrown out on day 30. }
   GSetRemember := RememberValue(Uid);
 end;
 
@@ -367,8 +375,8 @@ class function TAuthHook.WriteCookies(Req: TRequest; Res: TResponse): TResponse;
 begin
   Result := Res;
   if GClearRemember then
-    { Max-Age=0 er måten å slette en kake på. Verdien settes tom i tillegg,
-      for en klient som beholder den likevel. }
+    { Max-Age=0 is how a cookie is deleted. The value is set empty as well,
+      for a client that keeps it anyway. }
     Res.WithCookie(RememberCookieName, '', 0, Sessions.Secure)
   else if GSetRemember <> '' then
     Res.WithCookie(RememberCookieName, GSetRemember, RememberLifetime,
@@ -381,9 +389,9 @@ class function TAuthHook.Require(Req: TRequest): TResponse;
 begin
   if Check then
     Exit(nil);
-  { En Inertia- eller JSON-klient har ingen nytte av en 302 til en
-    HTML-side: den ville fulgt den og fått innloggingssiden som JSON.
-    401 er det klienten kan gjøre noe med. }
+  { An Inertia or JSON client has no use for a 302 to an HTML page: it
+    would follow it and get the sign-in page as JSON. A 401 is what the
+    client can do something with. }
   if (Req.Header('X-Inertia').Len > 0) or
      (Pos('application/json', Req.Header('Accept').ToString) > 0) then
     Exit(RespondText('Unauthenticated.', 401));

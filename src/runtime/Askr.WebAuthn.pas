@@ -1,32 +1,32 @@
 { Askr.WebAuthn — passkeys.
 
-  De to seremoniene: registrering av en ny nøkkel, og innlogging med en
-  som finnes. Alt regnestykket ligger under — SHA-256 i
-  Askr.Core.Crypto, ECDSA i Askr.Core.Ec, CBOR i Askr.Core.Cbor — så
-  denne uniten er parsing og kontroll, ikke matematikk.
+  The two ceremonies: registering a new key, and signing in with one that
+  exists. All the arithmetic is underneath — SHA-256 in Askr.Core.Crypto,
+  ECDSA in Askr.Core.Ec, CBOR in Askr.Core.Cbor — so this unit is parsing
+  and checking, not mathematics.
 
-  HVORFOR PASSKEYS OG IKKE ENGANGSKODER
+  WHY PASSKEYS AND NOT ONE-TIME CODES
 
-  En TOTP-kode kan tastes inn på et falskt domene; det er hele
-  phishing-angrepet, og koden hjelper ikke mot det. En passkey er bundet
-  til RP ID-en, og nettleseren nekter å bruke den andre steder — ikke
-  som en advarsel brukeren kan klikke bort, men som noe som ikke lar seg
-  gjøre. Og serveren lagrer bare en offentlig nøkkel: en lekket database
-  gir ingen innlogging.
+  A TOTP code can be typed into a fake domain; that is the whole phishing
+  attack, and the code does not help against it. A passkey is bound to the
+  RP ID, and the browser refuses to use it anywhere else — not as a
+  warning the user can click away, but as something that cannot be done.
+  And the server stores only a public key: a leaked database gives nobody
+  a way in.
 
-  ATTESTASJON VERIFISERES IKKE
+  ATTESTATION IS NOT VERIFIED
 
-  Attestasjonsuttalelsen sier hvilken autentikator nøkkelen kom fra.
-  Askr leser den ikke. Det er et valg, ikke en mangel: for vanlig
-  innlogging trenger man ikke vite om nøkkelen ligger i en iPhone eller
-  en Yubikey, og å kreve det låser ute brukere med utstyr man ikke har
-  tenkt på. Trenger du det — regulerte miljøer gjør det av og til —
-  er det denne uniten som må utvides, og det står her for at ingen skal
-  tro det allerede er gjort.
+  The attestation statement says which authenticator the key came from.
+  Askr does not read it. That is a choice, not an omission: for ordinary
+  sign-in you do not need to know whether the key is in an iPhone or a
+  Yubikey, and requiring it locks out users with equipment you have not
+  thought of. If you do need it — regulated environments sometimes do —
+  this is the unit that has to be extended, and it says so here so that
+  nobody believes it has already been done.
 
-  Det som ER verifisert: at utfordringen er vår, at origin stemmer, at
-  RP ID-hashen stemmer, at brukeren var til stede, og at signaturen
-  holder mot den lagrede nøkkelen. }
+  What IS verified: that the challenge is ours, that the origin matches,
+  that the RP ID hash matches, that the user was present, and that the
+  signature holds against the stored key. }
 unit Askr.WebAuthn;
 
 {$mode Delphi}{$H+}
@@ -47,21 +47,22 @@ const
 
 type
   TWebAuthnOptions = record
-    { Domenet nøkkelen bindes til, uten skjema og port: 'example.com'.
-      En passkey laget for ett RP ID virker ikke for et annet. }
+    { The domain the key is bound to, without scheme and port:
+      'example.com'. A passkey made for one RP ID does not work for
+      another. }
     RpId: string;
-    { Hele origin slik nettleseren oppgir den: 'https://example.com'.
-      Sammenlignes eksakt. }
+    { The whole origin as the browser reports it: 'https://example.com'.
+      Compared exactly. }
     Origin: string;
-    { Expect at autentikatoren faktisk verifiserte brukeren — PIN,
-      fingeravtrykk, ansikt — og ikke bare at noen rørte den. }
+    { Require that the authenticator actually verified the user — PIN,
+      fingerprint, face — and not merely that somebody touched it. }
     RequireUserVerification: Boolean;
   end;
 
   TRegistration = record
     Ok: Boolean;
-    { Engelsk, og trygg å vise: den sier hva som var galt, aldri hva
-      noe inneholdt. }
+    { In English, and safe to show: it says what was wrong, never what
+      anything contained. }
     Error: string;
     CredentialId: TBytes;
     PublicKeyX: TBytes;
@@ -75,28 +76,28 @@ type
     Error: string;
     SignCount: UInt32;
     UserVerified: Boolean;
-    { True når telleren ikke gikk opp. Se kommentaren ved
-      VerifyAssertion: det er et varsel, ikke en dom. }
+    { True when the counter did not go up. See the comment at
+      VerifyAssertion: it is a warning, not a verdict. }
     CloneWarning: Boolean;
   end;
 
-{ Storage en utfordring. 32 byte er det WebAuthn anbefaler, og den må
-  lagres i sesjonen til svaret kommer. }
+{ Makes a challenge. 32 bytes is what WebAuthn recommends, and it has to
+  be kept in the session until the answer comes back. }
 function NewChallenge: TBytes;
 
-{ Registrering. ClientDataJson og AttestationObject er de to feltene
-  nettleseren gir, Challenge den vi ga ut. }
+{ Registration. ClientDataJson and AttestationObject are the two fields
+  the browser gives, Challenge the one we handed out. }
 function VerifyRegistration(const Opts: TWebAuthnOptions;
   const ClientDataJson, AttestationObject, Challenge: TBytes): TRegistration;
 
-{ Innlogging. StoredSignCount er den vi har lagret fra sist; 0 betyr at
-  autentikatoren ikke teller. }
+{ Sign-in. StoredSignCount is the one we saved last time; 0 means the
+  authenticator does not count. }
 function VerifyAssertion(const Opts: TWebAuthnOptions;
   const ClientDataJson, AuthenticatorData, Signature, Challenge,
         PubX, PubY: TBytes; StoredSignCount: UInt32): TAssertion;
 
-{ Eksponert for testene: en ES256-signatur kommer DER-kodet, ikke som
-  rå r||s. }
+{ Exposed for the tests: an ES256 signature arrives DER encoded, not as
+  raw r||s. }
 function DerToRawSignature(const Der: TBytes; out R, S: TBytes): Boolean;
 
 implementation
@@ -151,13 +152,13 @@ end;
 
 { ---------------------------------------------------------------- DER -- }
 
-{ Leser en ASN.1-INTEGER og gir den som nøyaktig 32 byte.
+{ Reads an ASN.1 INTEGER and gives it back as exactly 32 bytes.
 
-  DER skriver heltall med fortegn, så en verdi med høyeste bit satt får
-  en ledende nullbyte foran. Og små verdier er kortere enn 32 byte.
-  Begge deler må håndteres: å kopiere rått inn i et 32-bytes felt er
-  nettopp feilen som gjør at noen signaturer verifiserer og andre ikke,
-  tilsynelatende tilfeldig. }
+  DER writes integers with a sign, so a value with the top bit set gets a
+  leading zero byte in front. And small values are shorter than 32 bytes.
+  Both have to be handled: copying raw into a 32-byte field is precisely
+  the bug that makes some signatures verify and others not, seemingly at
+  random. }
 function ReadDerInt(const Der: TBytes; var P: Integer; out Ut: TBytes): Boolean;
 var
   Len, I, Start: Integer;
@@ -171,20 +172,20 @@ begin
   Inc(P);
   Len := Der[P];
   Inc(P);
-  { Lengder over 127 bruker lang form. En P-256-komponent er høyst 33
-    byte, så lang form er alltid feil her. }
+  { Lengths above 127 use the long form. A P-256 component is at most 33
+    bytes, so the long form is always wrong here. }
   if (Len = 0) or (Len > 33) or (P + Len > Length(Der)) then
     Exit(False);
 
   Start := P;
-  { Skip over den ledende nullen DER legger på for å holde tallet
-    positivt. Mer enn én er ikke minimal koding. }
+  { Skip the leading zero DER adds to keep the number positive. More than
+    one is not minimal encoding. }
   if (Len > 1) and (Der[Start] = 0) then
   begin
     Inc(Start);
     Dec(Len);
     if Der[Start] < $80 then
-      { En null foran en byte som ikke trengte den er ikke DER. }
+      { A zero in front of a byte that did not need one is not DER. }
       Exit(False);
   end;
   if Len > 32 then
@@ -211,11 +212,12 @@ begin
   Len := Der[P];
   Inc(P);
   if Len > 127 then
-    { Lang form. En ES256-signatur er under 72 byte, så dette er feil. }
+    { The long form. An ES256 signature is under 72 bytes, so this is
+      wrong. }
     Exit(False);
   if P + Len <> Length(Der) then
-    { Etterfølgende data. En signatur med noe bak seg er ikke en
-      signatur vi har sett hele av. }
+    { Trailing data. A signature with something behind it is not a
+      signature we have seen all of. }
     Exit(False);
 
   if not ReadDerInt(Der, P, R) then Exit(False);
@@ -225,18 +227,18 @@ end;
 
 { ------------------------------------------------------------ COSE -- }
 
-{ Henter x og y ut av en COSE_Key.
+{ Pulls x and y out of a COSE_Key.
 
-  Kartet ser slik ut for ES256, med nøkler som er heltall:
+  The map looks like this for ES256, with keys that are integers:
     1  (kty) = 2   EC2
     3  (alg) = -7  ES256
    -1  (crv) = 1   P-256
-   -2  (x)   = 32 byte
-   -3  (y)   = 32 byte
+   -2  (x)   = 32 bytes
+   -3  (y)   = 32 bytes
 
-  Alt annet enn nøyaktig denne kombinasjonen avvises. Askr verifiserer
-  bare P-256; en RSA- eller Ed25519-nøkkel er ikke noe vi kan sjekke,
-  og å lagre den og late som er verre enn å si nei ved registrering. }
+  Anything but exactly that combination is rejected. Askr verifies P-256
+  only; an RSA or Ed25519 key is not something we can check, and storing
+  it and pretending is worse than saying no at registration. }
 function ReadCoseKey(var R: TCborReader; const Buf: TBytes;
   out X, Y: TBytes; out Err: string): Boolean;
 var
@@ -301,9 +303,9 @@ begin
           end;
         end;
     else
-      { Ukjente felter hoppes over. COSE tillater dem, og en ny
-        nøkkeltype skal ikke gjøre parsingen til en feil her — det er
-        sjekkene under som avgjør. }
+      { Unknown fields are skipped. COSE allows them, and a new key type
+        must not turn the parsing itself into an error here — it is the
+        checks below that decide. }
       if not R.Skip then
       begin
         Err := 'the credential public key is malformed';
@@ -369,7 +371,7 @@ begin
 
   if (A.Flags and FlagAttested) <> 0 then
   begin
-    { 16 byte aaguid, to byte lengde, så id-en. }
+    { 16 bytes of aaguid, two bytes of length, then the id. }
     if P + 18 > Length(B) then
     begin
       Err := 'attested credential data is truncated';
@@ -378,8 +380,8 @@ begin
     Inc(P, 16);
     CredLen := (Integer(B[P]) shl 8) or Integer(B[P + 1]);
     Inc(P, 2);
-    { WebAuthn setter taket på 1023. En lengde over det er enten en feil
-      eller noen som prøver seg. }
+    { WebAuthn puts the cap at 1023. A length above that is either a bug
+      or somebody having a go. }
     if (CredLen = 0) or (CredLen > 1023) or (P + CredLen > Length(B)) then
     begin
       Err := 'the credential id length is not usable';
@@ -388,9 +390,9 @@ begin
     A.CredentialId := Skive(B, P, CredLen);
     Inc(P, CredLen);
 
-    { Nøkkelen står etter id-en. Leseren tar ingen startposisjon, så
-      den får et utsnitt i stedet — da blir utsnittene den gir tilbake
-      relative til det samme. }
+    { The key comes after the id. The reader takes no start position, so
+      it gets a slice instead — then the slices it gives back are
+      relative to the same thing. }
     Rest := Skive(B, P, Length(B) - P);
     if Length(Rest) = 0 then
     begin
@@ -401,8 +403,8 @@ begin
     if not ReadCoseKey(R, Rest, A.KeyX, A.KeyY, Err) then
       Exit(False);
 
-    { Et punkt som ikke ligger på kurven skal aldri havne i databasen.
-      Her er det billig å si nei; senere er det bare rart. }
+    { A point that is not on the curve must never end up in the database.
+      Here it is cheap to say no; later it is merely strange. }
     if not EcOnCurve(BytesToU256(A.KeyX), BytesToU256(A.KeyY)) then
     begin
       Err := 'the credential public key is not on the curve';
@@ -440,8 +442,8 @@ begin
   for I := 0 to High(Json) do
     Text_[I + 1] := Chr(Json[I]);
 
-  { Egen arena: denne kan kalles utenfor en request, og clientData er
-    noen hundre byte. }
+  { Its own arena: this can be called outside a request, and clientData is
+      a few hundred bytes. }
   A := TArena.Create(64 * 1024);
   try
     if not JsonParse(A, StrDup(A, Text_), Rot, ErrPos) then
@@ -457,9 +459,9 @@ begin
       Exit;
     end;
 
-    { Origin sammenlignes eksakt. Ikke «starter med», ikke «inneholder»:
-      https://example.com.angriper.no starter med ingenting nyttig, men
-      en løs sammenligning har sluppet gjennom verre. }
+    { The origin is compared exactly. Not "starts with", not "contains":
+          https://example.com.attacker.example starts with nothing useful, but
+          a loose comparison has let worse through. }
     V := JsonMember(Rot, 'origin');
     if (V = nil) or (JsonAsString(V) <> Opts.Origin) then
     begin
@@ -557,9 +559,9 @@ begin
     Exit;
   end;
 
-  { Attestasjonsobjektet er et kart med fmt, attStmt og authData. Vi
-    leter bare etter authData; attStmt hoppes over uten å bli sett på,
-    og det står i overskriften hvorfor. }
+  { The attestation object is a map with fmt, attStmt and authData. We look
+    only for authData; attStmt is skipped without being looked at, and the
+    header says why. }
   R.Init(@AttestationObject[0], Length(AttestationObject));
   if not R.ReadMapLen(N) then
   begin
@@ -617,8 +619,8 @@ begin
     Exit;
   end;
 
-  { Nøkkelen kommer utenfra. Et punkt som ikke ligger på kurven skal
-    aldri havne i databasen. }
+  { The key comes from outside. A point that is not on the curve must
+    never end up in the database. }
   Result.CredentialId := A.CredentialId;
   Result.PublicKeyX := A.KeyX;
   Result.PublicKeyY := A.KeyY;
@@ -670,8 +672,8 @@ begin
     Exit;
   end;
 
-  { Det signerte er authenticatorData etterfulgt av hashen av
-    clientDataJSON. Rekkefølgen er ikke valgfri. }
+  { What is signed is authenticatorData followed by the hash of
+    clientDataJSON. The order is not optional. }
   ClientHash := DigestBytes(Sha256(ClientDataJson));
   Signert := Sammen(AuthenticatorData, ClientHash);
 
@@ -681,11 +683,11 @@ begin
     Exit;
   end;
 
-  { Telleren skal gå opp for hver bruk. Gjør den ikke det, kan nøkkelen
-    være kopiert — men mange autentikatorer teller ikke i det hele tatt
-    og sender alltid null. Derfor et varsel kallstedet kan handle på, og
-    ikke en avvisning: å nekte innlogging til alle med en teller som
-    står stille ville stengt ute det vanligste utstyret. }
+  { The counter is supposed to go up on every use. If it does not, the key
+    may have been copied — but many authenticators do not count at all and
+    always send zero. Hence a warning the caller can act on, and not a
+    rejection: refusing to sign in everybody whose counter stands still
+    would shut out the most common equipment. }
   Result.SignCount := A.SignCount;
   if (StoredSignCount > 0) and (A.SignCount > 0) and
      (A.SignCount <= StoredSignCount) then

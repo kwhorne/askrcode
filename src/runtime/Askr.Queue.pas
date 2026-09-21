@@ -1,24 +1,25 @@
-{ Askr.Queue — bakgrunnsjobber i samme prosess.
+{ Askr.Queue — background jobs in the same process.
 
-  PRD-ens andre regel: bakgrunnsjobber låner aldri requestens arena, de får
-  en egen. Her er hvorfor den regelen ikke kan være en konvensjon.
+  The PRD's second rule: background jobs never borrow the request's arena,
+  they get their own. Here is why that rule cannot be a convention.
 
-  Når en kontroller gjør Push, lever payloaden i request-arenaen. Requesten
-  er ferdig lenge før jobben kjører — arenaen er nullstilt, og minnet er delt
-  ut til en ny request. Peker jobben dit, leser den en annen brukers data.
+  When a controller calls Push, the payload lives in the request arena.
+  The request is long finished before the job runs — the arena has been
+  reset, and the memory handed out to a new request. If the job points
+  there, it reads another user's data.
 
-  Derfor er det to kopier på veien, og ingen av dem kan hoppes over:
+  So there are two copies on the way, and neither can be skipped:
 
-    request-arena  ->  heap (i Push, mens kalleren fortsatt eier bytene)
-                   ->  worker-arena (i workeren, før handleren kalles)
+    request arena  ->  heap (in Push, while the caller still owns the bytes)
+                   ->  worker arena (in the worker, before the handler runs)
 
-  Første kopi løsner jobben fra requesten. Andre gir handleren en payload med
-  samme levetid som alt annet den jobber med, slik at den kan skrives på
-  nøyaktig samme måte som en kontroller. Workeren nullstiller arenaen mellom
-  hver jobb, som HTTP-workerne gjør mellom requests.
+  The first copy detaches the job from the request. The second gives the
+  handler a payload with the same lifetime as everything else it works
+  with, so it can be written exactly like a controller. The worker resets
+  its arena between jobs, as the HTTP workers do between requests.
 
-  Kø, scheduler og cache i samme prosess er hele poenget: ingen Redis, ingen
-  Horizon, ingen supervisor ved siden av. }
+  Queue, scheduler and cache in the same process is the whole point: no
+  Redis, no Horizon, no supervisor alongside. }
 unit Askr.Queue;
 
 {$mode Delphi}{$H+}
@@ -34,15 +35,15 @@ type
 
   TJobContext = record
     Name: string;
-    { Ligger i workerens arena. Dør når jobben er ferdig. }
+    { Lives in the worker's arena. Dies when the job is done. }
     Payload: TStr;
     Attempt: Integer;
     Arena: TArena;
   end;
 
   TJobHandler = procedure(const Ctx: TJobContext);
-  { Kalles når en jobb feiler eller forkastes. Egen type fordi en property
-    ikke kan ha anonym prosedyretype. }
+  { Called when a job fails or is discarded. Its own type because a
+    property cannot have an anonymous procedure type. }
   TQueueErrorHandler = procedure(const JobName, Message_: string);
 
   PJob = ^TJob;
@@ -55,48 +56,49 @@ type
     Next: PJob;
   end;
 
-  { En jobb som er tatt ut av lageret og hører til én worker til den er
-    gjort opp. Data eies av lageret; nøyaktig ett av Complete, Retry, Fail
-    eller Drop skal kalles etterpå, og først da slippes den. }
+  { A job taken out of the store and belonging to one worker until it is
+    settled. Data is owned by the store; exactly one of Complete, Retry,
+    Fail or Drop must be called afterwards, and only then is it
+    released. }
   TReservedJob = record
     Name: string;
     Data: PByte;
     Len: SizeInt;
-    Attempt: Integer;     { antall tidligere forsøk }
-    Token: Pointer;       { lagerets eget håndtak }
-    Id: Int64;            { lagerets id, 0 når det ikke har noen }
+    Attempt: Integer;     { number of previous attempts }
+    Token: Pointer;       { the store's own handle }
+    Id: Int64;            { the store's id, 0 when it has none }
   end;
 
-  { Where_ jobbene ligger. To implementasjoner: i prosessen, som før, og i en
-    database.
+  { Where the jobs live. Two implementations: in the process, as before,
+    and in a database.
 
-    Grensesnittet finnes for at det skal være **én** utførelsesvei. Et eget
-    worker-løp for varige jobber ville gitt to sett regler for backoff,
-    forsøkstelling og arena-levetid, og de to ville drevet fra hverandre. }
+    The interface exists so that there is **one** execution path. A separate
+    worker loop for durable jobs would give two sets of rules for backoff,
+    attempt counting and arena lifetime, and the two would drift apart. }
   TJobStore = class abstract
   public
-    { Bytene er kallerens og kopieres her. }
+    { The bytes are the caller's and are copied here. }
     procedure Push(const JobName: string; Data: PByte; Len: SizeInt;
       DelayMs: Int64); virtual; abstract;
-    { Tar én jobb som er klar. False når det ikke finnes noen. }
+    { Takes one job that is ready. False when there is none. }
     function Reserve(out J: TReservedJob): Boolean; virtual; abstract;
     procedure Complete(var J: TReservedJob); virtual; abstract;
     procedure Retry(var J: TReservedJob; DelayMs: Int64); virtual; abstract;
-    { Oppbrukte forsøk. }
+    { Attempts exhausted. }
     procedure Fail(var J: TReservedJob; const Reason: string); virtual; abstract;
-    { Ingen handler registrert — jobben kan aldri kjøre. }
+    { No handler registered — the job can never run. }
     procedure Drop(var J: TReservedJob; const Reason: string); virtual; abstract;
     function Pending: Integer; virtual; abstract;
-    { Overlever jobbene at prosessen starter på nytt? }
+    { Do the jobs survive the process restarting? }
     function Durable: Boolean; virtual;
-    { Where_ lenge en worker uten arbeid venter før den ser etter igjen. Et
-      lager i prosessen vekkes av et signal og kan vente kort; et lager i
-      en database må spørre, og da er 20 ms å hamre på den. }
+    { How long an idle worker waits before looking again. A store in the
+      process is woken by a signal and can wait briefly; a store in a
+      database has to ask, and then 20 ms is hammering on it. }
     function PollIntervalMs: Integer; virtual;
   end;
 
-  { Jobbene i en kjede i prosessen. Dette er oppførselen køen alltid har
-    hatt, nå bak grensesnittet. }
+  { The jobs in a chain in the process. This is the behaviour the queue
+    has always had, now behind the interface. }
   TMemoryJobStore = class(TJobStore)
   private
     FLock: TCriticalSection;
@@ -148,10 +150,10 @@ type
     FWorkerCount: Integer;
     FMaxAttempts: Integer;
     FRunning: LongInt;
-    { Name_ til handler. En vanlig tabell med lineært søk, ikke TStringList
-      med Objects: en prosedyrevariabel kan ikke castes til TObject i
-      Delphi-modus uten at kompilatoren tolker den som et kall. Count_
-      jobbtyper er uansett en håndfull. }
+    { Name to handler. An ordinary table with a linear search, not a
+      TStringList with Objects: a procedure variable cannot be cast to
+      TObject in Delphi mode without the compiler reading it as a call.
+      The number of job types is a handful anyway. }
     FBindings: array of TJobBinding;
     FProcessed, FFailed, FRetried, FDropped: QWord;
     FOnError: TQueueErrorHandler;
@@ -160,24 +162,28 @@ type
   public
     constructor Create(AWorkers: Integer = 2;
       AMaxAttempts: Integer = 3); overload;
-    { With_ et eget lager. Køen overtar eieskapet når OwnsStore er satt. }
+    { With a store of your own. The queue takes ownership when OwnsStore is
+      set. }
     constructor Create(AStore: TJobStore; AWorkers: Integer = 2;
       AMaxAttempts: Integer = 3; AOwnsStore: Boolean = True); overload;
     destructor Destroy; override;
 
-    { Navnet kobles til en handler. Ukjente navn forkastes med telling. }
+    { The name is bound to a handler. Unknown names are discarded with a
+      count. }
     procedure Handle(const JobName: string; H: TJobHandler);
 
-    { Payloaden kopieres ut av kallerens arena her og nå. }
+    { The payload is copied out of the caller's arena here and now. }
     procedure Push(const JobName: string; const Payload: TStr;
       DelaySeconds: Integer = 0); overload;
     procedure Push(const JobName, Payload: string;
       DelaySeconds: Integer = 0); overload;
 
     procedure Start;
-    { Drain venter til køen er tom. Without drain forkastes det som står igjen. }
+    { Drain waits until the queue is empty. Without drain, whatever is left
+      is discarded. }
     procedure Stop(Drain: Boolean = True);
-    { Venter til køen er tom eller tiden er ute. Finnes for tester. }
+    { Waits until the queue is empty or the time runs out. It exists for
+      tests. }
     function WaitUntilEmpty(TimeoutMs: Integer): Boolean;
 
     function Pending: Integer;
@@ -189,8 +195,8 @@ type
     property MaxAttempts: Integer read FMaxAttempts write FMaxAttempts;
     property OnError: TQueueErrorHandler read FOnError write FOnError;
     property Store: TJobStore read FStore;
-    { Overlever jobbene en omstart? To_ statusendepunkter og til å si fra i
-      oppstartsloggen hva slags kø dette faktisk er. }
+    { Do the jobs survive a restart? For status endpoints, and for saying
+      in the startup log what kind of queue this actually is. }
     function Durable: Boolean;
   end;
 
@@ -282,8 +288,9 @@ begin
   J^.Name := JobName;
   J^.Attempt := 0;
   J^.RunAt := MonotonicMs + DelayMs;
-  { Her er grensen. Bytene kopieres mens kalleren fortsatt eier dem; om ett
-    millisekund er request-arenaen nullstilt og minnet delt ut på nytt. }
+  { This is the boundary. The bytes are copied while the caller still
+    owns them; in a millisecond the request arena is reset and the memory
+    handed out again. }
   if Len > 0 then
   begin
     J^.Data := GetMem(Len);
@@ -366,7 +373,7 @@ begin
   finally
     FLock.Release;
   end;
-  { Jobben er tilbake i kjeden og eies ikke lenger av workeren. }
+  { The job is back in the chain and no longer owned by the worker. }
   J.Token := nil;
   J.Data := nil;
   J.Len := 0;
@@ -375,9 +382,9 @@ end;
 
 procedure TMemoryJobStore.Fail(var J: TReservedJob; const Reason: string);
 begin
-  { En jobb som har brukt opp forsøkene sine forsvinner. Et lager i
-    prosessen har ingen plass å legge den; det er nettopp forskjellen på
-    dette og en varig kø. }
+  { A job that has used up its attempts disappears. A store in the
+    process has nowhere to put it; that is precisely the difference
+    between this and a durable queue. }
   Slipp(J);
 end;
 
@@ -481,9 +488,9 @@ end;
 procedure TQueue.Push(const JobName: string; const Payload: TStr;
   DelaySeconds: Integer);
 begin
-  { Lageret kopierer bytene mens kalleren fortsatt eier dem. Grensen ligger
-    der og kan ikke hoppes over: om ett millisekund er request-arenaen
-    nullstilt og minnet delt ut på nytt. }
+  { The store copies the bytes while the caller still owns them. The
+    boundary is there and cannot be skipped: in a millisecond the request
+    arena is reset and the memory handed out again. }
   FStore.Push(JobName, Payload.Data, Payload.Len,
     Int64(DelaySeconds) * 1000);
   FSignal.SetEvent;
@@ -543,10 +550,10 @@ begin
     end;
   SetLength(FWorkers, 0);
 
-  { Det som står igjen ryddes av lageret, ikke her. For et lager i
-    prosessen betyr det at jobbene forsvinner — det er derfor Stop uten
-    Drain teller dem som forkastet. For et varig lager blir de liggende
-    og kjøres neste gang appen starter, og det er hele poenget. }
+  { Whatever is left is cleared by the store, not here. For a store in
+    the process that means the jobs disappear — which is why Stop without
+    Drain counts them as discarded. For a durable store they stay and run
+    the next time the app starts, and that is the whole point. }
   if not FStore.Durable then
     Inc(FDropped, QWord(FStore.Pending));
 end;
@@ -562,8 +569,8 @@ constructor TQueueWorker.Create(AQueue: TQueue; AIndex: Integer);
 begin
   FQueue := AQueue;
   FIndex := AIndex;
-  { Egen arena per worker, nullstilt mellom jobbene. Samme mønster som
-    HTTP-workerne, og av samme grunn. }
+  { Its own arena per worker, reset between jobs. The same pattern as the
+    HTTP workers, and for the same reason. }
   FArena := TArena.Create(64 * 1024);
   inherited Create(False);
 end;
@@ -586,9 +593,9 @@ begin
   begin
     if not FQueue.FStore.Reserve(J) then
     begin
-      { Venter på signal, men våkner uansett jevnlig: en forsinket jobb
-        signaliserer ikke seg selv når tiden er inne, og en jobb lagt inn
-        av en annen prosess signaliserer ikke i det hele tatt. }
+      { Waits on a signal, but wakes regularly regardless: a delayed job
+        does not signal itself when its time comes, and a job added by
+        another process does not signal at all. }
       FQueue.FSignal.WaitFor(FQueue.FStore.PollIntervalMs);
       Continue;
     end;
@@ -609,8 +616,8 @@ begin
       Ctx.Name := J.Name;
       Ctx.Attempt := J.Attempt + 1;
       Ctx.Arena := FArena;
-      { Andre kopi: fra lagerets minne inn i workerens arena, slik at
-        handleren kan skrives som en kontroller. }
+      { The second copy: from the store's memory into the worker's arena, so
+        the handler can be written like a controller. }
       if J.Len > 0 then
         Ctx.Payload := StrDup(FArena, StrRef(J.Data, J.Len))
       else
@@ -629,7 +636,7 @@ begin
           if J.Attempt + 1 < FQueue.FMaxAttempts then
           begin
             InterLockedIncrement64(Int64(FQueue.FRetried));
-            { Eksponentiell backoff, tak på 30 sekunder. }
+            { Exponential backoff, capped at 30 seconds. }
             Backoff := Int64(100) shl J.Attempt;
             if Backoff > 30000 then
               Backoff := 30000;

@@ -1,22 +1,21 @@
-{ Askr.Image — det du kan vite om et bilde uten å dekode det.
+{ Askr.Image — what you can know about an image without decoding it.
 
-  Formatet leses av magiske byte, dimensjonene av hodet, og EXIF fjernes
-  ved å skrive om segmenter. Ingenting her dekoder en eneste piksel, og
-  uniten har derfor ingen avhengigheter i det hele tatt. Skalering og
-  formatkonvertering ligger i Askr.Image.Vips, som laster libvips med
-  dlopen og sier tydelig fra når det mangler.
+  The format is read from magic bytes, the dimensions from the header,
+  and EXIF is removed by rewriting segments. Nothing here decodes a
+  single pixel, so the unit has no dependencies at all. Resizing and
+  format conversion live in Askr.Image.Vips, which loads libvips with
+  dlopen and says clearly when it is missing.
 
-  DETTE ER FØRST OG FREMST EN SIKKERHETSUNIT
+  THIS IS FIRST AND FOREMOST A SECURITY UNIT
 
-  En opplastet fil som heter `.jpg` og faktisk er HTML er en lagret
-  XSS-vektor: serveres den tilbake med feil Content-Type, kjører den i
-  leserens nettleser under ditt domene. Filnavnet kommer fra en angriper
-  og betyr ingenting. `SniffFormat` ser på innholdet.
+  An uploaded file called `.jpg` that is actually HTML is a stored XSS
+  vector: serve it back with the wrong Content-Type and it runs in the
+  reader's browser under your domain. The filename comes from an attacker
+  and means nothing. `SniffFormat` looks at the content.
 
-  Og EXIF er en personvernlekkasje som er lett å glemme: et bilde tatt
-  med en telefon bærer ofte GPS-koordinater. Legger noen ut et
-  profilbilde, legger de ut hjemmeadressen sin med mindre noen har
-  fjernet den. }
+  And EXIF is a privacy leak that is easy to forget: a photo taken on a
+  phone often carries GPS coordinates. If somebody uploads a profile
+  picture, they upload their home address unless something removes it. }
 unit Askr.Image;
 
 {$mode Delphi}{$H+}
@@ -34,54 +33,56 @@ type
     Format: TImageFormat;
     Width: Integer;
     Height: Integer;
-    { True når hodet ble lest og bredde og høyde er ekte tall. For et
-      format vi kjenner, men ikke kan måle, er Format satt og Ok False. }
+    { True when the header was read and width and height are real numbers.
+      For a format we recognise but cannot measure, Format is set and Ok
+      is False. }
     Ok: Boolean;
-    { Animert GIF eller WebP. Verdt å vite fordi en «avatar» som
-      animerer sjelden er det noen ville hatt. }
+    { An animated GIF or WebP. Worth knowing, because an "avatar" that
+      animates is rarely what anyone wanted. }
     Animated: Boolean;
   end;
 
-{ Formatet ut fra de første bytene. Ser aldri på filnavnet. }
+{ The format from the first bytes. Never looks at the filename. }
 function SniffFormat(const Data: TBytes): TImageFormat; overload;
 function SniffFormat(const Path: string): TImageFormat; overload;
-{ Rett på en opplasting: TUploadedFile.Content er en TStr inn i
-  workerens lesebuffer, og kopieres ikke her.
+{ Straight onto an upload: TUploadedFile.Content is a TStr into the
+  worker's read buffer, and is not copied here.
 
-  ContentType fra klienten er en påstand, ikke en måling — en .exe kan
-  meldes som image/png. Dette er målingen. }
+  ContentType from the client is a claim, not a measurement — an .exe can
+  announce itself as image/png. This is the measurement. }
 function SniffFormat(const S: TStr): TImageFormat; overload;
 
-{ Navnet slik det skrives i en Content-Type. Tom streng for ifUnknown. }
+{ The name as written in a Content-Type. An empty string for
+  ifUnknown. }
 function MimeTypeFor(F: TImageFormat): string;
-{ Den vanlige endelsen, med punktum. }
+{ The usual extension, with the dot. }
 function ExtensionFor(F: TImageFormat): string;
 
-{ Leser format og dimensjoner uten å dekode. }
+{ Reads the format and the dimensions without decoding. }
 function ReadImageInfo(const Data: TBytes): TImageInfo; overload;
 function ReadImageInfo(const Path: string): TImageInfo; overload;
 function ReadImageInfo(const S: TStr): TImageInfo; overload;
 
-{ Sier endelsen det samme som innholdet?
+{ Does the extension say the same thing as the content?
 
-  Brukes på opplastinger: en .png som egentlig er JPEG er som regel
-  harmløs slurv, mens en .png som er HTML ikke er det. Begge deler skal
-  stoppes samme sted. }
+  Used on uploads: a .png that is really a JPEG is usually harmless
+  sloppiness, while a .png that is HTML is not. Both are stopped in the
+  same place. }
 function ExtensionMatches(const FileName: string; const Data: TBytes): Boolean; overload;
 function ExtensionMatches(const FileName: string; const S: TStr): Boolean; overload;
 
-{ Fjerner EXIF, XMP og kommentarer fra en JPEG.
+{ Removes EXIF, XMP and comments from a JPEG.
 
-  Pikslene røres ikke: bare APPn- og COM-segmentene hoppes over mens
-  fila skrives om. Returnerer False når inndata ikke er en JPEG i det
-  hele tatt; da er Ut uendret. }
+  The pixels are untouched: only the APPn and COM segments are skipped
+  while the file is rewritten. Returns False when the input is not a JPEG
+  at all; then Out is unchanged. }
 function StripJpegMetadata(const Data: TBytes; out Ut: TBytes): Boolean;
 
-{ Orienteringen fra EXIF, 1 til 8, eller 0 når den ikke står der.
+{ The orientation from EXIF, 1 to 8, or 0 when it is not there.
 
-  Verdt å lese FØR man fjerner EXIF: en telefon skriver ofte bildet
-  liggende og lar orienteringen si at det skal vises stående. Strippes
-  EXIF uten å rotere først, står bildet feil vei for alltid. }
+  Worth reading BEFORE removing EXIF: a phone often writes the photo
+  sideways and lets the orientation say which way up it goes. Strip the
+  EXIF without rotating first and the picture is sideways forever. }
 function JpegOrientation(const Data: TBytes): Integer;
 
 implementation
@@ -155,9 +156,9 @@ begin
             (Int64(D[P + 1]) shl 8) or Int64(D[P]);
 end;
 
-{ TStr er et utsnitt inn i et buffer noen andre eier. Det kopieres her
-  fordi resten av uniten regner i TBytes, og fordi hodet uansett er noen
-  kilobyte — ikke hele opplastingen. }
+{ A TStr is a slice into a buffer somebody else owns. It is copied here
+  because the rest of the unit works in TBytes, and because the header is
+  a few kilobytes anyway — not the whole upload. }
 function StrBytes(const S: TStr; Maks: Integer): TBytes;
 var
   N: Integer;
@@ -201,10 +202,10 @@ begin
   if Has_(Data, 0, [$49, $49, $2A, $00]) or Has_(Data, 0, [$4D, $4D, $00, $2A]) then
     Exit(ifTiff);
 
-  { SVG er tekst, og derfor et spesialtilfelle: det finnes ingen magisk
-    byte. Den regnes som et bilde her fordi noen laster den opp som ett,
-    men SVG kan inneholde skript og skal ALDRI serveres fra samme
-    origin som appen. Det står i docs/images.md. }
+  { SVG is text, and therefore a special case: there is no magic byte. It
+    counts as an image here because people upload it as one, but SVG can
+    contain scripts and must NEVER be served from the same origin as the
+    app. That is in docs/images.md. }
   for I := 0 to 255 do
   begin
     if I + 4 > Length(Data) then
@@ -263,11 +264,13 @@ end;
 
 { ---------------------------------------------------------- dimensjoner -- }
 
-{ JPEG: gå gjennom segmentene til en SOF, som bærer høyde og bredde.
+{ JPEG: walk the segments until a SOF, which carries the height and
+  width.
 
-  All_ SOF-markørene teller — SOF0 er baseline, SOF2 progressiv, og det
-  finnes et dusin til. DHT, DAC og RSTn er IKKE SOF, og å ta dem med er
-  den vanlige feilen: da leses lengdefeltet som dimensjoner. }
+  All the SOF markers count — SOF0 is baseline, SOF2 progressive, and
+  there are a dozen more. DHT, DAC and RSTn are NOT SOF, and including
+  them is the usual mistake: then the length field is read as
+  dimensions. }
 function JpegSize(const D: TBytes; out W, H: Integer): Boolean;
 var
   P, Len: Integer;
@@ -290,7 +293,7 @@ begin
       Inc(P);
       Continue;
     end;
-    { Markører uten lengdefelt. }
+    { Markers with no length field. }
     if (M = $D8) or ((M >= $D0) and (M <= $D9)) or (M = $01) then
     begin
       Inc(P, 2);
@@ -299,7 +302,7 @@ begin
     Len := Be16(D, P + 2);
     if Len < 2 then
       Exit;
-    { SOF0..SOF15, men ikke DHT ($C4), JPG ($C8) og DAC ($CC). }
+    { SOF0..SOF15, but not DHT ($C4), JPG ($C8) and DAC ($CC). }
     if ((M >= $C0) and (M <= $CF)) and (M <> $C4) and (M <> $C8) and (M <> $CC) then
     begin
       if P + 9 >= Length(D) then
@@ -308,7 +311,7 @@ begin
       W := Be16(D, P + 7);
       Exit((W > 0) and (H > 0));
     end;
-    { SOS: nå kommer komprimerte data, og det er ingen SOF etter. }
+    { SOS: compressed data starts here, and there is no SOF after it. }
     if M = $DA then
       Exit;
     Inc(P, 2 + Len);
@@ -332,15 +335,15 @@ begin
 
     ifPng:
       begin
-        { IHDR står alltid først, rett etter den åtte byte lange
-          signaturen, og har bredde og høyde som big-endian. }
+        { IHDR always comes first, right after the eight-byte signature,
+          and carries width and height as big-endian. }
         if (Length(Data) >= 24) and Has_(Data, 12, [$49, $48, $44, $52]) then
         begin
           Result.Width := Integer(Be32(Data, 16));
           Result.Height := Integer(Be32(Data, 20));
           Result.Ok := (Result.Width > 0) and (Result.Height > 0);
         end;
-        { APNG: en acTL-chunk før IDAT. }
+        { APNG: an acTL chunk before IDAT. }
         P := 8;
         while P + 8 <= Length(Data) do
         begin
@@ -366,9 +369,9 @@ begin
           Result.Height := Le16(Data, 8);
           Result.Ok := (Result.Width > 0) and (Result.Height > 0);
         end;
-        { En animert GIF har mer enn ett bilde. Å telle dem ordentlig
-          krever å gå gjennom blokkene; her holder det å se etter
-          NETSCAPE-utvidelsen, som alle animerte har. }
+        { An animated GIF has more than one frame. Counting them properly
+          means walking the blocks; here it is enough to look for the
+          NETSCAPE extension, which every animated one has. }
         for P := 0 to Length(Data) - 11 do
           if Has_(Data, P, [$4E, $45, $54, $53, $43, $41, $50, $45]) then
           begin
@@ -388,7 +391,7 @@ begin
         end
         else if Has_(Data, 12, [$56, $50, $38, $4C]) and (Length(Data) >= 25) then
         begin
-          { 14 bit bredde og 14 bit høyde, pakket over fire byte. }
+          { 14 bits of width and 14 of height, packed over four bytes. }
           Len := Integer(Le32(Data, 21));
           Result.Width := (Len and $3FFF) + 1;
           Result.Height := ((Len shr 14) and $3FFF) + 1;
@@ -415,17 +418,17 @@ begin
         Result.Ok := (Result.Width > 0) and (Result.Height > 0);
       end;
     ifUnknown, ifAvif, ifTiff, ifSvg:
-      { AVIF og TIFF har dimensjoner, men bak nok struktur til at det
-        er dekoding i praksis. SVG har dem ofte ikke i det hele tatt.
-        Format er satt; Ok blir staaende False, og det er svaret. }
+      { AVIF and TIFF have dimensions, but behind enough structure that
+        reading them is decoding in practice. SVG often does not have them
+        at all. Format is set; Ok stays False, and that is the answer. }
       ;
   end;
 end;
 
 function ReadImageInfo(const Path: string): TImageInfo;
 begin
-  { 64 kB rekker til hodet i alle formatene over. GIF-ens
-    NETSCAPE-utvidelse står tidlig, og PNG-ens acTL før IDAT. }
+  { 64 kB is enough for the header in every format above. The GIF's
+    NETSCAPE extension comes early, and the PNG's acTL before IDAT. }
   Result := ReadImageInfo(Les(Path, 64 * 1024));
 end;
 
@@ -566,7 +569,8 @@ begin
       Continue;
     end;
 
-    { SOS: fra her og ut er komprimerte data, og alt kopieres uendret. }
+    { SOS: from here on it is compressed data, and everything is copied
+      unchanged. }
     if M = $DA then
     begin
       for I := P to Length(Data) - 1 do
@@ -583,13 +587,14 @@ begin
     if (Len < 2) or (P + 2 + Len > Length(Data)) then
       Exit;
 
-    { APP0 beholdes: JFIF sier noe om oppløsning, og noen lesere blir
-      sure uten. APP1 til APP15 og COM er metadata og ryker — der ligger
-      EXIF, XMP, IPTC og Photoshop-ressurser.
+    { APP0 is kept: JFIF says something about resolution, and some
+      readers get upset without it. APP1 through APP15 and COM are
+      metadata and go — that is where EXIF, XMP, IPTC and Photoshop
+      resources live.
 
-      APP2 med ICC_PROFILE beholdes likevel: uten fargeprofilen kan et
-      bilde skifte farge synlig, og det er ikke metadata i samme
-      forstand. }
+      APP2 with ICC_PROFILE is kept anyway: without the colour profile an
+      image can visibly shift colour, and that is not metadata in the same
+      sense. }
     Behold := True;
     if (M >= $E1) and (M <= $EF) then
       Behold := (M = $E2) and Has_(Data, P + 4, [$49, $43, $43, $5F]);
@@ -606,7 +611,7 @@ begin
     Inc(P, 2 + Len);
   end;
 
-  { Kom vi hit, fantes ingen SOS. Da er fila avkortet. }
+  { If we got here there was no SOS. Then the file is truncated. }
   Result := False;
 end;
 
