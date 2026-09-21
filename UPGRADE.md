@@ -8,6 +8,10 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.8.1
+
+Nothing can break. Documentation only.
+
 ## 0.8.0
 
 Nothing can break in the framework. One new unit, and `Askr.Mail` only

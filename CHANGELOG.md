@@ -16,6 +16,28 @@ with the zero-major caveat that minor releases may break things until
 
 Nothing yet.
 
+## 0.8.1 — 2026-09-21
+
+Documentation only.
+
+### Fixed
+
+- The docs index described the mail page as "SMTP with STARTTLS", which
+  stopped being the whole story in 0.8.0.
+- The "written but never run" list in `docs/README.md` had two entries
+  and needed three: the Resend transport carries exactly the same
+  evidence and the same gap as the AI layer.
+- `docs/README.md` had said "This documentation describes Askr 0.6.0"
+  since 0.6.0.
+
+### Notes
+
+The docs fix was briefly committed on top of the `v0.8.0` tag and the tag
+was moved. That was wrong — `askr install` verifies that a pinned version
+resolves to one commit, and a tag that moves breaks exactly that promise.
+`v0.8.0` was restored to `097b70b`, and this release carries the change
+instead.
+
 ## 0.8.0 — 2026-09-21
 
 A mail provider. Resend over its HTTP API, and the transport is now
