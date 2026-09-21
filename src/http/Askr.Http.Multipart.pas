@@ -1,24 +1,25 @@
-{ Askr.Http.Multipart — `multipart/form-data`, altså skjemaer med filer.
+{ Askr.Http.Multipart — `multipart/form-data`, that is forms with files.
 
-  Parseren kopierer ingenting. Kroppen ligger allerede sammenhengende i
-  workerens lesebuffer, og hver del blir et `TStr`-utsnitt inn i det samme
-  bufferet. En opplasting på fem megabyte koster derfor fem megabyte én
-  gang — i bufferet som uansett måtte lese dem — og ikke en kopi til i
-  arenaen. Det er den samme modellen som resten av request-parsingen.
+  The parser copies nothing. The body already sits contiguously in the
+  worker's read buffer, and every part becomes a `TStr` slice into that
+  same buffer. A five-megabyte upload therefore costs five megabytes once
+  — in the buffer that had to read them anyway — and not another copy in
+  the arena. It is the same model as the rest of request parsing.
 
-  **Taket er `MaxBodyBytes`** (8 MB som standard, satt i `TServerOptions`).
-  Hele opplastingen må få plass i minnet på én gang. Det holder for skjemaer
-  med vedlegg, profilbilder og CSV-import, og det holder ikke for video.
-  Å laste opp noe som ikke får plass i minnet krever at kroppen strømmes til
-  disk mens den leses, og det er en annen form enn «kroppen er ett utsnitt» —
-  den ville måttet endres i `TWorker`, ikke her.
+  **The limit is `MaxBodyBytes`** (8 MB by default, set in
+  `TServerOptions`). The whole upload has to fit in memory at once. That
+  is enough for forms with attachments, profile pictures and CSV imports,
+  and it is not enough for video. Uploading something that does not fit in
+  memory requires the body to be streamed to disk as it is read, and that
+  is a different shape from "the body is one slice" — it would have to
+  change in `TWorker`, not here.
 
-  **Filnavnet fra klienten er ikke til å stole på.** Det er en tekst en
-  angriper skriver, og den klassiske feilen er å skjøte den rett på en
-  katalogsti: `../../etc/passwd` eller en fil som heter `.bashrc`. Derfor
-  har `TUploadedFile` både `SafeName`, som rydder navnet, og `StoreIn`, som
-  ikke bruker klientens navn i det hele tatt. `SaveAs` skriver dit du sier,
-  og da er stien ditt ansvar. }
+  **The filename from the client is not to be trusted.** It is a string an
+  attacker writes, and the classic mistake is to join it straight onto a
+  directory path: `../../etc/passwd`, or a file called `.bashrc`. So
+  `TUploadedFile` has both `SafeName`, which cleans the name, and
+  `StoreIn`, which does not use the client's name at all. `SaveAs` writes
+  where you say, and then the path is your responsibility. }
 unit Askr.Http.Multipart;
 
 {$mode Delphi}{$H+}
@@ -29,45 +30,47 @@ uses
   SysUtils, Classes, Askr.Core.Arena, Askr.Core.Text;
 
 const
-  { Grenser mot en kropp som er liten, men skadelig: tusenvis av bittesmå
-    deler koster parsing og allokering uten å bryte MaxBodyBytes. }
+  { Guards against a body that is small but harmful: thousands of tiny
+    parts cost parsing and allocation without breaking MaxBodyBytes. }
   MaxMultipartParts = 512;
   MaxPartHeaderBytes = 16 * 1024;
 
 type
   TMultipartError = (
     mpOk,
-    mpNoBoundary,       { Content-Type mangler boundary= }
-    mpMalformed,        { grensene står ikke der de skal }
+    mpNoBoundary,       { Content-Type has no boundary= }
+    mpMalformed,        { the boundaries are not where they should be }
     mpTooManyParts
   );
 
-  { Én fil fra skjemaet. Innholdet peker inn i requestens lesebuffer og er
-    gyldig så lenge requesten er det — ikke lenger. Skal den overleve, må
-    den lagres eller kopieres. }
+  { One file from the form. The content points into the request's read
+    buffer and is valid as long as the request is — no longer. To outlive
+    it, it has to be stored or copied. }
   TUploadedFile = record
     FieldName: TStr;
-    { Nøyaktig det klienten sendte. Ikke bruk den som filnavn. }
+    { Exactly what the client sent. Do not use it as a filename. }
     ClientName: TStr;
-    { Klientens Content-Type. Også en påstand fra klienten, ikke en måling:
-      en .exe kan meldes som image/png. Skal typen være til å stole på, må
-      innholdet sjekkes. }
+    { The client's Content-Type. Also a claim from the client, not a
+      measurement: an .exe can announce itself as image/png. For the type
+      to be trustworthy, the content has to be checked. }
     ContentType: TStr;
     Content: TStr;
 
     function IsEmpty: Boolean;
     function Size: SizeInt;
-    { Klientnavnet uten katalogdeler og uten tegn som betyr noe for et
-      filsystem. Tomt eller umulig navn blir 'upload'. }
+    { The client name with directory parts and anything meaningful to a
+      file system removed. An empty or impossible name becomes
+      'upload'. }
     function SafeName: string;
-    { Filendelsen fra SafeName, med punktum og i små bokstaver, eller ''. }
+    { The extension from SafeName, with the dot and lower-cased, or ''. }
     function Extension: string;
-    { Skriver til nøyaktig denne stien. Stien er kallerens ansvar — sett
-      aldri sammen en sti av ClientName. }
+    { Writes to exactly this path. The path is the caller's responsibility
+      — never build one out of ClientName. }
     function SaveAs(const Path: string): Boolean;
-    { Skriver til katalogen under et tilfeldig navn med den opprinnelige
-      endelsen, og gir hele stien tilbake. Tom streng hvis det ikke gikk.
-      Dette er den trygge veien: klientens navn når aldri filsystemet. }
+    { Writes into the directory under a random name with the original
+      extension, and gives the whole path back. An empty string if it did
+      not work. This is the safe route: the client's name never reaches
+      the file system. }
     function StoreIn(const Dir: string): string;
   end;
 
@@ -80,12 +83,12 @@ type
   end;
   PMultipartField = ^TMultipartField;
 
-  { Tabellene er arena-allokerte blokker med teller, ikke dynamiske
-    arrayer. Grunnen er målt og har en egen test: et dynamisk array er et
-    finaliseringspliktig felt, og `TRequest` som har ett slikt betaler en
-    `Defer`-oppføring per request — på hver eneste request, også de uten
-    en eneste fil. Hele arena-modellen er at en request ikke skal koste
-    opprydning. }
+  { The tables are arena-allocated blocks with a count, not dynamic
+    arrays. The reason is measured and has a test of its own: a dynamic
+    array is a field that needs finalising, and a `TRequest` with one of
+    those pays a `Defer` entry per request — on every single request,
+    including those without a single file. The whole point of the arena
+    model is that a request should not cost cleanup. }
   TMultipartForm = record
     Fields: PMultipartField;
     FieldCount: Integer;
@@ -99,23 +102,23 @@ type
     function Value(const AName: string): TStr;
     function Has(const AName: string): Boolean;
     function FileFor(const AName: string): TUploadedFile;
-    { Returverdien er et dynamisk array — den er en funksjonsverdi hos
-      kalleren, ikke et felt på requesten, og koster derfor ingen Defer. }
+    { The return value is a dynamic array — it is a function value at the
+      caller, not a field on the request, and so costs no Defer. }
     function FilesFor(const AName: string): TUploadedFiles;
     function ErrorText: string;
   end;
 
-{ Grensen ut av Content-Type. Tom TStr hvis den ikke er der. Verdien kan
-  stå i anførselstegn, og da hører de ikke med. }
+{ The boundary out of Content-Type. An empty TStr if it is not there.
+  The value may be quoted, and then the quotes are not part of it. }
 function MultipartBoundary(const ContentType: TStr): TStr;
 
-{ Parts_ kroppen. Returnerer False og setter Error ved feil — en ødelagt
-  kropp er en 400 fra kalleren, ikke en exception herfra. }
+{ Splits the body. Returns False and sets Error on failure — a broken
+  body is a 400 from the caller, not an exception from here. }
 function ParseMultipart(A: TArena; const Body, Boundary: TStr;
   out Form: TMultipartForm): Boolean;
 
-{ Navnet en fil får på disk. Eksponert fordi den er verdt å kunne teste og
-  kalle direkte. }
+{ The name a file gets on disk. Exposed because it is worth being able
+  to test and call directly. }
 function SanitizeFileName(const S: string): string;
 
 implementation
@@ -131,9 +134,9 @@ var
   C: Char;
   Base: string;
 begin
-  { Først vekk med alt som ligner en katalogsti. Både / og \, fordi en
-    Windows-klient sender \ og en Unix-server ellers ville sett det som et
-    helt vanlig tegn i navnet. }
+  { First remove anything resembling a directory path. Both / and \,
+    because a Windows client sends \ and a Unix server would otherwise see
+    it as a perfectly ordinary character in the name. }
   Base := S;
   for I := Length(Base) downto 1 do
     if (Base[I] = '/') or (Base[I] = '\') or (Base[I] = ':') then
@@ -150,13 +153,14 @@ begin
        ((C >= '0') and (C <= '9')) or (C = '.') or (C = '-') or (C = '_') then
       Result := Result + C
     else
-      { Alt annet blir understrek, også mellomrom og ikke-ASCII. Et navn
-        som overlever hit skal ikke kunne bety noe for et skall. }
+      { Everything else becomes an underscore, spaces and non-ASCII
+        included. A name that survives this far must not be able to mean
+        anything to a shell. }
       Result := Result + '_';
   end;
 
-  { Ledende punktum vekk: «.bashrc» og «..» er begge navn man ikke vil ha
-    laget ved et uhell. }
+  { Leading dots removed: ".bashrc" and ".." are both names you do not
+    want created by accident. }
   while (Result <> '') and (Result[1] = '.') do
     Delete(Result, 1, 1);
 
@@ -170,9 +174,9 @@ end;
 
 function TUploadedFile.IsEmpty: Boolean;
 begin
-  { Tom betyr «det kom ingen fil». Et skjemafelt der brukeren ikke valgte
-    noe sender en del med tomt filnavn og null bytes, og det skal ikke se
-    ut som en opplasting. }
+  { Empty means "no file came". A form field where the user chose
+    nothing sends a part with an empty filename and zero bytes, and that
+    must not look like an upload. }
   Result := (ClientName.Len = 0) and (Content.Len = 0);
 end;
 
@@ -199,7 +203,7 @@ begin
       Result := LowerCase(Copy(N, P, MaxInt));
       Break;
     end;
-  { En «endelse» på tjue tegn er ikke en endelse. }
+  { An "extension" of twenty characters is not an extension. }
   if Length(Result) > 16 then
     Result := '';
 end;
@@ -231,10 +235,10 @@ begin
   Result := '';
   if not ForceDirectories(Dir) then
     Exit;
-  { Tilfeldig navn, ikke klientens. To brukere som laster opp «bilde.jpg»
-    skal ikke skrive over hverandre, og klientens navn skal ikke nå
-    filsystemet i det hele tatt. Det opprinnelige navnet er fortsatt der i
-    ClientName hvis appen vil lagre det ved siden av. }
+  { A random name, not the client's. Two users uploading "photo.jpg"
+    must not overwrite each other, and the client's name must not reach the
+    file system at all. The original name is still in ClientName if the app
+    wants to store it alongside. }
   Path_ := IncludeTrailingPathDelimiter(Dir) + RandomHex(16) + Extension;
   if not SaveAs(Path_) then
     Exit;
@@ -333,9 +337,9 @@ begin
   if P < 0 then
     Exit;
   Rest := ContentType.Slice(P + Length('boundary='));
-  { Verdien kan stå i anførselstegn. RFC 2046 tillater tegn i en grense som
-    ellers må siteres, og en klient som gjør det skal ikke gi en grense som
-    begynner med ". }
+  { The value may be quoted. RFC 2046 allows characters in a boundary
+    that otherwise have to be quoted, and a client that does so must not
+    produce a boundary starting with a quote. }
   if (Rest.Len > 0) and (Rest.Data^ = Ord('"')) then
   begin
     Rest := Rest.Slice(1);
@@ -345,16 +349,16 @@ begin
     Result := Rest.Slice(0, P);
     Exit;
   end;
-  { Ellers slutter den ved semikolon eller ved slutten. }
+  { Otherwise it ends at a semicolon or at the end. }
   P := Rest.IndexOfByte(Ord(';'));
   if P >= 0 then
     Rest := Rest.Slice(0, P);
   Result := Rest.TrimSpace;
 end;
 
-{ Henter en navngitt parameter ut av en Content-Disposition-linje:
-  `form-data; name="fil"; filename="bilde.jpg"`. Verdien kan stå med eller
-  uten anførselstegn. }
+{ Pulls a named parameter out of a Content-Disposition line:
+  `form-data; name="file"; filename="photo.jpg"`. The value may be quoted
+  or bare. }
 function DispositionParam(const Line: TStr; const Key: string): TStr;
 var
   P: SizeInt;
@@ -437,16 +441,16 @@ begin
     Exit(False);
   end;
 
-  { Skilletegnet er CRLF + "--" + grensen. CRLF-en foran hører til
-    skilletegnet, ikke til innholdet — glemmer man det, får hver eneste fil
-    to ekstra byte på slutten, og det merkes først når noen åpner en
-    zip-fil som ikke lar seg åpne. }
+  { The delimiter is CRLF + "--" + the boundary. The CRLF in front
+    belongs to the delimiter, not to the content — forget that and every
+    single file gets two extra bytes at the end, which is noticed first
+    when somebody cannot open a zip file. }
   Skille.Init(A, Boundary.Len + 8);
   Skille.Append(#13#10'--');
   Skille.Append(Boundary);
   Delim := Skille.ToStr;
-  { Den aller første grensen står uten CRLF foran hvis det ikke er noen
-    preambel. }
+  { The very first boundary has no CRLF in front of it when there is no
+    preamble. }
   Start := Delim.Slice(2);
 
   if (Body.Len >= Start.Len) and
@@ -454,7 +458,7 @@ begin
     P := Start.Len
   else
   begin
-    { With_ preambel: let etter den første ekte grensen. }
+    { With a preamble: look for the first real boundary. }
     P := Body.IndexOfStr(Delim);
     if P < 0 then
     begin
@@ -466,7 +470,8 @@ begin
 
   while True do
   begin
-    { After_ grensen: enten "--" og slutt, eller CRLF og en del til. }
+    { After the boundary: either "--" and the end, or CRLF and another
+      part. }
     if P + 2 > Body.Len then
     begin
       Form.Error := mpMalformed;
@@ -476,8 +481,8 @@ begin
       Break;
     if ((Body.Data + P)^ <> 13) or ((Body.Data + P + 1)^ <> 10) then
     begin
-      { Noen klienter legger på mellomrom etter grensen. Skip over dem
-        heller enn å avvise en kropp som ellers er i orden. }
+      { Some clients add whitespace after the boundary. Skip past it rather
+        than refuse a body that is otherwise fine. }
       while (P < Body.Len) and
             (((Body.Data + P)^ = 32) or ((Body.Data + P)^ = 9)) do
         Inc(P);
@@ -509,8 +514,8 @@ begin
     Neste := Body.IndexOfStr(Delim, P);
     if Neste < 0 then
     begin
-      { Without en avsluttende grense er kroppen kuttet. Å ta med resten
-        likevel ville gitt en halv fil som ser hel ut. }
+      { Without a closing boundary the body is truncated. Taking the rest
+        anyway would give half a file that looks whole. }
       Form.Error := mpMalformed;
       Exit(False);
     end;
@@ -520,18 +525,19 @@ begin
     Disp := PartHeader(Hode, 'Content-Disposition');
     Name_ := DispositionParam(Disp, 'name');
     if Name_.Len = 0 then
-      { En del uten navn hører ikke til skjemaet. Den hoppes over i stedet
-        for å velte hele kroppen. }
+      { A part without a name does not belong to the form. It is skipped
+        rather than bringing the whole body down. }
       Continue;
 
-    { `filename` er det som skiller en fil fra et vanlig felt — også når
-      den er tom, slik et skjema med et tomt filfelt sender den. }
+    { `filename` is what separates a file from an ordinary field — also
+      when it is empty, which is how a form with an empty file field
+      sends it. }
     Filnavn := DispositionParam(Disp, 'filename');
     if Disp.IndexOfStr('filename=') >= 0 then
     begin
-      { Dobling i arenaen. Den forrige blokken blir liggende til Reset —
-        samme avveining som TStrBuilder gjør, og den koster ingenting i en
-        arena. Et skjema har som regel én fil, så det blir null vekster. }
+      { Doubling in the arena. The previous block stays until Reset — the
+        same trade-off TStrBuilder makes, and it costs nothing in an
+        arena. A form usually has one file, so that is zero growths. }
       if FilesSeen >= KapFil then
       begin
         if KapFil = 0 then

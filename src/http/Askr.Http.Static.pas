@@ -1,14 +1,15 @@
-{ Askr.Http.Static — statiske filer fra en mappe.
+{ Askr.Http.Static — static files from a directory.
 
-  PRD-en legger statiske filer i web-skallet, sammen med server, TLS og
-  sesjoner. I praksis er det Vite-bygget som skal ut her: en håndfull
-  JS- og CSS-filer med hash i navnet.
+  The PRD puts static files in the web shell, alongside the server, TLS
+  and sessions. In practice it is the Vite build that goes out here: a
+  handful of JS and CSS files with a hash in the name.
 
-  Det farlige ved en statisk filserver er stien. En request på
-  /../../etc/passwd skal ikke nå utenfor rotmappa, og det holder ikke å lete
-  etter «..» i teksten — prosentkoding, absolutte stier og symlenker må også
-  stoppes. Her normaliseres stien til segmenter, og alt som peker oppover
-  eller begynner med skråstrek avvises før noe røres på disk. }
+  The dangerous part of a static file server is the path. A request for
+  /../../etc/passwd must not reach outside the root directory, and looking
+  for ".." in the text is not enough — percent encoding, absolute paths
+  and symlinks all have to be stopped as well. Here the path is normalised
+  into segments, and anything pointing upwards or starting with a slash is
+  refused before anything on disk is touched. }
 unit Askr.Http.Static;
 
 {$mode Delphi}{$H+}
@@ -20,7 +21,7 @@ uses
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response;
 
 const
-  { 16 MB. Større filer serveres ikke herfra. }
+  { 16 MB. Larger files are not served from here. }
   MaxStaticFileBytes = 16 * 1024 * 1024;
 
 type
@@ -31,15 +32,16 @@ type
     FIndexFile: string;
     function Resolve(const UrlPath: TStr; out FullPath: string): Boolean;
   public
-    { ARoot er mappa som serveres. Den må finnes. }
+    { ARoot is the directory being served. It has to exist. }
     constructor Create(const ARoot: string);
-    { Svarer på requesten hvis fila finnes, ellers nil. Kalleren bestemmer
-      hva som skjer da — ruting videre, eller 404. }
+    { Answers the request if the file exists, otherwise nil. The caller
+      decides what happens then — routing onwards, or a 404. }
     function Serve(Req: TRequest): TResponse;
-    { Sekunder i Cache-Control. 0 slår den av. Bygg med hash i filnavnet
-      tåler en lang verdi; alt annet bør ha 0. }
+    { Seconds in Cache-Control. 0 turns it off. A build with a hash in the
+      filename tolerates a long value; anything else should have 0. }
     property MaxAge: Integer read FMaxAge write FMaxAge;
-    { Fil som serveres når stien peker på en mappe. Tom slår det av. }
+    { The file served when the path points at a directory. Empty turns it
+      off. }
     property IndexFile: string read FIndexFile write FIndexFile;
     property Root: string read FRoot;
   end;
@@ -100,8 +102,9 @@ begin
       S := Seg.ToString;
       if (S = '') or (S = '.') then
         Continue;
-      { Alt som peker oppover avvises. Vi normaliserer ikke bort '..' ved å
-        poppe — en request som prøver det er en request vi ikke vil ha. }
+      { Anything pointing upwards is refused. We do not normalise '..' away
+        by popping — a request that tries it is a request we do not
+        want. }
       if S = '..' then
         Exit(False);
       if (Pos(#0, S) > 0) or (Pos('\', S) > 0) or (Pos(':', S) > 0) then
@@ -130,8 +133,8 @@ begin
     if not FileExists(S) then
       Exit(False);
 
-    { Siste sikring: den oppslåtte stien må fortsatt ligge under rota, også
-      etter at OS har fulgt eventuelle symlenker. }
+    { The last guard: the resolved path must still lie under the root, also
+      after the OS has followed any symlinks. }
     FullPath := ExpandFileName(S);
     if Copy(FullPath, 1, Length(FRoot) + 1) <> FRoot + PathDelim then
       Exit(False);
@@ -160,9 +163,9 @@ begin
   F := TFileStream.Create(FullPath, fmOpenRead or fmShareDenyNone);
   try
     Size := F.Size;
-    { Fila leses inn i request-arenaen, så en stor fil blir en stor arena som
-      workeren beholder. Over grensen er det en jobb for en reverse proxy
-      eller en sendfile-vei, ikke for denne. }
+    { The file is read into the request arena, so a large file becomes a
+      large arena the worker keeps. Above the limit it is a job for a
+      reverse proxy or a sendfile path, not for this one. }
     if Size > MaxStaticFileBytes then
       Exit;
     Buf := PByte(A.Alloc(PtrUInt(Size) + 1));

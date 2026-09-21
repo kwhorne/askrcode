@@ -1,25 +1,26 @@
-{ Askr.Http.Router — rutingstabellen.
+{ Askr.Http.Router — the routing table.
 
-  Den samme tabellen brukes av både web-skallet og desktop-skallet, slik
-  PRD-en beskriver: App.RegisterRoutes(RegisterAppRoutes) er det eneste
-  desktop-varianten trenger for å svare på de samme adressene.
+  The same table is used by both the web shell and the desktop shell, as
+  the PRD describes: App.RegisterRoutes(RegisterAppRoutes) is all the
+  desktop variant needs to answer the same addresses.
 
-      procedure RegisterAppRoutes(R: TRouter);
-      begin
-        R.Get('/customers', Ctrl.Index);
-        R.Get('/customers/:id', Ctrl.Show);
-        R.Post('/customers', Ctrl.Store);
-      end;
+  procedure RegisterAppRoutes(R: TRouter);
+  begin
+  R.Get('/customers', Ctrl.Index);
+  R.Get('/customers/:id', Ctrl.Show);
+  R.Post('/customers', Ctrl.Store);
+  end;
 
-  Mønstrene har tre slags segmenter: faste, :navn som fanger ett segment, og
-  *navn som fanger resten av stien. Ingen regulære uttrykk — det er ikke
-  verdt kompleksiteten, og en rute man ikke kan lese i farten er en rute som
-  blir feil.
+  Patterns have three kinds of segment: literal, :name which captures one
+  segment, and *name which captures the rest of the path. No regular
+  expressions — they are not worth the complexity, and a route you cannot
+  read at a glance is a route that ends up wrong.
 
-  Rutene sorteres ikke etter registreringsrekkefølge alene: en fast rute
-  vinner alltid over en med parameter, og en med parameter over en wildcard.
-  Ellers ville /customers/new blitt slukt av /customers/:id avhengig av
-  hvilken rekkefølge noen tilfeldigvis skrev dem i. }
+  Routes are not sorted by registration order alone: a literal route
+  always beats one with a parameter, and one with a parameter beats a
+  wildcard. Otherwise /customers/new would be swallowed by
+  /customers/:id depending on the order somebody happened to write
+  them in. }
 unit Askr.Http.Router;
 
 {$mode Delphi}{$H+}
@@ -36,20 +37,22 @@ type
   TRouteHandler = function(Req: TRequest): TResponse of object;
   TRouteHandlerProc = function(Req: TRequest): TResponse;
 
-  { Kjøres før handleren. Returnerer nil for å slippe requesten videre, eller
-    en respons for å stoppe den der. Eksplisitt framfor en kjede med Next:
-    uten closures blir en Next-basert kjede vanskeligere å lese enn den er
-    verdt. }
+  { Runs before the handler. Returns nil to let the request through, or a
+    response to stop it there. Explicit rather than a chain with Next:
+    without closures a Next-based chain is harder to read than it is
+    worth. }
   TMiddleware = function(Req: TRequest): TResponse of object;
   TMiddlewareProc = function(Req: TRequest): TResponse;
 
-  { Kjøres etter at svaret er laget, med svaret i hånden. Returverdien er
-    svaret som går videre — som regel det samme objektet, endret.
+  { Runs after the response is made, with the response in hand. The return
+    value is the response that travels on — usually the same object,
+    modified.
 
-    Middleware alene rekker ikke: sesjonen må skrives tilbake og kaka settes
-    *etter* at handleren har kjørt, og det finnes ikke noe sted å henge det
-    når det eneste hooket er «før». Filteret kjenner ikke sesjoner eller
-    noe annet fra runtime-laget — det er bare et sted å stå. }
+    Middleware alone is not enough: the session has to be written back and
+    the cookie set *after* the handler has run, and there is nowhere to
+    hang that when the only hook is "before". The filter knows nothing
+    about sessions or anything else from the runtime layer — it is only
+    somewhere to stand. }
   TResponseFilter = function(Req: TRequest; Res: TResponse): TResponse of object;
   TResponseFilterProc = function(Req: TRequest; Res: TResponse): TResponse;
 
@@ -72,8 +75,9 @@ type
     procedure Parse(const APattern: string);
   public
     constructor Create(AMethod: THttpMethod; const APattern: string);
-    { With_ og uten metodesjekk. Den siste finnes for å kunne svare 405 i
-      stedet for 404 når stien finnes, men metoden er en annen. }
+    { With and without the method check. The second exists so a 405 can be
+      answered instead of a 404 when the path exists but the method is
+      another. }
     function Matches(Req: TRequest; const Path: TStr): Boolean;
     function MatchesPath(Req: TRequest; const Path: TStr): Boolean;
     property Method: THttpMethod read FMethod;
@@ -92,16 +96,17 @@ type
     FSorted: Boolean;
     function Add(AMethod: THttpMethod; const APattern: string): TRoute;
     procedure SortRoutes;
-    { Selve rutingen, uten etterfiltre. Handle kjører filtrene rundt den,
-      og alle utganger — 404, 405, en kortsluttende middleware — må gå
-      gjennom det ene stedet for at filtrene skal se dem alle. }
+    { The routing itself, without the after-filters. Handle runs the
+      filters around it, and every exit — 404, 405, a short-circuiting
+      middleware — has to go through that one place for the filters to
+      see them all. }
     function Route(Req: TRequest): TResponse;
   public
     constructor Create;
     destructor Destroy; override;
 
-    { Registrering. Den overlastede formen uten «of object» finnes for
-      frittstående funksjoner. }
+    { Registration. The overload without "of object" exists for free
+      functions. }
     procedure Get(const Pattern: string; H: TRouteHandler); overload;
     procedure Get(const Pattern: string; H: TRouteHandlerProc); overload;
     procedure Post(const Pattern: string; H: TRouteHandler); overload;
@@ -111,23 +116,24 @@ type
     procedure Delete(const Pattern: string; H: TRouteHandler); overload;
     procedure Any(const Pattern: string; H: TRouteHandler); overload;
 
-    { Name_ på sist registrerte rute. `askr routes` lister dem i steg 6. }
+    { Names the most recently registered route. `askr routes` lists them in
+      step 6. }
     procedure AsName(const AName: string);
 
     procedure Use(M: TMiddleware); overload;
     procedure Use(M: TMiddlewareProc); overload;
 
-    { Etterfiltre kjøres i motsatt rekkefølge av registreringen, slik at
-      et par av Use og After omslutter hverandre som man forventer. De
-      kjører også når middleware kortsluttet requesten — ellers ville en
-      401 fra en guard mistet sesjonskaka si. }
+    { After-filters run in the reverse order of registration, so that a
+      pair of Use and After wraps around each other the way you expect.
+      They also run when middleware short-circuited the request —
+      otherwise a 401 from a guard would lose its session cookie. }
     procedure After(F: TResponseFilter); overload;
     procedure After(F: TResponseFilterProc); overload;
 
-    { Kalles når ingen rute passer. Without en satt, svares det 404. }
+    { Called when no route matches. Without one set, the answer is 404. }
     procedure SetNotFound(H: TRouteHandler);
 
-    { Heter ikke Dispatch: det skygger for TObject.Dispatch. }
+    { Not called Dispatch: that shadows TObject.Dispatch. }
     function Handle(Req: TRequest): TResponse;
 
     { To_ `askr routes`. Én linje per rute. }
@@ -241,12 +247,12 @@ begin
           Req.SetParam(FSegments[I].Text, Seg);
         end;
       skWildcard:
-        { Håndtert før SplitAt over; kan ikke nås her. }
+        { Handled before the SplitAt above; unreachable here. }
         Exit(False);
     end;
   end;
 
-  { Overflødige segmenter betyr en annen rute. }
+  { Leftover segments mean a different route. }
   Result := Rest.Len = 0;
 end;
 
@@ -359,9 +365,9 @@ end;
 
 function CompareRoutes(Item1, Item2: Pointer): Integer;
 begin
-  { Mest spesifikke først: fast segment slår parameter, parameter slår
-    wildcard. Lik spesifisitet beholder registreringsrekkefølgen, som
-    TList.Sort ikke garanterer — derfor brukes mønsteret som tiebreak. }
+  { Most specific first: a literal segment beats a parameter, a parameter
+    beats a wildcard. Equal specificity keeps registration order, which
+    TList.Sort does not guarantee — hence the pattern as a tiebreak. }
   Result := TRoute(Item2).FSpecificity - TRoute(Item1).FSpecificity;
   if Result = 0 then
     Result := Length(TRoute(Item2).FSegments) - Length(TRoute(Item1).FSegments);
@@ -382,8 +388,8 @@ var
   I: Integer;
 begin
   Result := Route(Req);
-  { Motsatt rekkefølge: Use(A); After(A'); Use(B); After(B') skal gi
-    A, B, handler, B', A'. }
+  { Reverse order: Use(A); After(A2); Use(B); After(B2) should give
+    A, B, handler, B2, A2. }
   for I := High(FFilterProcs) downto 0 do
     Result := FFilterProcs[I](Req, Result);
   for I := High(FFilters) downto 0 do

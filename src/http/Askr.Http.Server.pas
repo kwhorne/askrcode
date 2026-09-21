@@ -1,20 +1,21 @@
-{ Askr.Http.Server — HTTP/1.1-vert med én arena per worker.
+{ Askr.Http.Server — an HTTP/1.1 host with one arena per worker.
 
-  Modellen er den PRD-en beskriver: N worker-tråder, hver med sin egen arena,
-  som alle blokkerer i accept på den samme lyttesocketen. Kjernen fordeler
-  tilkoblingene. Ingen event-løkke, ingen tilstandsmaskin — én tråd følger én
-  tilkobling fra start til slutt, og hele requesten ryddes med ett Arena.Reset.
+  The model is the one the PRD describes: N worker threads, each with its
+  own arena, all blocking in accept on the same listening socket. The
+  kernel distributes the connections. No event loop, no state machine —
+  one thread follows one connection from start to finish, and the whole
+  request is cleared with a single Arena.Reset.
 
-  Lesebufferet eies av workeren og ligger _ikke_ i arenaen. Det er med vilje:
-  bufferet må overleve Reset for at keep-alive og pipelining skal virke, og
-  det gjenbrukes på tvers av tilkoblinger slik at arenaen bare får se det som
-  faktisk er utledet av requesten.
+  The read buffer is owned by the worker and does _not_ live in the arena.
+  That is deliberate: the buffer has to survive Reset for keep-alive and
+  pipelining to work, and it is reused across connections so the arena
+  only ever sees what is actually derived from the request.
 
-  Hodet kopieres inn i arenaen før parsing. Det koster én memcpy på noen
-  hundre bytes, og til gjengjeld kan lesebufferet vokse når kroppen kommer
-  uten at utsnittene i TRequest blir hengende.
+  The head is copied into the arena before parsing. That costs one memcpy
+  of a few hundred bytes, and in return the read buffer can grow when the
+  body arrives without leaving the slices in TRequest dangling.
 
-  Programmer som bruker denne enheten må ha cthreads først i uses på Unix. }
+  Programs using this unit must have cthreads first in uses on Unix. }
 unit Askr.Http.Server;
 
 {$mode Delphi}{$H+}
@@ -41,19 +42,19 @@ type
     Backlog: Integer;
     ArenaBlockSize: PtrUInt;
     MaxBodyBytes: Int64;
-    { Tid vi venter på at en ny request skal begynne på en åpen tilkobling. }
+    { How long we wait for a new request to start on an open connection. }
     KeepAliveTimeoutMs: Integer;
-    { Tid vi venter på at en påbegynt request skal bli ferdig lest. }
+    { How long we wait for a started request to finish being read. }
     RequestTimeoutMs: Integer;
-    { After_ dette antallet stenges tilkoblingen, slik at lastbalansering og
-      arenaer får en naturlig grense. 0 = ubegrenset. }
+    { After this many, the connection is closed, so load balancing and
+      arenas get a natural boundary. 0 = unlimited. }
     MaxRequestsPerConnection: Integer;
     { Lesebufferet krymper tilbake hit etter en stor request. }
     ReadBufferSize: SizeInt;
     LogRequests: Boolean;
-    { PEM-filer. Er begge satt, snakker serveren HTTPS i stedet for HTTP.
-      Det er ingen egen port og ingen omdirigering: én server, én protokoll.
-      Vil man ha begge deler, kjører man to servere. }
+    { PEM files. With both set the server speaks HTTPS instead of HTTP.
+      There is no separate port and no redirect: one server, one protocol.
+      If you want both, run two servers. }
     TlsCertFile: string;
     TlsKeyFile: string;
   end;
@@ -70,12 +71,13 @@ type
     FBufLen: SizeInt;    { gyldige bytes fra 0 }
     FBufPos: SizeInt;    { konsumert til hit }
     FRequests: QWord;
-    { Ikke-nil når tilkoblingen er kryptert. Lever like lenge som én
-      tilkobling, og eier ikke socketen. }
+    { Non-nil when the connection is encrypted. Lives exactly as long as one
+      connection, and does not own the socket. }
     FTls: TTlsConn;
     procedure EnsureCapacity(Need: SizeInt);
     procedure Compact;
-    { Leser minst én byte til. False = motparten lukket eller timeout. }
+    { Reads at least one more byte. False = the peer closed, or a
+      timeout. }
     function Fill(Sock: TSocket): Boolean;
     function FindHeadEnd(out HeadLen, Total: SizeInt): Boolean;
     procedure ServeConnection(Sock: TSocket; const Peer: string);
@@ -110,23 +112,24 @@ type
     procedure SetHandler(AHandler: THandlerMethod); overload;
     procedure SetHandler(AHandler: THandlerFunc); overload;
 
-    { Åpner lyttesocketen og starter workerne. Returnerer med en gang. }
+    { Opens the listening socket and starts the workers. Returns at
+      once. }
     procedure Start;
-    { Start, og blokker til Stop kalles. }
+    { Start, and block until Stop is called. }
     procedure Run;
     procedure Stop;
 
     function TotalRequests: QWord;
-    { Summert over workerne. Flater dette ut under vedvarende last, holder
-      arena-premisset; vokser det, gjør det ikke. }
+    { Summed across the workers. If this flattens out under sustained load
+      the arena premise holds; if it grows, it does not. }
     function TotalArenaReserved: PtrUInt;
     function TotalArenaHighWater: PtrUInt;
-    { Faktisk port. Er Port satt til 0 er dette porten kjernen valgte, som er
-      det tester trenger for å slippe å gjette. }
+    { The actual port. With Port set to 0 this is the port the kernel
+      chose, which is what tests need so they do not have to guess. }
     property BoundPort: Word read FBoundPort;
     property Running: Boolean read IsRunning;
     property Options: TServerOptions read FOpts;
-    { True når serveren tok imot et sertifikat og snakker HTTPS. }
+    { True when the server accepted a certificate and speaks HTTPS. }
     function UsesTls: Boolean;
   end;
 
@@ -142,7 +145,8 @@ const
   ScNProcessorsOnln = {$IFDEF DARWIN} 58 {$ELSE} 84 {$ENDIF};
 
 var
-  { Adressen sendes til setsockopt, så verdien må ha en levetid. }
+  { The address is passed to setsockopt, so the value needs a
+    lifetime. }
   SockOptTrue: cint = 1;
 
 function sysconf(Name: cint): clong; cdecl; external 'c' name 'sysconf';
@@ -243,9 +247,9 @@ begin
   Result := True;
 end;
 
-{ Leter etter CRLFCRLF. HeadLen er hodet uten den avsluttende tomme linjen,
-  Total er antall bytes som utgjør hele hodet. Tåler også bare LFLF, som
-  enkelte klienter sender. }
+{ Looks for CRLFCRLF. HeadLen is the head without the terminating blank
+  line, Total is the number of bytes making up the whole head. Also
+  tolerates bare LFLF, which some clients send. }
 function TWorker.FindHeadEnd(out HeadLen, Total: SizeInt): Boolean;
 var
   I: SizeInt;
@@ -302,8 +306,8 @@ var
   S: string;
   Reason: string;
 begin
-  { Ferdigbygget uten arena: brukes når requesten ble avvist før den fikk en
-    arena i det hele tatt, eller når arenaen ikke er til å stole på. }
+  { Pre-built without an arena: used when the request was refused before
+    it got an arena at all, or when the arena cannot be trusted. }
   Reason := StatusText(Code);
   S := 'HTTP/1.1 ' + IntToStr(Code) + ' ' + Reason + #13#10 +
        'Content-Type: text/plain; charset=utf-8'#13#10 +
@@ -335,7 +339,8 @@ begin
   begin
     Compact;
 
-    { Wait på starten av en request. Her gjelder keep-alive-timeouten. }
+    { Waiting for a request to start. The keep-alive timeout applies
+      here. }
     SetTimeout(Sock, SO_RCVTIMEO, FServer.Options.KeepAliveTimeoutMs);
     while not FindHeadEnd(HeadLen, HeadTotal) do
     begin
@@ -346,7 +351,7 @@ begin
       end;
       if not Fill(Sock) then
         Exit;   { normal stengning eller timeout — ikke en feil }
-      { From_ og med første byte er requesten påbegynt. }
+      { From the first byte onwards the request has started. }
       SetTimeout(Sock, SO_RCVTIMEO, FServer.Options.RequestTimeoutMs);
     end;
 
@@ -375,7 +380,8 @@ begin
         Exit;
       end;
 
-      { Les kroppen. Lesebufferet kan vokse her; hodet ligger trygt i arenaen. }
+      { Read the body. The read buffer may grow here; the head is safe in
+        the arena. }
       BodyLen := SizeInt(Req.ContentLength);
       if BodyLen > 0 then
       begin
@@ -390,8 +396,8 @@ begin
 
       Req.SetRemoteAddr(StrDup(FArena, Peer));
 
-      { Gjør requesten omgivende, slik at Inertia() og liknende hjelpere
-        finner den uten at hver kontroller må sende den videre. }
+      { Make the request ambient, so Inertia() and similar helpers find it
+        without every controller having to pass it along. }
       UseRequest(Req);
 
       Inc(Count);
@@ -407,13 +413,13 @@ begin
       except
         on E: Exception do
         begin
-          { Handleren er brukerkode. En upåaktet exception skal koste denne
-            requesten, ikke workeren. }
+          { The handler is user code. An unhandled exception should cost this
+            request, not the worker. }
           Res := RespondText('Internal Server Error', 500);
           Close_ := True;
-          { En exception fra brukerkode logges alltid, uansett LogRequests.
-            Det er ikke en request-linje, det er en feil — og en 500 som
-            ikke etterlater seg et spor er en 500 ingen kan feilsøke. }
+          { An exception from user code is always logged, whatever LogRequests
+            says. It is not a request line, it is an error — and a 500
+            that leaves no trace is a 500 nobody can debug. }
           LogException(E, 'unhandled exception in handler',
             ['method', Askr.Http.Types.MethodName(Req.Method),
              'path', Req.Path.ToString]);
@@ -441,12 +447,12 @@ begin
       UseArena(Prev);
     end;
 
-    { En enkelt stor request skal ikke få workeren til å holde på minnet.
-      Bufferet slippes bare når det ikke ligger noe igjen i det: en klient
-      som pipeliner en request rett etter en stor kropp ville ellers fått
-      den forkastet. Det krevde både pipelining og en kropp over seksten
-      ganger bufferet, så det viste seg ikke — men opplasting gjør begge
-      deler vanligere. }
+    { A single large request must not make the worker hold on to the
+      memory. The buffer is released only when nothing is left in it: a
+      client pipelining a request right after a large body would
+      otherwise have it discarded. That took both pipelining and a body
+      over sixteen times the buffer, so it did not show up — but uploads
+      make both of those more common. }
     if (FBufCap > FServer.Options.ReadBufferSize * 16) and
        (FBufPos >= FBufLen) then
     begin
@@ -474,8 +480,9 @@ begin
     begin
       if fpGetErrno = ESysEINTR then
         Continue;
-      { Lyttesocketen ble lukket av Stop, eller kjernen er tom for
-        filhåndtak. I begge tilfeller er det riktig å se på FRunning. }
+      { The listening socket was closed by Stop, or the kernel is out of
+        file handles. In both cases looking at FRunning is the right
+        response. }
       if not FServer.IsRunning then
         Break;
       Sleep(5);
@@ -489,9 +496,9 @@ begin
     FTls := nil;
     if FServer.FTlsCtx <> nil then
       try
-        { Håndtrykket skjer her, ikke i ServeConnection, fordi en klient som
-          ikke får det til skal koste én lukket socket og ingenting mer —
-          ikke en arena, ikke en logglinje per request. }
+        { The handshake happens here rather than in ServeConnection, because
+          a client that cannot manage it should cost one closed socket and
+          nothing more — not an arena, not a log line per request. }
         FTls := TTlsConn.Create(FServer.FTlsCtx, Sock);
       except
         on E: Exception do
@@ -585,8 +592,8 @@ begin
   fpSetSockOpt(FListen, SOL_SOCKET, SO_REUSEADDR, @SockOptTrue, SizeOf(SockOptTrue));
 
   Host := StrToNetAddr(FOpts.Host);
-  { StrToNetAddr melder feil ved å returnere 0.0.0.0, som også er en gyldig
-    adresse å lytte på. Derfor sammenliknes det mot teksten. }
+  { StrToNetAddr reports failure by returning 0.0.0.0, which is also a
+    valid address to listen on. So we compare against the text instead. }
   if (Host.s_addr = 0) and (FOpts.Host <> '0.0.0.0') then
     raise EServerError.CreateFmt('Invalid listen address: %s', [FOpts.Host]);
 
@@ -610,7 +617,8 @@ begin
     raise EServerError.CreateFmt('listen() failed: %d', [fpGetErrno]);
   end;
 
-  { With_ Port = 0 velger kjernen. Les den tilbake, ellers vet ingen hvor vi er. }
+  { With Port = 0 the kernel chooses. Read it back, or nobody knows where
+    we are. }
   Len := SizeOf(Addr);
   if fpGetSockName(FListen, @Addr, @Len) = 0 then
     FBoundPort := NToHs(Addr.sin_port)
@@ -625,11 +633,12 @@ begin
   if IsRunning then
     Exit;
 
-  { Without dette dreper en klient som lukker tidlig hele prosessen. }
+  { Without this, a client that closes early kills the whole process. }
   fpSignal(SIGPIPE, SignalHandler(SIG_IGN));
 
-  { Sertifikatet leses før lyttesocketen åpnes. En feilstavet sti skal gi
-    en feilmelding ved oppstart, ikke en port som tar imot og så avviser alt. }
+  { The certificate is read before the listening socket opens. A
+    misspelled path should give an error at startup, not a port that
+    accepts and then refuses everything. }
   if (FOpts.TlsCertFile <> '') or (FOpts.TlsKeyFile <> '') then
   begin
     if (FOpts.TlsCertFile = '') or (FOpts.TlsKeyFile = '') then
@@ -661,7 +670,7 @@ begin
   if InterLockedExchange(FRunning, 0) = 0 then
     Exit;
 
-  { Å lukke lyttesocketen får accept til å returnere i alle workerne. }
+  { Closing the listening socket makes accept return in every worker. }
   if FListen >= 0 then
   begin
     fpShutdown(FListen, 2);

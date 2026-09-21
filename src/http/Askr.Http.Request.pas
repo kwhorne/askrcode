@@ -1,18 +1,19 @@
-{ Askr.Http.Request — parsing av HTTP/1.1-request inn i arenaen.
+{ Askr.Http.Request — parsing an HTTP/1.1 request into the arena.
 
-  Parseren kopierer ingenting. Verten leser bytes inn i ett sammenhengende
-  buffer i request-arenaen, og alle felter her er utsnitt (TStr) inn i det
-  bufferet. Når verten kaller Arena.Reset forsvinner både bufferet og
-  requesten i én operasjon.
+  The parser copies nothing. The host reads bytes into one contiguous
+  buffer in the request arena, and every field here is a slice (TStr) into
+  that buffer. When the host calls Arena.Reset, both the buffer and the
+  request go away in a single operation.
 
-  Det som bevisst ikke støttes i fase 1: chunked transfer-encoding, obsolete
-  line folding, og pipelining utover én request om gangen per tilkobling.
-  De to første avvises eksplisitt i stedet for å tolkes feil. }
+  What is deliberately unsupported in phase 1: chunked transfer encoding,
+  obsolete line folding, and pipelining beyond one request at a time per
+  connection. The first two are refused explicitly rather than
+  misinterpreted. }
 unit Askr.Http.Request;
 
 {$mode Delphi}{$H+}
-{ Header-tabellen er en sammenhengende blokk i arenaen og indekseres med
-  peker-aritmetikk. }
+{ The header table is a contiguous block in the arena, indexed with
+  pointer arithmetic. }
 {$POINTERMATH ON}
 
 interface
@@ -24,7 +25,7 @@ uses
 type
   TParseState = (
     psOk,
-    psNeedMore,           { hele hodet er ikke lest ennå }
+    psNeedMore,           { the whole head has not been read yet }
     psBadRequest,         { 400 }
     psUriTooLong,         { 414 }
     psHeadersTooLarge,    { 431 }
@@ -51,18 +52,19 @@ type
     FParams: PHttpHeader;
     FParamCount: Integer;
     FParamCapacity: Integer;
-    { Multipart parses høyst én gang per request. Cachen ligger på
-      requesten selv, ikke i en trådlokal tabell: TRequest lages på nytt
-      for hver request, så feltet er ferskt uten at noen må rydde det. }
+    { Multipart is parsed at most once per request. The cache lives on the
+      request itself rather than in a thread-local table: a TRequest is
+      made afresh for every request, so the field is clean without anyone
+      having to clear it. }
     FMultipart: TMultipartForm;
     FMultipartDone: Boolean;
     function ParseRequestLine(const Line: TStr): TParseState;
     function ParseHeaderLines(const Block: TStr; LineCount: Integer): TParseState;
     function ApplyHeaders(MaxBody: Int64): TParseState;
   public
-    { Raw er hodet uten den avsluttende tomme linjen. MaxBody håndheves mot
-      Content-Length før verten begynner å lese kroppen, slik at en for stor
-      request avvises uten å bli lest inn. }
+    { Raw is the head without the terminating blank line. MaxBody is
+      enforced against Content-Length before the host starts reading the
+      body, so an over-sized request is refused without being read in. }
     function ParseHead(const Raw: TStr; MaxBody: Int64): TParseState;
     procedure SetBody(const ABody: TStr);
     procedure SetRemoteAddr(const AAddr: TStr);
@@ -71,7 +73,7 @@ type
     function HasHeader(const AName: string): Boolean;
     function HeaderAt(Index: Integer): PHttpHeader;
 
-    { Ruteparametre. Settes av ruteren når et mønster matcher. }
+    { Route parameters. Set by the router when a pattern matches. }
     procedure SetParam(const AName: string; const AValue: TStr);
     procedure ClearParams;
     function Param(const AName: string): TStr;
@@ -81,28 +83,30 @@ type
 
     function Query(const AName: string): TStr;
     function HasQuery(const AName: string): Boolean;
-    { Leser fra kroppen. Dekker både application/x-www-form-urlencoded og
-      de vanlige feltene i en multipart/form-data — et skjema med en fil i
-      skal ikke gjøre de andre feltene utilgjengelige. }
+    { Reads from the body. Covers both application/x-www-form-urlencoded
+      and the ordinary fields of a multipart/form-data — a form with a
+      file in it must not make the other fields unreachable. }
     function Form(const AName: string): TStr;
     function HasForm(const AName: string): Boolean;
     function ContentType: TStr;
     function IsJson: Boolean;
     function IsMultipart: Boolean;
 
-    { Hele den delte kroppen. Parses første gang noe spør, og bare da.
-      `Ok` er False når kroppen ikke lot seg dele — da er 400 svaret. }
+    { The whole parsed body. Parsed the first time something asks, and only
+      then. `Ok` is False when the body could not be split — then 400 is
+      the answer. }
     function Multipart: TMultipartForm;
-    { Én opplastet fil. `IsEmpty` er True når feltet ikke fantes eller
-      brukeren ikke valgte noen fil. }
+    { One uploaded file. `IsEmpty` is True when the field did not exist or
+      the user chose no file. }
     function Upload(const AName: string): TUploadedFile;
-    { All_ filene under samme navn, som i `<input type="file" multiple>`. }
+    { Every file under the same name, as in `<input type="file"
+      multiple>`. }
     function Uploads(const AName: string): TUploadedFiles;
 
     property Method: THttpMethod read FMethod;
     property MethodStr: TStr read FMethodStr;
     property Target: TStr read FTarget;
-    { Prosentdekodet sti. Dette er det ruteren matcher mot. }
+    { The percent-decoded path. This is what the router matches against. }
     property Path: TStr read FPath;
     property RawPath: TStr read FRawPath;
     property QueryString: TStr read FQueryString;
@@ -110,8 +114,8 @@ type
     property HeaderCount: Integer read FHeaderCount;
     property ContentLength: Int64 read FContentLength;
     property KeepAlive: Boolean read FKeepAlive write FKeepAlive;
-    { ?page=N, klemt til minst 1. Finnes fordi paginering er det vanligste
-      stedet en query-parameter blir til et tall. }
+    { ?page=N, clamped to at least 1. It exists because pagination is the
+      commonest place a query parameter becomes a number. }
     function Page: Integer;
     function IntQuery(const AName: string; Default: Int64 = 0): Int64;
 
@@ -119,9 +123,10 @@ type
     property RemoteAddr: TStr read FRemoteAddr;
   end;
 
-{ Omgivende request for gjeldende tråd, etter samme mønster som UseArena og
-  UseDb. Verten setter den før den kaller inn i brukerkode, slik at
-  hjelpere som Inertia() kan finne den uten å ta den som parameter. }
+{ The ambient request for the current thread, following the same pattern
+  as UseArena and UseDb. The host sets it before calling into user code,
+  so helpers like Inertia() can find it without taking it as a
+  parameter. }
 function CurrentRequest: TRequest;
 function UseRequest(R: TRequest): TRequest;
 
@@ -185,7 +190,8 @@ begin
     Exit(psUnsupportedVersion);
   end;
 
-  { Absolute-form (http://host/sti) er lovlig mot proxyer. Vi tar bare stien. }
+  { Absolute form (http://host/path) is legal towards proxies. We take
+    only the path. }
   if FTarget.StartsWithStr('http://') or FTarget.StartsWithStr('https://') then
   begin
     Rest := FTarget.Slice(FTarget.IndexOfByte(Ord('/'), 8));
@@ -201,8 +207,9 @@ begin
   if not Rest.SplitAt(Ord('?'), FRawPath, FQueryString) then
     FQueryString := StrEmpty;
 
-  { Fragment hører ikke hjemme i en request-target, men klienter sender det.
-    Går via lokale variabler: SplitAt ville ellers skrevet over Self midtveis. }
+  { A fragment does not belong in a request target, but clients send one.
+    Goes via local variables: SplitAt would otherwise overwrite Self
+    midway. }
   Frag := FRawPath.IndexOfByte(Ord('#'));
   if Frag >= 0 then
     FRawPath := FRawPath.Slice(0, Frag);
@@ -235,14 +242,16 @@ begin
     if Line.Len = 0 then
       Continue;
 
-    { Obsolete line folding — en headerlinje som starter med whitespace.
-      RFC 9112 lar en server avvise dette, og det er tryggere enn å gjette. }
+    { Obsolete line folding — a header line starting with whitespace.
+      RFC 9112 lets a server refuse this, and that is safer than
+      guessing. }
     if (Line.Data^ = Ord(' ')) or (Line.Data^ = 9) then
       Exit(psBadRequest);
 
     if not Line.SplitAt(Ord(':'), N, V) then
       Exit(psBadRequest);
-    { Whitespace mellom feltnavn og kolon er request smuggling-materiale. }
+    { Whitespace between the field name and the colon is request-smuggling
+      material. }
     if (N.Len = 0) or ((N.Data + N.Len - 1)^ <= Ord(' ')) then
       Exit(psBadRequest);
 
@@ -305,8 +314,8 @@ var
   Line, Rest: TStr;
   LineCount, I: Integer;
 begin
-  { Parseren allokerer header-tabellen og dekodet sti i arenaen, så en TRequest
-    må være laget innenfor en UseArena-blokk. }
+  { The parser allocates the header table and the decoded path in the
+    arena, so a TRequest has to be made inside a UseArena block. }
   if Arena = nil then
     raise EArenaError.Create('TRequest.ParseHead: no arena');
 
@@ -326,8 +335,8 @@ begin
   if Result <> psOk then
     Exit;
 
-  { Teller linjer først, så header-tabellen kan allokeres i nøyaktig riktig
-    størrelse i stedet for å vokse. }
+  { Counts the lines first, so the header table can be allocated at
+    exactly the right size rather than growing. }
   LineCount := 0;
   for I := 0 to Rest.Len - 1 do
     if (Rest.Data + I)^ = 10 then
@@ -418,8 +427,8 @@ end;
 
 procedure TRequest.ClearParams;
 begin
-  { Bufferet beholdes; bare tellingen nullstilles. Ruteren prøver flere
-    mønstre per request, og hver av dem skal starte blankt. }
+  { The buffer is kept; only the count is reset. The router tries several
+    patterns per request, and each of them has to start clean. }
   FParamCount := 0;
 end;
 
@@ -478,8 +487,8 @@ begin
     Exit(Multipart.Has(AName));
   if not ContentType.StartsWithStr('application/x-www-form-urlencoded') then
     Exit(False);
-  { Et felt som finnes med tom verdi er noe annet enn et som ikke finnes —
-    en avkrysningsboks sender ofte nettopp en tom verdi. }
+  { A field that exists with an empty value is not the same as one that
+    does not exist — a checkbox often sends exactly an empty value. }
   Result := QueryValue(Arena, FBody, AName, V);
 end;
 
@@ -524,7 +533,8 @@ begin
   CT := ContentType;
   if CT.StartsWithStr('application/json') then
     Exit(True);
-  { Dekker application/ld+json, application/problem+json og resten av +json. }
+  { Covers application/ld+json, application/problem+json and the rest of
+    +json. }
   P := CT.IndexOfByte(Ord('+'));
   Result := (P >= 0) and CT.Slice(P).StartsWithStr('+json');
 end;

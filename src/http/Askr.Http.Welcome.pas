@@ -1,21 +1,22 @@
-{ Askr.Http.Welcome — siden man ser før man har skrevet noe selv.
+{ Askr.Http.Welcome — the page you see before you have written anything.
 
-  Et nytt prosjekt gikk fra `askr new` rett til en blank side: ruta går
-  gjennom Inertia, og Inertia trenger en Vite-server som ikke kjører ennå.
-  Serveren virket hele tiden, men ingenting viste det.
+  A new project went from `askr new` straight to a blank page: the route
+  goes through Inertia, and Inertia needs a Vite server that is not
+  running yet. The server worked the whole time, but nothing showed it.
 
-  Denne siden viser det, og den gjør det uten noe som helst: ingen npm,
-  ingen byggesteg, ingen filer ved siden av binæren, ingen nett. Alt ligger
-  her — også fontene, som er systemets egne, fordi en maskin uten nett skal
-  se det samme som en med.
+  This page shows it, and it does so with nothing at all: no npm, no build
+  step, no files beside the binary, no network. Everything is here — the
+  fonts included, which are the system's own, because a machine with no
+  network should see what a connected one sees.
 
-  Det den faktisk viser fram, er arenaen. Tallene er lest av den arenaen som
-  gjengir akkurat denne requesten, i det øyeblikket den gjengis. Det er det
-  ene Askr gjør annerledes enn alt annet, og det er verdt mer enn en logo.
+  What it actually puts on display is the arena. The numbers are read from
+  the arena rendering this very request, at the moment it is rendered.
+  That is the one thing Askr does differently from everything else, and it
+  is worth more than a logo.
 
-  **Teksten på siden er på engelsk.** Kildekoden her er norsk som resten av
-  rammeverket, men dette er det første et internasjonalt publikum ser, og da
-  er norsk feil valg. Endrer du teksten, hold den på engelsk. }
+  **The text on the page is English.** So is everything else in the
+  framework now, but this is the first thing an international audience
+  sees, so if you change the text, keep it English. }
 unit Askr.Http.Welcome;
 
 {$mode Delphi}{$H+}
@@ -26,8 +27,9 @@ uses
   SysUtils, Askr.Core.Arena, Askr.Core.Text,
   Askr.Http.Request, Askr.Http.Response;
 
-{ Velkomstsiden for et nytt prosjekt. Kalles fra kontrolleren `askr new`
-  lager, og er ment å bli slettet derfra så snart appen har noe eget å vise. }
+{ The welcome page for a new project. Called from the controller `askr
+  new` writes, and meant to be deleted from there as soon as the app has
+  something of its own to show. }
 function WelcomePage(Req: TRequest; const AppName: string): TResponse;
 
 implementation
@@ -48,7 +50,8 @@ begin
     end;
 end;
 
-{ Tusenskille med smalt mellomrom, slik tall skrives på norsk. }
+{ Thousands separated with a thin space, which reads the same in every
+  locale. }
 function Number(V: QWord): string;
 var
   S: string;
@@ -66,16 +69,16 @@ begin
   end;
 end;
 
-{ Andel av det reserverte, som bredde i prosent. Minimum en hårstrek, ellers
-  forsvinner en request på 400 byte helt mot 64 kB — og nettopp den
-  forskjellen er det bjelken skal vise. }
+{ The share of what is reserved, as a width in per cent. A hairline
+  minimum, or a 400-byte request disappears entirely against 64 kB — and
+  that difference is precisely what the bar is there to show. }
 function Andel(Del, Hele: PtrUInt): string;
 var
   Tidels: Int64;
 begin
-  { Heltallsregning, ikke FormatFloat. Flyttallsformatering drar inn
-    systemets desimalskilletegn, og et komma her ville gjort bredden til
-    ugyldig CSS på en maskin med norsk locale. }
+  { Integer arithmetic, not FormatFloat. Float formatting pulls in the
+    system's decimal separator, and a comma here would make the width
+    invalid CSS on a machine with a Norwegian locale. }
   if Hele = 0 then
     Exit('0.4');
   Tidels := (Int64(Del) * 1000) div Int64(Hele);

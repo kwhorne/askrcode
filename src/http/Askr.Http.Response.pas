@@ -1,9 +1,10 @@
-{ Askr.Http.Response — responsobjekt og serialisering.
+{ Askr.Http.Response — the response object and its serialisation.
 
-  Responsen bygges i request-arenaen som alt annet, og serialiseres til ett
-  sammenhengende buffer før verten skriver til socketen. Én write per respons
-  gir færre syscalls enn å skrive hode og kropp hver for seg, og gjør at små
-  responser går ut i ett TCP-segment. }
+  The response is built in the request arena like everything else, and
+  serialised into one contiguous buffer before the host writes to the
+  socket. One write per response means fewer syscalls than writing head
+  and body separately, and it lets a small response go out in a single TCP
+  segment. }
 unit Askr.Http.Response;
 
 {$mode Delphi}{$H+}
@@ -27,38 +28,40 @@ type
   public
     constructor Create(AStatus: Integer = 200);
 
-    { Byggerne returnerer Self, så de kan kjedes:
-        Result := Respond(201).WithHeader('Location', Url).WithJson(Payload); }
+    { The builders return Self, so they chain:
+      Result := Respond(201).WithHeader('Location', Url).WithJson(Payload); }
     function Status(ACode: Integer): TResponse;
     function WithHeader(const AName, AValue: string): TResponse; overload;
     function WithHeader(const AName: string; const AValue: TStr): TResponse; overload;
-    { Legger til uten å erstatte. Bare for headere som lovlig kan gjentas —
-      Set-Cookie er den som betyr noe i praksis. For alt annet er to like
-      headernavn en feil hos kalleren, og WithHeader er den som skal brukes. }
+    { Adds without replacing. Only for headers that may legally repeat —
+      Set-Cookie is the one that matters in practice. For anything else
+      two identical header names are a mistake by the caller, and
+      WithHeader is the one to use. }
     function AddHeader(const AName, AValue: string): TResponse;
-    { Én Set-Cookie. More kall gir flere kaker, slik protokollen tillater.
-      HttpOnly og SameSite=Lax er standard fordi alternativet er å huske
-      dem; `ReadableByJs` slår av HttpOnly for de kakene en frontend faktisk
-      skal lese, som XSRF-TOKEN. MaxAge < 0 gir en sesjonskake, 0 sletter. }
+    { One Set-Cookie. Further calls give further cookies, as the protocol
+      allows. HttpOnly and SameSite=Lax are the defaults because the
+      alternative is remembering them; `ReadableByJs` turns HttpOnly off
+      for the cookies a frontend is actually meant to read, such as
+      XSRF-TOKEN. MaxAge < 0 gives a session cookie, 0 deletes. }
     function WithCookie(const AName, AValue: string; MaxAge: Integer = -1;
       Secure: Boolean = False; ReadableByJs: Boolean = False;
       const SameSite: string = 'Lax'; const Path: string = '/'): TResponse;
     function WithContentType(const AValue: string): TResponse;
-    { Første verdi for navnet, eller tom streng. Etterfiltre trenger å
-      kunne se hva handleren satte — en filtrering som bare kan skrive er
-      halv. With_ flere Set-Cookie gir den den første; til det formålet
-      finnes HeaderCount og HeaderAt. }
+    { The first value for the name, or an empty string. After-filters need
+      to see what the handler set — a filter that can only write is half
+      a filter. With several Set-Cookie headers it gives the first; for
+      that purpose there are HeaderCount and HeaderAt. }
     function HeaderValue(const AName: string): string;
     function HeaderAt(Index: Integer): PHttpHeader;
     function WithBody(const ABody: TStr): TResponse; overload;
     function WithBody(const ABody: string): TResponse; overload;
 
-    { Skriver statuslinje, headere og kropp inn i B.
-      ConnectionClose styrer Connection-headeren; HeadOnly utelater kroppen
-      men beholder Content-Length, slik HEAD krever. }
+    { Writes the status line, the headers and the body into B.
+      ConnectionClose drives the Connection header; HeadOnly leaves the
+      body out but keeps Content-Length, as HEAD requires. }
     procedure WriteTo(var B: TStrBuilder; ConnectionClose, HeadOnly: Boolean);
 
-    { True når statuskoden per definisjon ikke har kropp. }
+    { True when the status code by definition has no body. }
     function BodyForbidden: Boolean;
 
     property StatusCode: Integer read FStatus;
@@ -66,7 +69,7 @@ type
     property HeaderCount: Integer read FHeaderCount;
   end;
 
-{ All_ disse allokerer i den omgivende arenaen (se Askr.Core.Arena). }
+{ All of these allocate in the ambient arena (see Askr.Core.Arena). }
 function Respond(AStatus: Integer = 200): TResponse;
 function RespondText(const S: string; AStatus: Integer = 200): TResponse;
 function RespondHtml(const S: string; AStatus: Integer = 200): TResponse;
@@ -77,7 +80,7 @@ function NoContent: TResponse;
 implementation
 
 const
-  { Sendes med hver respons. Kan slås av på serveren. }
+  { Sent with every response. Can be turned off on the server. }
   ServerToken = 'Askr';
 
 constructor TResponse.Create(AStatus: Integer);
@@ -121,10 +124,10 @@ function TResponse.WithHeader(const AName: string; const AValue: TStr): TRespons
 var
   I: Integer;
 begin
-  { Samme headernavn to ganger er nesten alltid en feil hos kalleren, og for
-    Location eller Content-Type er det direkte skadelig. Siste verdi vinner.
-    Set-Cookie er unntaket som lovlig kan gjentas, og den har AddHeader og
-    WithCookie. }
+  { The same header name twice is nearly always a mistake by the caller,
+    and for Location or Content-Type it is actively harmful. The last value
+    wins. Set-Cookie is the exception that may legally repeat, and it has
+    AddHeader and WithCookie. }
   I := IndexOfHeader(AName);
   if I >= 0 then
   begin
@@ -203,7 +206,7 @@ end;
 
 function TResponse.WithBody(const ABody: string): TResponse;
 begin
-  { Kopieres inn i arenaen: kalleren sin string kan være en temporær. }
+  { Copied into the arena: the caller's string may be a temporary. }
   Result := WithBody(StrDup(Arena, ABody));
 end;
 

@@ -1,8 +1,8 @@
-{ Askr.Http.Types — metoder, statuskoder og URL-koding.
+{ Askr.Http.Types — methods, status codes and URL encoding.
 
-  Ingen egennavn på HTTP-laget, jf. PRD-en. Alt her er rene verdier og
-  funksjoner uten tilstand, slik at både server og desktop-skallet kan bruke
-  dem uten å dra med seg en vert. }
+  No proper nouns in the HTTP layer, as the PRD says. Everything here is
+  plain values and stateless functions, so both the server and the
+  desktop shell can use them without dragging a host along. }
 unit Askr.Http.Types;
 
 {$mode Delphi}{$H+}
@@ -24,8 +24,8 @@ type
   PHttpHeader = ^THttpHeader;
 
 const
-  { Grenser som håndheves av parseren. En request som bryter dem avvises med
-    431 eller 413 i stedet for å få lov til å blåse opp arenaen. }
+  { Limits the parser enforces. A request that breaks them is refused with
+    431 or 413 rather than being allowed to blow the arena up. }
   MaxRequestLineBytes = 8 * 1024;
   MaxHeaderBytes      = 32 * 1024;
   MaxHeaderCount      = 100;
@@ -34,14 +34,15 @@ const
 function MethodFromStr(const S: TStr): THttpMethod;
 function MethodName(M: THttpMethod): string;
 
-{ Standard grunn for en statuskode. Ukjente koder får en tom streng, og
-  serveren skriver da bare tallet — det er lovlig i HTTP/1.1. }
+{ The default reason for a status code. Unknown codes get an empty
+  string, and the server then writes only the number — which is legal in
+  HTTP/1.1. }
 function StatusText(Code: Integer): string;
 
-{ Prosentdekoding. '+' tolkes som mellomrom bare når PlusAsSpace er satt,
-  altså for query og skjemaer, ikke for sti-segmenter.
-  Returnerer et utsnitt i arenaen. Er det ingenting å dekode, returneres
-  inndata uendret uten kopi. }
+{ Percent decoding. '+' is read as a space only when PlusAsSpace is set,
+  that is for the query and for forms, not for path segments.
+  Returns a slice in the arena. With nothing to decode, the input is
+  returned unchanged and uncopied. }
 function UrlDecode(A: TArena; const S: TStr; PlusAsSpace: Boolean = False): TStr;
 
 { Henter én verdi fra en application/x-www-form-urlencoded-streng. }
@@ -52,7 +53,7 @@ implementation
 
 function MethodFromStr(const S: TStr): THttpMethod;
 begin
-  { Metodenavn er case-sensitive i HTTP, så vi sammenlikner eksakt. }
+  { Method names are case-sensitive in HTTP, so we compare exactly. }
   case S.Len of
     3: if S.EqualsStr('GET') then Exit(hmGet)
        else if S.EqualsStr('PUT') then Exit(hmPut);
@@ -171,8 +172,8 @@ begin
     end
     else
     begin
-      { En ugyldig %-sekvens beholdes som den er. Å avvise requesten her ville
-        gjort parseren strengere enn nettleserne. }
+      { An invalid % sequence is kept as it stands. Refusing the request here
+        would make the parser stricter than the browsers. }
       (Dst + O)^ := B;
       Inc(I);
     end;
@@ -190,8 +191,9 @@ begin
   Rest := QueryString;
   while Rest.Len > 0 do
   begin
-    { Siste par har ingen '&' etter seg. SplitAt gir da hele resten som Pair
-      og tømmer Rest, som er nøyaktig det løkka trenger. }
+    { The last pair has no '&' after it. SplitAt then gives the whole
+      remainder as Pair and empties Rest, which is exactly what the loop
+      needs. }
     Rest.SplitAt(Ord('&'), Pair, Rest);
     if Pair.Len = 0 then
       Continue;
