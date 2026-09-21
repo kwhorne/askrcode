@@ -76,7 +76,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Queues](queue.md) | Background jobs, in-process or durable |
 | [Scheduler](scheduler.md) | Recurring work |
 | [Cache](cache.md) | A sharded LRU in the process |
-| [Mail](mail.md) | SMTP with STARTTLS |
+| [Mail](mail.md) | Resend, SMTP with STARTTLS, or a log file |
 | [Logging](logging.md) | Levels, fields, text or JSON |
 | [HTTP client](http-client.md) | Calling other services, with certificate verification |
 | [AI](ai.md) | Claude: text, streaming, tools, structured output |
@@ -93,8 +93,9 @@ queue uses the database you already have. See [Deployment](deployment.md).
 
 ## What is not here
 
-Askr is honest about what has not been done. Two things are **written but
-never run**, and they are marked as such everywhere they appear:
+Askr is honest about what has not been done. Three things are **written
+but never run in earnest**, and they are marked as such everywhere they
+appear:
 
 - **The Windows WebView2 shell.** Compiled and type-checked against FPC's
   own `rtl/win` declarations; never started on a Windows machine.
@@ -102,6 +103,9 @@ never run**, and they are marked as such everywhere they appear:
   call to `api.anthropic.com` returns a 401 with Anthropic's own error JSON,
   correctly parsed — but no call with a valid key has been made from this
   repository.
+- **The Resend transport with a real API key.** Same evidence and the same
+  gap: `api.resend.com` returns a 401 that parses into `EResendError`, and
+  no mail has been sent from here with a valid key.
 
 Things that exist in Laravel and deliberately do **not** exist here, with
 reasons, are listed in each relevant page and collected in `LARAVEL.md` at
@@ -109,6 +113,6 @@ the repository root.
 
 ## Version
 
-This documentation describes Askr 0.6.0. The framework builds and passes
+This documentation describes Askr 0.8.0. The framework builds and passes
 its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on macOS and
 Linux.
