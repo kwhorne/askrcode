@@ -34,6 +34,27 @@ with the zero-major caveat that minor releases may break things until
   in case is a second URL to a crawler. A path is refused with a reason
   rather than dropped or kept.
 
+- **`Askr.Http.Sitemap` — `UseSitemap(R, Source)`.** The application
+  declares which paths exist; the framework writes the XML, makes the URLs
+  absolute against `app.url`, formats `lastmod` as W3C datetime, and
+  enforces the protocol's limits.
+
+  **Askr knows the routes but not which are public**, and cannot expand
+  `/docs/:slug` into the pages that exist. A sitemap generated from the
+  route table would be a list of patterns with every admin route in it.
+
+  **50 000 URLs and 50 MB are hard limits**, not guidance: over either, a
+  crawler rejects the whole document. The entries are split into parts with
+  an index in front. Mutation-checked by never splitting, which fails at
+  50 001.
+
+  **Escaping is checked by a real XML parser**, not by a pattern — a `&` in
+  one URL makes the whole document malformed, and a regular expression is
+  what one imagines XML to be. Mutation-checked by removing the escaping,
+  which the parser then refuses to read.
+
+  `askr new` registers it with a source listing `/`, to show the shape.
+
 - **`Askr.Http.Robots` — `UseRobots(R)`, and a default that is closed.**
   The body follows `APP_ENV`: production allows everything and adds a
   `Sitemap:` line when `app.url` is set; anything else answers

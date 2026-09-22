@@ -19,7 +19,7 @@ uses
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
   Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url,
-  Askr.Http.Robots;
+  Askr.Http.Robots, Askr.Http.Sitemap;
 
 var
   Passed: Integer = 0;
@@ -1524,6 +1524,11 @@ begin
   Result := nil;
 end;
 
+procedure TestSitemapSource(S: TSitemap);
+begin
+  S.Add('/').Add('/customers');
+end;
+
 procedure TestRuter;
 var
   A: TArena;
@@ -1533,6 +1538,7 @@ var
   Req: TRequest;
   Reply_: TResponse;
   Lines: TStringList;
+  StaticFile: TStringList;
 begin
   Group('Router');
   A := TArena.Create(32 * 1024);
@@ -1624,6 +1630,46 @@ begin
     Req := MakeRequest(A, 'POST /robots.txt HTTP/1.1'#13#10'Host: t');
     Reply_ := R.Handle(Req);
     Check((Reply_ = nil) or (Reply_.StatusCode <> 200), 'and only by GET');
+
+    { A sitemap needs an origin, and refuses rather than emitting relative
+      URLs a crawler would reject. Without app.url the handler raises, the
+      server turns that into a 500, and the log line names the key -- which
+      is the right noise for a misconfiguration, and the reason this test
+      has to say which origin it means. }
+    ForceDirectories('.build' + PathDelim + 'cfg-sitemap-route');
+    StaticFile := TStringList.Create;
+    try
+      StaticFile.Add('APP_ENV=local');
+      StaticFile.Add('APP_URL=https://example.com');
+      StaticFile.SaveToFile('.build' + PathDelim + 'cfg-sitemap-route' +
+        PathDelim + '.env');
+    finally
+      StaticFile.Free;
+    end;
+    ClearConfig;
+    LoadConfig('.build' + PathDelim + 'cfg-sitemap-route');
+
+    UseSitemap(R, @TestSitemapSource);
+    A.Reset;
+    Req := MakeRequest(A, 'GET /sitemap.xml HTTP/1.1'#13#10'Host: t');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 200, 'sitemap.xml is answered');
+    Check(Pos('application/xml', Reply_.HeaderValue('Content-Type')) > 0,
+      'as xml');
+    Check(Pos('<urlset', Reply_.Body.ToString) > 0, 'with a urlset');
+
+    { A part number is text a client wrote. One that does not exist is a
+      404 rather than an empty document, which would read as a site with
+      no pages at all. }
+    A.Reset;
+    Req := MakeRequest(A, 'GET /sitemap/9 HTTP/1.1'#13#10'Host: t');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 404, 'a part that does not exist is a 404');
+    A.Reset;
+    Req := MakeRequest(A, 'GET /sitemap/nonsense HTTP/1.1'#13#10'Host: t');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 404, 'and so is a part that is not a number');
+    ClearConfig;
   finally
     R.Free;
     Spor.Free;

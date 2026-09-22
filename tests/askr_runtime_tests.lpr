@@ -22,7 +22,8 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Http.Robots;
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Http.Robots, Askr.Http.Sitemap,
+  DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -4153,6 +4154,156 @@ begin
   ClearConfig;
 end;
 
+{ The sitemap, judged by a real XML parser.
+
+  A `&` in a URL is the ordinary case -- one query parameter is enough --
+  and an unescaped one makes the whole document malformed, not just that
+  entry. A crawler that cannot parse it reads none of it.
+
+  So the assertions go through fcl-xml rather than through Pos(). A
+  pattern match is my idea of what XML is; a parser is XML. It is the same
+  move as reading a link's protocol out of the browser rather than out of
+  a regular expression. }
+procedure TestSitemap;
+var
+  Folder, Xml: string;
+  L: TStringList;
+
+  { True when the text parses as XML at all. }
+  function Parses(const S: string; out Root: string): Boolean;
+  var
+    D: TXMLDocument;
+    Stream: TStringStream;
+  begin
+    Result := False;
+    Root := '';
+    D := nil;
+    Stream := TStringStream.Create(S);
+    try
+      try
+        ReadXMLFile(D, Stream);
+        Root := string(D.DocumentElement.NodeName);
+        Result := True;
+      except
+        on E: Exception do
+          Result := False;
+      end;
+    finally
+      D.Free;
+      Stream.Free;
+    end;
+  end;
+
+  { The text of every <loc> in the document, one per line. }
+  function Locs(const S: string): string;
+  var
+    D: TXMLDocument;
+    Stream: TStringStream;
+    List_: TDOMNodeList;
+    I: Integer;
+  begin
+    Result := '';
+    D := nil;
+    Stream := TStringStream.Create(S);
+    try
+      ReadXMLFile(D, Stream);
+      List_ := D.DocumentElement.GetElementsByTagName('loc');
+      for I := 0 to List_.Count - 1 do
+        Result := Result + string(List_[I].TextContent) + #10;
+    finally
+      D.Free;
+      Stream.Free;
+    end;
+  end;
+
+var
+  S: TSitemap;
+  Root: string;
+begin
+  Folder := '.build/cfg-sitemap';
+  ForceDirectories(Folder);
+  L := TStringList.Create;
+  try
+    L.Add('APP_ENV=production');
+    L.Add('APP_URL=https://example.com');
+    L.SaveToFile(Folder + '/.env');
+  finally
+    L.Free;
+  end;
+  ClearConfig;
+  LoadConfig(Folder);
+
+  S := TSitemap.Create;
+  try
+    S.Add('/').Add('/docs/queries').Add('/about', EncodeDate(2026, 9, 22));
+    AssertEqual(S.Count, 3, 'three entries');
+    AssertEqual(S.PartCount, 1, 'in one document');
+
+    Xml := S.RootXml;
+    AssertTrue(Parses(Xml, Root), 'the document parses as XML');
+    AssertEqual(Root, 'urlset', 'and it is a urlset');
+
+    { Absolute, and from app.url. A sitemap of relative URLs is refused by
+      crawlers, and the only other source of an origin is the request --
+      the one place it must never come from. }
+    AssertContains(Locs(Xml), 'https://example.com/docs/queries',
+      'the paths came out absolute');
+    AssertNotContains(Locs(Xml), #10'/', 'and none of them relative');
+
+    AssertContains(Xml, '<lastmod>2026-09-22T00:00:00+00:00</lastmod>',
+      'lastmod is W3C datetime in UTC');
+    { Two of the three had none. A lastmod of "now" on every build tells a
+      crawler nothing except that you do not know. }
+    AssertEqual(Length(Xml) - Length(StringReplace(Xml, '<lastmod>', '',
+      [rfReplaceAll])), Length('<lastmod>'),
+      'and is left out where there is none -- exactly one of the three');
+  finally
+    S.Free;
+  end;
+
+  { The one that decides whether the document is readable at all. }
+  S := TSitemap.Create;
+  try
+    S.Add('/search?q=a&b=2&c=<3>');
+    Xml := S.RootXml;
+    AssertTrue(Parses(Xml, Root),
+      'a URL with & and < in it still parses');
+    AssertContains(Xml, '&amp;', 'because it was escaped');
+    AssertContains(Locs(Xml), 'https://example.com/search?q=a&b=2&c=<3>',
+      'and the parser gives the original back');
+  finally
+    S.Free;
+  end;
+
+  { Over the limit is not a large sitemap, it is a rejected one, so it
+    splits and an index goes in front. 50 001 entries is slow to build but
+    it is the only way to know the boundary is where it is said to be. }
+  S := TSitemap.Create;
+  try
+    while S.Count < MaxSitemapUrls do
+      S.Add('/p/' + IntToStr(S.Count));
+    AssertEqual(S.PartCount, 1, 'exactly at the limit is still one part');
+    S.Add('/one-more');
+    AssertEqual(S.PartCount, 2, 'one past it becomes two');
+
+    Xml := S.RootXml;
+    AssertTrue(Parses(Xml, Root), 'the index parses');
+    AssertEqual(Root, 'sitemapindex', 'and it is an index, not a urlset');
+    AssertContains(Locs(Xml), 'https://example.com/sitemap/1',
+      'pointing at the parts');
+    AssertContains(Locs(Xml), 'https://example.com/sitemap/2', 'both of them');
+
+    AssertTrue(Parses(S.PartXml(2), Root), 'and part two parses');
+    AssertEqual(Root, 'urlset', 'as a urlset');
+    AssertContains(Locs(S.PartXml(2)), '/one-more',
+      'holding what did not fit in part one');
+  finally
+    S.Free;
+  end;
+
+  ClearConfig;
+end;
+
 { The docs tools, against this repository's own docs/.
 
   The property that matters is not that a search finds things — it is what
@@ -4444,6 +4595,8 @@ begin
   Test('app.url is configuration, never the request', @TestAppUrl);
 
   Group('Crawlers');
+  Test('the sitemap is valid XML, absolute, and split at the limit',
+    @TestSitemap);
   Test('robots.txt is closed unless the environment is production',
     @TestRobots);
 

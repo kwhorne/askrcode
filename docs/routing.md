@@ -98,6 +98,63 @@ R.Use(@RequireJson);
 Middleware is **global** today. Per-route and per-group middleware is a real
 gap, and not yet built.
 
+## sitemap.xml
+
+```pascal
+uses Askr.Http.Sitemap;
+
+procedure AppSitemap(S: TSitemap);
+begin
+  S.Add('/');
+  S.Add('/about', LastEdited);
+  for P in Pages do
+    S.Add('/docs/' + P.Slug, P.UpdatedAt);
+end;
+
+UseSitemap(R, @AppSitemap);   { after the static files }
+```
+
+**Askr knows the routes; it does not know which of them are public.** It
+cannot turn `/docs/:slug` into the pages that exist either — that answer is
+in a database, or a directory, or a decision. A sitemap generated from the
+route table would be a list of patterns rather than pages, with every admin
+route in it. So the application declares and the framework generates.
+
+The source runs **per request**, so pages in a database are listed as they
+are now.
+
+Paths go in; absolute URLs come out, against `app.url`. A sitemap of
+relative URLs is rejected by crawlers, and the only other source of an
+origin is the request — which is [the one place it must never come
+from](configuration.md#appurl-and-why-it-is-not-the-request). Without
+`app.url` the handler raises rather than emitting a document nobody can
+use, and the log line names the key.
+
+`lastmod` is optional and is left out when you do not pass one. A `lastmod`
+that is really "now" on every build tells a crawler nothing except that you
+do not know, and it learns to ignore the field.
+
+### The limits are not advice
+
+A sitemap holds at most **50 000 URLs and 50 MB**. Over either, it is not a
+large sitemap — it is a rejected one, and a crawler that rejects it reads
+none of it. Askr splits the entries into parts and serves an index at
+`/sitemap.xml` pointing at `/sitemap/1`, `/sitemap/2` and so on, which is
+what the protocol says to do.
+
+The part URLs have no `.xml` on them because a route parameter in Askr is a
+whole segment. It makes no difference to a crawler, which follows the
+absolute URLs the index gives it.
+
+### Escaping
+
+A `&` in a URL is the ordinary case — one query parameter is enough — and
+an unescaped one makes the **whole document** malformed, not just that
+entry. Entries are escaped for you. The test parses the output with a real
+XML parser rather than matching it against a pattern, for the same reason
+the markdown renderer is measured through the browser's own parser: a
+regular expression is what one imagines XML to be.
+
 ## robots.txt
 
 ```pascal

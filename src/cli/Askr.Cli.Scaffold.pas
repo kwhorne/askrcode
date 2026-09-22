@@ -406,7 +406,7 @@ begin
     '  Askr.Console,' + #10 +
     '  Askr.Http.Request, Askr.Http.Response,' + #10 +
     '  Askr.Http.Server, Askr.Http.Router, Askr.Http.Static,' + #10 +
-    '  Askr.Http.Robots,' + #10 +
+    '  Askr.Http.Robots, Askr.Http.Sitemap,' + #10 +
     '  Askr.Session, Askr.Csrf, Askr.Auth,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
@@ -429,6 +429,17 @@ begin
     'begin' + #10 +
     '  UseDb(DbPool.Acquire);' + #10 +
     '  Result := nil;' + #10 +
+    'end;' + #10 + #10 +
+
+    '{ The pages this site offers to a crawler. Add yours here; with' + #10 +
+    '  pages in a database, query them — this runs per request, so the' + #10 +
+    '  list is what exists now.' + #10 +
+    '' + #10 +
+    '  Paths only. They are made absolute against app.url when the' + #10 +
+    '  document is written, never from the request. }' + #10 +
+    'procedure AppSitemap(S: TSitemap);' + #10 +
+    'begin' + #10 +
+    '  S.Add(' + Q + '/' + Q + ');' + #10 +
     'end;' + #10 + #10 +
     'function ReleaseDb(Req: TRequest; Res: TResponse): TResponse;' + #10 +
     'var' + #10 +
@@ -494,6 +505,11 @@ begin
     '  { askr down / askr up. It comes after the static files, so that a' + #10 +
     '    maintenance page with css can still be served. }' + #10 +
     '  UseMaintenance(R);' + #10 +
+    '  { The sitemap. Askr knows the routes but not which of them are' + #10 +
+    '    public, and it cannot turn /docs/:slug into the pages that' + #10 +
+    '    exist — so the list is yours. Called per request, so pages in a' + #10 +
+    '    database can be listed as they are now. }' + #10 +
+    '  UseSitemap(R, @AppSitemap);' + #10 +
     '  { robots.txt. The default follows APP_ENV and only production is' + #10 +
     '    open, because a missing robots.txt means "index everything" —' + #10 +
     '    the dangerous state is a staging site nobody thought about.' + #10 +
