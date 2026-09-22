@@ -88,6 +88,21 @@ Liste := TQuery<TCustomer>.New.Paginate(Req.Page, 25);
 
 `Req.Page` reads `?page=N` and clamps to at least 1.
 
+**`Paginate` adds the primary key to the end of the `ORDER BY`.** A page
+is a slice cut out of an order, and where the order does not decide
+between two rows the database may put them either way round — on each
+query. Page one then shows a row that page two shows again, and some
+other row is never shown at all. It is not an exotic case: it is every
+sort over a column with repeats, which is most of them, and nothing says
+a word when it happens.
+
+The key is unique by definition, so adding it last makes the order total
+without changing what you asked for. It is added ascending whichever way
+your sort runs — the point is that it is decided, not which way — and it
+is not added when you already ordered by the key yourself. `Limit` and
+`Offset` on their own are left alone: those are yours to use as you like,
+and `Paginate` is the one that promises pages.
+
 ## Getting results
 
 | | |

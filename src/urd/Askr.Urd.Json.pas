@@ -104,9 +104,21 @@ procedure WriteModelList(var W: TJsonWriter; L: TModelListBase);
 var
   I: Integer;
 begin
+  { No list is an empty list, not null.
+
+    A consumer of a list is going to iterate it, and `null` is the one
+    value that makes that a crash rather than a no-op -- in JavaScript,
+    in Swift, in anything with a type for a list. The two states worth
+    telling apart are "here are the rows" and "you did not ask for
+    this", and the second is said by leaving the key out, which is
+    already the rule for a relation that was never loaded.
+
+    Before this a nil list serialised as `null`, so a list endpoint that
+    matched nothing handed its caller something to crash on. }
   if L = nil then
   begin
-    W.Null;
+    W.BeginArray;
+    W.EndArray;
     Exit;
   end;
   W.BeginArray;

@@ -37,6 +37,19 @@ other client gets the byte-for-byte body it got before.
 Nothing needs changing in your code. If you want the old behaviour on one
 route, branch on `Req.AcceptsJson` yourself.
 
+**`Paginate` adds the primary key to the end of the `ORDER BY`.** Without
+it a page is not reproducible: two rows the sort cannot tell apart may
+come back either way round on each query, so a row appears on two pages
+and another on none. If you were reading the SQL, or counting the terms
+in an `ORDER BY`, it has one more. Nothing about the rows you get changes
+except that they stop moving. `Limit` and `Offset` used directly are
+untouched.
+
+**A list with nothing in it now serialises as `[]` rather than `null`.**
+This reaches Inertia props and relations as well as API payloads. Code
+that tested a prop for `null` to mean "empty" has to test for length
+instead; code that iterated it stops needing a guard.
+
 **Middleware now runs in the order you registered it.** It used to run
 every method before every plain procedure, whichever order they were
 written in. If you have both kinds on one router and were relying --

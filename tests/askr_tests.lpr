@@ -3265,6 +3265,65 @@ begin
   SqOrders.Sum_ := ColCurrency('sq_orders', 'sum');
 end;
 
+{ Reads one member out of a JSON document, through the real parser rather
+  than by matching text. A substring check passes on a body that is not
+  JSON at all, which is the failure being guarded against.
+
+  The key may be a dotted path -- `meta.total` -- so a nested object can
+  be asked about without a second helper. A member that is not there and
+  a member that is an empty string both read as '', which is why the
+  tests that care about the difference ask for the raw text as well. }
+function ProblemMember(const Body_, Key: string): string;
+var
+  A: TArena;
+  Root, V: PJsonValue;
+  ErrAt: SizeInt;
+  Rest, One: string;
+  P: Integer;
+begin
+  A := TArena.Create(16 * 1024);
+  try
+    if not JsonParse(A, StrDup(A, Body_), Root, ErrAt) then
+      Exit('<not json>');
+    V := Root;
+    Rest := Key;
+    while Rest <> '' do
+    begin
+      P := Pos('.', Rest);
+      if P = 0 then
+      begin
+        One := Rest;
+        Rest := '';
+      end
+      else
+      begin
+        One := Copy(Rest, 1, P - 1);
+        Rest := Copy(Rest, P + 1, MaxInt);
+      end;
+      V := JsonMember(V, One);
+    end;
+    Result := JsonAsString(V);
+  finally
+    A.Free;
+  end;
+end;
+
+{ True when the document parses at all. A payload nobody can parse is the
+  one failure a substring check never notices. }
+function IsJson(const Body_: string): Boolean;
+var
+  A: TArena;
+  Root: PJsonValue;
+  ErrAt: SizeInt;
+begin
+  A := TArena.Create(16 * 1024);
+  try
+    Result := JsonParse(A, StrDup(A, Body_), Root, ErrAt);
+  finally
+    A.Free;
+  end;
+end;
+
 procedure TestSqlite;
 var
   A: TArena;
@@ -3285,6 +3344,8 @@ var
   ForApne: Integer;
   Sql: string;
   G: TGrid<TSqCustomer>;
+  Q_: TQuery<TSqCustomer>;
+  Raised_: Boolean;
   GW: TJsonWriter;
   GJson: string;
   Failed_: Boolean;
@@ -3512,6 +3573,143 @@ begin
       Check(Pos('"pages":', GJson) > 0, 'og antall sider');
       Check(Pos('"per":3', GJson) > 0, 'and the page size after the cap');
       Check(Pos('"sort":"name"', GJson) > 0, 'and which column is sorted');
+
+      { ---- the list envelope, for a caller that is not the grid ---- }
+
+      { A page in the middle of a set: data, a measured total, and a next
+        link. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(MakeRequest(A,
+        'GET /customers?sort=name&status=open HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2);
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      GJson := G.ListResponse(Items).Body.ToString;
+
+      Check(IsJson(GJson), 'the envelope parses');
+      CheckEqS(ProblemMember(GJson, 'meta.total'), IntToStr(Count_),
+        'the total is the whole set, not the page');
+      CheckEqS(ProblemMember(GJson, 'meta.per'), '2', 'and the page size');
+      CheckEqS(ProblemMember(GJson, 'meta.page'), '1', 'and which page');
+      Check(Pos('"data":[{', GJson) > 0, 'data is an array of objects');
+
+      { **The next link keeps the application''s own parameters.** A list
+        usually carries more than sort and search, and a link that paged
+        through a different list than the caller asked for would be worse
+        than no link. }
+      Sql := ProblemMember(GJson, 'links.next');
+      Check(Pos('status=open', Sql) > 0, 'the next link keeps status=open');
+      Check(Pos('sort=name', Sql) > 0, 'and the sort');
+      Check(Pos('page=2', Sql) > 0, 'and moves to page two');
+      Check(Pos('/customers?', Sql) = 1, 'and is a relative path');
+      CheckEqS(ProblemMember(GJson, 'links.prev'), '',
+        'there is no page before the first');
+
+      { Page two of two: prev is there, next is not, and page= is
+        replaced rather than repeated. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(MakeRequest(A,
+        'GET /customers?page=2&status=open HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(100);
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      GJson := G.ListResponse(Items).Body.ToString;
+      Sql := ProblemMember(GJson, 'links.prev');
+      Check(Pos('page=1', Sql) > 0, 'prev goes back one');
+      Check(Pos('page=2', Sql) = 0, 'and the old page is gone, not repeated');
+      Check(Pos('status=open', Sql) > 0, 'with the parameters still there');
+      CheckEqS(ProblemMember(GJson, 'links.next'), '',
+        'and there is nothing after the last page');
+
+      { **Nothing matched.** This is the case the envelope exists for:
+        data has to be an empty array, never null. A client of a list
+        iterates that key, and null is the one value that turns an empty
+        result into a crash. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(MakeRequest(A, 'GET /customers?q=zzzznothing HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name)
+       .Searchable([SqCustomers.Name, SqCustomers.Email])
+       .DefaultSort('name').PerPage(10);
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      GJson := G.ListResponse(Items).Body.ToString;
+      Check(Pos('"data":[]', GJson) > 0, 'nothing matched gives an empty array');
+      Check(Pos('null', ProblemMember(GJson, 'data')) = 0, 'and not null');
+      Check(Pos('"data":null', GJson) = 0, 'data is never null');
+      CheckEqS(ProblemMember(GJson, 'meta.total'), '0', 'the total is zero');
+      CheckEqS(ProblemMember(GJson, 'meta.pages'), '1',
+        'and there is still one page, not zero');
+      CheckEqS(ProblemMember(GJson, 'links.next'), '', 'with no next');
+      CheckEqS(ProblemMember(GJson, 'links.prev'), '', 'and no prev');
+
+      { A list nobody built at all is still an array. }
+      GW.Init(A, 64);
+      WriteModelList(GW, nil);
+      CheckEqS(GW.ToString, '[]', 'no list at all is an empty array');
+
+      { **The total has to be measured, not assumed.** Building the
+        payload without calling Rows would report a total of zero for a
+        list with rows in it. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name');
+      Raised_ := False;
+      try
+        G.ListResponse(nil);
+      except
+        on E: EGridError do
+          Raised_ := True;
+      end;
+      Check(Raised_, 'a payload built without Rows raises');
+
+      { And the reply says it is JSON. }
+      G := TGrid<TSqCustomer>.New;
+      G.Read(MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name');
+      Items := G.Rows(TQuery<TSqCustomer>.New);
+      CheckEqS(G.ListResponse(Items).HeaderValue('Content-Type'),
+        'application/json; charset=utf-8', 'the envelope is served as JSON');
+
+      { **A page is cut out of an order, so the order has to be total.**
+        Where the sort does not decide between two rows the database may
+        put them either way round, on each query -- so page one shows a
+        row that page two shows again, and some other row is never shown.
+        Paginate puts the primary key last for that, and this is the SQL
+        that comes out. There is no way to make SQLite return them in a
+        different order on demand, so the assertion is on the ORDER BY
+        and not on the symptom. }
+      Sql := TQuery<TSqCustomer>.New.OrderBy(SqCustomers.Name).ToSql;
+      Sql := Copy(Sql, Pos('ORDER BY', Sql), MaxInt);
+      Check(Pos('name', Sql) > 0, 'an ordinary query orders by what it was told');
+      Check(Pos('id', Sql) = 0, 'and nothing is added to it');
+      Sql := TQuery<TSqCustomer>.New.Limit(2).ToSql;
+      Check(Pos('ORDER BY', Sql) = 0,
+        'nor does a plain Limit, which is the caller''s own business');
+      G := TGrid<TSqCustomer>.New;
+      G.Read(MakeRequest(A, 'GET /customers HTTP/1.1'#13#10'Host: t'))
+       .Sortable('name', SqCustomers.Name).DefaultSort('name').PerPage(2);
+      Q_ := TQuery<TSqCustomer>.New;
+      G.Rows(Q_);
+      Sql := Q_.ToSql;
+      Check(Pos('ORDER BY', Sql) > 0, 'a page is ordered');
+      Check(Pos('name', Copy(Sql, Pos('ORDER BY', Sql), MaxInt)) > 0,
+        'by what was asked for');
+      Check(Pos('id', Copy(Sql, Pos('ORDER BY', Sql), MaxInt)) >
+            Pos('name', Copy(Sql, Pos('ORDER BY', Sql), MaxInt)),
+        'and then by the primary key, last');
+
+      { And only once. A caller who already ordered by the key has said
+        everything there is to say about the order; adding it again is
+        harmless SQL and a sign the check is not there. }
+      Q_ := TQuery<TSqCustomer>.New.OrderBy(SqCustomers.Id);
+      Q_.Paginate(1, 2);
+      Sql := Copy(Q_.ToSql, Pos('ORDER BY', Q_.ToSql), MaxInt);
+      Count_ := 0;
+      I := Pos('id', Sql);
+      while I > 0 do
+      begin
+        Inc(Count_);
+        I := PosEx('id', Sql, I + 1);
+      end;
+      CheckEqI(Count_, 1, 'the key is not added when it is already there');
+
     end;
 
     { Ada is active, and of Customer 2..5 so are 2 and 4. Three in
@@ -3906,25 +4104,6 @@ const
     every route that can throw, and the ones that throw are the ones
     holding a connection string. }
   BoomSecret = '/Users/askr/secret/db.pass: password=hunter2';
-
-{ Reads one member out of a problem document, through the real parser
-  rather than by matching text. A substring check passes on a body that is
-  not JSON at all, which is the failure being guarded against. }
-function ProblemMember(const Body_, Key: string): string;
-var
-  A: TArena;
-  Root: PJsonValue;
-  ErrAt: SizeInt;
-begin
-  A := TArena.Create(8 * 1024);
-  try
-    if not JsonParse(A, StrDup(A, Body_), Root, ErrAt) then
-      Exit('<not json>');
-    Result := JsonAsString(JsonMember(Root, Key));
-  finally
-    A.Free;
-  end;
-end;
 
 { The size is the whole point. The file has to fit inside the arena
   block that is already in use by the request — larger, and it gets a new

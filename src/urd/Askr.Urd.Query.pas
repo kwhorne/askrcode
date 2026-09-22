@@ -1123,11 +1123,49 @@ begin
 end;
 
 function TQuery<M>.Paginate(Page, PerPage: Integer): TModelList<M>;
+var
+  O: POrderTerm;
+  Pk: string;
+  I: Integer;
+  Have: Boolean;
 begin
   if Page < 1 then
     Page := 1;
   if PerPage < 1 then
     PerPage := 25;
+
+  { The primary key goes on the end of the ORDER BY, always.
+
+    LIMIT and OFFSET cut a page out of an order, and where the order does
+    not decide between two rows, the database is free to put them either
+    way round -- on each query. Page 1 then shows a row that page 2 shows
+    again, and some other row is never shown at all. It is not a rare
+    case: it is every sort over a column with repeats, which is most of
+    them, and nothing says a word when it happens.
+
+    The key is unique by definition, so adding it last makes the order
+    total without changing what the caller asked for. Ascending
+    regardless of the sort direction: the point is that it is decided,
+    not which way. }
+  Pk := FMeta.PrimaryKey;
+  if Pk <> '' then
+  begin
+    Have := False;
+    for I := 0 to FOrderCount - 1 do
+      if (FOrders + I)^.Column = Pk then
+      begin
+        Have := True;
+        Break;
+      end;
+    if not Have then
+    begin
+      O := AddOrder;
+      O^.Table := FMeta.Table;
+      O^.Column := Pk;
+      O^.Dir := Asc;
+    end;
+  end;
+
   FLimit := PerPage;
   FOffset := (Page - 1) * PerPage;
   Result := Get;

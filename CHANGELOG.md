@@ -52,6 +52,28 @@ with the zero-major caveat that minor releases may break things until
   passes trivially today, which is the point: it fails the day somebody
   adds the convenience.
 
+- **A list envelope for an API.** `TGrid<M>.ListResponse(Rows)` writes
+  `data`, `meta` and `links`:
+
+      {"data": [...],
+       "meta": {"page":1,"per":25,"total":137,"pages":6,
+                "sort":"name","dir":"asc","q":""},
+       "links": {"prev":null,"next":"/customers?status=open&page=2"}}
+
+  It is the same `TGrid` the data grid component uses -- sorting,
+  searching and paging happen in the database either way, and the only
+  difference is how the result is written out. `WriteJson` gives the
+  component its prop, `ListResponse` gives an API caller the envelope,
+  `WriteListInto` writes it into a document of your own.
+
+  `total` comes from `Rows`, which counts the filtered set before
+  fetching the page; building the payload without calling `Rows` raises
+  rather than reporting a total nobody measured. `pages` is at least 1,
+  including for an empty result.
+
+  The links are relative and carry the whole query string forward with
+  only `page` replaced, so `?status=open` is still there on page two.
+
 - **`EHttpError`**: an exception that says which status it should become.
   Raising is the only way out of the middle of a function, and not every
   failure is a fault. The server answers with `HttpStatus` instead of
@@ -97,6 +119,22 @@ with the zero-major caveat that minor releases may break things until
   with a login form — the failure disguised as success.
 
 ### Fixed
+
+- **A page could show the same row twice and never show another.**
+  `Paginate` cuts a slice out of an order, and where the order does not
+  decide between two rows the database may put them either way round on
+  each query -- so page one shows a row that page two shows again, and
+  something else is never shown at all. It is every sort over a column
+  with repeats, which is most of them, and nothing says a word when it
+  happens. `Paginate` now puts the primary key last in the `ORDER BY`,
+  which is unique by definition, so the order is total without changing
+  what was asked for. `Limit` and `Offset` on their own are untouched.
+
+- **A list serialised as `null` when there was nothing in it.**
+  `WriteModelList` wrote `null` for a nil list, so a list endpoint that
+  matched nothing handed its caller something to crash on. It is `[]`
+  now. "You did not ask for this" is said by leaving the key out, which
+  was already the rule for a relation that was never loaded.
 
 - **Middleware did not run in the order it was registered.** The router
   kept one list for methods and one for plain procedures and ran every

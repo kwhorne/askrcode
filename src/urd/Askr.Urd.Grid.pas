@@ -46,8 +46,8 @@ interface
 uses
   SysUtils, Math,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
-  Askr.Http.Request,
-  Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query;
+  Askr.Http.Request, Askr.Http.Response,
+  Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
 
 type
   EGridError = class(Exception);
@@ -81,8 +81,14 @@ type
       is a trap, and it caught us immediately. }
     FClientPer: Integer;
     FQuery: string;
+    { The path and the raw query string of the request this was read
+      from, kept so a next link can be built without losing the
+      application's own parameters. Empty when no request was read. }
+    FPath: string;
+    FQueryString: string;
     FTotal: Int64;
     FRan: Boolean;
+    function LinkTo(PageNo: Int64): string;
     function Find(const Key: string; out C: TGridCol): Boolean;
     procedure Add(const Key: string; const AName, ATable: ShortString;
       Kind: TGridColKind);
@@ -126,6 +132,28 @@ type
       know which column is sorted, which page it is on and how many
       matches there are. }
     procedure WriteJson(var W: TJsonWriter); override;
+
+    (* The same list for a caller that is not the data grid component:
+
+         "data": [...]
+         "meta": "page":1, "per":25, "total":137, "pages":6,
+                 "sort":"name", "dir":"asc", "q":""
+         "links": "prev":null, "next":"/customers?sort=name&page=2"
+
+       -- an object with those three keys, written without the braces
+       because a brace in a Pascal comment opens a nested one.
+
+       `data` is an array whatever happens: never null, never missing.
+       `total` comes from Rows, which counts before it fetches, and
+       building this without calling Rows first raises rather than
+       reporting a total nobody measured.
+
+       The links are relative and carry the whole query string forward
+       with only `page` replaced, so a filter the application added is
+       still there on page two. *)
+    procedure WriteListInto(var W: TJsonWriter; Rows_: TModelList<M>);
+    { The same thing as a complete response. }
+    function ListResponse(Rows_: TModelList<M>): TResponse;
 
     property Total: Int64 read FTotal;
     property Page: Integer read FPage;
@@ -296,6 +324,8 @@ begin
   end;
 
   FQuery := Trim(Req.Query('q').ToString);
+  FPath := Req.Path.ToString;
+  FQueryString := Req.QueryString.ToString;
 end;
 
 function TGrid<M>.EffectiveSort: string;
@@ -399,6 +429,124 @@ begin
   { A page outside the range gives an empty list, not an error. That
     happens when somebody deletes rows while you are on the last page. }
   Result := Q.Paginate(FPage, EffectivePer);
+end;
+
+{ ------------------------------------------------------ list payload -- }
+
+{ Everything after the path, with page= replaced.
+
+  The whole query string is carried over rather than rebuilt from what
+  the grid knows about, because a list usually carries more than sort and
+  search -- `?status=open&assignee=me` is the application's, and a next
+  link that quietly dropped it would page through a different list than
+  the one the caller asked for. }
+function TGrid<M>.LinkTo(PageNo: Int64): string;
+var
+  Rest, One, Kept: string;
+  P: Integer;
+begin
+  Kept := '';
+  Rest := FQueryString;
+  while Rest <> '' do
+  begin
+    P := Pos('&', Rest);
+    if P = 0 then
+    begin
+      One := Rest;
+      Rest := '';
+    end
+    else
+    begin
+      One := Copy(Rest, 1, P - 1);
+      Rest := Copy(Rest, P + 1, MaxInt);
+    end;
+    if One = '' then
+      Continue;
+    if (Copy(One, 1, 5) = 'page=') or (One = 'page') then
+      Continue;
+    if Kept <> '' then
+      Kept := Kept + '&';
+    Kept := Kept + One;
+  end;
+
+  if Kept <> '' then
+    Kept := Kept + '&';
+  Result := FPath + '?' + Kept + 'page=' + IntToStr(PageNo);
+end;
+
+procedure TGrid<M>.WriteListInto(var W: TJsonWriter; Rows_: TModelList<M>);
+var
+  Pages: Int64;
+begin
+  { A total that was never measured must not be written as if it had
+    been. Rows is what measures it, and a payload built without it would
+    say total 0 for a list that has rows in it. }
+  if not FRan then
+    raise EGridError.Create(
+      'The list has no total: call Grid.Rows before building the ' +
+      'payload. It is Rows that counts the matches, and a total nobody ' +
+      'measured is worse than none.');
+
+  Pages := Max(1, (FTotal + EffectivePer - 1) div EffectivePer);
+
+  W.BeginObject;
+  { Always an array, and always called the same thing. A client of a list
+    endpoint iterates this key; there is no shape of reply where handing
+    it null is the more useful answer. }
+  W.Key('data');
+  WriteModelList(W, Rows_);
+
+  W.Key('meta');
+  W.BeginObject;
+  W.Field('page', Int64(FPage));
+  W.Field('per', Int64(EffectivePer));
+  W.Field('total', FTotal);
+  W.Field('pages', Pages);
+  W.Field('sort', EffectiveSort);
+  if EffectiveDir = Desc then
+    W.Field('dir', 'desc')
+  else
+    W.Field('dir', 'asc');
+  W.Field('q', FQuery);
+  W.EndObject;
+
+  { Relative, on purpose. An absolute one would need an origin, and the
+    only truthful source of that is app.url -- which a list endpoint has
+    no business requiring. The caller just made this request, so it has
+    the origin already. }
+  W.Key('links');
+  W.BeginObject;
+  if FPath = '' then
+  begin
+    { No path means the grid was never given a request. Saying null is
+      the honest answer; guessing a path is not. }
+    W.FieldNull('prev');
+    W.FieldNull('next');
+  end
+  else
+  begin
+    if FPage > 1 then
+      W.Field('prev', LinkTo(FPage - 1))
+    else
+      W.FieldNull('prev');
+    if FPage < Pages then
+      W.Field('next', LinkTo(FPage + 1))
+    else
+      W.FieldNull('next');
+  end;
+  W.EndObject;
+  W.EndObject;
+end;
+
+function TGrid<M>.ListResponse(Rows_: TModelList<M>): TResponse;
+var
+  W: TJsonWriter;
+begin
+  W.Init(CurrentArena, 4096);
+  WriteListInto(W, Rows_);
+  Result := Respond(200)
+    .WithContentType('application/json; charset=utf-8')
+    .WithBody(W.ToStr);
 end;
 
 procedure TGrid<M>.WriteJson(var W: TJsonWriter);

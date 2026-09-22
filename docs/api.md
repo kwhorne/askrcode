@@ -306,6 +306,87 @@ on Tuesday" and "this token never existed" are different answers to the
 only question anybody asks afterwards, and a deleted row can give only
 the second.
 
+## Returning a list
+
+A list endpoint answers with three things: the rows, where in the set
+they came from, and how to ask for the next lot.
+
+```pascal
+function TCustomerCtl.Index(Req: TRequest): TResponse;
+var
+  G: TGrid<TCustomer>;
+begin
+  G := TGrid<TCustomer>.New;
+  G.Read(Req)
+   .Sortable('name', Customers.Name)
+   .Sortable('balance', Customers.Balance)
+   .Searchable([Customers.Name, Customers.Email])
+   .DefaultSort('name')
+   .PerPage(25, 200);
+
+  Result := G.ListResponse(G.Rows(TQuery<TCustomer>.New));
+end;
+```
+
+```json
+{
+  "data": [ { "id": 1, "name": "Ada", "balance": 500.0000 } ],
+  "meta": {
+    "page": 1, "per": 25, "total": 137, "pages": 6,
+    "sort": "name", "dir": "asc", "q": ""
+  },
+  "links": {
+    "prev": null,
+    "next": "/customers?sort=name&status=open&page=2"
+  }
+}
+```
+
+`GET /customers?sort=balance&dir=desc&per=50&q=ada&page=2` is read by
+`Read`. This is the same `TGrid` the [data grid](lauf.md) component uses
+— sorting, searching and paging happen in the database either way, and
+the only difference is how the result is written out. `WriteJson` gives
+the component its prop; `ListResponse` gives an API caller the envelope
+above, and `WriteListInto` writes it into a document of your own.
+
+### data is an array
+
+`data` is an array whatever happens: `[]` when nothing matched, never
+`null` and never missing. A consumer of a list is going to iterate that
+key, and `null` is the one value that turns an empty result into a
+crash. "You did not ask for this" is said by leaving a key out, which is
+already the rule for [a relation that was never loaded](inertia.md).
+
+### total is counted, not guessed
+
+`Rows` runs `SELECT count(*)` over the filtered set **before** it fetches
+the page, with the search applied and the limit and offset ignored. Do it
+the other way round and you count the rows on the page.
+
+Building the payload without calling `Rows` raises rather than reporting
+`"total": 0` for a list that has rows in it.
+
+`pages` is at least 1, including for an empty result: a set with nothing
+in it still has one page, and a client that loops `for p := 1 to pages`
+should visit it.
+
+### The links are relative, and keep your parameters
+
+`links.next` is the whole query string this request came in with, with
+only `page` replaced. A list usually carries more than sort and search —
+`?status=open&assignee=me` is the application's — and a next link that
+quietly dropped those would page through a different list than the caller
+asked for.
+
+They are relative on purpose. An absolute URL needs an origin, and the
+only truthful source of one is `app.url` ([see why](../src/core/Askr.Core.Url.pas));
+a list endpoint has no business requiring that to be configured, and the
+caller just made the request, so it has the origin already.
+
+`prev` and `next` are `null` at the ends, and both are `null` when the
+grid was never given a request — there is no path to build one from, and
+guessing at one would be worse than saying so.
+
 ## What the framework answers for you
 
 | | |
@@ -349,11 +430,17 @@ rule removes.
 
 ## What is not here
 
-**There is no list envelope.** A handler that returns a collection decides
-its own shape. `TQuery.Paginate(Page, PerPage)` gives you the rows and
-`TQuery.Count` the total ([Queries](queries.md)); wrapping the two in a
-`data` / `meta` object is yours to write. A framework opinion here is
-worth having only once the rest of the layer agrees with it.
+**There are no per-field filters on a list.** `q` is free text over the
+columns you named with `Searchable`. Per-field filters need an operator
+per type and a way to express and/or, and that is a separate question
+about how much of a query language a URL should carry. Add a `Where` of
+your own to the query you hand `Rows` — a list over "my orders" is still
+a list.
+
+**There is no cursor pagination.** `page` and `per` over a total order,
+which is what `Paginate` guarantees. Cursors are the right answer for a
+feed that grows while you read it, and the wrong shape for a `pages`
+count, which is what a table with page numbers under it needs.
 
 **There is no refresh token and no OAuth.** A token is issued by somebody
 who is already trusted -- at a console, or by a handler you wrote -- and
