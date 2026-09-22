@@ -8,6 +8,41 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.11.0
+
+Two things can break, and both only if you already have a frontend.
+
+**A custom root template needs a `{{fallback}}` placeholder** — but only
+once a page starts using `TInertia.PageFallback`. Until then nothing
+changes. When one does, put it inside the mount element:
+
+```html
+<div id="{{root}}">{{fallback}}</div>
+```
+
+A page that sets a fallback against a template with nowhere to put it
+raises, rather than dropping it quietly.
+
+**Your `main.js` needs one line**, for the same feature. Svelte 5 mounts by
+appending, so without it the reader sees the page twice:
+
+```js
+setup({ el, App, props }) {
+  el.innerHTML = ''
+  mount(App, { target: el, props })
+}
+```
+
+`askr new` writes both. Everything else in this release is additive:
+`app.url` and absolute URLs, conditional GET with ETags, `robots.txt`,
+`sitemap.xml`, and per-page head metadata. See
+[the changelog](CHANGELOG.md).
+
+**One behaviour changed without a flag.** Static files now carry an `ETag`
+and answer `304` to a matching `If-None-Match`. If something of yours
+compares response bodies byte for byte across requests, it will now
+sometimes get an empty one with a 304 instead.
+
 ## 0.10.1
 
 Nothing can break. Documentation, and one error message.
