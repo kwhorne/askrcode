@@ -8,6 +8,22 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.11.1
+
+**Worth reading if you use the AI layer's tool loop.** It was sending the
+assistant turn back without the `tool_use` blocks it had asked with, and
+Anthropic's API refuses the results that follow — so `RunTools` failed with
+a 400 the moment a model actually called a tool. It works now. Nothing you
+wrote needs changing for that.
+
+**`TAiMessage` changed shape**, and this can break code that builds one by
+hand. `ToolUseId`, `IsToolResult` and `IsError` are gone; there are
+`ToolCalls` and `ToolResults` arrays instead, because one turn can ask for
+several tools and all the answers have to travel in one message.
+`ToolResultMsg(Id, Text)` still works and makes a one-element version. If
+you only ever used `UserMsg`, `AssistantMsg` and `ToolResultMsg`, nothing
+changes.
+
 ## 0.11.0
 
 Two things can break, and both only if you already have a frontend.
