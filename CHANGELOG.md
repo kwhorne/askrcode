@@ -16,6 +16,11 @@ with the zero-major caveat that minor releases may break things until
 
 ### Added
 
+- **`docs/generators.md`**: `make model` and `make resource` on one page --
+  the order, what each writes and refuses, the tests it generates, how
+  `./askr make:check` checks it, and what is not there yet. `docs/cli.md`
+  points to it rather than carrying a second copy.
+
 - **`askr make resource <Name> --api`**: the same table as JSON under
   `/api`, scoped `<table>:read` and `<table>:write` -- the list envelope,
   `RespondModel`, problem documents, 201 with a `Location`, `PATCH` for a

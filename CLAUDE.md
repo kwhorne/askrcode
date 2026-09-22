@@ -16,6 +16,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr cli        # bygger CLI-en fra PRD-en
 ./askr run:demo   # Rún ende-til-ende mot SQLite
 ./askr check      # samme som test, med -Cr -Co -Ci
+./askr make:check # generatorene: tre databaser, en socket og Chrome
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -779,6 +780,11 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **Hemmeligheter skjules, lukket til noen åpner.** En kolonne som ser ut
   som et passord, token eller hash skjules fra JSON og holdes ute av skjema
   og liste. Feilen i den retningen merkes; en lekket hash gjør ikke det.
+* **`make:check` sier bare det den viste.** Den teller ok, feil og hoppet
+  over, og uten node eller Chrome er sluttlinja «holds for what ran» — ikke
+  påstanden om at sidene virker i en nettleser. En port som melder grønt
+  for noe den ikke kjørte, er samme feil som en suite som melder grønt på
+  kode som ikke kompilerer.
 * **Én nøkkelordliste**, `IsPascalKeyword` i `Askr.Norn.Codegen`. Den gamle
   i Norn hadde 41 av 67, `make model` hadde sin egen lengre, og en kolonne
   som het `until` ga en schema-unit som ikke kompilerte.

@@ -99,7 +99,7 @@ or set it for this project only, in askr.toml:
 |---|---|
 | `askr make model <Name> [--migration]` | `app/Models/App.Models.<Name>.pas` |
 | `askr make model <Name> name:type ...` | The model **and** its migration, from one spec |
-| `askr make resource <Name> [--table=t]` | Pages over a table that exists — see [below](#a-resource-from-a-table) |
+| `askr make resource <Name> [--web] [--api]` | Pages or JSON over a table that exists — see [Generators](generators.md) |
 | `askr make controller <Name>` | `app/Http/App.Http.<Name>Controller.pas` |
 | `askr make migration <Name>` | `database/App.Migrations.<Name>.pas` |
 | `askr make seeder <Name>` | `database/App.Seeders.<Name>.pas` |
@@ -120,164 +120,13 @@ or deleted cannot become invisible.
 the moment it exists. If any file a command would write already exists,
 nothing is written and the file is named; `--force` replaces it.
 
-### A model from a spec
+### Models and resources
 
-```sh
-askr make model Gadget name:string(60) notes:text? qty:int price:money \
-                       born:date maker:references
-```
-
-The model and its migration come from the same spec, so they start out
-agreeing — which a model and a migration written by hand stop doing one
-column at a time.
-
-| Type | Column | Property |
-|---|---|---|
-| `string`, `string(n)` | `VARCHAR(n)`, 255 when no length is given | `string` |
-| `text` | `TEXT` | `string` |
-| `int`, `bigint` | `INTEGER`, `BIGINT` | `Int64` |
-| `bool` | the dialect's boolean | `Boolean` |
-| `money` | `NUMERIC(12,2)` | `Currency` |
-| `float` | the dialect's double | `Double` |
-| `datetime`, `date` | the dialect's timestamp and date | `TDateTime` |
-| `json`, `uuid` | the dialect's JSON and UUID where it has them | `string` |
-| `thing:references` | `thing_id BIGINT`, a foreign key to `things` | `Int64` |
-
-A trailing `?` makes a column nullable. Timestamps are on by default, in
-both files together — `--no-timestamps` leaves them out of both.
-
-`Rules` gets what the spec **states**: `Required` for a NOT NULL text,
-date or reference, and `MaxLen(n)` for a `string(n)`. Not for a NOT NULL
-number or boolean — zero and false are values, and Required would refuse
-the one nobody thinks of as missing. **Nothing is inferred from a name**:
-a column called `email` is not therefore an email.
-
-**Refused, with a message saying why:**
-
-- A type that is not on the list. `name:strng` would otherwise become a
-  column of some kind, and a typo should not decide which.
-- A name the model would not map back to. A model finds a property's
-  column with `SnakeCase` at run time, so the property written for a
-  column has to snake_case back to exactly that column. `abc_2x` would
-  become `Abc2x`, which maps to `abc2x`.
-- A Pascal keyword — `label`, `type`, `end`. The usual escape, a trailing
-  underscore, is what breaks the mapping: the model would read `label_`
-  while the migration made `label`. That happened in Askr once, by hand.
-- `id`, `created_at` or `updated_at`, which are there already; a column
-  given twice; and `thing_id:references`, which is written `thing:references`.
-
-It does not migrate. A `make` command that changes the database is a
-surprise, and in production it is the wrong one. It prints the next step:
-
-```
-Next:
-  askr migrate     makes the gadgets table
-  askr schema      types its columns from the database
-```
-
-### A resource from a table
-
-```sh
-askr make model Gadget name:string(60) born:date maker:references
-askr migrate
-askr make resource Gadget
-```
-
-The table is read from the database the project is configured with — the
-one that **exists**, not a spec — and becomes the seven actions over it:
-
-| Written | |
-|---|---|
-| `app/Http/App.Http.GadgetsController.pas` | `Index`, `Show`, `Add`, `Store`, `Edit`, `Update`, `Remove`, and `GadgetsRoutes(R)` |
-| `frontend/src/pages/Gadgets/` | `Index`, `Show`, `Add` and `Edit`, in Lauf, and `Fields` shared by the two forms |
-| `tests/App.Tests.Gadgets.pas` | Every action, through the router |
-| `app/Models/App.Models.Gadget.pas` | Only when there is none; one that is there is used as it is |
-| `app/Schema/` | The typed columns, exactly as `askr schema` writes them |
-
-and puts `GadgetsRoutes(R);` in `app.lpr` and the test in
-`tests/app_tests.lpr`, at the lines `askr new` left — or, when those lines
-are gone, prints what to add. It refuses a table that is not there, has no
-primary key, a key of two columns, or a key that is not a whole number, and
-says which.
-
-**The controller uses the typed columns** — `Gadgets.Name`, not `'name'` —
-so a column dropped later is a compile error in the controller rather than
-a 500 on the page. That is the reason to generate Pascal instead of
-interpreting a table at run time. **The Svelte pages are not typed against
-anything**: a rename breaks the controller and leaves the pages showing an
-empty cell. They say so at the top.
-
-`Add` and `Remove`, not `Create` and `Destroy`: those are `TObject`'s
-constructor and destructor, and a method with either name hides it.
-
-**A request fills only the fields the form has.**
-`Req.FillInto(M, [Gadgets.Name.Name, ...])`, not `Req.FillInto(M)` — the
-one-argument form fills every column the model maps, so a client that added
-`created_at` to the body would have set it. The generated test sends a
-forged `created_at` and checks it did not land.
-
-What the table says, the resource does:
-
-- `NOT NULL` without a default is `Required`, and the field is marked
-  required. A column **with** a default is not required, and a new form
-  starts from the default when it is a plain value (`'draft'`, `0`,
-  `false`); a function such as `now()` is left to the database.
-- `VARCHAR(n)` is `MaxLen(n)` and `maxlength="n"`.
-- A foreign key to a table whose model exists is a select of its rows,
-  labelled by its first string column and capped at a thousand — a select
-  with more is the wrong control. Without a model for it, it is a number,
-  and says what it points at. A key to a table that is not there is not a
-  relation.
-- A column named like a secret — `password`, `token`, `hash`, `secret`,
-  `salt` — is hidden from JSON, and is in neither the form, the list nor
-  the page. A guess, made in the direction whose failure is loud.
-- A type a form cannot show, such as a blob, stays out of the pages, and
-  out of a model this writes.
-- `deleted_at` makes it soft: `Remove` sets it.
-
-**The test runs on `TEST_DATABASE_URL`, and on `sqlite::memory:` without
-one**, with the migrations run first. A test that wrote into the database
-you develop against would leave its rows there. When it cannot make a row —
-a `NOT NULL` column the form leaves out, with no default — it tests the
-list and the 404 and says why it does not write.
-
-#### As JSON: `--api`
-
-```sh
-askr make resource Gadget --api          # JSON only
-askr make resource Gadget --web --api    # both
-```
-
-| Written | |
-|---|---|
-| `app/Http/App.Http.GadgetsApiController.pas` | `GET`, `POST`, `PATCH` and `DELETE` under `/api/gadgets`, `GadgetsApiRoutes(R)`, and `GadgetsApiDoc(D)` |
-| `app/Http/App.Http.ApiDoc.pas` | `AppApiDoc`, the first time; each resource after that is two lines in it |
-| `tests/App.Tests.GadgetsApi.pas` | Every action, with real tokens |
-
-and `UseOpenApi(R, @AppApiDoc)` in `app.lpr`, once.
-
-Reading needs a token with `gadgets:read`, writing one with
-`gadgets:write` — `askr token:issue 7 ci --scopes=gadgets:read,gadgets:write`.
-A list is the [envelope](lists.md); a row is the model's JSON; a refusal
-is a [problem document](api.md). `POST` answers 201 with a `Location`,
-`DELETE` 204 with nothing. A change is a `PATCH`, not a `PUT`: what the
-body leaves out is left as it is, which is what `FillInto` does and what
-`PATCH` means.
-
-**The description sits next to the routes it describes**, in the same
-unit, and `askr openapi --check` fails when the two disagree. `make:check`
-runs it straight after generating, and runs the document through a real
-OpenAPI validator — a generated API that drifted on its first run would be
-the generator being wrong about itself.
-
-The request body in the document is the model's, `created_at` included,
-though the controller fills only the form's fields. OpenAPI has a place
-for that (`readOnly`); Askr does not write it yet.
-
-Not here yet: showing the rows of a has-many relation on the parent's page;
-checking that a foreign key points at a row before saving, or that a unique
-column is unique — both fail in the database instead of on the form; and a
-nullable number other than a reference, which Pascal cannot tell from zero.
+`askr make model <Name> name:type ...` writes a model and its migration
+from one spec. `askr make resource <Name>` reads a table that exists and
+writes the pages over it, with `--api` for JSON. What each writes, what it
+refuses, and what the generated tests prove are on
+[their own page](generators.md).
 
 ## Migrations
 

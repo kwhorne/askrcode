@@ -906,11 +906,11 @@ make_check_browser() {
   chrome=${ASKR_CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
   [ -x "$chrome" ] || chrome=$(command -v google-chrome || command -v chromium || true)
   if ! command -v node >/dev/null 2>&1 || [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
-    echo "  skip  needs node and Chrome (ASKR_CHROME)"
+    skip "needs node and Chrome (ASKR_CHROME)"
     return 0
   fi
   if [ ! -d "$ROOT/frontend/lauf/node_modules/axe-core" ]; then
-    echo "  skip  needs npm install in frontend/lauf"
+    skip "needs npm install in frontend/lauf"
     return 0
   fi
   web_port=${ASKR_MAKE_PORT:-8353}
@@ -920,11 +920,11 @@ make_check_browser() {
   sed -i.bak "s|\"file:/work/frontend/lauf\"|\"file:$ROOT/frontend/lauf\"|" "$front/package.json"
   rm -f "$front/package.json.bak"
   if ! ( cd "$front" && npm install --no-fund --no-audit >"$work/web-npm.log" 2>&1 ); then
-    echo "  skip  npm install failed (see $work/web-npm.log)"
+    skip "npm install failed (see $work/web-npm.log)"
     return 0
   fi
   if curl -s -o /dev/null "http://127.0.0.1:5173/" 2>/dev/null; then
-    echo "  skip  something is already on port 5173, where the pages load Vite from"
+    skip "something is already on port 5173, where the pages load Vite from"
     return 0
   fi
   ( cd "$front" && exec npx vite --host 127.0.0.1 ) >"$work/web-vite.log" 2>&1 &
@@ -976,11 +976,32 @@ make_check_browser() {
   rm -rf "$profile" 2>/dev/null
 }
 
+# The gate behind docs/generators.md: what `askr make` writes has to build,
+# migrate, round-trip, test, describe itself and work in a browser, on all
+# three databases. In order:
+#
+#   make model      every type, refusals, the round trip through the model
+#   the plan        each table read back gives the lines make model wrote
+#   make resource   three of them, --api on two; built, tested on SQLite,
+#                   Postgres and MySQL; openapi --check and a validator
+#   a socket        the API with real tokens and curl, and the pool after
+#                   forty refusals
+#   a browser       the pages in Chrome, and axe over every one of them
+#   the migrator    two migrations with one version
+#
+# Needs ./askr db:up. The socket and the browser need node and Chrome;
+# without them those parts are skipped, counted, and the last line says so
+# instead of claiming them.
 cmd_make_check() {
   prepare
   fail=0
-  ok()  { echo "  ok    $1"; }
-  bad() { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+  oks=0
+  fails=0
+  skips=0
+  started=$(date +%s)
+  ok()   { echo "  ok    $1"; oks=$((oks + 1)); }
+  bad()  { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; fails=$((fails + 1)); }
+  skip() { echo "  skip  $1"; skips=$((skips + 1)); }
 
   if ! docker ps --format '{{.Names}}' | grep -qx askr-postgres ||
      ! docker ps --format '{{.Names}}' | grep -qx askr-mysql; then
@@ -1321,7 +1342,7 @@ EOF
         ok "a real validator accepts it: ${out#ok: }" ||
         bad "a real validator accepts it" "$out"
     else
-      echo "  skip  the validator: node is not here"
+      skip "the validator: node is not here"
     fi
   else
     bad "askr openapi prints the document" "$(head -5 "$work/res-openapi.err")"
@@ -1345,7 +1366,7 @@ EOF
       bad "the pages compile" "$(head -12 "$work/res-pages.log")"
     fi
   else
-    echo "  skip  the pages: needs node and npm install in frontend/lauf"
+    skip "the pages: needs node and npm install in frontend/lauf"
   fi
 
   echo
@@ -1433,11 +1454,19 @@ EOF
   fi
 
   echo
+  took=$(( $(date +%s) - started ))
   if [ $fail -ne 0 ]; then
-    echo "make:check failed."
+    echo "make:check failed: $fails of $((oks + fails)) checks, in ${took}s."
     return 1
   fi
-  echo "make:check holds: what askr make writes builds, migrates and round-trips on all three."
+  if [ $skips -eq 0 ]; then
+    echo "make:check holds: $oks checks in ${took}s -- what askr make writes builds, migrates,"
+    echo "round-trips and passes its own tests on SQLite, Postgres and MySQL, describes"
+    echo "itself without drift, answers over a socket, and works in Chrome."
+  else
+    echo "make:check holds for what ran: $oks checks in ${took}s, $skips skipped (see above)."
+    echo "What was skipped has not been shown to work here."
+  fi
 }
 
 cmd_seo_check() {
@@ -2233,9 +2262,11 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   rutetabellen begge veier, og tokens, scopes,
                   konvolutt, CORS og rate limit over socket
   ./askr make:check
-                  generatorene mot et ekte prosjekt: askr make model med
-                  hver type, bygget, migrert og rundturet gjennom den
-                  genererte modellen på SQLite, Postgres og MySQL.
+                  generatorene mot et ekte prosjekt: make model med hver
+                  type, make resource for web og API, bygget, migrert og
+                  testet på SQLite, Postgres og MySQL; openapi --check og
+                  en validator; API-et over en socket; sidene i Chrome med
+                  axe. Krever ./askr db:up; node og Chrome for de to siste.
                   Krever ./askr db:up
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
