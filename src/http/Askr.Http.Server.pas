@@ -426,6 +426,17 @@ begin
         end;
       end;
 
+      { Conditional GET, in one place rather than in every handler. A
+        response that carries an ETag and matches what the client already
+        has becomes a 304 with no body; TResponse decides, including the
+        rule that a response setting a cookie never does.
+
+        Only GET and HEAD: If-None-Match on other methods is a
+        precondition, answered with 412, which Askr does not do -- and
+        turning a POST into a 304 would drop the write. }
+      if (Req.Method = hmGet) or (Req.Method = hmHead) then
+        Res.NotModifiedIfMatches(Req.Header('if-none-match').ToString);
+
       Out_.Init(FArena, 1024 + Res.Body.Len);
       Res.WriteTo(Out_, Close_, Req.Method = hmHead);
 

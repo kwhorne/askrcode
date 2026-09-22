@@ -972,6 +972,65 @@ begin
     Raw := Serialize(A, RespondText('hei'), True, False);
     Check(Pos('Connection: close'#13#10, Raw) > 0, 'Connection: close');
 
+    { ---- conditional GET ---- }
+
+    A.Reset;
+    Res := RespondText('hei').WithETag('abc');
+    Check(Res.HeaderValue('ETag') = '"abc"',
+      'the ETag is quoted, because an unquoted one is not valid');
+    Res := RespondText('hei').WithETag('abc', True);
+    Check(Res.HeaderValue('ETag') = 'W/"abc"', 'and weak when asked');
+
+    A.Reset;
+    Res := RespondText('hei').WithETag('abc');
+    Check(not Res.NotModifiedIfMatches('"zzz"'), 'a different tag is a miss');
+    CheckEqI(Res.StatusCode, 200, 'and the answer stays a 200');
+
+    A.Reset;
+    Res := RespondText('hei').WithETag('abc');
+    Check(Res.NotModifiedIfMatches('"abc"'), 'the same tag is a hit');
+    CheckEqI(Res.StatusCode, 304, 'which makes it a 304');
+    CheckEqI(Res.Body.Len, 0, 'with no body');
+    Check(Res.HeaderValue('ETag') = '"abc"', 'keeping the ETag');
+    Check(Res.HeaderValue('Content-Type') = '',
+      'and dropping Content-Type, which describes a body there is none of');
+    Raw := Serialize(A, Res, False, False);
+    Check(Pos('Content-Length:', Raw) = 0, 'a 304 sends no Content-Length');
+    Check(Pos('304 Not Modified', Raw) > 0, 'and says so');
+
+    { The header is a list, and W/"x" matches "x" for If-None-Match --
+      the opposite of If-Match, and the one people get backwards. }
+    A.Reset;
+    Res := RespondText('hei').WithETag('abc');
+    Check(Res.NotModifiedIfMatches('"one", W/"abc", "two"'),
+      'a list is searched, weakly');
+    A.Reset;
+    Res := RespondText('hei').WithETag('abc');
+    Check(Res.NotModifiedIfMatches('*'), '* matches anything with a tag');
+
+    { A body that comes with a cookie is a body made for one client. A
+      page with a CSRF token in it, served from cache on a later 304, is a
+      form whose token has since been rotated -- a rejected submit nobody
+      can reproduce. The ETag goes too, or the problem only moves to the
+      next cache in the chain. }
+    A.Reset;
+    Res := RespondText('hei').WithETag('abc').WithCookie('session', 'x');
+    Check(not Res.NotModifiedIfMatches('"abc"'),
+      'a response that sets a cookie never answers 304');
+    CheckEqI(Res.StatusCode, 200, 'it stays a 200');
+    Check(Res.HeaderValue('ETag') = '', 'and loses the ETag entirely');
+
+    { Only a 200 becomes a 304. A 404 carrying an ETag is a mistake
+      somewhere else, and answering it conditionally would hide it. }
+    A.Reset;
+    Res := RespondText('nope', 404).WithETag('abc');
+    Check(not Res.NotModifiedIfMatches('"abc"'), 'a 404 is not conditional');
+
+    A.Reset;
+    Res := RespondText('hei');
+    Check(not Res.NotModifiedIfMatches('"abc"'),
+      'and neither is a response with no ETag at all');
+
     A.Reset;
     Raw := Serialize(A, RespondText('hei'), False, True);
     Check(Pos('Content-Length: 3'#13#10, Raw) > 0, 'HEAD beholder Content-Length');
@@ -3279,6 +3338,18 @@ begin
     takes a path and nothing else. }
   if Req.Path.EqualsStr('/absolute') then
     Exit(RespondText(AbsoluteUrl(Req.Path.ToString)));
+  { A handler that sets an ETag and a cookie on the same response. It is
+    the shape of any page with a session and a CSRF token in the form. }
+  { Echoes the body, and carries an ETag. A POST here is the case the
+    method check exists for: without it the write would be answered with
+    "your copy is current" and dropped. Without the ETag the test would
+    pass whatever the method check did, which is how the first version of
+    it passed. }
+  if Req.Path.EqualsStr('/etag-ekko') then
+    Exit(Respond(200).WithContentType('text/plain')
+      .WithBody(Req.Body).WithETag('fast'));
+  if Req.Path.EqualsStr('/med-kake') then
+    Exit(RespondText('skjema').WithETag('fast').WithCookie('session', 'abc'));
   if Req.Path.EqualsStr('/upload') then
   begin
     if not Req.Multipart.Ok then
@@ -3306,6 +3377,7 @@ var
   Reserved1, Reserved2: PtrUInt;
   MpBody, MpContent: string;
   StaticFile: TStringList;
+  Etag_: string;
 begin
   Group('End to end over a socket');
   { Content with CRLFs in it, and with something that looks like the
@@ -3424,6 +3496,101 @@ begin
     Check(Pos('Content-Length: 3', Head) > 0, 'HEAD har Content-Length');
     CheckEqS(Body, '', 'HEAD has no body');
 
+    { ---- conditional GET, over the wire ----
+
+      The comparison lives in the server, so every handler gets it without
+      asking. What is proved here rather than in the unit is that the
+      header survives the trip, and that a 304 really sends nothing after
+      the head on a keep-alive connection -- a body there would
+      desynchronise the stream and be read as the start of the next
+      response. }
+    C.SendRaw('GET /static/big.css HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'a static file');
+    Check(Pos('ETag: "', Head) > 0, 'comes with an ETag');
+    Etag_ := Copy(Head, Pos('ETag: ', Head) + 6, MaxInt);
+    Etag_ := Copy(Etag_, 1, Pos(#13, Etag_) - 1);
+
+    C.SendRaw('GET /static/big.css HTTP/1.1'#13#10'Host: test'#13#10 +
+      'If-None-Match: ' + Etag_ + #13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'the same file with If-None-Match');
+    Check(Pos('HTTP/1.1 304 Not Modified', Head) = 1, 'gives 304');
+    CheckEqI(Length(Body), 0, 'with nothing after the head');
+
+    { The connection is still in step. If a 304 had sent a body, this is
+      where it would show. }
+    C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'and the connection is still usable');
+    CheckEqS(Body, 'rot', 'reading the next response cleanly');
+
+    C.SendRaw('GET /static/big.css HTTP/1.1'#13#10'Host: test'#13#10 +
+      'If-None-Match: "something-else"'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'a stale If-None-Match');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'gets the file again');
+    CheckEqI(Length(Body), StaticSize, 'in full');
+
+    { A conditional POST must not become a 304: that would answer a write
+      with "your copy is current" and drop it. }
+    C.SendRaw('POST /etag-ekko HTTP/1.1'#13#10'Host: test'#13#10 +
+      'If-None-Match: *'#13#10'Content-Length: 4'#13#10#13#10'data');
+    Check(C.ReadResponse(Head, Body), 'a POST carrying If-None-Match');
+    Check(Pos('ETag: "fast"', Head) > 0,
+      'against a response that does have an ETag');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'is not answered conditionally');
+    CheckEqS(Body, 'data', 'and still does the work');
+
+    { The same route by GET is conditional, which is what makes the line
+      above a statement about the method and not about the route. }
+    C.SendRaw('GET /etag-ekko HTTP/1.1'#13#10'Host: test'#13#10 +
+      'If-None-Match: *'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'and a GET of the same route');
+    Check(Pos('HTTP/1.1 304 Not Modified', Head) = 1, 'is');
+
+    { A validator that never changes is worse than none: it would serve a
+      stale file forever. So the file is changed and asked for again.
+
+      The size is changed, not just the bytes. The tag is built from the
+      modification time and the size, and the time has second resolution --
+      a rewrite within the same second at the same length is not detected.
+      That is the same window nginx and Apache have, and it closes itself
+      on the next write; hashing the contents would close it at the cost of
+      a pass over every file on every request. }
+    StaticFile := TStringList.Create;
+    try
+      StaticFile.Text := 'first';
+      StaticFile.SaveToFile('.build' + PathDelim + 'e2e-statisk' +
+        PathDelim + 'static' + PathDelim + 'vary.txt');
+    finally
+      StaticFile.Free;
+    end;
+    C.SendRaw('GET /static/vary.txt HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'a file that is about to change');
+    Etag_ := Copy(Head, Pos('ETag: ', Head) + 6, MaxInt);
+    Etag_ := Copy(Etag_, 1, Pos(#13, Etag_) - 1);
+
+    StaticFile := TStringList.Create;
+    try
+      StaticFile.Text := 'second, and longer than the first';
+      StaticFile.SaveToFile('.build' + PathDelim + 'e2e-statisk' +
+        PathDelim + 'static' + PathDelim + 'vary.txt');
+    finally
+      StaticFile.Free;
+    end;
+    C.SendRaw('GET /static/vary.txt HTTP/1.1'#13#10'Host: test'#13#10 +
+      'If-None-Match: ' + Etag_ + #13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'the same file after it changed');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1,
+      'is sent again, not answered 304 from the old tag');
+    Check(Pos('ETag: ' + Etag_, Head) = 0, 'and the tag moved with it');
+
+    { And the cookie guard, at the far end of the wire. }
+    C.SendRaw('GET /med-kake HTTP/1.1'#13#10'Host: test'#13#10 +
+      'If-None-Match: "fast"'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'a page that sets a cookie');
+    Check(Pos('HTTP/1.1 200 OK', Head) = 1, 'is never a 304');
+    CheckEqS(Body, 'skjema', 'the body comes every time');
+    Check(Pos('ETag:', Head) = 0, 'and it carries no ETag at all');
+    Check(Pos('Set-Cookie:', Head) > 0, 'but still sets the cookie');
+
     { A real upload over the socket. Everything else about multipart is
       tested against a body that is already in memory; this is the only
       test where the bytes actually go through the read buffer and
@@ -3501,12 +3668,12 @@ begin
     CheckEqI(Reserved2, Reserved1, 'the arena does not grow under sustained load');
     Check(Server.TotalArenaHighWater < 64 * 1024,
       'toppforbruket per request holder seg lite');
-    { 15 valid requests above, then 50 + 1 + 500 here. The two rejected
+    { 24 valid requests above, then 50 + 1 + 500 here. The two rejected
       ones (400 and 501) are not counted, because they never reached a
       handler. The number is written out rather than computed: the point
       of it is that the server's own count agrees with what the suite
       actually sent, and a computed one would agree with itself. }
-    CheckEqI(Server.TotalRequests, 567, 'every valid request was counted');
+    CheckEqI(Server.TotalRequests, 576, 'every valid request was counted');
     C.Close;
   finally
     Server.Free;

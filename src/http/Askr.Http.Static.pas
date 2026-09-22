@@ -180,6 +180,16 @@ begin
     .WithContentType(ContentTypeForExt(Ext))
     .WithBody(StrRef(Buf, SizeInt(Size)));
 
+  { Modification time and size, which is what nginx and Apache use. The
+    value is opaque -- it only has to change when the file does -- so the
+    timestamp needs no format, only to be a number that moves.
+
+    Hashing the bytes would be a stronger promise, and the file is already
+    in memory, but it would cost a pass over every file on every request
+    to close a window that is one second wide and closes itself on the
+    next write. }
+  Result.WithETag(Format('%x-%x', [FileAge(FullPath), Size]));
+
   if FMaxAge > 0 then
     Result.WithHeader('Cache-Control',
       Format('public, max-age=%d', [FMaxAge]))

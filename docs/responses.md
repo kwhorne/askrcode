@@ -86,6 +86,46 @@ browser repeats the method against the new address.
 Result := Redirect('/customers', 303);
 ```
 
+## Conditional GET
+
+```pascal
+Respond(200).WithBody(Html).WithETag('v3')
+```
+
+The value is the opaque part **without quotes** — they are added for you,
+because an unquoted ETag is not a valid one and the mistake stays invisible
+until some client rejects it. `WithETag(Value, True)` makes it weak.
+
+The comparison happens in the server, once, so no handler has to do it: a
+`GET` or `HEAD` carrying `If-None-Match` that matches becomes a **304 with
+no body**. Static files get an ETag automatically, from the file's
+modification time and size.
+
+**A response that sets a cookie never answers 304, and loses its ETag.**
+A body that comes with a cookie is a body made for one client. A page with
+a CSRF token in it, served from the client's cache on a later 304, is a
+form whose token has since been rotated — a rejected submit that nobody
+can reproduce. The guard is in the framework rather than in a rule you have
+to remember, and it takes the ETag with it: leaving the tag would only move
+the problem to the next cache in the chain.
+
+Only `GET` and `HEAD` are conditional this way. `If-None-Match` on other
+methods is a precondition — answered with `412`, which Askr does not do —
+and turning a `POST` into a 304 would answer a write with "your copy is
+current" and drop it.
+
+### What is not here
+
+**No `Last-Modified` or `If-Modified-Since`.** ETags answer the same
+question with fewer ways to be subtly wrong, and a date has one-second
+resolution with a timezone attached.
+
+**The static ETag has a one-second window.** It is built from modification
+time and size, as nginx and Apache build theirs, so a file rewritten within
+the same second at the same length keeps its tag. Hashing the bytes would
+close that window at the cost of a pass over every file on every request;
+the window closes itself on the next write.
+
 ## Bodies
 
 ```pascal

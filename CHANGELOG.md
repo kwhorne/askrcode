@@ -34,6 +34,23 @@ with the zero-major caveat that minor releases may break things until
   in case is a second URL to a crawler. A path is refused with a reason
   rather than dropped or kept.
 
+- **Conditional GET.** `TResponse.WithETag`, and a comparison in the server
+  so that no handler has to do it: a `GET` or `HEAD` whose `If-None-Match`
+  matches answers **304 with no body**. Static files get an ETag from
+  modification time and size.
+
+  **A response that sets a cookie never answers 304, and loses its ETag.**
+  A body that comes with a cookie is made for one client; a page with a
+  CSRF token, served from cache on a later 304, is a form whose token has
+  been rotated — a rejected submit nobody can reproduce. Mutation-checked
+  by removing the guard, which fails six assertions.
+
+  Only `GET` and `HEAD`: turning a `POST` into a 304 would answer a write
+  with "your copy is current" and drop it. That test first passed for the
+  wrong reason — it posted to a route with no ETag, so the method check was
+  never in play — and now posts to one that has one, with a `GET` of the
+  same route beside it to show the difference is the method.
+
 ### Changed
 
 - **The reset link in `askr make auth` is built with `AbsoluteUrlOrFail`**
