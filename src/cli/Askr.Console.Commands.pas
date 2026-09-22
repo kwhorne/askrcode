@@ -27,7 +27,7 @@ type
   end;
 
 const
-  ConsoleCommands: array[0..25] of TConsoleCommand = (
+  ConsoleCommands: array[0..26] of TConsoleCommand = (
     (Name_: 'about';            Help: 'what this app is configured with'),
     (Name_: 'routes';           Help: 'the routing table'),
     (Name_: 'migrate';          Help: 'run pending migrations'),
@@ -41,6 +41,7 @@ const
     (Name_: 'db:table';         Help: 'columns, indexes and keys of one table'),
     (Name_: 'db:wipe';          Help: 'drop every table (--force in production)'),
     (Name_: 'schema';           Help: 'generate typed columns from the database'),
+    (Name_: 'schema:check';     Help: 'do the typed columns still describe the database'),
     (Name_: 'queue:work';       Help: 'run the queue until interrupted'),
     (Name_: 'queue:status';     Help: 'counters for the queue'),
     (Name_: 'schedule:list';    Help: 'the schedule'),

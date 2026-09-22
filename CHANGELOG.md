@@ -12,6 +12,37 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **`askr schema:check`**: whether the typed columns still describe the
+  database, in both directions, and non-zero when they do not.
+
+  It was named in the header of every file `askr schema` has ever
+  written, and it did not exist. The fingerprint it needed was in each
+  file too, and nothing read it.
+
+  It tells five things apart. A table with no file, a file for a table
+  that has changed, a file for a table that is gone, and the same table
+  typed differently by this version all fail. The same declarations with
+  their comments worded differently -- what an upgrade leaves behind --
+  pass with a note. The comparison is on tokens with comments removed,
+  because the first real project it ran against came back "retyped"
+  over a translated comment in the manifest.
+
+### Fixed
+
+- **A dropped table left its typed columns behind**, and code using them
+  went on compiling against a table that was gone. `askr schema` now
+  removes a generated file whose table no longer exists and says so;
+  only files with Norn's own header are touched.
+
+- **`api_tokens` got typed columns in every app that had issued a
+  token.** It was left off the list of framework-owned tables in 0.12.0,
+  so `App.Schema.ApiTokens` appeared in an application that never queries
+  the table -- the exact appear-and-disappear that list exists to stop.
+
 ## 0.12.0 — 2026-09-22
 
 Askr serves programs as well as pages. This release is the API layer: an

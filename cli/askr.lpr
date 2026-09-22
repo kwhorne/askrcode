@@ -200,6 +200,7 @@ begin
   Si('  askr migrate:status|:rollback|:reset|:fresh|:refresh');
   Si('  askr db:seed|db:show|db:table|db:wipe');
   Si('  askr schema              typed columns from the database');
+  Si('  askr schema:check        do they still describe it');
   Si('  askr queue:work|queue:status');
   Si('  askr schedule:list|schedule:run');
   Si('  askr cache:clear   askr down   askr up');

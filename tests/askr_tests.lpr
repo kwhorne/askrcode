@@ -19,7 +19,7 @@ uses
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
   Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url, Askr.Urd.Json,
-  Askr.Http.Robots, Askr.Http.Sitemap;
+  Askr.Http.Robots, Askr.Http.Sitemap, Askr.Console.Commands;
 
 var
   Passed: Integer = 0;
@@ -3324,6 +3324,233 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------ schema drift -- }
+
+{ The gate for `askr schema:check`.
+
+  The command was named in the header of every file `askr schema` has ever
+  written, and it did not exist. The fingerprint it would have compared
+  was in each file too, and nothing read it. So this holds down the four
+  things the check has to tell apart, in both directions -- and that the
+  promise in the header names commands that exist. }
+function DriftKindOf(const D: TDrifts; const Name_: string): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(D) do
+    if D[I].FileName = Name_ then
+      Exit(Ord(D[I].Kind));
+  Result := -1;
+end;
+
+function ReplaceInFile(const Path_, Old, New_: string): Boolean;
+var
+  L: TStringList;
+  T: string;
+begin
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Path_);
+    T := L.Text;
+    Result := Pos(Old, T) > 0;
+    L.Text := StringReplace(T, Old, New_, []);
+    L.SaveToFile(Path_);
+  finally
+    L.Free;
+  end;
+end;
+
+procedure TestSchemaDrift;
+const
+  Dir = '.build/drift-test';
+  DbPath = '.build/drift-test/drift.sqlite';
+  OutDir = '.build/drift-test/schema';
+var
+  C: TDbConnection;
+  A, PrevA: TArena;
+  Opts: TCodegenOptions;
+  F: TGeneratedFiles;
+  D: TDrifts;
+  Removed, Bad: TStringArray;
+  I, P, Q: Integer;
+  Hdr, Cmd: string;
+  Helper: TStringList;
+
+  function Regen: TGeneratedFiles;
+  var
+    S: TDbSchema;
+  begin
+    S := IntrospectSchema(C);
+    try
+      Result := GenerateSources(S, Opts);
+    finally
+      S.Free;
+    end;
+  end;
+
+begin
+  Group('Schema drift');
+  ForceDirectories(OutDir);
+  DeleteFile(DbPath);
+  DeleteFile(OutDir + '/App.Schema.Customers.pas');
+  DeleteFile(OutDir + '/App.Schema.Orders.pas');
+  DeleteFile(OutDir + '/App.Schema.Manifest.pas');
+  DeleteFile(OutDir + '/App.Schema.Helpers.pas');
+
+  A := TArena.Create(64 * 1024);
+  PrevA := UseArena(A);
+  C := OpenDbConnection('sqlite:' + DbPath);
+  try
+    Opts := DefaultCodegenOptions;
+    Opts.OutputDir := OutDir;
+
+    C.Exec(A, 'CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
+    { A table the framework owns. It was left off the skip list in 0.12.0,
+      so every app that issued a token got App.Schema.ApiTokens for a
+      table it never queries. }
+    C.Exec(A, 'CREATE TABLE api_tokens (id INTEGER PRIMARY KEY, token_hash TEXT)');
+
+    F := Regen;
+    WriteSources(F, Opts);
+    Check(not FileExists(OutDir + '/App.Schema.ApiTokens.pas'),
+      'a table the framework owns gets no typed columns');
+    D := FindDrift(F, Opts);
+    CheckEqI(Length(D), 0, 'freshly written, nothing has drifted');
+
+    { A file of the application's in the same directory. It is not Norn's,
+      so it is not reported -- and below, not removed either. }
+    Helper := TStringList.Create;
+    try
+      Helper.Add('unit App.Schema.Helpers;');
+      Helper.Add('interface');
+      Helper.Add('implementation');
+      Helper.Add('end.');
+      Helper.SaveToFile(OutDir + '/App.Schema.Helpers.pas');
+    finally
+      Helper.Free;
+    end;
+    D := FindDrift(F, Opts);
+    CheckEqI(Length(D), 0, 'a file of the app''s own is none of this');
+
+    { The table changes under the file. }
+    C.Exec(A, 'ALTER TABLE customers ADD COLUMN email TEXT');
+    F := Regen;
+    D := FindDrift(F, Opts);
+    CheckEqI(DriftKindOf(D, 'App.Schema.Customers.pas'), Ord(dkChanged),
+      'a column added by hand is reported against its table');
+    Check(DriftKindOf(D, 'App.Schema.Manifest.pas') = Ord(dkChanged),
+      'and the manifest has changed with it');
+    Check(Length(CheckDrift(F, Opts)) > 0, 'and it is drift that matters');
+    WriteSources(F, Opts);
+    CheckEqI(Length(CheckDrift(F, Opts)), 0, 'regenerating settles it');
+
+    { A table with no file. }
+    C.Exec(A, 'CREATE TABLE orders (id INTEGER PRIMARY KEY, total NUMERIC)');
+    F := Regen;
+    D := FindDrift(F, Opts);
+    CheckEqI(DriftKindOf(D, 'App.Schema.Orders.pas'), Ord(dkMissing),
+      'a new table with no typed columns is reported');
+    WriteSources(F, Opts);
+
+    { **And a file with no table.** The direction that was not checked at
+      all: a dropped table left its file behind, and code using its
+      columns went on compiling against a table that was gone. }
+    C.Exec(A, 'DROP TABLE orders');
+    F := Regen;
+    D := FindDrift(F, Opts);
+    CheckEqI(DriftKindOf(D, 'App.Schema.Orders.pas'), Ord(dkNoSuchTable),
+      'a file for a dropped table is reported');
+    Check(DriftMatters(dkNoSuchTable), 'and that matters');
+    Removed := RemoveStaleSources(F, Opts);
+    CheckEqI(Length(Removed), 1, 'askr schema removes it');
+    Check(not FileExists(OutDir + '/App.Schema.Orders.pas'),
+      'and it is gone');
+    Check(FileExists(OutDir + '/App.Schema.Helpers.pas'),
+      'while the app''s own file in the same directory is untouched');
+    WriteSources(F, Opts);
+    CheckEqI(Length(CheckDrift(F, Opts)), 0, 'and then nothing is left');
+
+    { **A file written by an older askr schema.** Same table, same
+      declarations, the header in the words it used before the language
+      sweep. That is not the database drifting, and failing CI over it
+      after every upgrade would teach people to ignore the check. }
+    Check(ReplaceInFile(OutDir + '/App.Schema.Customers.pas',
+      '{ GENERATED BY NORN - DO NOT EDIT.', '{ AUTOGENERERT AV NORN - IKKE REDIGER.'),
+      'the header was found to rewrite');
+    Check(ReplaceInFile(OutDir + '/App.Schema.Customers.pas',
+      'Schema fingerprint: ', 'Skjemaavtrykk: '),
+      'and the fingerprint line');
+    D := FindDrift(F, Opts);
+    CheckEqI(DriftKindOf(D, 'App.Schema.Customers.pas'), Ord(dkOlderTemplate),
+      'an older header over the same declarations is told apart');
+    CheckEqI(Length(CheckDrift(F, Opts)), 0, 'and does not fail the check');
+
+    { A comment **inside** the declarations, reworded. The first run
+      against a real project reported exactly this as "retyped" -- the
+      manifest had a comment translated when the codebase went English,
+      and no type had changed. And the alignment of a column: a template
+      that lines things up differently has not typed anything
+      differently. }
+    WriteSources(F, Opts);
+    Check(ReplaceInFile(OutDir + '/App.Schema.Manifest.pas',
+      '{ Lookups at run time.', '{ Oppslag ved kjoring.'),
+      'a comment in the manifest was found to reword');
+    Check(ReplaceInFile(OutDir + '/App.Schema.Customers.pas',
+      'const Name  : TColStr', 'const Name      :   TColStr'),
+      'and a declaration was found to realign');
+    D := FindDrift(F, Opts);
+    CheckEqI(DriftKindOf(D, 'App.Schema.Manifest.pas'), Ord(dkOlderTemplate),
+      'a reworded comment is not a retyping');
+    CheckEqI(DriftKindOf(D, 'App.Schema.Customers.pas'), Ord(dkOlderTemplate),
+      'and nor is wider alignment');
+    CheckEqI(Length(CheckDrift(F, Opts)), 0, 'so neither fails the check');
+
+    { **Retyped.** The fingerprint says the table is the same; the types
+      below it say something else. That has happened -- SQLite's
+      created_at was typed `string` while Postgres typed the same
+      migration `TDateTime` -- and it is easy to wave through as "only a
+      template change". It is not: code compiles against the old types. }
+    WriteSources(F, Opts);
+    Check(ReplaceInFile(OutDir + '/App.Schema.Customers.pas',
+      ': TColStr   = (Name: ''name''', ': TColInt64 = (Name: ''name'''),
+      'a declaration was found to change');
+    D := FindDrift(F, Opts);
+    CheckEqI(DriftKindOf(D, 'App.Schema.Customers.pas'), Ord(dkRetyped),
+      'the same table typed differently is reported');
+    Check(Length(CheckDrift(F, Opts)) > 0, 'and fails the check');
+    WriteSources(F, Opts);
+
+    { **The promise in the header names commands that exist.** It named
+      one that did not for as long as the header has existed. Every
+      `askr <word>` in it has to be something the binary answers to. }
+    Hdr := F[0].Source;
+    Hdr := Copy(Hdr, 1, Pos('unit ', Hdr));
+    Bad := nil;
+    P := Pos('`askr ', Hdr);
+    I := 0;
+    while P > 0 do
+    begin
+      Q := PosEx('`', Hdr, P + 1);
+      Cmd := Trim(Copy(Hdr, P + 6, Q - P - 6));
+      if Pos(' ', Cmd) > 0 then
+        Cmd := Copy(Cmd, 1, Pos(' ', Cmd) - 1);
+      Inc(I);
+      if not IsConsoleCommand(Cmd) then
+      begin
+        SetLength(Bad, Length(Bad) + 1);
+        Bad[High(Bad)] := Cmd;
+      end;
+      P := PosEx('`askr ', Hdr, Q + 1);
+    end;
+    Check(I >= 2, 'the header names the commands it relies on');
+    CheckEqI(Length(Bad), 0, 'and every one of them exists');
+  finally
+    C.Free;
+    UseArena(PrevA);
+    A.Free;
+  end;
+end;
+
 procedure TestSqlite;
 var
   A: TArena;
@@ -4654,6 +4881,7 @@ begin
   TestModellLivskvalitet;
   TestQueue;
   TestSqlite;
+  TestSchemaDrift;
   TestEndToEnd;
 
   WriteLn;

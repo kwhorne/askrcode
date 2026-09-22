@@ -84,14 +84,54 @@ and incremental compilation are not disturbed. `askr schema` reports how
 many were actually written:
 
 ```
-2 file(s), 0 changed.
+2 file(s), 0 changed, 0 removed.
 ```
+
+A generated file for a table that no longer exists is **removed**, and
+named when it is. It makes a false claim — code using its columns keeps
+compiling against a table that is gone — and the files are in git, so a
+removal is a diff to read rather than a loss. Only files carrying Norn's
+own header are touched; a file of yours in the same directory is left
+alone.
 
 ## Drift
 
-`CheckDrift` compares generated source against what is on disk and returns
-the names that differ. An empty list means they agree — a deployment check
-that the schema the code was compiled against is the schema that is there.
+```sh
+askr schema:check
+```
+
+Whether the typed columns still describe the database. It exits non-zero
+when they do not, so it belongs in CI next to the build.
+
+It checks **both directions**:
+
+| | |
+|---|---|
+| A table with no file | fails |
+| A file for a table that has changed | fails |
+| A file for a table that is no longer there | fails |
+| The same table, typed differently by this version | fails |
+| The same declarations, worded differently | reported, passes |
+
+The third is the one that was not checked at all before: a dropped table
+left its file behind, and nothing said so.
+
+The fourth is easy to wave through as a template change, and must not be.
+The table is the same — the fingerprint says so — but the types are not.
+That has happened: SQLite used to declare `created_at` as `TEXT`, and the
+same migration was typed `string` there and `TDateTime` against Postgres.
+
+The fifth is what an upgrade leaves behind: an older `askr schema` wrote
+the file, and the only differences are the words in its comments. That is
+compared with comments removed and whitespace collapsed, because the
+first real project this ran against was reported as retyped over a
+translated comment — and a check that cries wolf over prose is one people
+stop reading.
+
+The fingerprint in each file's header is what tells a changed table from
+the rest. It had been written into every file from the start, and until
+`schema:check` existed nothing read it. The command itself was named in
+that header all along, and did not exist either.
 
 ## Generated code must compile without warnings
 

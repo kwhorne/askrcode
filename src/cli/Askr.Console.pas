@@ -639,7 +639,7 @@ var
   S: TDbSchema;
   Opts: TCodegenOptions;
   Filer: TGeneratedFiles;
-  Changed: TStringArray;
+  Changed, Removed: TStringArray;
   I: Integer;
 begin
   C := OpenDb;
@@ -652,17 +652,91 @@ begin
       Changed := WriteSources(Filer, Opts);
       for I := 0 to High(Filer) do
         Si('  ' + Opts.OutputDir + '/' + Filer[I].FileName);
+      { A file for a table that is gone makes a false claim, and code
+        using its columns keeps compiling against a table that is not
+        there. schema:check reports it; this is what fixes it. }
+      Removed := RemoveStaleSources(Filer, Opts);
+      for I := 0 to High(Removed) do
+        Si('  ' + Opts.OutputDir + '/' + Removed[I] + '  (removed: no such table)');
       Si('');
       { WriteSources leaves unchanged files alone, so that timestamps and
         incremental compilation are not disturbed — and gives back only the
         names of the ones that were actually written. }
-      Si(Format('%d file(s), %d changed.', [Length(Filer), Length(Changed)]));
+      Si(Format('%d file(s), %d changed, %d removed.',
+        [Length(Filer), Length(Changed), Length(Removed)]));
     finally
       S.Free;
     end;
   finally
     C.Free;
   end;
+end;
+
+{ Whether the typed columns still describe the database.
+
+  Named in the header of every file `askr schema` has ever written, and it
+  did not exist until now -- the fingerprint was there in each file, and
+  nothing read it. It belongs in CI next to the build: a table changed
+  by hand, or a migration nobody regenerated after, is otherwise found by
+  the first query that asks for a column that is not there. }
+procedure CmdSchemaCheck;
+var
+  C: TDbConnection;
+  S: TDbSchema;
+  Opts: TCodegenOptions;
+  Filer: TGeneratedFiles;
+  D: TDrifts;
+  I, Bad, Note: Integer;
+begin
+  C := OpenDb;
+  try
+    S := IntrospectSchema(C);
+    try
+      Opts := DefaultCodegenOptions;
+      Opts.OutputDir := Cfg('schema.dir', 'app/Schema');
+      Filer := GenerateSources(S, Opts);
+      D := FindDrift(Filer, Opts);
+    finally
+      S.Free;
+    end;
+  finally
+    C.Free;
+  end;
+
+  Bad := 0;
+  Note := 0;
+  for I := 0 to High(D) do
+    if DriftMatters(D[I].Kind) then
+      Inc(Bad)
+    else
+      Inc(Note);
+
+  if Bad = 0 then
+  begin
+    Si(Format('The typed columns describe the database: %d file(s) in %s.',
+      [Length(Filer), Opts.OutputDir]));
+    if Note > 0 then
+    begin
+      Si('');
+      for I := 0 to High(D) do
+        if not DriftMatters(D[I].Kind) then
+          Si('  ' + DriftText(D[I]));
+      Si('');
+      Si('Nothing is wrong. askr schema would only reword the comments.');
+    end;
+    Exit;
+  end;
+
+  Err(Format('%d file(s) in %s no longer describe the database:',
+    [Bad, Opts.OutputDir]));
+  Err('');
+  for I := 0 to High(D) do
+    if DriftMatters(D[I].Kind) then
+      Err('  ' + DriftText(D[I]));
+  Err('');
+  Err('Run askr schema to regenerate them, then build: anything that used a');
+  Err('column that changed will now fail to compile, which is the point.');
+  Halt(1);
 end;
 
 { ------------------------------------------------------------- queue -- }
@@ -1177,6 +1251,7 @@ begin
   else if K = 'db:table' then CmdDbTable(Arg(1))
   else if K = 'db:wipe' then CmdDbWipe(False)
   else if K = 'schema' then CmdSchema
+  else if K = 'schema:check' then CmdSchemaCheck
   else if K = 'queue:work' then CmdQueueWork
   else if K = 'queue:status' then CmdQueueStatus
   else if K = 'schedule:list' then CmdScheduleList

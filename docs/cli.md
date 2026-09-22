@@ -145,6 +145,7 @@ Version            State      Title
 | `askr db:table <name>` | Columns, types, nullability, indexes, foreign keys |
 | `askr db:wipe [--force]` | Drop every table |
 | `askr schema` | Generate typed columns from the live database |
+| `askr schema:check` | Whether they still describe it — both directions, non-zero on drift |
 
 `db:table` shows the Pascal type each column maps to, which is the fastest
 way to find out why a generated column is not the type you expected:

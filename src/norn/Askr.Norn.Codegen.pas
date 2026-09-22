@@ -51,10 +51,70 @@ function GenerateSources(Schema: TDbSchema;
 function WriteSources(const Files: TGeneratedFiles;
   const Opts: TCodegenOptions): TStringArray;
 
-{ Compares generated source with what is on disk. An empty list means
-  they match. }
+type
+  { What is wrong with one file, if anything.
+
+    They are told apart because they call for different reactions, and
+    only the last is harmless: an older `askr schema` wrote the header,
+    and everything below it is what would be written today. Failing CI
+    over that after every upgrade would teach people to ignore the check.
+
+    Retyped is the one that is easy to wave through and must not be. The
+    table is unchanged -- the fingerprint says so -- but this version
+    types it differently. That has happened: SQLite used to declare
+    created_at as TEXT, and the same migration typed it `string` there and
+    `TDateTime` against Postgres. Code compiling against the old types is
+    compiling against a description that is no longer the framework's.
+
+    The fingerprint in the header is what tells a changed table from the
+    rest. It was written into every file from the start, and until now
+    nothing read it. }
+  TDriftKind = (
+    dkMissing,        { a table with no file }
+    dkChanged,        { the file describes a table that has since changed }
+    dkRetyped,        { same table, typed differently by this askr schema }
+    dkNoSuchTable,    { a file for a table that is no longer there }
+    dkOlderTemplate   { same table, same declarations, older wording }
+  );
+
+  TDrift = record
+    FileName: string;
+    Kind: TDriftKind;
+  end;
+  TDrifts = array of TDrift;
+
+{ Everything on disk that is not what `askr schema` would write now, in
+  both directions: a table with no file, and a file with no table. The
+  second is the one that matters most and was not checked at all -- a
+  dropped table left its file behind, and code using its columns went on
+  compiling against a table that was gone.
+
+  Only files carrying Norn's own header are considered. A file of the
+  application's that happens to live in the same directory is never
+  reported, and never removed. }
+function FindDrift(const Files: TGeneratedFiles;
+  const Opts: TCodegenOptions): TDrifts;
+{ True for the kinds that mean the file no longer describes the
+  database. }
+function DriftMatters(Kind: TDriftKind): Boolean;
+function DriftText(const D: TDrift): string;
+
+{ The kinds that matter, as text. An empty list means the typed columns
+  describe the database. }
 function CheckDrift(const Files: TGeneratedFiles;
   const Opts: TCodegenOptions): TStringArray;
+
+{ Removes generated files whose table is gone, and returns their names.
+  `askr schema` calls it, because a check that says "no such table" has
+  to point at a command that actually fixes it. The files are checked
+  into git, so a removal is a diff to read and not a loss. }
+function RemoveStaleSources(const Files: TGeneratedFiles;
+  const Opts: TCodegenOptions): TStringArray;
+
+{ The fingerprint written in a generated file's header, or ''. Reads the
+  older Norwegian wording too, since projects still have files from before
+  the language sweep. }
+function FingerprintIn(const Source: string): string;
 
 { Naming conventions, exposed because the tests and the manifest use
   them. }
@@ -90,7 +150,13 @@ begin
     they would appear and disappear from `askr schema` depending on whether
     the queue had been used yet. The names are repeated here rather than
     taken from Askr.Queue.Db, because Norn must not depend on the runtime. }
-  Result.SkipTables := MigrationsTable + ',askr_jobs,askr_failed_jobs';
+  {
+    api_tokens joined them in 0.12.0 and was left off this list, so any
+    app that had issued a token got App.Schema.ApiTokens as well -- the
+    exact appear-and-disappear the comment above describes. Found by
+    writing the check that would have reported it. }
+  Result.SkipTables := MigrationsTable +
+    ',askr_jobs,askr_failed_jobs,api_tokens';
 end;
 
 function IsReserved(const S: string): Boolean;
@@ -595,26 +661,241 @@ begin
   end;
 end;
 
-function CheckDrift(const Files: TGeneratedFiles;
-  const Opts: TCodegenOptions): TStringArray;
+function FingerprintIn(const Source: string): string;
+const
+  Markers: array[0..1] of string = ('Schema fingerprint: ', 'Skjemaavtrykk: ');
+var
+  I, P, E: Integer;
+begin
+  Result := '';
+  for I := Low(Markers) to High(Markers) do
+  begin
+    P := Pos(Markers[I], Source);
+    if P = 0 then
+      Continue;
+    P := P + Length(Markers[I]);
+    E := P;
+    while (E <= Length(Source)) and
+          (Source[E] in ['0'..'9', 'a'..'f', 'A'..'F']) do
+      Inc(E);
+    Exit(LowerCase(Copy(Source, P, E - P)));
+  end;
+end;
+
+{ Norn's header, in either language. The first line is enough: nothing an
+  application writes by hand starts like that. }
+function IsGenerated(const Source: string): Boolean;
+begin
+  Result := (Copy(Source, 1, Length('{ GENERATED BY NORN')) = '{ GENERATED BY NORN') or
+            (Copy(Source, 1, Length('{ AUTOGENERERT AV NORN')) = '{ AUTOGENERERT AV NORN');
+end;
+
+{ What the file declares, and nothing else: comments out, whitespace
+  collapsed to single spaces, string literals kept as they are.
+
+  The first version compared the raw text after the header, and the first
+  real project it ran against came back "retyped" -- over a comment in
+  the manifest that had been translated when the codebase went English.
+  No type had changed. A check that cries wolf over prose is a check
+  people stop reading, so what is compared now is the tokens: a changed
+  type or name is a difference, a changed sentence or a wider column of
+  alignment is not. }
+function DeclarationsOf(const Source: string): string;
 var
   I, N: Integer;
+  C: Char;
+  B: TStringBuilder;
+  Space: Boolean;
+begin
+  N := Length(Source);
+  B := TStringBuilder.Create;
+  try
+    I := 1;
+    Space := False;
+    while I <= N do
+    begin
+      C := Source[I];
+      if C = '''' then
+      begin
+        { A string literal is part of what is declared, braces and all. }
+        if Space and (B.Length > 0) then
+          B.Append(' ');
+        Space := False;
+        B.Append(C);
+        Inc(I);
+        while I <= N do
+        begin
+          B.Append(Source[I]);
+          if Source[I] = '''' then
+          begin
+            Inc(I);
+            Break;
+          end;
+          Inc(I);
+        end;
+        Continue;
+      end;
+      if C = '{' then
+      begin
+        while (I <= N) and (Source[I] <> '}') do
+          Inc(I);
+        Inc(I);
+        Space := True;
+        Continue;
+      end;
+      if (C = '(') and (I < N) and (Source[I + 1] = '*') then
+      begin
+        Inc(I, 2);
+        while (I < N) and not ((Source[I] = '*') and (Source[I + 1] = ')')) do
+          Inc(I);
+        Inc(I, 2);
+        Space := True;
+        Continue;
+      end;
+      if (C = '/') and (I < N) and (Source[I + 1] = '/') then
+      begin
+        while (I <= N) and not (Source[I] in [#10, #13]) do
+          Inc(I);
+        Space := True;
+        Continue;
+      end;
+      if C in [' ', #9, #10, #13] then
+      begin
+        Space := True;
+        Inc(I);
+        Continue;
+      end;
+      if Space and (B.Length > 0) then
+        B.Append(' ');
+      Space := False;
+      B.Append(C);
+      Inc(I);
+    end;
+    Result := B.ToString;
+  finally
+    B.Free;
+  end;
+end;
+
+function Wanted(const Files: TGeneratedFiles; const Name_: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Files) do
+    if SameText(Files[I].FileName, Name_) then
+      Exit(True);
+  Result := False;
+end;
+
+procedure AddDrift(var R: TDrifts; const Name_: string; K: TDriftKind);
+begin
+  SetLength(R, Length(R) + 1);
+  R[High(R)].FileName := Name_;
+  R[High(R)].Kind := K;
+end;
+
+function FindDrift(const Files: TGeneratedFiles;
+  const Opts: TCodegenOptions): TDrifts;
+var
+  I: Integer;
   Path, OnDisk: string;
+  SR: TSearchRec;
+  Dir: string;
 begin
   Result := nil;
+  Dir := IncludeTrailingPathDelimiter(Opts.OutputDir);
+
   for I := 0 to High(Files) do
   begin
-    Path := IncludeTrailingPathDelimiter(Opts.OutputDir) + Files[I].FileName;
+    Path := Dir + Files[I].FileName;
     OnDisk := ReadWhole(Path);
     if OnDisk = Files[I].Source then
       Continue;
-    N := Length(Result);
-    SetLength(Result, N + 1);
     if OnDisk = '' then
-      Result[N] := Files[I].FileName + ' (missing)'
+      AddDrift(Result, Files[I].FileName, dkMissing)
+    else if FingerprintIn(OnDisk) <> FingerprintIn(Files[I].Source) then
+      AddDrift(Result, Files[I].FileName, dkChanged)
+    else if DeclarationsOf(OnDisk) <> DeclarationsOf(Files[I].Source) then
+      AddDrift(Result, Files[I].FileName, dkRetyped)
     else
-      Result[N] := Files[I].FileName + ' (differs)';
+      { The table is what the file says it is, declared the way it would
+        be declared today; only the words around the declarations have
+        moved on. }
+      AddDrift(Result, Files[I].FileName, dkOlderTemplate);
   end;
+
+  { The other direction. }
+  if FindFirst(Dir + Opts.UnitPrefix + '.*.pas', faAnyFile, SR) = 0 then
+  try
+    repeat
+      if Wanted(Files, SR.Name) then
+        Continue;
+      if not IsGenerated(ReadWhole(Dir + SR.Name)) then
+        Continue;
+      AddDrift(Result, SR.Name, dkNoSuchTable);
+    until FindNext(SR) <> 0;
+  finally
+    FindClose(SR);
+  end;
+end;
+
+function DriftMatters(Kind: TDriftKind): Boolean;
+begin
+  Result := Kind <> dkOlderTemplate;
+end;
+
+function DriftText(const D: TDrift): string;
+begin
+  case D.Kind of
+    dkMissing:
+      Result := D.FileName + ' is missing: a table with no typed columns';
+    dkChanged:
+      Result := D.FileName + ' describes the table as it was: it has ' +
+        'changed since';
+    dkRetyped:
+      Result := D.FileName + ' describes the same table with other types ' +
+        'than this askr schema would give it';
+    dkNoSuchTable:
+      Result := D.FileName + ' is for a table that is no longer there, ' +
+        'and code using it still compiles';
+    dkOlderTemplate:
+      Result := D.FileName + ' was written by an older askr schema; what ' +
+        'it declares is the same';
+  end;
+end;
+
+function CheckDrift(const Files: TGeneratedFiles;
+  const Opts: TCodegenOptions): TStringArray;
+var
+  D: TDrifts;
+  I: Integer;
+begin
+  Result := nil;
+  D := FindDrift(Files, Opts);
+  for I := 0 to High(D) do
+    if DriftMatters(D[I].Kind) then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := DriftText(D[I]);
+    end;
+end;
+
+function RemoveStaleSources(const Files: TGeneratedFiles;
+  const Opts: TCodegenOptions): TStringArray;
+var
+  D: TDrifts;
+  I: Integer;
+begin
+  Result := nil;
+  D := FindDrift(Files, Opts);
+  for I := 0 to High(D) do
+    if D[I].Kind = dkNoSuchTable then
+      if DeleteFile(IncludeTrailingPathDelimiter(Opts.OutputDir) +
+                    D[I].FileName) then
+      begin
+        SetLength(Result, Length(Result) + 1);
+        Result[High(Result)] := D[I].FileName;
+      end;
 end;
 
 end.
