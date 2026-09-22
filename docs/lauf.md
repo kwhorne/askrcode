@@ -176,7 +176,7 @@ the control a `bind:value` instead.
 
 ## The grid sorts in the database
 
-`DataGrid`'s server half is [`Askr.Urd.Grid`](database.md), not JavaScript.
+`DataGrid`'s server half is [`Askr.Urd.Grid`](lists.md), not JavaScript.
 
 ```pascal
 G := TGrid<TCustomer>.New;

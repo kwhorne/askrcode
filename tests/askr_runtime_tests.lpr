@@ -1483,6 +1483,142 @@ begin
   end;
 end;
 
+{ Every link inside docs/ goes somewhere.
+
+  There are forty pages now and they refer to each other constantly --
+  the API layer alone is six pages that only make sense together. A
+  reference to a page that was renamed, or to a section that was
+  rewritten, is worse than no reference: it reads as an answer and ends
+  in a 404. Nothing else would notice, because the documentation is
+  prose and prose compiles.
+
+  Only links **within** docs/ are checked. An http link needs a network
+  and would make the suite depend on somebody else's uptime, and a `../`
+  link points into the repository, which the docs site does not
+  serve. }
+function AnchorOf(const Heading: string): string;
+var
+  I: Integer;
+  C: Char;
+  S: string;
+begin
+  { GitHub's rule, which is what every markdown reader follows: lower
+    case, spaces to hyphens, and everything that is not a letter, a
+    digit or a hyphen dropped. }
+  S := LowerCase(Trim(Heading));
+  Result := '';
+  for I := 1 to Length(S) do
+  begin
+    C := S[I];
+    if C = ' ' then
+      Result := Result + '-'
+    else if ((C >= 'a') and (C <= 'z')) or ((C >= '0') and (C <= '9')) or
+            (C = '-') then
+      Result := Result + C;
+  end;
+end;
+
+procedure TestDocLinks;
+var
+  Pages: TDocPages;
+  Anchors: TStringList;
+  Body, Line, Target, Path_, Anchor: string;
+  F: TStringList;
+  I, J, P, Q, Bar: Integer;
+  Broken: Integer;
+  Checked: Integer;
+begin
+  AssertTrue(DirectoryExists('docs'),
+    'docs/ is there (run from the repository root)');
+
+  Pages := DocPages('docs');
+  AssertTrue(Length(Pages) > 20, 'the pages are found');
+
+  { Every heading on every page, as "page.md#anchor". }
+  Anchors := TStringList.Create;
+  F := TStringList.Create;
+  try
+    Anchors.Sorted := True;
+    Anchors.Duplicates := dupIgnore;
+    for I := 0 to High(Pages) do
+    begin
+      F.LoadFromFile('docs/' + Pages[I]);
+      Anchors.Add(Pages[I]);
+      for J := 0 to F.Count - 1 do
+      begin
+        Line := F[J];
+        if Copy(Line, 1, 1) <> '#' then
+          Continue;
+        while (Line <> '') and (Line[1] = '#') do
+          System.Delete(Line, 1, 1);
+        Anchors.Add(Pages[I] + '#' + AnchorOf(Line));
+      end;
+    end;
+
+    Broken := 0;
+    Checked := 0;
+    for I := 0 to High(Pages) do
+    begin
+      F.LoadFromFile('docs/' + Pages[I]);
+      Body := F.Text;
+      P := Pos('](', Body);
+      while P > 0 do
+      begin
+        Q := PosEx(')', Body, P + 2);
+        if Q = 0 then
+          Break;
+        Target := Copy(Body, P + 2, Q - P - 2);
+        P := PosEx('](', Body, Q);
+
+        if (Copy(Target, 1, 4) = 'http') or (Copy(Target, 1, 3) = '../') or
+           (Target = '') then
+          Continue;
+
+        Bar := Pos('#', Target);
+        if Bar = 0 then
+        begin
+          Path_ := Target;
+          Anchor := '';
+        end
+        else
+        begin
+          Path_ := Copy(Target, 1, Bar - 1);
+          Anchor := Copy(Target, Bar + 1, MaxInt);
+        end;
+        { A bare #anchor means a section of this same page. }
+        if Path_ = '' then
+          Path_ := Pages[I];
+
+        Inc(Checked);
+        if Anchor = '' then
+        begin
+          if Anchors.IndexOf(Path_) < 0 then
+          begin
+            Inc(Broken);
+            Fail(Format('%s links to a page that is not there: %s',
+              [Pages[I], Target]));
+          end;
+        end
+        else if Anchors.IndexOf(Path_ + '#' + Anchor) < 0 then
+        begin
+          Inc(Broken);
+          Fail(Format('%s links to a section that is not there: %s',
+            [Pages[I], Target]));
+        end;
+      end;
+    end;
+
+    { The count matters: with nothing to check, "nothing is broken" is
+      true of an empty directory and of a bug in the scanner. }
+    AssertTrue(Checked > 40,
+      Format('there are links to check (%d found)', [Checked]));
+    AssertEqual(Broken, 0, 'and every one of them resolves');
+  finally
+    F.Free;
+    Anchors.Free;
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -6133,6 +6269,7 @@ begin
   Group('Docs');
   Test('search is exact, and a name that does not exist is not found',
     @TestDocsSearchAndRead);
+  Test('every link inside docs/ goes somewhere', @TestDocLinks);
 
   Group('Compiler diagnostics');
   Test('fpc diagnostics parse the same on every compiler and architecture',

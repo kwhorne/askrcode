@@ -12,9 +12,41 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.12.0 — 2026-09-22
+
+Askr serves programs as well as pages. This release is the API layer: an
+error shape a machine can read, bearer tokens with scopes, a list
+envelope, CORS, a rate limit, and an OpenAPI document generated from the
+models and checked against the routes in both directions.
+
+`./askr api:check` is the gate for all of it, end to end against a real
+app. It found two of the bugs listed under Fixed.
 
 ### Added
+
+- **An error has a shape a program can read.** Errors are now RFC 9457
+  problem documents — `application/problem+json` with `type`, `title`,
+  `status` and an optional `detail` — whenever the caller asked for JSON.
+  `Problem(Status, Detail)` builds one; `BeginProblem`/`ProblemFrom` open
+  and close one so an application can add extension members of its own.
+
+- **`TRequest.AcceptsJson`** decides who asked. `Accept` naming
+  `application/json` before `text/html` is a program; a browser's header
+  names the page type first; no `Accept` at all means no preference, and
+  a page is the safer thing to hand somebody who did not say. An Inertia
+  request is never one of these — it carries its own header and gets its
+  own payload.
+
+- **`ValidationProblem(E: TErrors)`** in `Askr.Urd.Bind`: a 422 with the
+  errors keyed on the column name, the same object Inertia gets as
+  `props.errors`. `BackWithErrors` calls it for you.
+
+- **`EHttpError`**: an exception that says which status it should become.
+  Raising is the only way out of the middle of a function, and not every
+  failure is a fault. The server answers with `HttpStatus` instead of
+  500, does not log it as a failure below 500, and does not close the
+  connection over it. `PublicDetail` is empty by default, for the same
+  reason `detail` in a problem document is.
 
 - **API tokens.** `Authorization: Bearer askr_...` resolves to a user id
   and signs the request in for that request only -- no session, no
@@ -52,40 +84,27 @@ with the zero-major caveat that minor releases may break things until
   passes trivially today, which is the point: it fails the day somebody
   adds the convenience.
 
-- **An OpenAPI 3.1 document**, generated from what is already true.
-  `UseOpenApi(R, @AppApiDoc)` serves it at `/openapi.json`, `askr
-  openapi` prints it, and the `openapi` MCP tool hands it to an agent.
+- **A list envelope for an API.** `TGrid<M>.ListResponse(Rows)` writes
+  `data`, `meta` and `links`:
 
-      D.Get('/api/customers').Summary('Every customer')
-       .ReturnsList(TCustomer).Secured('customers:read');
+      {"data": [...],
+       "meta": {"page":1,"per":25,"total":137,"pages":6,
+                "sort":"name","dir":"asc","q":""},
+       "links": {"prev":null,"next":"/customers?status=open&page=2"}}
 
-  The application declares what the framework cannot know -- which paths
-  are the API, what an operation is for, what it takes and returns --
-  and the framework fills in the rest from the route table and the
-  models' own metadata. The schemas come from the same `TModelMeta` that
-  `WriteModel` serialises from, so a column hidden with `HideFromJson`
-  is not in the document either, and a renamed column is renamed in
-  both.
+  It is the same `TGrid` the data grid component uses -- sorting,
+  searching and paging happen in the database either way, and the only
+  difference is how the result is written out. `WriteJson` gives the
+  component its prop, `ListResponse` gives an API caller the envelope,
+  `WriteListInto` writes it into a document of your own.
 
-  It describes what is actually sent: a `TDateTime` goes out as
-  `2026-09-22 13:00:00`, which is not RFC 3339, so it is **not**
-  declared `format: date-time` -- a generated client told otherwise
-  would build a parser that fails on every row.
+  `total` comes from `Rows`, which counts the filtered set before
+  fetching the page; building the payload without calling `Rows` raises
+  rather than reporting a total nobody measured. `pages` is at least 1,
+  including for an empty result.
 
-  **`askr openapi --check` is the drift gate, and it runs both ways**: a
-  path described that is not a route, and a route under the API that
-  nothing describes. One direction alone lets the other half rot, which
-  is the same argument the AGENTS.md check needed. It exits non-zero, so
-  it belongs in CI.
-
-- **`./askr api:check`**, the gate for the whole layer. It builds
-  `examples/api/apidemo.lpr`, runs the document through a **real**
-  OpenAPI validator against the published meta-schema -- and confirms
-  that validator refuses a document with its version removed, so "valid"
-  means something -- then drives the running app over a socket: a token
-  per scope, the list envelope, a hidden column staying hidden, 403 for
-  the wrong scope, 422 with the errors keyed on the column, a preflight
-  and a near-miss origin, and the rate limit biting with `Retry-After`.
+  The links are relative and carry the whole query string forward with
+  only `page` replaced, so `?status=open` is still there on page two.
 
 - **`RespondModel(M, Status)`** in `Askr.Urd.Json`: one model as a whole
   reply, with the same serialisation as everywhere else.
@@ -134,55 +153,50 @@ with the zero-major caveat that minor releases may break things until
   the limiter that costs eight requests. The new key inherits the bucket
   instead.
 
-- **A list envelope for an API.** `TGrid<M>.ListResponse(Rows)` writes
-  `data`, `meta` and `links`:
+- **An OpenAPI 3.1 document**, generated from what is already true.
+  `UseOpenApi(R, @AppApiDoc)` serves it at `/openapi.json`, `askr
+  openapi` prints it, and the `openapi` MCP tool hands it to an agent.
 
-      {"data": [...],
-       "meta": {"page":1,"per":25,"total":137,"pages":6,
-                "sort":"name","dir":"asc","q":""},
-       "links": {"prev":null,"next":"/customers?status=open&page=2"}}
+      D.Get('/api/customers').Summary('Every customer')
+       .ReturnsList(TCustomer).Secured('customers:read');
 
-  It is the same `TGrid` the data grid component uses -- sorting,
-  searching and paging happen in the database either way, and the only
-  difference is how the result is written out. `WriteJson` gives the
-  component its prop, `ListResponse` gives an API caller the envelope,
-  `WriteListInto` writes it into a document of your own.
+  The application declares what the framework cannot know -- which paths
+  are the API, what an operation is for, what it takes and returns --
+  and the framework fills in the rest from the route table and the
+  models' own metadata. The schemas come from the same `TModelMeta` that
+  `WriteModel` serialises from, so a column hidden with `HideFromJson`
+  is not in the document either, and a renamed column is renamed in
+  both.
 
-  `total` comes from `Rows`, which counts the filtered set before
-  fetching the page; building the payload without calling `Rows` raises
-  rather than reporting a total nobody measured. `pages` is at least 1,
-  including for an empty result.
+  It describes what is actually sent: a `TDateTime` goes out as
+  `2026-09-22 13:00:00`, which is not RFC 3339, so it is **not**
+  declared `format: date-time` -- a generated client told otherwise
+  would build a parser that fails on every row.
 
-  The links are relative and carry the whole query string forward with
-  only `page` replaced, so `?status=open` is still there on page two.
+  **`askr openapi --check` is the drift gate, and it runs both ways**: a
+  path described that is not a route, and a route under the API that
+  nothing describes. One direction alone lets the other half rot, which
+  is the same argument the AGENTS.md check needed. It exits non-zero, so
+  it belongs in CI.
 
-- **`EHttpError`**: an exception that says which status it should become.
-  Raising is the only way out of the middle of a function, and not every
-  failure is a fault. The server answers with `HttpStatus` instead of
-  500, does not log it as a failure below 500, and does not close the
-  connection over it. `PublicDetail` is empty by default, for the same
-  reason `detail` in a problem document is.
+- **`./askr api:check`**, the gate for the whole layer. It builds
+  `examples/api/apidemo.lpr`, runs the document through a **real**
+  OpenAPI validator against the published meta-schema -- and confirms
+  that validator refuses a document with its version removed, so "valid"
+  means something -- then drives the running app over a socket: a token
+  per scope, the list envelope, a hidden column staying hidden, 403 for
+  the wrong scope, 422 with the errors keyed on the column, a preflight
+  and a near-miss origin, and the rate limit biting with `Retry-After`.
 
-- **An error has a shape a program can read.** Errors are now RFC 9457
-  problem documents — `application/problem+json` with `type`, `title`,
-  `status` and an optional `detail` — whenever the caller asked for JSON.
-  `Problem(Status, Detail)` builds one; `BeginProblem`/`ProblemFrom` open
-  and close one so an application can add extension members of its own.
+- **Six documentation pages for the layer**, indexed under APIs:
+  `api.md` for who is asking and what an error looks like, then
+  `tokens.md`, `lists.md`, `cors.md`, `rate-limiting.md` and
+  `openapi.md`. Each ends with what it deliberately does not do.
 
-- **`TRequest.AcceptsJson`** decides who asked. `Accept` naming
-  `application/json` before `text/html` is a program; a browser's header
-  names the page type first; no `Accept` at all means no preference, and
-  a page is the safer thing to hand somebody who did not say. An Inertia
-  request is never one of these — it carries its own header and gets its
-  own payload.
-
-- **`ValidationProblem(E: TErrors)`** in `Askr.Urd.Bind`: a 422 with the
-  errors keyed on the column name, the same object Inertia gets as
-  `props.errors`. `BackWithErrors` calls it for you.
-
-- **`docs/api.md`** — content negotiation, the error shape, and the four
-  things that are not there yet: token auth, a list envelope, CORS and
-  rate limiting, and an OpenAPI document.
+  A test in `askr_runtime_tests` follows every link inside `docs/` and
+  fails on one that points at a page or a section that is not there. The
+  API layer alone is six pages that only make sense together, and a
+  reference that rots reads as an answer and ends in a 404.
 
 ### Changed
 

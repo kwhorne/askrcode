@@ -2,8 +2,9 @@
 
 Askr is an application framework for Free Pascal. It gives you what Rails
 gives you — routing, models, migrations, validation, sessions, auth,
-queues, mail, a console — on a compiled stack that ships as **one binary
-with no sidecars**.
+queues, mail, a console, and an API layer with tokens and an OpenAPI
+document — on a compiled stack that ships as **one binary with no
+sidecars**.
 
 Three things make it different from the frameworks it borrows from, and
 they shape everything else in this documentation:
@@ -42,11 +43,21 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Routing](routing.md) | Routes, parameters, middleware, response filters |
 | [Requests](requests.md) | Query, form, JSON, headers, route parameters |
 | [Responses](responses.md) | Status, headers, cookies, redirects, JSON |
-| [APIs](api.md) | Content negotiation, and what an error looks like to a program |
 | [File uploads](uploads.md) | `multipart/form-data`, and why the client's filename is not to be trusted |
 | [Images](images.md) | What a file really is, and resizing it |
 | [Inertia and Svelte](inertia.md) | Server-driven pages without an API |
 | [Lauf](lauf.md) | The frontend layer: components, forms, the data grid |
+
+## APIs
+
+| | |
+|---|---|
+| [APIs](api.md) | Who is asking, what an error looks like, and how the pieces fit |
+| [API tokens](tokens.md) | `Authorization: Bearer`, scopes, revocation |
+| [Lists and pagination](lists.md) | `data`, `meta`, `links`, and the grid on the server |
+| [CORS](cors.md) | Who else may call this, from a browser |
+| [Rate limiting](rate-limiting.md) | How often one caller may ask |
+| [OpenAPI](openapi.md) | The document, and the gate that keeps it true |
 
 ## Data
 
@@ -125,6 +136,6 @@ part that makes this documentation something other than marketing.
 
 ## Version
 
-This documentation describes Askr 0.11.2. The framework builds and passes
+This documentation describes Askr 0.12.0. The framework builds and passes
 its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on aarch64 and
 x86_64, on macOS and Linux.

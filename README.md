@@ -38,6 +38,7 @@ exactly that over 500 requests.
 | **Norn** | Migrations, and typed columns generated from the *database*, not from the migrations |
 | **Lauf** | The frontend layer: 38 Svelte 5 components, forms that know your validation, a data grid that sorts in the database |
 | **Rún** | An optional query language transpiled to typed Pascal at build time |
+| **APIs** | Bearer tokens with scopes, a list envelope, problem documents, CORS, rate limiting, and an OpenAPI document generated from your models |
 | Images | What an upload really is, and resizing it with libvips |
 | Runtime | Queue (in-process or durable), scheduler, cache, mail, logging, configuration |
 | Security | Pure-Pascal crypto, password hashing, sign-in, gates, signed URLs |
@@ -62,6 +63,26 @@ end;
 misspelled column is a compile error and `Where(Customers.Balance, GT, 'abc')`
 does not compile at all.
 
+The same controller, serving a program instead of a page:
+
+```pascal
+function TCustomerController.Index(Req: TRequest): TResponse;
+var
+  G: TGrid<TCustomer>;
+begin
+  AuthorizeScope('customers:read');
+  G := TGrid<TCustomer>.New;
+  G.Read(Req).Sortable('name', Customers.Name).DefaultSort('name');
+  Result := G.ListResponse(G.Rows(TQuery<TCustomer>.New));
+end;
+```
+
+`data`, `meta` and `links` come out of that, the scopes come off a bearer
+token, and `askr openapi` describes it — from the model's own metadata, so
+a column hidden from JSON is not in the document either. `askr openapi
+--check` fails if the document and the routes stop agreeing, in either
+direction.
+
 ```svelte
 <Form action="/customers" data={sent ?? {}} {errors}>
   <Field name="email" label="Email"><Input type="email" /></Field>
@@ -75,8 +96,9 @@ and `aria-invalid`, and the button shows a spinner while the request is out.
 ## Status
 
 Phases 1 and 2 are complete on **macOS and Linux**, on **aarch64 and
-x86_64**. The data layer is complete for all three dialects. The CLI has 26
-commands. Documentation is 36 pages under [`docs/`](docs/).
+x86_64**. The data layer is complete for all three dialects. The CLI has a
+command for everything the binary can do — `askr list` prints them.
+Documentation is 42 pages under [`docs/`](docs/).
 
 One thing is **written and has never been run in earnest**, and it will
 say so until someone runs it:
@@ -128,7 +150,7 @@ A project names the release it builds against, and `askr` fetches it:
 ```toml
 # askr.toml
 [askr]
-version = "0.11.2"
+version = "0.12.0"
 ```
 
 ```sh

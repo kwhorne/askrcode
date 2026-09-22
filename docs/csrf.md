@@ -87,7 +87,7 @@ The pattern matches exactly, or with a trailing `*`. **This is a hole you
 make on purpose, which is why it has to be written down.**
 
 There is one exemption you do not have to write down: a request that
-authenticated with an [API token](api.md) in an `Authorization` header.
+authenticated with an [API token](tokens.md) in an `Authorization` header.
 CSRF defends against a browser being made to send a request it did not
 mean to, with the cookie it carries everywhere; a header is not carried
 everywhere, and no other site can set one on a request to your server.

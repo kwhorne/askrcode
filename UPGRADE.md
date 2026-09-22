@@ -8,7 +8,7 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
-## Unreleased
+## 0.12.0
 
 **Worth reading if anything but a browser calls your app.** The framework
 now answers a client that asked for JSON differently from one that asked

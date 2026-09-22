@@ -204,7 +204,7 @@ everything.
 The token is printed **once**. Only its SHA-256 is stored, so there is no
 way to print it again, and `token:list` shows nothing secret. The
 `api_tokens` table is created by the first `token:issue`. See
-[APIs](api.md).
+[API tokens](tokens.md).
 
 ## The API document
 
@@ -215,7 +215,7 @@ way to print it again, and `token:list` shows nothing secret. The
 
 `--check` runs both ways: a path described that is not a route, and a
 route under the API that nothing describes. It exits non-zero on either,
-so it belongs in CI. See [APIs](api.md).
+so it belongs in CI. See [OpenAPI](openapi.md).
 
 ## Inspection
 

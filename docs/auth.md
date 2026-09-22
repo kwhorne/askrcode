@@ -245,7 +245,7 @@ Authorization: Bearer askr_...
 `UseTokenAuth` resolves it and signs the request in for that request only,
 with no session and no cookie. `Check`, `Id`, `User` and every gate then
 answer as they do for a browser, so authorisation is written once. See
-[APIs](api.md).
+[API tokens](tokens.md).
 
 ```pascal
 procedure LoginForRequest(const UserId: string);

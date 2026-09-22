@@ -203,6 +203,8 @@ begin
   Si('  askr queue:work|queue:status');
   Si('  askr schedule:list|schedule:run');
   Si('  askr cache:clear   askr down   askr up');
+  Si('  askr token:issue|token:list|token:revoke');
+  Si('  askr openapi [--check]   the API document, or its drift');
   Si('  askr install             fetch the pinned framework version');
   Si('  askr update [version]    move to a newer release');
   Si('  askr outdated            what is published, what you have');

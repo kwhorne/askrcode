@@ -250,7 +250,7 @@ UseAuth(R);             { restores login from the "remember me" cookie }
 pay for any of it. `UseTokenAuth` comes before `UseCsrf` because a request
 that authenticated with a header it carried itself is exempt from CSRF,
 and that is only visible once the token has been read — see
-[APIs](api.md).
+[API tokens](tokens.md).
 
 The database lease, when there is one, is registered before all of these:
 a middleware that reads the database needs the connection already
@@ -262,7 +262,7 @@ would refuse every preflight, and the real request would never be sent.
 It is also not a request the caller made, so it does not spend their rate
 limit. `UseRateLimit` is after `UseTokenAuth` for the opposite reason: it
 needs the token to have been read to key the bucket on it. See
-[APIs](api.md).
+[CORS](cors.md) and [Rate limiting](rate-limiting.md).
 
 `UseSessions`, `UseCsrf` and `UseAuth` are plain procedures, not class
 helpers — Pascal allows only one active class helper per type in scope, and
