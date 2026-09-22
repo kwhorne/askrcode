@@ -17,6 +17,7 @@ uses
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
   Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
+  Askr.Console.Commands,
   Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
@@ -265,24 +266,13 @@ begin
   end;
 end;
 
-{ Kommandoene appbinæren svarer på. Lista står i Askr.Console; her er den
-  bare speilet, fordi verktøyet må vite hva det skal videresende før det
-  har spurt binæren om noe. }
+{ The words the application binary answers to. The list is in
+  Askr.Console.Commands and that is the only copy: this used to be a
+  mirror of the table in Askr.Console, with a comment on it saying so,
+  and the first command added afterwards went into one of them. }
 function ErAppKommando(const K: string): Boolean;
-const
-  Appens: array[0..21] of string = (
-    'about', 'routes', 'migrate', 'migrate:status', 'migrate:rollback',
-    'migrate:reset', 'migrate:fresh', 'migrate:refresh', 'db:seed',
-    'db:show', 'db:table', 'db:wipe', 'schema', 'queue:work',
-    'queue:status', 'schedule:list', 'schedule:run', 'cache:clear',
-    'down', 'up', 'env', 'list');
-var
-  I: Integer;
 begin
-  for I := Low(Appens) to High(Appens) do
-    if Appens[I] = K then
-      Exit(True);
-  Result := False;
+  Result := IsConsoleCommand(K);
 end;
 
 function BuildFlags(P: TProject): string;

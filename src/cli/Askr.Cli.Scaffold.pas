@@ -407,7 +407,7 @@ begin
     '  Askr.Http.Request, Askr.Http.Response,' + #10 +
     '  Askr.Http.Server, Askr.Http.Router, Askr.Http.Static,' + #10 +
     '  Askr.Http.Robots, Askr.Http.Sitemap,' + #10 +
-    '  Askr.Session, Askr.Csrf, Askr.Auth,' + #10 +
+    '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Auth.Token,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
     { This line is the marker `askr make auth` inserts in front of. If you
@@ -532,6 +532,22 @@ begin
     '    nor a cookie. }' + #10 +
     '  SetSessions(TSessionStore.Create);' + #10 +
     '  UseSessions(R);' + #10 +
+    '  { API tokens, for callers that are not browsers:' + #10 +
+    '' + #10 +
+    '      Authorization: Bearer askr_...' + #10 +
+    '' + #10 +
+    '    Mint one with: askr token:issue <user-id> <name> --scopes=a,b' + #10 +
+    '' + #10 +
+    '    The api_tokens table is made by the first token:issue, not at' + #10 +
+    '    startup: this app has to start whether or not the database is' + #10 +
+    '    up, and a DDL on boot would make that untrue.' + #10 +
+    '' + #10 +
+    '    It costs nothing for a browser — with no Authorization header' + #10 +
+    '    it does not touch the database. It has to come BEFORE UseCsrf:' + #10 +
+    '    a request that authenticated with a header it carried itself is' + #10 +
+    '    not what CSRF defends against, and the exemption is only' + #10 +
+    '    visible once the token has been read. }' + #10 +
+    '  UseTokenAuth(R);' + #10 +
     '  UseCsrf(R);' + #10 +
     '  UseAuth(R);' + #10 + #10 +
     '  R.Get(' + Q + '/' + Q + ', Home.Index);' + #10 +

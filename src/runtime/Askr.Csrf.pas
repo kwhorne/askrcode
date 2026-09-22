@@ -37,7 +37,7 @@ uses
   SysUtils,
   Askr.Core.Text, Askr.Core.Crypto,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
-  Askr.Session;
+  Askr.Session, Askr.Auth;
 
 const
   { The key the token lives under in the session. The underscore marks it
@@ -206,6 +206,22 @@ begin
   if not CsrfMethodNeedsCheck(Req.Method) then
     Exit(True);
   if CsrfIsExempt(Req.Path) then
+    Exit(True);
+
+  { A request that authenticated with a credential it carried itself --
+    an API token in a header -- is not what CSRF defends against.
+
+    The whole attack is a browser being made to send a request it did not
+    mean to, with the cookie it carries everywhere. An Authorization
+    header is not carried everywhere: no other site can set one on a
+    request to us, which is exactly why the header exists. Requiring a
+    CSRF token as well would ask an API client for something it has no
+    way to obtain, and every POST with a valid token would be a 419.
+
+    This is why UseTokenAuth has to be registered before UseCsrf. The
+    other way round, CSRF answers before the token is read and the
+    exemption never applies. }
+  if IsRequestIdentity then
     Exit(True);
 
   S := CurrentSession;

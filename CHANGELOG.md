@@ -16,6 +16,49 @@ with the zero-major caveat that minor releases may break things until
 
 ### Added
 
+- **API tokens.** `Authorization: Bearer askr_...` resolves to a user id
+  and signs the request in for that request only -- no session, no
+  cookie. `Check`, `Id`, `User` and every gate then answer for a token
+  caller exactly as they do for a browser, so authorisation is written
+  once.
+
+      UseSessions(R);
+      UseTokenAuth(R);   { before UseCsrf }
+      UseCsrf(R);
+      UseAuth(R);
+
+  `askr token:issue <user-id> <name> --scopes=a,b [--days=N]`,
+  `askr token:list`, `askr token:revoke`. `--scopes` is required and has
+  no default: the one command that mints a credential should make you say
+  what it may do.
+
+  **The token is never stored.** The row holds `sha256(token)` as hex and
+  the plaintext is shown once. The gate is a sweep of the database file
+  for the token that was just issued -- and it also requires the hash to
+  be present, because a sweep for something absent passes on an empty
+  file. The hash is bare, with no salt and no key, and the reasons for
+  both are in `docs/api.md`.
+
+  **Nothing keeps a fragment of a live token.** There is no prefix
+  column: matching a token found in a log back to a row is done by
+  hashing the string you found, which needs nothing stored, and telling
+  two tokens apart in a list is what `name` is for.
+
+  Scopes are exact strings with `*` as the only wildcard. A token issued
+  with no scopes allows nothing. A session is not scoped, so a scope
+  check passes for a browser and fails for anyone not signed in at all.
+
+  **Never from the query string**, and there is a test that says so -- it
+  passes trivially today, which is the point: it fails the day somebody
+  adds the convenience.
+
+- **`EHttpError`**: an exception that says which status it should become.
+  Raising is the only way out of the middle of a function, and not every
+  failure is a fault. The server answers with `HttpStatus` instead of
+  500, does not log it as a failure below 500, and does not close the
+  connection over it. `PublicDetail` is empty by default, for the same
+  reason `detail` in a problem document is.
+
 - **An error has a shape a program can read.** Errors are now RFC 9457
   problem documents — `application/problem+json` with `type`, `title`,
   `status` and an optional `detail` — whenever the caller asked for JSON.
@@ -54,6 +97,42 @@ with the zero-major caveat that minor releases may break things until
   with a login form — the failure disguised as success.
 
 ### Fixed
+
+- **Middleware did not run in the order it was registered.** The router
+  kept one list for methods and one for plain procedures and ran every
+  method before every procedure, so which of the two a piece of
+  middleware happened to be decided when it ran -- and nothing at the
+  call site said so. It is one list now, in registration order, and the
+  after-filters are one list in reverse.
+
+  It cost a real bug, found by running a generated app rather than by the
+  suite: `R.Use(@LeaseDb)` is a procedure and `UseTokenAuth` registers a
+  class method, so the token middleware asked for the database connection
+  before it had been leased, and every request carrying a token was a
+  500. A test that registers one kind cannot see it; the new one
+  alternates.
+
+- **`EForbidden` was a 500.** `Askr.Auth` said "the host translates it
+  into a 403" and nothing did -- so `Authorize` worked, refused exactly
+  as it was meant to, and looked like a broken server both in the log and
+  to the caller. It is a 403 now, through `EHttpError`. The same half
+  promise `askr down` was before `UseMaintenance` existed.
+
+- **A POST with a valid API token would have been a 419.** `UseCsrf`
+  now exempts a request that authenticated with a header it carried
+  itself. CSRF defends against a browser being made to send a request
+  with the cookie it carries everywhere; no other site can set an
+  `Authorization` header on a request to your server, and asking an API
+  client for a CSRF token asks it for something it cannot obtain.
+
+- **`askr token:revoke --user=<id>` reported a revocation that had not
+  happened.** One function took a string and decided from its shape: a
+  number meant a token id, anything else a user id. User ids are primary
+  keys, so they are numbers -- `--user=7` revoked token 7, which did not
+  exist, and printed "Token 7 is revoked." The flag had already said
+  which of the two it was. There are two entry points now and no
+  guessing, and `RevokeToken` says whether it revoked anything so the
+  command can fail instead of claiming success.
 
 - **The body of a 500 never carries the exception message.** It never
   did in Askr, and now there is a test that says so: `/boom` raises with

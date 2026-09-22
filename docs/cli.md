@@ -188,6 +188,24 @@ want to scale them separately.
 should survive a restart. The running server picks it up immediately; no
 restart needed.
 
+## API tokens
+
+| Command | What it does
+|---|---|
+| `askr token:issue <user-id> <name> --scopes=a,b [--days=N]` | Mint one |
+| `askr token:list <user-id>` | What that user has, and its state |
+| `askr token:revoke <token-id>` | Revoke one |
+| `askr token:revoke --user=<user-id>` | Revoke every token that user has |
+
+`--scopes` is required and has no default: the one command that mints a
+credential should make you say what it may do. Use `--scopes='*'` for
+everything.
+
+The token is printed **once**. Only its SHA-256 is stored, so there is no
+way to print it again, and `token:list` shows nothing secret. The
+`api_tokens` table is created by the first `token:issue`. See
+[APIs](api.md).
+
 ## Inspection
 
 | Command | What it does

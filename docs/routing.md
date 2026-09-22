@@ -95,6 +95,15 @@ R.Use(@RequireJson);
 
 `askr make middleware <Name>` writes the skeleton.
 
+**Middleware runs in the order you registered it**, whether each one is a
+method or a plain procedure. That sounds too obvious to state, and it is
+stated because it was not true until recently: the router kept one list
+per kind and ran every method before every procedure, so the order came
+from how a piece of middleware happened to be written rather than from
+where it was written. A database lease registered as a procedure ran
+*after* an authentication step registered as a class method, and every
+request that needed both was a 500.
+
 Middleware is **global** today. Per-route and per-group middleware is a real
 gap, and not yet built.
 
@@ -228,13 +237,21 @@ UseMaintenance(R);      { askr down / askr up }
 
 SetSessions(TSessionStore.Create);
 UseSessions(R);         { Start before, Commit after }
+UseTokenAuth(R);        { Authorization: Bearer — before UseCsrf }
 UseCsrf(R);             { rejects unsafe methods without a token }
 UseAuth(R);             { restores login from the "remember me" cookie }
 ```
 
 **The order is not optional.** The CSRF token lives in the session, and
 "remember me" writes to it. Static files are registered first so they never
-pay for any of it.
+pay for any of it. `UseTokenAuth` comes before `UseCsrf` because a request
+that authenticated with a header it carried itself is exempt from CSRF,
+and that is only visible once the token has been read — see
+[APIs](api.md).
+
+The database lease, when there is one, is registered before all of these:
+a middleware that reads the database needs the connection already
+leased.
 
 `UseSessions`, `UseCsrf` and `UseAuth` are plain procedures, not class
 helpers — Pascal allows only one active class helper per type in scope, and

@@ -86,6 +86,18 @@ token and must be authenticated some other way — a signature in a header.
 The pattern matches exactly, or with a trailing `*`. **This is a hole you
 make on purpose, which is why it has to be written down.**
 
+There is one exemption you do not have to write down: a request that
+authenticated with an [API token](api.md) in an `Authorization` header.
+CSRF defends against a browser being made to send a request it did not
+mean to, with the cookie it carries everywhere; a header is not carried
+everywhere, and no other site can set one on a request to your server.
+Requiring a CSRF token as well would ask an API client for something it
+has no way to obtain.
+
+This is why `UseTokenAuth` is registered **before** `UseCsrf`. The other
+way round, CSRF answers before the token has been read and every POST
+with a valid token is a 419.
+
 ## Checking it yourself
 
 ```pascal

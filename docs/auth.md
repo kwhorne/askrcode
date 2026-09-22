@@ -233,6 +233,31 @@ An ordinary browser request is redirected. **An Inertia or JSON request gets
 401**, because a 302 to an HTML page is useless to a client that asked for
 JSON — it would follow it and receive the login page as JSON.
 
+## A caller that is not a browser
+
+`Login` writes to a session, and a session is a browser mechanism. A
+program presents its credential on the request instead:
+
+```
+Authorization: Bearer askr_...
+```
+
+`UseTokenAuth` resolves it and signs the request in for that request only,
+with no session and no cookie. `Check`, `Id`, `User` and every gate then
+answer as they do for a browser, so authorisation is written once. See
+[APIs](api.md).
+
+```pascal
+procedure LoginForRequest(const UserId: string);
+function IsRequestIdentity: Boolean;
+```
+
+`LoginForRequest` is the hook underneath it, for plugging in a scheme of
+your own. The identity lasts exactly as long as the request: it is
+cleared when the arena resets, which is the first thing the next request
+on that worker does. It **wins over the session** when both are present —
+an `Authorization` header is the caller naming which credential to use.
+
 ## Doing it yourself
 
 `Login` needs an ambient session, so it works inside a request handled by a

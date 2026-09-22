@@ -88,10 +88,29 @@ type
   TRouter = class
   private
     FRoutes: TList;
-    FMiddleware: array of TMiddleware;
-    FMiddlewareProcs: array of TMiddlewareProc;
-    FFilters: array of TResponseFilter;
-    FFilterProcs: array of TResponseFilterProc;
+    { One list, not one per kind.
+
+      There used to be two of each -- methods and plain procedures -- and
+      Route ran every method before every procedure. Registration order
+      was silently rewritten, and which of the two a piece of middleware
+      happened to be was decided by how it was written rather than by
+      anything a reader could see.
+
+      It cost a real bug: a generated app registered R.Use(@LeaseDb),
+      which is a procedure, and then UseTokenAuth, which is a class
+      method -- so the token middleware asked for the database connection
+      before the connection was leased, on every request that carried a
+      token. Found by running it against a real app; nothing in the suite
+      could see it, because a test that registers one kind never
+      notices. }
+    FBefore: array of record
+      M: TMiddleware;
+      P: TMiddlewareProc;
+    end;
+    FAfter: array of record
+      F: TResponseFilter;
+      P: TResponseFilterProc;
+    end;
     FNotFound: TRouteHandler;
     FSorted: Boolean;
     function Add(AMethod: THttpMethod; const APattern: string): TRoute;
@@ -120,6 +139,8 @@ type
       step 6. }
     procedure AsName(const AName: string);
 
+    { Middleware runs in the order it was registered, whether it is a
+      method or a plain procedure. }
     procedure Use(M: TMiddleware); overload;
     procedure Use(M: TMiddlewareProc); overload;
 
@@ -332,30 +353,40 @@ procedure TRouter.Use(M: TMiddleware);
 var
   N: Integer;
 begin
-  N := Length(FMiddleware);
-  SetLength(FMiddleware, N + 1);
-  FMiddleware[N] := M;
+  N := Length(FBefore);
+  SetLength(FBefore, N + 1);
+  FBefore[N].M := M;
+  FBefore[N].P := nil;
 end;
 
 procedure TRouter.Use(M: TMiddlewareProc);
 var
   N: Integer;
 begin
-  N := Length(FMiddlewareProcs);
-  SetLength(FMiddlewareProcs, N + 1);
-  FMiddlewareProcs[N] := M;
+  N := Length(FBefore);
+  SetLength(FBefore, N + 1);
+  FBefore[N].M := nil;
+  FBefore[N].P := M;
 end;
 
 procedure TRouter.After(F: TResponseFilter);
+var
+  N: Integer;
 begin
-  SetLength(FFilters, Length(FFilters) + 1);
-  FFilters[High(FFilters)] := F;
+  N := Length(FAfter);
+  SetLength(FAfter, N + 1);
+  FAfter[N].F := F;
+  FAfter[N].P := nil;
 end;
 
 procedure TRouter.After(F: TResponseFilterProc);
+var
+  N: Integer;
 begin
-  SetLength(FFilterProcs, Length(FFilterProcs) + 1);
-  FFilterProcs[High(FFilterProcs)] := F;
+  N := Length(FAfter);
+  SetLength(FAfter, N + 1);
+  FAfter[N].F := nil;
+  FAfter[N].P := F;
 end;
 
 procedure TRouter.SetNotFound(H: TRouteHandler);
@@ -390,10 +421,11 @@ begin
   Result := Route(Req);
   { Reverse order: Use(A); After(A2); Use(B); After(B2) should give
     A, B, handler, B2, A2. }
-  for I := High(FFilterProcs) downto 0 do
-    Result := FFilterProcs[I](Req, Result);
-  for I := High(FFilters) downto 0 do
-    Result := FFilters[I](Req, Result);
+  for I := High(FAfter) downto 0 do
+    if Assigned(FAfter[I].F) then
+      Result := FAfter[I].F(Req, Result)
+    else
+      Result := FAfter[I].P(Req, Result);
 end;
 
 function TRouter.Route(Req: TRequest): TResponse;
@@ -404,15 +436,12 @@ var
 begin
   SortRoutes;
 
-  for I := 0 to High(FMiddleware) do
+  for I := 0 to High(FBefore) do
   begin
-    Result := FMiddleware[I](Req);
-    if Result <> nil then
-      Exit;
-  end;
-  for I := 0 to High(FMiddlewareProcs) do
-  begin
-    Result := FMiddlewareProcs[I](Req);
+    if Assigned(FBefore[I].M) then
+      Result := FBefore[I].M(Req)
+    else
+      Result := FBefore[I].P(Req);
     if Result <> nil then
       Exit;
   end;

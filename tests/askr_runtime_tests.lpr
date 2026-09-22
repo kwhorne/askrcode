@@ -21,7 +21,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
-  Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
@@ -539,6 +539,362 @@ begin
     UseArena(Prev);
     A.Free;
     Store.Free;
+  end;
+end;
+
+{ -------------------------------------------------------- api-tokens -- }
+
+{ The gate for token authentication.
+
+  The database is a **file**, not sqlite::memory:, because one of the
+  claims is about what is on disk: the token that was just issued must not
+  be anywhere in it. A sweep for something absent proves nothing on its
+  own -- an empty file passes, and so does a path with a typo in it -- so
+  the sweep also requires the hash to be present. That is the difference
+  between measuring and hoping, and the same mistake was made once
+  already in the hydration check. }
+type
+  TTokCtl = class
+  public
+    function Me(Req: TRequest): TResponse;
+    function ReadOrders(Req: TRequest): TResponse;
+    function WriteOrders(Req: TRequest): TResponse;
+    function Which(Req: TRequest): TResponse;
+  end;
+
+function TTokCtl.Me(Req: TRequest): TResponse;
+begin
+  if Check then
+    Result := RespondText('user:' + Id)
+  else
+    Result := RespondText('out');
+end;
+
+{ TokenAllows rather than AuthorizeScope: the raising form is checked
+  directly below, and the status it turns into is measured over a real
+  socket in askr_tests -- the test client has no server to do that
+  mapping. }
+function TTokCtl.ReadOrders(Req: TRequest): TResponse;
+begin
+  if not TokenAllows('orders:read') then
+    Exit(ErrorResponse(403));
+  Result := RespondText('read');
+end;
+
+function TTokCtl.WriteOrders(Req: TRequest): TResponse;
+begin
+  if not TokenAllows('orders:write') then
+    Exit(ErrorResponse(403));
+  Result := RespondText('write');
+end;
+
+function TTokCtl.Which(Req: TRequest): TResponse;
+begin
+  Result := RespondText(CurrentToken.Name_);
+end;
+
+function FileBytes(const Path_: string): string;
+var
+  F: TFileStream;
+begin
+  Result := '';
+  F := TFileStream.Create(Path_, fmOpenRead or fmShareDenyNone);
+  try
+    SetLength(Result, F.Size);
+    if F.Size > 0 then
+      F.ReadBuffer(Result[1], F.Size);
+  finally
+    F.Free;
+  end;
+end;
+
+procedure TestApiTokens;
+const
+  Folder = '.build/token-test';
+  DbFile = '.build/token-test/tokens.sqlite';
+var
+  C: TDbConnection;
+  R: TRouter;
+  Ctl: TTokCtl;
+  K: TTestClient;
+  A: TArena;
+  Res: TResponse;
+  Full, ReadOnly_, Star, Doomed, Stale, NoScope, Raw, Tweaked: string;
+  T: TApiToken;
+  Tokens: TApiTokens;
+  I, Forbidden_: Integer;
+begin
+  ForceDirectories(Folder);
+  DeleteFile(DbFile);
+
+  C := OpenDbConnection('sqlite:' + DbFile);
+  UseDb(C);
+  Ctl := nil;
+  R := nil;
+  K := nil;
+  try
+    EnsureTokenSchema(C);
+    { Twice is a no-op. The durable queue learned this the hard way:
+      CREATE INDEX IF NOT EXISTS does not exist in MySQL, so the check
+      has to come first rather than the DDL being idempotent. }
+    EnsureTokenSchema(C);
+
+    Full := IssueToken(C, '7', 'ci', ['orders:read', 'orders:write']);
+    ReadOnly_ := IssueToken(C, '7', 'reader', ['orders:read']);
+    Star := IssueToken(C, '7', 'everything', ['*']);
+    Doomed := IssueToken(C, '7', 'to be revoked', ['orders:read']);
+    Stale := IssueToken(C, '7', 'to expire', ['orders:read'], 60);
+    NoScope := IssueToken(C, '9', 'no scopes at all', []);
+
+    AssertEqual(Copy(Full, 1, 5), 'askr_',
+      'a token is recognisable for what it is');
+    AssertEqual(Length(Full), Length(TokenPrefix) + 43,
+      '32 bytes, base64url, unpadded');
+    AssertTrue(Full <> ReadOnly_, 'two tokens are not the same token');
+
+    A := TArena.Create(8 * 1024);
+    try
+      { Revoked, and expired by moving the expiry into the past. A test
+        may write SQL; waiting a minute is not a test. }
+      C.Exec(A, 'UPDATE api_tokens SET revoked_at = 1 ' +
+        'WHERE name = ' + QuotedStr('to be revoked'));
+      C.Exec(A, 'UPDATE api_tokens SET expires_at = 1 ' +
+        'WHERE name = ' + QuotedStr('to expire'));
+    finally
+      A.Free;
+    end;
+
+    { --- the sweep ------------------------------------------------- }
+
+    { Closed first, so everything is on disk and nothing is sitting in a
+      write-ahead log nobody is looking at. }
+    UseDb(nil);
+    C.Free;
+    C := nil;
+    Raw := FileBytes(DbFile);
+
+    { The control. Without it the assertions below are also true of an
+      empty file, a missing file, and a path with a typo in it. }
+    AssertTrue(Pos(Sha256Hex(Full), Raw) > 0,
+      'the sweep is reading the right file: the hash is in it');
+
+    AssertEqual(Pos(Full, Raw), 0, 'the token itself is not on disk');
+    AssertEqual(Pos(ReadOnly_, Raw), 0, 'nor the second');
+    AssertEqual(Pos(Star, Raw), 0, 'nor the third');
+    AssertEqual(Pos(Doomed, Raw), 0, 'nor the revoked one');
+    AssertEqual(Pos(Stale, Raw), 0, 'nor the expired one');
+    AssertEqual(Pos(NoScope, Raw), 0, 'nor the one with no scopes');
+    { Not even a fragment. A stored prefix column would put one there,
+      which is the argument for not having one. }
+    AssertEqual(Pos(Copy(Full, Length(TokenPrefix) + 1, 12), Raw), 0,
+      'not even the first twelve characters of one');
+
+    { --- lookups --------------------------------------------------- }
+
+    C := OpenDbConnection('sqlite:' + DbFile);
+    UseDb(C);
+
+    AssertTrue(FindToken(C, Full, T), 'a live token is found');
+    AssertEqual(T.UserId, '7', 'and says whose it is');
+    AssertEqual(T.Name_, 'ci', 'and what it was called');
+
+    AssertFalse(FindToken(C, Doomed, T), 'a revoked token is not usable');
+    AssertTrue(T.State = tsRevoked, 'and the server knows why');
+    AssertFalse(FindToken(C, Stale, T), 'an expired token is not usable');
+    AssertTrue(T.State = tsExpired, 'and the server knows why');
+
+    AssertFalse(FindToken(C, 'askr_' + StringOfChar('A', 43), T),
+      'a token that was never issued is not found');
+    AssertTrue(T.State = tsNone, 'and there is nothing to say about it');
+    AssertFalse(FindToken(C, 'not-a-token', T),
+      'nor is something that is not one at all');
+
+    { The wrong length never reaches the table at all -- every token has
+      exactly one shape, so the check turns nothing real away. }
+    AssertFalse(FindToken(C, Full + 'x', T), 'a longer string is not it');
+    AssertFalse(FindToken(C, Copy(Full, 1, Length(Full) - 1), T),
+      'nor a shorter one');
+
+    { Right shape, one character different. This one does reach the hash
+      lookup, and has to miss: a comparison anywhere in the chain that
+      settled for a prefix would let it through. }
+    Tweaked := Full;
+    if Tweaked[Length(Tweaked)] = 'A' then
+      Tweaked[Length(Tweaked)] := 'B'
+    else
+      Tweaked[Length(Tweaked)] := 'A';
+    AssertFalse(FindToken(C, Tweaked, T),
+      'one character different is a different token');
+
+    { --- through the router ---------------------------------------- }
+
+    Ctl := TTokCtl.Create;
+    R := TRouter.Create;
+    R.Get('/me', Ctl.Me);
+    R.Get('/orders', Ctl.ReadOrders);
+    R.Post('/orders', Ctl.WriteOrders);
+    R.Get('/which', Ctl.Which);
+    UseTokenAuth(R);
+    { CSRF on the same router, and after the token, because every POST
+      below has to get past it.
+
+      A request that authenticated with a header is not what CSRF
+      defends against -- no other site can set an Authorization header on
+      a request to us. Without the exemption every one of those POSTs is
+      a 419, so the assertions below are the proof that it works. There
+      are no sessions wired up here at all, which is why the last check
+      in this block is a 419 and has to be. }
+    UseCsrf(R);
+    K := TTestClient.Create(R);
+
+    Res := K.Get('/me');
+    AssertEqual(Res.Body.ToString, 'out', 'no token, nobody signed in');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Full).Get('/me');
+    AssertEqual(Res.Body.ToString, 'user:7', 'a token signs the request in');
+
+    { **Never from the query string.** There is no code that reads one,
+      and this is what says so. It passes trivially today, and that is
+      the point: it fails the day somebody adds the convenience. A query
+      string ends up in access logs, in Referer on every outbound link,
+      in browser history, and in whatever somebody pastes into a chat. }
+    Res := K.Get('/me?token=' + Full);
+    AssertEqual(Res.Body.ToString, 'out',
+      'a token in the query string is not a credential');
+    Res := K.Get('/me?access_token=' + Full);
+    AssertEqual(Res.Body.ToString, 'out', 'under any name');
+    Res := K.WithHeader('X-Api-Key', Full).Get('/me');
+    AssertEqual(Res.Body.ToString, 'out',
+      'and there is one header, not several');
+
+    { The identity must not outlive the request. The threadvar holding it
+      does not die with the arena the way an arena object does, so it is
+      cleared by Arena.Defer, which runs when the next request on this
+      worker resets the arena. Get this wrong and the next caller is
+      served as somebody else -- quietly, and only sometimes. }
+    Res := K.Get('/me');
+    AssertEqual(Res.Body.ToString, 'out',
+      'the next request is not still signed in');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Full).Get('/which');
+    AssertEqual(Res.Body.ToString, 'ci', 'the handler can see which token');
+    Res := K.Get('/which');
+    AssertEqual(Res.Body.ToString, '', 'and that is gone next time too');
+
+    { --- what a bad token gets ------------------------------------- }
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Doomed).Get('/me');
+    AssertStatus(Res, 401, 'a revoked token is refused');
+    AssertContains(Res.HeaderValue('WWW-Authenticate'), 'Bearer',
+      'with the header the bearer scheme refuses by');
+    AssertNotContains(Res.Body.ToString, 'revoked',
+      'and the body does not say the token was ever real');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Stale).Get('/me');
+    AssertStatus(Res, 401, 'an expired token is refused');
+    Res := K.WithHeader('Authorization',
+      'Bearer askr_' + StringOfChar('A', 43)).Get('/me');
+    AssertStatus(Res, 401, 'and one that never existed');
+    AssertNotContains(Res.Body.ToString, 'askr_',
+      'and the reply does not echo what was sent');
+
+    { A credential that is offered and does not work is an error in
+      itself. Treating it as an anonymous request would surface later,
+      somewhere else, as a 403 or a 404. }
+    Res := K.WithHeader('Authorization', 'Bearer ' + Doomed).Get('/orders');
+    AssertStatus(Res, 401, 'a bad token stops the request, not the handler');
+
+    { --- scopes ---------------------------------------------------- }
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Full).Get('/orders');
+    AssertEqual(Res.Body.ToString, 'read', 'a scope it has');
+    Res := K.WithHeader('Authorization', 'Bearer ' + Full).Post('/orders', '{}');
+    AssertEqual(Res.Body.ToString, 'write', 'and the other one');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + ReadOnly_).Get('/orders');
+    AssertEqual(Res.Body.ToString, 'read', 'a read token reads');
+    Res := K.WithHeader('Authorization', 'Bearer ' + ReadOnly_)
+      .Post('/orders', '{}');
+    AssertStatus(Res, 403, 'and is refused the write');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Star).Post('/orders', '{}');
+    AssertEqual(Res.Body.ToString, 'write', 'a star is every scope');
+
+    { And a browser is still protected. The exemption is for a credential
+      the caller carried, not for anything that skipped the session. }
+    Res := K.Post('/orders', '{}');
+    AssertStatus(Res, 419, 'a POST with no credential still needs a token');
+
+    { A token issued with no scopes is not a master key. Somebody will
+      write IssueToken(..., []) meaning everything; this is what they
+      get. }
+    Res := K.WithHeader('Authorization', 'Bearer ' + NoScope).Get('/orders');
+    AssertStatus(Res, 403, 'no scopes means no scopes');
+
+    { Nobody signed in at all is also no. Otherwise a handler carrying
+      only a scope check would be open to anyone.
+
+      The request above has to be made first. Without it the last token
+      seen is still in the threadvar, and the assertion passes because
+      that token happens to have no scopes -- green for the wrong
+      reason, which a mutation found. }
+    Res := K.Get('/me');
+    AssertEqual(Res.Body.ToString, 'out', 'nobody is signed in now');
+    AssertFalse(TokenAllows('orders:read'),
+      'and then no scope is allowed either');
+
+    { And the raising form says 403, which is what the server answers
+      with. The mapping itself is measured over a socket in askr_tests. }
+    Forbidden_ := 0;
+    try
+      AuthorizeScope('orders:write');
+    except
+      on E: EForbidden do
+      begin
+        Forbidden_ := E.HttpStatus;
+        AssertEqual(E.PublicDetail, '',
+          'and says nothing to the caller about what they nearly got');
+      end;
+    end;
+    AssertEqual(Forbidden_, 403, 'AuthorizeScope raises a 403');
+
+    { --- last used, and revoking ----------------------------------- }
+
+    Tokens := TokensFor(C, '7');
+    AssertEqual(Length(Tokens), 5, 'the list is that one user''s tokens');
+    for I := 0 to High(Tokens) do
+      AssertEqual(Pos('askr_', Tokens[I].Scopes + Tokens[I].Name_), 0,
+        'and carries nothing that looks like a token');
+
+    AssertTrue(FindToken(C, Full, T), 'still live');
+    AssertTrue(T.LastUsedAt > 0, 'and it has been used');
+
+    AssertTrue(RevokeToken(C, T.Id), 'revoking says it revoked something');
+    AssertFalse(FindToken(C, Full, T), 'a revoked token stops working');
+    { And says so when it did not. The console prints a success on True
+      and an error on False, and a command that reports a revocation that
+      did not happen is worse than one that fails. }
+    AssertFalse(RevokeToken(C, T.Id), 'revoking it twice revokes nothing');
+    AssertFalse(RevokeToken(C, 99999), 'nor does revoking one that is not there');
+    Res := K.WithHeader('Authorization', 'Bearer ' + Full).Get('/me');
+    AssertStatus(Res, 401, 'immediately, on the next request');
+
+    { Five tokens for this user, two of them already revoked -- the one
+      backdated with SQL and the one revoked a moment ago. The guard on
+      the UPDATE is what makes it three and not five, and it is also what
+      keeps the first revocation time rather than overwriting it. }
+    AssertEqual(RevokeTokensFor(C, '7'), 3,
+      'revoking everything skips the ones already revoked');
+    AssertFalse(FindToken(C, Star, T), 'and the rest stop working');
+    AssertTrue(FindToken(C, NoScope, T),
+      'while another user''s token is untouched');
+  finally
+    K.Free;
+    R.Free;
+    Ctl.Free;
+    UseDb(nil);
+    if C <> nil then
+      C.Free;
   end;
 end;
 
@@ -4921,6 +5277,10 @@ begin
   Test('Inertia carries flash whatever the key', @TestInertiaFlashUansettNokkel);
   Test('the session does not leak out of the request',
     @TestSesjonenLekkerIkkeUtAvRequesten);
+
+  Group('API tokens');
+  Test('hashed at rest, scoped, revocable, and never from a URL',
+    @TestApiTokens);
 
   Group('What an error looks like');
   Test('a machine client is never given a page, and never a redirect',

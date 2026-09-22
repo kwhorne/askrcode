@@ -31,14 +31,24 @@ interface
 
 uses
   SysUtils,
-  Askr.Core.Text, Askr.Core.Clock, Askr.Core.Crypto,
+  Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Crypto,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Session;
 
 type
-  EAuthError = class(Exception);
-  { Raised by `Authorize`. The host translates it into a 403. }
-  EForbidden = class(EAuthError);
+  { A 500 unless a descendant says otherwise: these are mistakes in how
+    auth was set up, and there is nothing a caller can do about one. }
+  EAuthError = class(EHttpError);
+
+  { Raised by `Authorize` and `AuthorizeScope`. The server answers 403.
+
+    The message names the gate and nothing else, and it does **not** reach
+    the client -- PublicDetail stays empty. A 403 that explains itself
+    tells whoever hit it what they nearly got. }
+  EForbidden = class(EAuthError)
+  public
+    function HttpStatus: Integer; override;
+  end;
 
   { The app's lookup from id to user object. Called at most once per
     request; the result is cached for that request. Return nil when the id
@@ -73,6 +83,26 @@ procedure Login(const UserId: string; Remember: Boolean = False);
   cookie. The whole session, not only the user key — whatever was in there
   belonged to whoever was signed in. }
 procedure Logout;
+
+{ Signs in for this request only, with no session and no cookie.
+
+  This is for a credential the client presents on the request itself -- an
+  API token in an Authorization header. There is nothing to carry between
+  requests, so there is nothing to store: the identity lasts exactly as
+  long as the request does, and `Check`, `Id`, `User` and every gate see
+  it without knowing where it came from.
+
+  **It wins over the session when both are there.** An Authorization
+  header is the caller naming which credential to use, and unlike a cookie
+  no other site can set it -- which is the same reason a request
+  authenticated this way needs no CSRF token.
+
+  `Askr.Auth.Token` is the caller. An application would only reach for
+  this directly to plug in a scheme of its own. }
+procedure LoginForRequest(const UserId: string);
+{ True when this request's identity came from LoginForRequest rather than
+  from a session. }
+function IsRequestIdentity: Boolean;
 
 function Check: Boolean;
 { Id-en, eller tom streng. }
@@ -113,6 +143,11 @@ procedure RequireAuth(R: TRouter; const LoginPath: string = '/login');
 
 implementation
 
+function EForbidden.HttpStatus: Integer;
+begin
+  Result := 403;
+end;
+
 var
   GLoader: TUserLoader;
   GGates: array of record
@@ -125,6 +160,9 @@ var
 threadvar
   GUser: TObject;
   GUserFor: string;
+  { The identity for this one request, from a credential on the request
+    itself. Empty when there is none. }
+  GRequestId: string;
 
 { --------------------------------------------------------- innlogging -- }
 
@@ -218,16 +256,63 @@ begin
     S.Clear;
     Sessions.Regenerate(S);
   end;
+  { Also the request identity: after Logout nobody is signed in for the
+    rest of this request, whichever credential got them in. A token
+    cannot be signed out in any lasting sense -- that is what revoking
+    is for -- but leaving Check true after a Logout would be a lie. }
+  GRequestId := '';
   GUser := nil;
   GUserFor := '';
   GSetRemember := '';
   GClearRemember := True;
 end;
 
+{ Runs when the arena resets, which is the first thing the next request
+  on this worker does -- so a stale identity is gone before anything can
+  read it.
+
+  A threadvar does not die with the request the way an arena object does,
+  and an identity that outlived its request would mean the next caller on
+  that worker is somebody else. The session threadvar had exactly this
+  bug, and the worst thing about it was that it only crashed sometimes.
+  This one would not crash at all. }
+procedure ForgetRequestIdentity(Data: Pointer);
+begin
+  GRequestId := '';
+  GUser := nil;
+  GUserFor := '';
+end;
+
+procedure LoginForRequest(const UserId: string);
+var
+  A: TArena;
+begin
+  if UserId = '' then
+    raise EAuthError.Create('LoginForRequest needs a user id.');
+  A := CurrentArena;
+  if A = nil then
+    raise EAuthError.Create(
+      'LoginForRequest needs an ambient arena: the identity is cleared ' +
+      'when the arena resets, and without one it would outlive the ' +
+      'request.');
+  GRequestId := UserId;
+  GUser := nil;
+  GUserFor := '';
+  A.Defer(ForgetRequestIdentity, nil);
+end;
+
+function IsRequestIdentity: Boolean;
+begin
+  Result := GRequestId <> '';
+end;
+
 function Id: string;
 var
   S: TSession;
 begin
+  { A credential presented on the request beats the ambient one. }
+  if GRequestId <> '' then
+    Exit(GRequestId);
   S := CurrentSession;
   if S = nil then
     Exit('');

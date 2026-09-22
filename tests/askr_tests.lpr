@@ -1895,6 +1895,127 @@ begin
   end;
 end;
 
+{ Middleware and after-filters run in registration order, whichever kind
+  each one is.
+
+  There used to be one list for methods and one for plain procedures, and
+  every method ran before every procedure. Which list a piece of
+  middleware landed in was decided by how it happened to be written, not
+  by anything at the call site -- so `R.Use(@A); R.Use(B.C);` ran C, then
+  A, and a reader had no way to see it.
+
+  It cost a real bug: a generated app leased its database connection with
+  a procedure and read API tokens with a class method, so the token
+  middleware asked for the connection before it was there. Every request
+  carrying a token was a 500. The suite could not see it, because a test
+  that registers only one kind never notices; this one registers both,
+  alternating. }
+type
+  TOrderTrace = class
+  public
+    function First_(Req: TRequest): TResponse;
+    function Third(Req: TRequest): TResponse;
+    function AfterB(Req: TRequest; Res: TResponse): TResponse;
+    function AfterD(Req: TRequest; Res: TResponse): TResponse;
+    function Handler(Req: TRequest): TResponse;
+  end;
+
+var
+  GOrder: string;
+
+function TOrderTrace.First_(Req: TRequest): TResponse;
+begin
+  GOrder := GOrder + 'A';
+  Result := nil;
+end;
+
+function SecondProc(Req: TRequest): TResponse;
+begin
+  GOrder := GOrder + 'B';
+  Result := nil;
+end;
+
+function TOrderTrace.Third(Req: TRequest): TResponse;
+begin
+  GOrder := GOrder + 'C';
+  Result := nil;
+end;
+
+function FourthProc(Req: TRequest): TResponse;
+begin
+  GOrder := GOrder + 'D';
+  Result := nil;
+end;
+
+function TOrderTrace.Handler(Req: TRequest): TResponse;
+begin
+  GOrder := GOrder + '|';
+  Result := RespondText('ok');
+end;
+
+function AfterAProc(Req: TRequest; Res: TResponse): TResponse;
+begin
+  GOrder := GOrder + 'a';
+  Result := Res;
+end;
+
+function TOrderTrace.AfterB(Req: TRequest; Res: TResponse): TResponse;
+begin
+  GOrder := GOrder + 'b';
+  Result := Res;
+end;
+
+function AfterCProc(Req: TRequest; Res: TResponse): TResponse;
+begin
+  GOrder := GOrder + 'c';
+  Result := Res;
+end;
+
+function TOrderTrace.AfterD(Req: TRequest; Res: TResponse): TResponse;
+begin
+  GOrder := GOrder + 'd';
+  Result := Res;
+end;
+
+procedure TestMiddlewareOrder;
+var
+  A, PrevA: TArena;
+  R: TRouter;
+  T: TOrderTrace;
+  Req: TRequest;
+begin
+  Group('Middleware order');
+  A := TArena.Create(8192);
+  PrevA := UseArena(A);
+  T := TOrderTrace.Create;
+  R := TRouter.Create;
+  try
+    GOrder := '';
+    { Method, procedure, method, procedure. }
+    R.Use(T.First_);
+    R.Use(@SecondProc);
+    R.Use(T.Third);
+    R.Use(@FourthProc);
+    { And the filters the other way round: procedure, method, procedure,
+      method -- so neither ordering can come out right by accident. }
+    R.After(@AfterAProc);
+    R.After(T.AfterB);
+    R.After(@AfterCProc);
+    R.After(T.AfterD);
+    R.Get('/', T.Handler);
+
+    Req := MakeRequest(A, 'GET / HTTP/1.1'#13#10'Host: t');
+    R.Handle(Req);
+    CheckEqS(GOrder, 'ABCD|dcba',
+      'middleware in registration order, filters in reverse, both kinds');
+  finally
+    R.Free;
+    T.Free;
+    UseArena(PrevA);
+    A.Free;
+  end;
+end;
+
 { ------------------------------------------------------------- validering -- }
 
 type
@@ -3730,6 +3851,47 @@ begin
 end;
 
 type
+  { An exception that says what it should become.
+
+    Before EHttpError existed, every way of stopping a handler from the
+    middle of its work was a 500 -- so a guard that refused exactly as it
+    was meant to looked like a broken server, in the log and to the
+    caller. Raising is the only way out of the middle of a function, and
+    some of those failures are not faults. }
+  ERefused = class(EHttpError)
+  public
+    function HttpStatus: Integer; override;
+  end;
+
+  { And one that says something on purpose. The default is silence, for
+    the same reason a problem document has no detail by default. }
+  EShipped = class(EHttpError)
+  public
+    function HttpStatus: Integer; override;
+    function PublicDetail: string; override;
+  end;
+
+const
+  { Shaped like a message that really does carry something: the gate name
+    and the row it was about. It belongs in the log and nowhere else. }
+  RefusedSecret = 'gate=orders:write user=7 row=/var/db/orders.sqlite';
+
+function ERefused.HttpStatus: Integer;
+begin
+  Result := 403;
+end;
+
+function EShipped.HttpStatus: Integer;
+begin
+  Result := 409;
+end;
+
+function EShipped.PublicDetail: string;
+begin
+  Result := 'That order has already shipped.';
+end;
+
+type
   TE2EHandler = class
   public
     Statisk: TStaticFiles;
@@ -3816,6 +3978,11 @@ begin
   end;
   if Req.Path.EqualsStr('/boom') then
     raise Exception.Create('on purpose: ' + BoomSecret);
+  { Refused, not broken. }
+  if Req.Path.EqualsStr('/refused') then
+    raise ERefused.Create(RefusedSecret);
+  if Req.Path.EqualsStr('/shipped') then
+    raise EShipped.Create('order 7 is in state shipped, table orders');
   { Answers with nothing, so the server's own 404 runs. The fall-through
     below is the application's 404 and a different path entirely. }
   if Req.Path.EqualsStr('/nowhere') then
@@ -4176,6 +4343,47 @@ begin
       'the leak is closed on both sides, not just the new one');
     C.Close;
 
+    { An exception that knows what it should become. A refused
+      authorisation is a 403; it was a 500 until EHttpError existed, and
+      a working guard that answers 500 looks like a broken server. }
+    Check(C.Connect(Port), 'connects for the refusals');
+    C.SendRaw('GET /refused HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('HTTP/1.1 403', Head) = 1, 'a refusal is 403, not 500');
+    CheckEqS(Body, 'Forbidden', 'with the status text and nothing else');
+    { The same rule as the 500: the message is where the detail is, and
+      the detail is what must not travel. A 403 that explains itself
+      tells whoever hit it what they nearly got. }
+    Check(Pos(RefusedSecret, Body) = 0, 'the message is not in the body');
+    Check(Pos('orders:write', Body) = 0, 'nor the gate it names');
+
+    { And the connection is still good. A refusal is an ordinary answer
+      and the caller usually asks something else next; only a fault costs
+      the connection. }
+    C.SendRaw('GET / HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    CheckEqS(Body, 'rot', 'and the connection stays open after a 403');
+
+    C.SendRaw('GET /refused HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: application/json'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('HTTP/1.1 403', Head) = 1, 'a JSON client gets the 403');
+    Check(Pos('application/problem+json', Head) > 0, 'as a problem document');
+    CheckEqS(ProblemMember(Body, 'title'), 'Forbidden', 'titled');
+    Check(Pos('detail', Body) = 0, 'and with nothing to add');
+
+    { Silence is the default, not the only option. An application that
+      wants to say something says it in PublicDetail, on purpose. }
+    C.SendRaw('GET /shipped HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: application/json'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('HTTP/1.1 409', Head) = 1, 'and any other status it names');
+    CheckEqS(ProblemMember(Body, 'detail'),
+      'That order has already shipped.', 'with the detail it chose');
+    Check(Pos('table orders', Body) = 0,
+      'and still not the message it was raised with');
+    C.Close;
+
     { Ugyldig request. }
     Check(C.Connect(Port), 'connects for the invalid request');
     C.SendRaw('GET / HTTP/1.1'#13#10#13#10);
@@ -4209,12 +4417,12 @@ begin
     CheckEqI(Reserved2, Reserved1, 'the arena does not grow under sustained load');
     Check(Server.TotalArenaHighWater < 64 * 1024,
       'toppforbruket per request holder seg lite');
-    { 31 valid requests above, then 50 + 1 + 500 here. The two rejected
+    { 35 valid requests above, then 50 + 1 + 500 here. The two rejected
       ones (400 and 501) are not counted, because they never reached a
       handler. The number is written out rather than computed: the point
       of it is that the server's own count agrees with what the suite
       actually sent, and a computed one would agree with itself. }
-    CheckEqI(Server.TotalRequests, 583, 'every valid request was counted');
+    CheckEqI(Server.TotalRequests, 587, 'every valid request was counted');
     C.Close;
   finally
     Server.Free;
@@ -4244,6 +4452,7 @@ begin
   TestInertia;
   TestHiddenColumns;
   TestRuter;
+  TestMiddlewareOrder;
   TestValidering;
   TestBinding;
   TestNornSchema;

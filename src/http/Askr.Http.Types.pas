@@ -13,6 +13,29 @@ uses
   SysUtils, Askr.Core.Arena, Askr.Core.Text;
 
 type
+  { An exception that already knows which status it should become.
+
+    An unhandled exception is a 500, and that is right: the server cannot
+    know what went wrong in somebody else's handler. But some failures are
+    not the server's fault and not a surprise -- a refused authorisation
+    is a 403, a missing record is a 404 -- and raising is the only way to
+    stop a handler from the middle of the work it was doing.
+
+    Descend from this and override HttpStatus. The server answers with
+    that instead of 500, and does not log it as a failure when it is below
+    500, because a refused request is not a fault.
+
+    **The message still does not reach the client.** PublicDetail is empty
+    by default, for the same reason detail in a problem document is empty
+    by default: the message is where the SQL, the path and the value are.
+    Overriding PublicDetail is how an application says something on
+    purpose. }
+  EHttpError = class(Exception)
+  public
+    function HttpStatus: Integer; virtual;
+    function PublicDetail: string; virtual;
+  end;
+
   THttpMethod = (
     hmUnknown, hmGet, hmHead, hmPost, hmPut, hmPatch, hmDelete, hmOptions
   );
@@ -79,6 +102,16 @@ begin
   else
     Result := '';
   end;
+end;
+
+function EHttpError.HttpStatus: Integer;
+begin
+  Result := 500;
+end;
+
+function EHttpError.PublicDetail: string;
+begin
+  Result := '';
 end;
 
 function StatusText(Code: Integer): string;

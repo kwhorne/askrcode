@@ -43,7 +43,8 @@ uses
   Askr.Urd.Driver, Askr.Norn.Schema, Askr.Norn.Migration,
   Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
-  Askr.Queue, Askr.Scheduler, Askr.Cache;
+  Askr.Queue, Askr.Scheduler, Askr.Cache, Askr.Auth.Token,
+  Askr.Console.Commands;
 
 type
   { A seeder is a class that fills the database. The same shape as a
@@ -220,6 +221,23 @@ begin
     if ParamStr(I) = '--' + Name_ then
       Exit(True);
   Result := False;
+end;
+
+{ A flag that carries text: --scopes=a,b or --scopes a,b. }
+function FlagText(const Name_: string; const Standard: string = ''): string;
+var
+  I: Integer;
+  P: string;
+begin
+  Result := Standard;
+  for I := 1 to ParamCount do
+  begin
+    P := ParamStr(I);
+    if Copy(P, 1, Length(Name_) + 3) = '--' + Name_ + '=' then
+      Exit(Copy(P, Length(Name_) + 4, MaxInt));
+    if (P = '--' + Name_) and (I < ParamCount) then
+      Exit(ParamStr(I + 1));
+  end;
 end;
 
 function Arg(Index: Integer): string;
@@ -859,47 +877,211 @@ begin
   end;
 end;
 
-{ ------------------------------------------------------------- tabell -- }
+{ --------------------------------------------------------- api-tokens -- }
 
-type
-  TCommand = record
-    Name_: string;
-    Help: string;
+{ Splits --scopes=a,b,c. Commas, because a space would have to be quoted
+  on every shell. }
+function SplitScopes(const S: string): TStringArray;
+var
+  Rest, One: string;
+  P: Integer;
+begin
+  Result := nil;
+  Rest := S;
+  while Rest <> '' do
+  begin
+    P := Pos(',', Rest);
+    if P = 0 then
+    begin
+      One := Trim(Rest);
+      Rest := '';
+    end
+    else
+    begin
+      One := Trim(Copy(Rest, 1, P - 1));
+      Rest := Copy(Rest, P + 1, MaxInt);
+    end;
+    if One = '' then
+      Continue;
+    SetLength(Result, Length(Result) + 1);
+    Result[High(Result)] := One;
+  end;
+end;
+
+procedure CmdTokenIssue(const UserId, Name_: string);
+var
+  C: TDbConnection;
+  Scopes: TStringArray;
+  Days: Integer;
+  Plain, ScopeFlag: string;
+begin
+  if (UserId = '') or (Name_ = '') then
+  begin
+    Err('Usage: askr token:issue <user-id> <name> --scopes=a,b [--days=N]');
+    Err('');
+    Err('The user id is your own -- the same one you pass to Login.');
+    Err('Use --scopes=''*'' for a token that may do everything.');
+    Halt(1);
   end;
 
-const
-  Commands: array[0..21] of TCommand = (
-    (Name_: 'about';            Help: 'what this app is configured with'),
-    (Name_: 'routes';           Help: 'the routing table'),
-    (Name_: 'migrate';          Help: 'run pending migrations'),
-    (Name_: 'migrate:status';   Help: 'what has run and what has not'),
-    (Name_: 'migrate:rollback'; Help: 'roll back the last batch (--step=N)'),
-    (Name_: 'migrate:reset';    Help: 'roll back everything'),
-    (Name_: 'migrate:fresh';    Help: 'drop all tables, then migrate (--seed)'),
-    (Name_: 'migrate:refresh';  Help: 'reset, then migrate (--seed)'),
-    (Name_: 'db:seed';          Help: 'run the seeders (--class=Name)'),
-    (Name_: 'db:show';          Help: 'tables in the database'),
-    (Name_: 'db:table';         Help: 'columns, indexes and keys of one table'),
-    (Name_: 'db:wipe';          Help: 'drop every table (--force in production)'),
-    (Name_: 'schema';           Help: 'generate typed columns from the database'),
-    (Name_: 'queue:work';       Help: 'run the queue until interrupted'),
-    (Name_: 'queue:status';     Help: 'counters for the queue'),
-    (Name_: 'schedule:list';    Help: 'the schedule'),
-    (Name_: 'schedule:run';     Help: 'dispatch what is due, once'),
-    (Name_: 'cache:clear';      Help: 'empty the cache'),
-    (Name_: 'down';             Help: 'maintenance mode on'),
-    (Name_: 'up';               Help: 'maintenance mode off'),
-    (Name_: 'env';              Help: 'the current environment'),
-    (Name_: 'list';             Help: 'these commands'));
+  { No default. The one command that mints a credential should make you
+    say what it may do; a default of "everything" would be the wrong
+    answer most of the time and silent every time. }
+  ScopeFlag := FlagText('scopes');
+  if Trim(ScopeFlag) = '' then
+  begin
+    Err('--scopes is required. Say what this token may do:');
+    Err('');
+    Err('  --scopes=orders:read,orders:write');
+    Err('  --scopes=''*''            everything');
+    Halt(1);
+  end;
+  Scopes := SplitScopes(ScopeFlag);
+  Days := FlagValue('days', 0);
+
+  C := OpenDb;
+  try
+    EnsureTokenSchema(C);
+    Plain := IssueToken(C, UserId, Name_, Scopes, Int64(Days) * 24 * 60 * 60);
+    Si('');
+    Si('  ' + Plain);
+    Si('');
+    { Said plainly, because the next thing the reader does decides whether
+      they lose it. }
+    Si('This is the only time the token is shown. Only its SHA-256 is');
+    Si('stored, so there is no way to print it again.');
+    Si('');
+    Si('  Authorization: Bearer ' + Copy(Plain, 1, Length(TokenPrefix) + 6) +
+      '...');
+    if Days > 0 then
+      Si(Format('Expires in %d day(s).', [Days]));
+  finally
+    C.Free;
+  end;
+end;
+
+function StateWord(T: TApiToken): string;
+begin
+  case T.State of
+    tsRevoked: Result := 'revoked';
+    tsExpired: Result := 'expired';
+    tsActive: Result := 'active';
+  else
+    Result := '?';
+  end;
+end;
+
+function MsWord(Ms: Int64): string;
+begin
+  if Ms <= 0 then
+    Result := 'never'
+  else
+    { IsoTimestamp is UTC and already the framework's one format for a
+      point in time. Trimmed to the minute, because a column in a list
+      does not need seconds. }
+    Result := Copy(IsoTimestamp(Ms), 1, 16);
+end;
+
+procedure CmdTokenList(const UserId: string);
+var
+  C: TDbConnection;
+  Tokens: TApiTokens;
+  I: Integer;
+begin
+  if UserId = '' then
+  begin
+    Err('Usage: askr token:list <user-id>');
+    Halt(1);
+  end;
+  C := OpenDb;
+  try
+    EnsureTokenSchema(C);
+    Tokens := TokensFor(C, UserId);
+    if Length(Tokens) = 0 then
+    begin
+      Si('No tokens for ' + UserId + '.');
+      Exit;
+    end;
+    Si(Format('%-6s %-20s %-8s %-16s %s',
+      ['Id', 'Name', 'State', 'Last used', 'Scopes']));
+    for I := 0 to High(Tokens) do
+      Si(Format('%-6d %-20s %-8s %-16s %s',
+        [Tokens[I].Id, Copy(Tokens[I].Name_, 1, 20), StateWord(Tokens[I]),
+         MsWord(Tokens[I].LastUsedAt), Tokens[I].Scopes]));
+    Si('');
+    { Nothing above is secret, and that is the point rather than an
+      accident: no part of a live token is kept anywhere. }
+    Si('Tokens themselves are not stored and cannot be shown.');
+  finally
+    C.Free;
+  end;
+end;
+
+{ Two entry points and no guessing.
+
+  The first version took one string and decided from its shape: a number
+  meant a token id, anything else a user id. User ids are primary keys,
+  so they are numbers -- `token:revoke --user=7` revoked token 7, which
+  did not exist, and printed "Token 7 is revoked." It reported a success
+  that had not happened, which is worse than failing. The flag already
+  said which of the two it was; the code just did not listen.
+
+  Same rule as finding the colon after the key in package.json: where
+  there is an answer, use it instead of inferring one. }
+procedure CmdTokenRevoke(const TokenId: string);
+var
+  C: TDbConnection;
+  Id_: Int64;
+begin
+  if not TryStrToInt64(TokenId, Id_) then
+  begin
+    Err('Usage: askr token:revoke <token-id>');
+    Err('       askr token:revoke --user=<user-id>   every token they have');
+    Err('');
+    Err('A token id is the number in the first column of: askr token:list');
+    Halt(1);
+  end;
+  C := OpenDb;
+  try
+    EnsureTokenSchema(C);
+    if RevokeToken(C, Id_) then
+      Si(Format('Token %d is revoked.', [Id_]))
+    else
+    begin
+      Err(Format('Token %d is not there, or was revoked already.', [Id_]));
+      Halt(1);
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
+procedure CmdTokenRevokeUser(const UserId: string);
+var
+  C: TDbConnection;
+  N: Integer;
+begin
+  C := OpenDb;
+  try
+    EnsureTokenSchema(C);
+    N := RevokeTokensFor(C, UserId);
+    Si(Format('%d token(s) revoked for %s.', [N, UserId]));
+  finally
+    C.Free;
+  end;
+end;
+
+{ ------------------------------------------------------------- tabell -- }
 
 function ConsoleCommands: TStringArray;
 var
   I: Integer;
 begin
   Result := nil;
-  SetLength(Result, Length(Commands));
-  for I := Low(Commands) to High(Commands) do
-    Result[I] := Commands[I].Name_;
+  SetLength(Result, Length(Askr.Console.Commands.ConsoleCommands));
+  for I := Low(Askr.Console.Commands.ConsoleCommands) to
+           High(Askr.Console.Commands.ConsoleCommands) do
+    Result[I] := Askr.Console.Commands.ConsoleCommands[I].Name_;
 end;
 
 procedure CmdList;
@@ -908,8 +1090,11 @@ var
 begin
   Si('Commands this app answers to:');
   Si('');
-  for I := Low(Commands) to High(Commands) do
-    Si(Format('  %-18s %s', [Commands[I].Name_, Commands[I].Help]));
+  for I := Low(Askr.Console.Commands.ConsoleCommands) to
+           High(Askr.Console.Commands.ConsoleCommands) do
+    Si(Format('  %-18s %s',
+      [Askr.Console.Commands.ConsoleCommands[I].Name_,
+       Askr.Console.Commands.ConsoleCommands[I].Help]));
 end;
 
 function RunConsole: Boolean;
@@ -945,6 +1130,15 @@ begin
   else if K = 'schedule:list' then CmdScheduleList
   else if K = 'schedule:run' then CmdScheduleRun
   else if K = 'cache:clear' then CmdCacheClear
+  else if K = 'token:issue' then CmdTokenIssue(Arg(1), Arg(2))
+  else if K = 'token:list' then CmdTokenList(Arg(1))
+  else if K = 'token:revoke' then
+  begin
+    if FlagText('user') <> '' then
+      CmdTokenRevokeUser(FlagText('user'))
+    else
+      CmdTokenRevoke(Arg(1));
+  end
   else if K = 'down' then CmdDown
   else if K = 'up' then CmdUp
   else if K = 'env' then Si(AppEnv)

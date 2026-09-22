@@ -32,6 +32,33 @@ Result := Problem(409, 'That order has already shipped.');
 the framework's own 404, 405, 419, 401 and 500 use it when the caller
 asked for JSON. See [APIs](api.md).
 
+## Answering with a status from deep inside
+
+Raising is the only way out of the middle of a function, and not every
+failure is a fault. An exception descending from `EHttpError` says which
+status it should become:
+
+```pascal
+type
+  ENotFound = class(EHttpError)
+  public
+    function HttpStatus: Integer; override;      { 404 }
+    function PublicDetail: string; override;     { optional }
+  end;
+```
+
+The server answers with that instead of 500, and does not log it as a
+failure when it is below 500 — a refused request is not a fault, and a
+connection is not closed over one.
+
+**The exception's message still does not reach the client.**
+`PublicDetail` is empty by default, for the same reason `detail` in a
+problem document is: the message is where the SQL, the path and the value
+are. Overriding it is how an application says something on purpose.
+
+`EForbidden`, from [gates](auth.md#gates), is the one Askr ships: 403,
+with nothing added.
+
 ## Headers
 
 ```pascal

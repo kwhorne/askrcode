@@ -37,6 +37,25 @@ other client gets the byte-for-byte body it got before.
 Nothing needs changing in your code. If you want the old behaviour on one
 route, branch on `Req.AcceptsJson` yourself.
 
+**Middleware now runs in the order you registered it.** It used to run
+every method before every plain procedure, whichever order they were
+written in. If you have both kinds on one router and were relying --
+knowingly or not -- on the old grouping, the order changes. The new order
+is the one the call site reads as. After-filters are likewise one list in
+reverse registration order.
+
+**`EForbidden` is now a 403 rather than a 500.** `Authorize` and the new
+`AuthorizeScope` raise it, and the server answers with the status the
+exception names. This was always what the code said it did; nothing
+translated it until now. It can break you only if something was counting
+on gates producing a 500, or was catching `EForbidden` and would rather
+the server did not answer for it -- catch it in the handler as before,
+and nothing reaches the server.
+
+`EAuthError` now descends from `EHttpError` rather than `Exception`
+directly. `Exception` is still an ancestor, so `on E: Exception` is
+unaffected.
+
 ## 0.11.2
 
 Nothing can break. Documentation, and one example.

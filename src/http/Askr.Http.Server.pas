@@ -330,6 +330,8 @@ var
   ErrCode: Integer;
   BodyLen: SizeInt;
   Started: Int64;
+  Status_: Integer;
+  Detail_: string;
 begin
   FBufLen := 0;
   FBufPos := 0;
@@ -422,14 +424,37 @@ begin
             line, which is the one place that can be read by somebody
             entitled to read it. A framework that helpfully returns it
             has published a reconnaissance endpoint on every route. }
-          Res := ErrorResponse(500);
-          Close_ := True;
-          { An exception from user code is always logged, whatever LogRequests
-            says. It is not a request line, it is an error — and a 500
-            that leaves no trace is a 500 nobody can debug. }
-          LogException(E, 'unhandled exception in handler',
-            ['method', Askr.Http.Types.MethodName(Req.Method),
-             'path', Req.Path.ToString]);
+          Status_ := 500;
+          Detail_ := '';
+          if E is EHttpError then
+          begin
+            { The exception said what it should become. A refused
+              authorisation is a 403 and nothing else -- and before this
+              existed it was a 500, which made a working guard look like
+              a broken server. }
+            Status_ := EHttpError(E).HttpStatus;
+            Detail_ := EHttpError(E).PublicDetail;
+          end;
+          Res := ErrorResponse(Status_, Detail_);
+          { Only a fault costs the connection. A 403 is an ordinary
+            answer and the client may well ask something else next. }
+          Close_ := Close_ or (Status_ >= 500);
+          if Status_ >= 500 then
+            { An exception from user code is always logged, whatever
+              LogRequests says. It is not a request line, it is an error —
+              and a 500 that leaves no trace is a 500 nobody can debug. }
+            LogException(E, 'unhandled exception in handler',
+              ['method', Askr.Http.Types.MethodName(Req.Method),
+               'path', Req.Path.ToString])
+          else
+            { Below 500 it is not a fault, so it is not logged as one.
+              The message is kept, because "why did this 403" is the
+              question that gets asked. }
+            LogInfo('request refused',
+              ['status', Int64(Status_),
+               'method', Askr.Http.Types.MethodName(Req.Method),
+               'path', Req.Path.ToString,
+               'reason', E.Message]);
         end;
       end;
 
