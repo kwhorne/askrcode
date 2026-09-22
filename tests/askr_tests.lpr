@@ -1283,6 +1283,7 @@ var
   Req: TRequest;
   R: TResponse;
   Body, Raw: string;
+  Lines: TStringList;
 begin
   Group('Inertia');
   A := TArena.Create(32 * 1024);
@@ -1290,6 +1291,76 @@ begin
   PrevR := UseRequest(nil);
   try
     TInertia.SetVersion('abc123');
+
+    { ---- this page's head ----
+
+      Two escapings, and which applies depends on where the value lands.
+      An attribute takes HTML escaping; the JSON-LD lands inside a script
+      element, where the browser decodes no entities -- so HTML escaping
+      there would put `&quot;` into the JSON as six characters and break
+      it, while an unescaped `</script>` would close the element. }
+    ForceDirectories('.build' + PathDelim + 'cfg-head');
+    Lines := TStringList.Create;
+    try
+      Lines.Add('APP_ENV=local');
+      Lines.Add('APP_URL=https://example.com');
+      Lines.SaveToFile('.build' + PathDelim + 'cfg-head' + PathDelim + '.env');
+    finally
+      Lines.Free;
+    end;
+    ClearConfig;
+    LoadConfig('.build' + PathDelim + 'cfg-head');
+
+    Req := MakeRequest(A, 'GET /docs/queries HTTP/1.1'#13#10'Host: test');
+    UseRequest(Req);
+    TInertia.PageTitle('Queries — "typed" <b>');
+    TInertia.PageDescription('A description with " and <b> and </script> in it');
+    TInertia.PageCanonical('/docs/queries');
+    TInertia.PageOg('title', 'Queries');
+    TInertia.PageJsonLd('{"@type":"Article","name":"a </script> b"}');
+    R := Inertia('Docs/Show', ['slug', 'queries']);
+    Raw := R.Body.ToString;
+
+    Check(Pos('<title>Queries &amp; ', Raw) = 0, 'sanity: not a stray match');
+    Check(Pos('&quot;typed&quot;', Raw) > 0,
+      'the page title overrides the site default, escaped');
+    Check(Pos('&lt;b&gt;', Raw) > 0, 'and its angle brackets are gone');
+    Check(Pos('<meta name="description"', Raw) > 0, 'a description is written');
+    Check(Pos('name="description" content="A description with &quot;', Raw) > 0,
+      'with the quote escaped, or the attribute would end there');
+    Check(Pos('<link rel="canonical" href="https://example.com/docs/queries">',
+      Raw) > 0, 'the canonical is absolute, from app.url');
+    Check(Pos('<meta property="og:title" content="Queries">', Raw) > 0,
+      'and Open Graph gets its prefix');
+
+    { The one that decides whether a page can be hijacked from its own
+      metadata: no raw </script> anywhere outside the payload. }
+    Check(Pos('</script><img', Raw) = 0, 'nothing closed the script element');
+    { One backslash, not two: Pascal does not interpret escapes in a
+      string literal, so '\\' would be two characters. The same trap as
+      the emitted /\\//g that once left a regex unclosed. The '/' is
+      escaped as well, so the whole thing reads \u003c\/script. }
+    Check(Pos('\u003c\/script', Raw) > 0,
+      'the JSON-LD escaped its closing tag as JSON, not as HTML');
+    Check(Pos('&quot;@type&quot;', Raw) = 0,
+      'and was not HTML-escaped, which would have broken the JSON');
+
+    { Per thread and per response: the next page does not inherit this
+      one's head. A worker serves one request after another. }
+    A.Reset;
+    Req := MakeRequest(A, 'GET /other HTTP/1.1'#13#10'Host: test');
+    UseRequest(Req);
+    R := Inertia('Other', []);
+    Raw := R.Body.ToString;
+    Check(Pos('description', Raw) = 0, 'the next page inherits no description');
+    Check(Pos('canonical', Raw) = 0, 'nor a canonical');
+    Check(Pos('og:', Raw) = 0, 'nor Open Graph');
+    Check(Pos('ld+json', Raw) = 0, 'nor the JSON-LD');
+    Check(Pos('<title>Askr</title>', Raw) > 0,
+      'and the title is the site default again');
+
+    ClearConfig;
+    A.Reset;
 
     { Without X-Inertia: hele HTML-skallet. }
     Req := MakeRequest(A, 'GET /customers?page=2 HTTP/1.1'#13#10'Host: test');

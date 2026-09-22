@@ -48,7 +48,7 @@ interface
 uses
   SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response,
-  Askr.Urd.Model, Askr.Urd.Json, Askr.Session;
+  Askr.Urd.Model, Askr.Urd.Json, Askr.Session, Askr.Core.Url;
 
 type
   EInertiaError = class(Exception);
@@ -94,6 +94,41 @@ type
        loads. *)
     class procedure SetHead(const AHtml: string); static;
     class function Head: string; static;
+
+    (* ---- this page, rather than this site ----
+
+       SetTitle above is the site's default, set once at startup: it is a
+       plain global, which is right for a value that never changes and
+       wrong for one that does. These are per thread, like the flash, and
+       for the same reason — a global here would let one worker put its
+       description on another's page.
+
+       They apply to **the response being built now**, and are cleared
+       when it is. A handler that sets them and then returns something
+       other than an Inertia response leaves them for the next Inertia
+       render on that worker; set them next to the render, not far from
+       it. *)
+
+    { This page's <title>, overriding the site default. }
+    class procedure PageTitle(const AValue: string); static;
+    { <meta name="description">. Search engines use it for the snippet;
+      it is not a ranking signal and a missing one is better than a
+      duplicated one. }
+    class procedure PageDescription(const AValue: string); static;
+    { <link rel="canonical">. A path is made absolute against app.url; a
+      value that is already absolute is taken as it is. Never built from
+      the request — see Askr.Core.Url. }
+    class procedure PageCanonical(const APathOrUrl: string); static;
+    { An Open Graph property. The name is given without the prefix:
+      PageOg('title', ...) becomes <meta property="og:title">. }
+    class procedure PageOg(const AProperty, AValue: string); static;
+    { JSON-LD, as a complete JSON object. It goes inside a script
+      element, so JSON escaping applies and not HTML escaping — the
+      distinction that made `/` in an Inertia payload a bug once. }
+    class procedure PageJsonLd(const AJson: string); static;
+    { Forgets everything set for this page. Called for you when an
+      Inertia response is built. }
+    class procedure ClearPageHead; static;
   end;
 
 { Builds the response. Props are pairs of name and value:
@@ -184,6 +219,15 @@ const
 threadvar
   GFlashKeys: array of string;
   GFlashValues: array of string;
+  { The head of the page being built right now. Per thread for the same
+    reason the flash is: the workers each serve their own request, and a
+    global would let one put its description on another's page. }
+  GPageTitle: string;
+  GPageDescription: string;
+  GPageCanonical: string;
+  GPageOgKeys: array of string;
+  GPageOgValues: array of string;
+  GPageJsonLd: string;
 
 var
   GVersion: string = '1';
@@ -231,6 +275,47 @@ end;
 class procedure TInertia.SetHead(const AHtml: string);
 begin
   GHead := AHtml;
+end;
+
+class procedure TInertia.PageTitle(const AValue: string);
+begin
+  GPageTitle := AValue;
+end;
+
+class procedure TInertia.PageDescription(const AValue: string);
+begin
+  GPageDescription := AValue;
+end;
+
+class procedure TInertia.PageCanonical(const APathOrUrl: string);
+begin
+  GPageCanonical := APathOrUrl;
+end;
+
+class procedure TInertia.PageOg(const AProperty, AValue: string);
+var
+  N: Integer;
+begin
+  N := Length(GPageOgKeys);
+  SetLength(GPageOgKeys, N + 1);
+  SetLength(GPageOgValues, N + 1);
+  GPageOgKeys[N] := AProperty;
+  GPageOgValues[N] := AValue;
+end;
+
+class procedure TInertia.PageJsonLd(const AJson: string);
+begin
+  GPageJsonLd := AJson;
+end;
+
+class procedure TInertia.ClearPageHead;
+begin
+  GPageTitle := '';
+  GPageDescription := '';
+  GPageCanonical := '';
+  SetLength(GPageOgKeys, 0);
+  SetLength(GPageOgValues, 0);
+  GPageJsonLd := '';
 end;
 
 class function TInertia.Head: string;
@@ -512,19 +597,80 @@ begin
   Result := GTitle;
 end;
 
+{ The head tags for this page: description, canonical, Open Graph,
+  JSON-LD.
+
+  Two escapings, and which one applies depends on where the value lands.
+  An attribute value takes HTML escaping. The JSON-LD lands inside a
+  script element, where HTML escaping is the wrong tool entirely -- the
+  browser does not decode entities there, so `&quot;` would arrive as six
+  characters inside the JSON and break it, while a `</script>` in a string
+  would close the element. That is the same distinction that made the
+  Inertia payload's `/` a bug once. }
+function PageHeadHtml(A: TArena): string;
+var
+  I: Integer;
+  Canon: string;
+
+  function Attr(const S: string): string;
+  begin
+    Result := HtmlAttrEscape(A, Askr.Core.Text.Str(S)).ToString;
+  end;
+
+begin
+  Result := '';
+
+  if GPageDescription <> '' then
+    Result := Result + '  <meta name="description" content="' +
+      Attr(GPageDescription) + '">' + #10;
+
+  if GPageCanonical <> '' then
+  begin
+    { A path is made absolute; something already absolute is taken as it
+      is. Either way it does not come from the request. }
+    if (Pos('http://', GPageCanonical) = 1) or
+       (Pos('https://', GPageCanonical) = 1) then
+      Canon := GPageCanonical
+    else
+      Canon := AbsoluteUrl(GPageCanonical);
+    { Empty when app.url is not set. A canonical pointing at the wrong
+      place is worse than none, so it is left out rather than guessed. }
+    if Canon <> '' then
+      Result := Result + '  <link rel="canonical" href="' + Attr(Canon) +
+        '">' + #10;
+  end;
+
+  for I := 0 to High(GPageOgKeys) do
+    Result := Result + '  <meta property="og:' + Attr(GPageOgKeys[I]) +
+      '" content="' + Attr(GPageOgValues[I]) + '">' + #10;
+
+  if GPageJsonLd <> '' then
+    Result := Result + '  <script type="application/ld+json">' +
+      JsonScriptEscape(A, Askr.Core.Text.Str(GPageJsonLd)).ToString +
+      '</script>' + #10;
+end;
+
 function RenderShell(A: TArena; const Payload: TStr): TStr;
 var
   Tpl: string;
+  Title_: string;
   Escaped: TStr;
   B: TStrBuilder;
   P: Integer;
 begin
   Tpl := StringReplace(TInertia.RootTemplate, '{{root}}', TInertia.RootId,
     [rfReplaceAll]);
-  Tpl := StringReplace(Tpl, '{{head}}', TInertia.Head, [rfReplaceAll]);
-  { Tittelen er brukerkontrollert og havner i et HTML-element. }
+  Tpl := StringReplace(Tpl, '{{head}}',
+    TInertia.Head + #10 + PageHeadHtml(A), [rfReplaceAll]);
+  { The title is user-controlled and lands in an HTML element. This page's
+    own when it set one, the site default otherwise -- a page with no
+    title is the same accessibility failure as an empty one. }
+  if GPageTitle <> '' then
+    Title_ := GPageTitle
+  else
+    Title_ := TInertia.Title;
   Tpl := StringReplace(Tpl, '{{title}}',
-    HtmlAttrEscape(A, Askr.Core.Text.Str(TInertia.Title)).ToString,
+    HtmlAttrEscape(A, Askr.Core.Text.Str(Title_)).ToString,
     [rfReplaceAll]);
   { Inside a script element it is JSON escaping that applies, not HTML
     escaping. See JsonScriptEscape. }
@@ -557,27 +703,36 @@ begin
 
   { The version check before anything is built. The client is to reload,
     not to get a payload it cannot use. }
-  if (Req <> nil) and IsInertiaRequest(Req) and (Req.Method = hmGet) and
-     Req.HasHeader('x-inertia-version') and
-     not Req.Header('x-inertia-version').EqualsStr(TInertia.Version) then
-    Exit(InertiaLocation(Req.Target.ToString));
+  { Whatever happens, this page's head does not become the next page's.
+    The values are per thread and a worker serves one request after
+    another, so anything left behind is inherited by whoever comes next on
+    this thread -- the same shape as the session threadvar that had to be
+    cleared first rather than last in Commit. }
+  try
+    if (Req <> nil) and IsInertiaRequest(Req) and (Req.Method = hmGet) and
+       Req.HasHeader('x-inertia-version') and
+       not Req.Header('x-inertia-version').EqualsStr(TInertia.Version) then
+      Exit(InertiaLocation(Req.Target.ToString));
 
-  Payload := BuildPayload(A, Req, Component, Props, Deferred);
+    Payload := BuildPayload(A, Req, Component, Props, Deferred);
 
-  if IsInertiaRequest(Req) then
-  begin
+    if IsInertiaRequest(Req) then
+    begin
+      Result := Respond(200)
+        .WithContentType('application/json')
+        .WithHeader('X-Inertia', 'true')
+        .WithHeader('Vary', 'X-Inertia')
+        .WithBody(Payload);
+      Exit;
+    end;
+
     Result := Respond(200)
-      .WithContentType('application/json')
-      .WithHeader('X-Inertia', 'true')
+      .WithContentType('text/html; charset=utf-8')
       .WithHeader('Vary', 'X-Inertia')
-      .WithBody(Payload);
-    Exit;
+      .WithBody(RenderShell(A, Payload));
+  finally
+    TInertia.ClearPageHead;
   end;
-
-  Result := Respond(200)
-    .WithContentType('text/html; charset=utf-8')
-    .WithHeader('Vary', 'X-Inertia')
-    .WithBody(RenderShell(A, Payload));
 end;
 
 function InertiaRedirect(const Url: string): TResponse;

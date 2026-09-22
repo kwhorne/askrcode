@@ -97,6 +97,46 @@ end;
 
 Written into every response's props.
 
+## The head of this page
+
+```pascal
+TInertia.PageTitle('Queries');
+TInertia.PageDescription('The typed query builder, eager loading, paging');
+TInertia.PageCanonical('/docs/queries');
+TInertia.PageOg('title', 'Queries');
+TInertia.PageJsonLd(LdJson);
+Result := Inertia('Docs/Show', ['page', P]);
+```
+
+`TInertia.SetTitle` is the **site's** default, set once at startup — a
+plain global, which is right for a value that never changes. The `Page*`
+calls are **this page's**, and they are per thread for the same reason the
+flash is: a global would let one worker put its description on another's
+page.
+
+They apply to the response being built now and are cleared when it is
+built. A handler that sets them and then returns something other than an
+Inertia response leaves them for the next Inertia render on that worker,
+so set them next to the render rather than far from it.
+
+`PageCanonical` takes a path and makes it absolute against `app.url`;
+something already absolute is used as it is. It is never built from the
+request — see [`app.url`](configuration.md#appurl-and-why-it-is-not-the-request).
+Without `app.url` the link is left out rather than guessed: a canonical
+pointing at the wrong place is worse than none.
+
+### Two escapings, and where each applies
+
+An attribute value takes HTML escaping. A `"` in a description that is not
+escaped ends the attribute, and the rest of it becomes markup.
+
+The JSON-LD lands **inside a script element**, where HTML escaping is the
+wrong tool entirely: the browser decodes no entities there, so `&quot;`
+would arrive as six characters inside the JSON and break it — while an
+unescaped `</script>` would close the element and hand the rest of the
+page to whoever wrote the description. Askr applies JSON escaping there,
+the same distinction that made `/` in the Inertia payload a bug once.
+
 ## The root template
 
 ```pascal

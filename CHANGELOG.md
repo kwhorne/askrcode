@@ -34,6 +34,24 @@ with the zero-major caveat that minor releases may break things until
   in case is a second URL to a crawler. A path is refused with a reason
   rather than dropped or kept.
 
+- **The head of a page: `TInertia.PageTitle`, `PageDescription`,
+  `PageCanonical`, `PageOg` and `PageJsonLd`.** `SetTitle` stays the site's
+  default; these are this page's, and they are **per thread** for the same
+  reason the flash is — a global would let one worker put its description
+  on another's page. They are cleared when the response is built, and
+  mutation-checked against inheriting.
+
+  **Two escapings, and which applies depends on where the value lands.** An
+  attribute takes HTML escaping; the JSON-LD lands inside a script element,
+  where the browser decodes no entities — `&quot;` would arrive as six
+  characters and break the JSON, while an unescaped `</script>` would close
+  the element. Both directions are mutation-checked, including HTML-escaping
+  the JSON-LD, which is the mistake that looks safest.
+
+  `PageCanonical` makes a path absolute against `app.url` and leaves the
+  link out when there is none: a canonical pointing at the wrong place is
+  worse than no canonical.
+
 - **`Askr.Http.Sitemap` — `UseSitemap(R, Source)`.** The application
   declares which paths exist; the framework writes the XML, makes the URLs
   absolute against `app.url`, formats `lastmod` as W3C datetime, and
