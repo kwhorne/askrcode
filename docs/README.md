@@ -94,19 +94,26 @@ queue uses the database you already have. See [Deployment](deployment.md).
 
 ## What is not here
 
-Askr is honest about what has not been done. Three things are **written
-but never run in earnest**, and they are marked as such everywhere they
+Askr is honest about what has not been done. Two things are **written but
+never run in earnest**, and they are marked as such everywhere they
 appear:
 
 - **The Windows WebView2 shell.** Compiled and type-checked against FPC's
   own `rtl/win` declarations; never started on a Windows machine.
-- **The AI layer with a real API key.** The wire path is proven — a real
-  call to `api.anthropic.com` returns a 401 with Anthropic's own error JSON,
-  correctly parsed — but no call with a valid key has been made from this
-  repository.
-- **The Resend transport with a real API key.** Same evidence and the same
-  gap: `api.resend.com` returns a 401 that parses into `EResendError`, and
-  no mail has been sent from here with a valid key.
+- **The Resend transport with a real API key.** The wire path is proven —
+  `api.resend.com` returns a 401 that parses into `EResendError` — but no
+  mail has been sent from here with a valid key.
+
+**The AI layer was on that list until it was run with a real key**, and
+all four things it offers work: text, streaming, tool calls and structured
+output. That run is `examples/ai/aiprobe.lpr`.
+
+It is worth saying what the run cost, because it is the argument for
+keeping such a list at all. It found a bug the suite could not: the tool
+loop sent the assistant turn back without the `tool_use` blocks it had
+asked with, which the API refuses. The suite had been green throughout,
+because it checked the shape the author believed in rather than the one
+the API requires.
 
 Things that deliberately do **not** exist here, with the reasons, are
 listed on each relevant page. Every page has that section, and it is the

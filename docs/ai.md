@@ -16,22 +16,35 @@ finally
 end;
 ```
 
-## Before you rely on this
+## What has actually been run
 
-**No call with a valid key has been made from this repository.** There is no
-API key here.
+All four of these have been exercised against `api.anthropic.com` with a
+real key — text, streaming, tool calls and structured output, and adaptive
+thinking besides. The run is `examples/ai/aiprobe.lpr`, and it is an
+example rather than a test: a suite that only runs for people holding a
+credential is a suite most people cannot run.
 
-What *has* been proven against `api.anthropic.com` is a real call without a
-key, which comes back as a genuine **401 with Anthropic's own error JSON**,
-correctly parsed into `EAiError` with status and type. That proves DNS, TLS,
-the request shape and the error handling — not that a response with content
-comes back.
+**What that run found is the reason it was worth doing.** The tool loop
+sent the assistant's turn back without the `tool_use` blocks it had asked
+with, and the API refuses the results that follow:
 
-Everything else is tested against `TFakeAiTransport`, which holds the JSON
-that gets sent up against what it should be.
+> each `tool_result` block must have a corresponding `tool_use` block in
+> the previous message
 
-This is the same caveat that stands on the Windows shell, and it stays until
-someone has run it.
+The suite had been green the whole time. It is built on
+`TFakeAiTransport`, which holds the JSON that gets sent up against what it
+should be — and "what it should be" was the author's belief, not the API's
+requirement. **That is the limit of any fake**, and it is worth knowing
+before you trust one of your own.
+
+A second half of the same bug: every tool result was in its own message,
+so only the first sat after the assistant turn it answered. A round with a
+single tool call could not show it. The suite now has one with two
+parallel calls.
+
+**Adaptive thinking is not on every model.** Haiku 4.5 answers `400` with
+`adaptive thinking is not supported on this model`, which is the error
+path working. Use a model that has it, or leave thinking off.
 
 ## The model
 
