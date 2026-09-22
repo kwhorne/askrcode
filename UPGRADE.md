@@ -8,6 +8,15 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.11.2
+
+Nothing can break. Documentation, and one example.
+
+The Resend transport has been run against the real API with a real key,
+so the caveat that said otherwise is gone from every page that carried it.
+`examples/mail/resendprobe.lpr` is that run. Only the Windows shell is
+still on the never-run list.
+
 ## 0.11.1
 
 **Worth reading if you use the AI layer's tool loop.** It was sending the
