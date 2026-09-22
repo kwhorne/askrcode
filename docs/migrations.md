@@ -150,6 +150,19 @@ Migrations run **in a transaction where the dialect allows it**. MySQL
 commits implicitly on DDL, so the migrator says so rather than pretending
 otherwise.
 
+**Two migrations with one version are refused before anything runs.** The
+version is what a migration is recorded under, and that key is unique. A
+second migration with the same one used to have its DDL run and then fail
+at the record — the table made, nothing to say so, and on MySQL nothing to
+roll back. The migrator now names both and stops while nothing has
+happened.
+
+`askr make` does not produce one any more. A version used to be the time
+to the second, and two `make` commands in the same second got the same
+one. It is now the time or one past the highest version already in
+`database/`, whichever is later: an ordering key, which is all it was ever
+used as.
+
 ## Status
 
 ```sh

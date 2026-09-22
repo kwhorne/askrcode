@@ -123,6 +123,41 @@ begin
   Result := GMigrations;
 end;
 
+{ Two migrations with one version, refused before anything runs.
+
+  The version is the key the migrator records a migration under, and the
+  table holding it has that key unique. So a second migration with the
+  same version had its DDL run and was then refused at the insert -- the
+  table made, the record not written, and on MySQL, which commits DDL at
+  once, nothing to roll back. The next migrate then tried to make the
+  table again.
+
+  It was found by two `askr make model` calls in the same second, which
+  stamped the same time on both. That is fixed where the stamp is chosen.
+  This is the other end, and it covers a migration written by hand as
+  well: the problem is stated with both names, while nothing has
+  happened yet. }
+procedure CheckRegistry;
+var
+  Regs: TList;
+  I: Integer;
+  A_, B_: TMigrationClass;
+begin
+  Regs := RegisteredMigrations;
+  for I := 1 to Regs.Count - 1 do
+  begin
+    A_ := TMigrationClass(Regs[I - 1]);
+    B_ := TMigrationClass(Regs[I]);
+    if A_.Version = B_.Version then
+      raise ENornError.CreateFmt(
+        'Two migrations have the version %s: %s and %s. The version is ' +
+        'what a migration is recorded under, so one of them would run and ' +
+        'then fail to be recorded. Change the Version of one of them, and ' +
+        'nothing has been run yet.',
+        [A_.Version, A_.ClassName, B_.ClassName]);
+  end;
+end;
+
 { TMigration }
 
 class function TMigration.Title: string;
@@ -383,6 +418,7 @@ var
   M: TMigrationClass;
 begin
   Result := 0;
+  CheckRegistry;
   EnsureTable;
   Applied := AppliedVersions;
   try
@@ -392,7 +428,7 @@ begin
       M := TMigrationClass(Regs[I]);
       if Applied.IndexOf(M.Version) >= 0 then
         Continue;
-      Say('  opp   ' + M.Version + '  ' + M.Title);
+      Say('  up     ' + M.Version + '  ' + M.Title);
       RunOne(M, True);
       Inc(Result);
       if (Steps > 0) and (Result >= Steps) then
@@ -413,6 +449,7 @@ var
   M: TMigrationClass;
 begin
   Result := 0;
+  CheckRegistry;
   EnsureTable;
   if Steps < 1 then
     Steps := 1;
@@ -432,7 +469,7 @@ begin
         raise ENornError.CreateFmt(
           'Migration %s has been applied, but its class no longer exists. ' +
           'It cannot be rolled back.', [Applied[I]]);
-      Say('  ned   ' + M.Version + '  ' + M.Title);
+      Say('  down   ' + M.Version + '  ' + M.Title);
       RunOne(M, False);
       Inc(Result);
       if Result >= Steps then

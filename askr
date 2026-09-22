@@ -786,6 +786,245 @@ cmd_api_check() {
   echo "api:check holds: the document is OpenAPI, and the API answers as it says."
 }
 
+# The gate for the generators: what `askr make` writes has to build, migrate
+# on all three databases, and put a row in and get the same row out -- through
+# the model it wrote, not through SQL.
+#
+# Everything runs in the container, where fpc, libpq and MariaDB Connector/C
+# all are, on the compose network so Postgres and MySQL answer by name. The
+# CLI is built into a directory of its own so the host's .build/bin/askr is
+# not replaced by a Linux one.
+#
+# Written in English like cmd_mcp_check and cmd_api_check.
+cmd_make_check() {
+  prepare
+  fail=0
+  ok()  { echo "  ok    $1"; }
+  bad() { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+
+  if ! docker ps --format '{{.Names}}' | grep -qx askr-postgres ||
+     ! docker ps --format '{{.Names}}' | grep -qx askr-mysql; then
+    echo "make:check needs Postgres and MySQL. Run: ./askr db:up" >&2
+    return 1
+  fi
+  ensure_image
+
+  mk_bin="$BUILD/makecheck-bin"
+  mk_units="$BUILD/makecheck-units"
+  work="$BUILD/makecheck"
+  mkdir -p "$mk_bin" "$mk_units" "$work"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$mk_units|; s|-FE$BIN|-FE$mk_bin|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+
+  in_box() {
+    docker run --rm --network "$DB_NET" $DOCKER_PLATFORM -v "$ROOT":/work \
+      -e ASKR_HOME=/work -w "/work/${work#$ROOT/}${2:+/$2}" "$IMAGE" sh -c "$1"
+  }
+  askr_bin="/work/${mk_bin#$ROOT/}/askr"
+
+  echo "Building the askr tool for the container ..."
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags cli/askr.lpr >"$work/cli.log" 2>&1; then
+    bad "the tool builds" "$(grep -iE 'error|fatal' "$work/cli.log" | head -3)"
+    return 1
+  fi
+
+  echo
+  echo "- askr make model, from a spec"
+
+  # The removal happens in the same container as the scaffold -- Docker
+  # Desktop's mount cache does not always see a host-side delete in time.
+  out=$(in_box "rm -rf shop && $askr_bin new shop --no-auth" 2>&1) || true
+  if [ ! -f "$work/shop/askr.toml" ]; then
+    bad "a project is scaffolded" "$(echo "$out" | tail -3)"
+    return 1
+  fi
+  sed -i.bak 's|^version = .*|path = "/work"|; s|^path = .*|path = "/work"|' "$work/shop/askr.toml"
+  rm -f "$work/shop/askr.toml.bak"
+  ok "a project is scaffolded"
+
+  if in_box "$askr_bin make model Maker 'name:string(80)'" shop >"$work/m1.log" 2>&1; then
+    ok "a parent model"
+  else
+    bad "a parent model" "$(tail -3 "$work/m1.log")"
+  fi
+
+  # Quoted one by one: a bracket and a question mark both mean something to
+  # a shell, and the spec has to arrive as it was written.
+  spec="'name:string(60)' 'notes:text?' qty:int big:bigint active:bool price:money ratio:float 'seen_at:datetime?' born:date 'meta:json?' 'tag:uuid?' maker:references"
+  if in_box "$askr_bin make model Gadget $spec" shop >"$work/m2.log" 2>&1; then
+    ok "a model with every type there is"
+  else
+    bad "a model with every type there is" "$(tail -5 "$work/m2.log")"
+  fi
+  if grep -q "askr migrate" "$work/m2.log"; then
+    ok "and it says what to run next, rather than migrating by itself"
+  else
+    bad "and it says what to run next" "$(cat "$work/m2.log")"
+  fi
+
+  # **Never over a file that is there.** The first `make` wrote it; the
+  # second must not touch it, byte for byte, and must say so.
+  before=$(cat "$work/shop/app/Models/App.Models.Gadget.pas" | cksum)
+  if in_box "$askr_bin make model Gadget name:text" shop >"$work/m3.log" 2>&1; then
+    bad "making it again is refused" "it exited 0"
+  else
+    ok "making it again is refused"
+  fi
+  after=$(cat "$work/shop/app/Models/App.Models.Gadget.pas" | cksum)
+  if [ "$before" = "$after" ]; then
+    ok "and the file is left exactly as it was"
+  else
+    bad "and the file is left exactly as it was"
+  fi
+  if grep -q "already there" "$work/m3.log"; then
+    ok "and it says which file"
+  else
+    bad "and it says which file" "$(cat "$work/m3.log")"
+  fi
+
+  # A typo is not a type.
+  if in_box "$askr_bin make model Thing name:strng" shop >"$work/m4.log" 2>&1; then
+    bad "an unknown type is refused" "it exited 0"
+  else
+    ok "an unknown type is refused"
+  fi
+  if [ -f "$work/shop/app/Models/App.Models.Thing.pas" ]; then
+    bad "and nothing was written"
+  else
+    ok "and nothing was written"
+  fi
+
+  cp "$ROOT/tools/make-check/roundtrip.lpr" "$work/shop/tests/app_tests.lpr" 2>/dev/null ||
+    { mkdir -p "$work/shop/tests" && cp "$ROOT/tools/make-check/roundtrip.lpr" "$work/shop/tests/app_tests.lpr"; }
+
+  # One database each, made fresh, so this never touches askr_dev.
+  docker exec askr-postgres psql -q -U askr -d askr_dev \
+    -c "DROP DATABASE IF EXISTS askr_make" -c "CREATE DATABASE askr_make" >/dev/null
+  docker exec askr-mysql mysql -uroot -paskr -e \
+    "DROP DATABASE IF EXISTS askr_make; CREATE DATABASE askr_make CHARACTER SET utf8mb4; GRANT ALL ON askr_make.* TO 'askr'@'%';" \
+    2>/dev/null
+
+  # Once: the migrations are compiled into the binary, so it has to be
+  # built after make model and before anything runs them.
+  echo
+  if in_box "$askr_bin build" shop >"$work/build.log" 2>&1; then
+    ok "the project builds with what make model wrote"
+  else
+    bad "the project builds with what make model wrote" \
+      "$(grep -E 'rror|Fatal' "$work/build.log" | head -6)"
+    return 1
+  fi
+
+  for dsn in \
+      "sqlite:storage/make.sqlite" \
+      "postgresql://askr:askr@askr-postgres:5432/askr_make" \
+      "mysql://askr:askr@askr-mysql:3306/askr_make"; do
+    dialect=${dsn%%:*}
+    echo
+    echo "- the round trip on $dialect"
+    printf 'APP_ENV=local\nDATABASE_URL=%s\n' "$dsn" > "$work/shop/.env"
+    in_box "rm -f storage/make.sqlite" shop >/dev/null 2>&1 || true
+
+    if in_box "$askr_bin migrate" shop >"$work/migrate-$dialect.log" 2>&1; then
+      ok "the migrations run"
+    else
+      bad "the migrations run" "$(tail -5 "$work/migrate-$dialect.log")"
+      continue
+    fi
+    if in_box "$askr_bin test" shop >"$work/test-$dialect.log" 2>&1; then
+      ok "every column comes back as it went in"
+    else
+      bad "every column comes back as it went in" \
+        "$(grep -E 'FAIL|got:|rror' "$work/test-$dialect.log" | head -12)"
+    fi
+  done
+
+  echo
+  echo "- two migrations with one version"
+
+  # Written by hand, with the version of one that is there. make model can
+  # no longer produce this, but a person can -- and before the migrator
+  # checked, it ran the second one's DDL and then failed to record it.
+  ver=$(sed -n "s/.*Result := '\([0-9]\{14\}\)'.*/\1/p" \
+    "$work/shop/database/App.Migrations.CreateMakers.pas" | head -1)
+  cat > "$work/shop/database/App.Migrations.Twin.pas" <<EOF
+unit App.Migrations.Twin;
+
+{\$mode Delphi}{\$H+}
+
+interface
+
+uses
+  Askr.Norn.Schema, Askr.Norn.Migration;
+
+type
+  TTwin = class(TMigration)
+  public
+    class function Version: string; override;
+    procedure Up(S: TSchemaBuilder); override;
+  end;
+
+implementation
+
+class function TTwin.Version: string;
+begin
+  Result := '$ver';
+end;
+
+procedure TTwin.Up(S: TSchemaBuilder);
+begin
+  with S.Create('twins') do
+    Id;
+end;
+
+initialization
+  RegisterMigration(TTwin);
+
+end.
+EOF
+  # make migration regenerates the index from the directory, which is what
+  # puts the hand-written one in it -- the way a person would.
+  in_box "$askr_bin make migration Noop" shop >/dev/null 2>&1 || true
+  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/twin.sqlite\n' > "$work/shop/.env"
+  in_box "rm -f storage/twin.sqlite" shop >/dev/null 2>&1 || true
+  if ! in_box "$askr_bin build" shop >"$work/twin-build.log" 2>&1; then
+    bad "the project with the twin builds" "$(grep -E 'rror|Fatal' "$work/twin-build.log" | head -4)"
+  elif in_box "$askr_bin migrate" shop >"$work/twin.log" 2>&1; then
+    bad "askr migrate refuses two migrations with one version" "it exited 0"
+  else
+    ok "askr migrate refuses two migrations with one version"
+    if grep -q TTwin "$work/twin.log" && grep -q TCreateMakers "$work/twin.log"; then
+      ok "and names both of them"
+    else
+      bad "and names both of them" "$(grep -v '^  \$' "$work/twin.log" | head -4)"
+    fi
+    # As a sentence, not as a crash. An exception nobody caught prints
+    # "An unhandled exception occurred at $..." and a column of addresses,
+    # which reads as the tool breaking rather than as something to fix.
+    if grep -q 'unhandled exception\|^  \$0000' "$work/twin.log"; then
+      bad "and says it as a message, not as a stack of addresses" \
+        "$(head -3 "$work/twin.log")"
+    else
+      ok "and says it as a message, not as a stack of addresses"
+    fi
+    tables=$(in_box "python3 -c \"import sqlite3; print(' '.join(r[0] for r in sqlite3.connect('storage/twin.sqlite').execute(\\\"select name from sqlite_master where type='table'\\\")))\"" shop 2>/dev/null)
+    case " $tables " in
+      *" makers "*|*" twins "*)
+        bad "and nothing was run before it said so" "tables: $tables" ;;
+      *)
+        ok "and nothing was run before it said so" ;;
+    esac
+  fi
+
+  echo
+  if [ $fail -ne 0 ]; then
+    echo "make:check failed."
+    return 1
+  fi
+  echo "make:check holds: what askr make writes builds, migrates and round-trips on all three."
+}
+
 cmd_seo_check() {
   prepare
 
@@ -1546,6 +1785,7 @@ case "${1:-}" in
   test:amd64) shift; ASKR_ARCH=amd64 exec "$0" test "$@" ;;
   mcp:check) shift; cmd_mcp_check "$@" ;;
   api:check) shift; cmd_api_check "$@" ;;
+  make:check) shift; cmd_make_check "$@" ;;
   seo:check) shift; cmd_seo_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
@@ -1572,6 +1812,11 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   validert av en ekte OpenAPI-validator, drift mot
                   rutetabellen begge veier, og tokens, scopes,
                   konvolutt, CORS og rate limit over socket
+  ./askr make:check
+                  generatorene mot et ekte prosjekt: askr make model med
+                  hver type, bygget, migrert og rundturet gjennom den
+                  genererte modellen på SQLite, Postgres og MySQL.
+                  Krever ./askr db:up
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,

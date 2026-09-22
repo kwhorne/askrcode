@@ -1223,6 +1223,8 @@ begin
        Askr.Console.Commands.ConsoleCommands[I].Help]));
 end;
 
+procedure Dispatch_(const K: string); forward;
+
 function RunConsole: Boolean;
 var
   K: string;
@@ -1238,6 +1240,31 @@ begin
   System.Delete(K, 1, 2);
   Result := True;
 
+  { A command that fails says why, and stops. The alternative was what
+    FPC does with an exception nobody caught: "An unhandled exception
+    occurred at $00000000004DF4AC" and a column of addresses, which reads
+    as the tool crashing and not as something the user can fix -- the
+    same complaint as the one about a missing fpc, one layer down. The
+    two migrations with one version were reported that way, with a
+    perfectly clear message buried between the addresses.
+
+    The class name stays in the line, because EDbError and ENornError
+    point different ways, and it costs nothing. The stack does not: a
+    command-line error is for the person who ran it, and they need the
+    sentence rather than the frames. }
+  try
+    Dispatch_(K);
+  except
+    on E: Exception do
+    begin
+      Err(E.ClassName + ': ' + E.Message);
+      Halt(1);
+    end;
+  end;
+end;
+
+procedure Dispatch_(const K: string);
+begin
   if K = 'about' then CmdAbout
   else if K = 'routes' then CmdRoutes
   else if K = 'migrate' then CmdMigrate(FlagValue('step', 0))

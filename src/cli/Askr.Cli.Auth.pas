@@ -1741,7 +1741,7 @@ end;
 
 procedure MakeAuth(const Root: string; Force: Boolean);
 var
-  Path_: string;
+  Path_, Base_: string;
 begin
   Path_ := IncludeTrailingPathDelimiter(Root) +
     'app/Http/App.Http.AuthController.pas';
@@ -1753,14 +1753,15 @@ begin
 
   WriteUser(Root);
   WriteCredential(Root);
-  WriteMigrations(Root, Stamp);
+  Base_ := NextVersion(Root);
+  WriteMigrations(Root, Base_);
   { A migration of its own, and TWO timestamps later: credentials points
     at users with a foreign key, so the table has to exist first — and
     WriteMigrations itself uses T and T+1. With +1, credentials got the
     same version as password_resets, and the migrator skipped it as
     already run. The table was then never created, and the security page
     answered 500. }
-  WritePasskeyMigration(Root, IntToStr(StrToInt64(Stamp) + 2));
+  WritePasskeyMigration(Root, IntToStr(StrToInt64(Base_) + 2));
   WriteControllers(Root);
   UpdateIndex(Root, 'database', 'App.Migrations', 'App.Migrations.');
 

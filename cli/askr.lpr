@@ -17,7 +17,7 @@ uses
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
   Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
-  Askr.Console.Commands,
+  Askr.Console.Commands, Askr.Cli.Fields,
   Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
@@ -734,6 +734,9 @@ end;
 procedure CmdMake(P: TProject);
 var
   Slag, Name_: string;
+  Specs: array of string;
+  Fields: TFieldSpecs;
+  I: Integer;
 begin
   Slag := LowerCase(ParamStr(2));
   Name_ := ParamStr(3);
@@ -744,11 +747,42 @@ begin
   begin
     Si('Usage: askr make model|controller|migration|seeder|job|' +
       'middleware <Name>');
+    Si('       askr make model <Name> name:type ...   with its migration');
+    Si('         types: ' + TypeNames + '; string(n) for a length,');
+    Si('         a trailing ? for nullable. --no-timestamps, --force');
     Si('       askr make auth [--force]');
     Halt(1);
   end;
   if Slag = 'model' then
-    MakeModel(P.Root, Name_, HasFlag('migration'))
+  begin
+    { name:type after the name means a spec, and then the migration comes
+      with it -- a spec without its table would be half of one. Without
+      one, the stub it has always written. }
+    Specs := nil;
+    for I := 4 to ParamCount do
+      if (Copy(ParamStr(I), 1, 2) <> '--') then
+      begin
+        SetLength(Specs, Length(Specs) + 1);
+        Specs[High(Specs)] := ParamStr(I);
+      end;
+    if Length(Specs) = 0 then
+      MakeModel(P.Root, Name_, HasFlag('migration'))
+    else
+    begin
+      try
+        Fields := ParseFields(Specs);
+      except
+        on E: EFieldSpec do
+        begin
+          Si(E.Message);
+          Halt(1);
+        end;
+      end;
+      if not MakeModelFromFields(P.Root, Name_, Fields,
+               not HasFlag('no-timestamps'), HasFlag('force')) then
+        Halt(1);
+    end;
+  end
   else if Slag = 'controller' then
     MakeController(P.Root, Name_)
   else if Slag = 'migration' then

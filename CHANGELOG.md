@@ -31,7 +31,57 @@ with the zero-major caveat that minor releases may break things until
   because the first real project it ran against came back "retyped"
   over a translated comment in the manifest.
 
+- **`askr make model <Name> name:type ...`**: the model and its migration
+  from one spec, so they start out agreeing. `string(n)`, `text`, `int`,
+  `bigint`, `bool`, `money`, `float`, `datetime`, `date`, `json`, `uuid`
+  and `thing:references`; a trailing `?` for nullable; timestamps on by
+  default in both files together. `Rules` gets what the spec states --
+  `Required` for NOT NULL text, dates and references, `MaxLen` for a
+  length -- and nothing inferred from a name.
+
+  It refuses a type that is not on the list, a Pascal keyword, and a
+  name the model would not map back to with Urd's own `SnakeCase` --
+  the `Label_` bug from the passkey scaffold, both halves. It does not
+  migrate; it prints the next step.
+
+  `./askr make:check` is the gate: a scaffolded project, a model with
+  every type, built, migrated and round-tripped through the generated
+  model on **SQLite, Postgres and MySQL**, 31 checks each, including
+  that the nullable ones are NULL in the database and not `''`.
+
+- **`TSchema.EmptyIsNull('Prop')`**: an empty string in that property is
+  written as NULL. Pascal has no null string, so a nullable text column
+  set from a model was never NULL -- and for `json` and `uuid`, `''` is
+  not a value at all: Postgres and MySQL refuse the save. Found by the
+  round trip on those two. `askr make model` asks for it on every column
+  marked `?`.
+
+### Changed
+
+- **`askr make` never writes over a file that is there.** It used to
+  overwrite without asking. Any file a command would write that already
+  exists stops the whole command, and is named; `--force` replaces it.
+  Half a set -- a model written and its migration refused -- is worse
+  than none, so every path is checked before any is written.
+
+- **A failing console command prints its message, not a stack.** An
+  exception nobody caught came out as "An unhandled exception occurred
+  at $00000000004DF4AC" and a column of addresses, which reads as the
+  tool breaking. It is one line now: the class and the message.
+
+- The migrator says `up` and `down`, not `opp` and `ned`.
+
 ### Fixed
+
+- **Two `askr make model` in the same second made two migrations with one
+  version.** The version was the time to the second. The migrator ran
+  the second one's DDL and then failed to record it -- the table made,
+  nothing to say so, and on MySQL nothing to roll back. A new version is
+  now one past the highest in `database/` when the clock has not moved
+  on. Found by `make:check`, which makes two models in a row.
+
+  **And the migrator refuses two migrations with one version before
+  running anything**, naming both. That covers one written by hand too.
 
 - **A dropped table left its typed columns behind**, and code using them
   went on compiling against a table that was gone. `askr schema` now

@@ -47,6 +47,7 @@ begin
 
   S.Timestamps;                      { created_at, updated_at }
   S.SoftDeletes;                     { deleted_at }
+  S.EmptyIsNull('Notes');            { '' is written as NULL }
 
   S.HasMany('Orders', TOrder, 'customer_id');
   S.BelongsTo('Customer', TCustomer, 'customer_id');
@@ -55,6 +56,23 @@ end;
 ```
 
 The metadata is built once per class and cached.
+
+### EmptyIsNull
+
+Pascal has no null string. A nullable text column set from a model was
+therefore never NULL: an empty field went in as `''`, and `WhereNull` found
+nothing. For a `json` or `uuid` column it is worse than wrong — `''` is not
+a value there at all, and Postgres and MySQL refuse the save.
+
+`S.EmptyIsNull('Notes')` writes an empty string as NULL. It has to be asked
+for rather than done for every string, because in a NOT NULL column `''` is
+a real value and NULL would make the save fail. `askr make model` asks for
+it on every column its spec marked with `?`. Naming a property that is not
+there, or one that is not a string, raises — a setting that silently did
+nothing would look like it worked.
+
+It is the same argument as a `TDateTime` of zero being written as NULL
+(see [Timestamps](#timestamps)), made for strings.
 
 > A `published` field must come **before** properties in the same section,
 > and a forward-declared class cannot be used as a type argument to

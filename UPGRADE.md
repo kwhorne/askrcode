@@ -8,6 +8,22 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## Unreleased
+
+**`askr make` no longer writes over a file that is there.** A script that
+ran `askr make model X` to refresh a stub now stops and names the file.
+Pass `--force` to get the old behaviour.
+
+**`askr schema` removes a generated file whose table is gone.** Only files
+carrying Norn's header, and it says which. If you kept one on purpose --
+you should not have, since it describes a table that is not there -- it is
+in git.
+
+**The migrator refuses two migrations with the same version**, before it
+runs anything. If you have two, `askr migrate` will say which and stop;
+change the `Version` of one of them. It used to run one of them and fail
+to record it.
+
 ## 0.12.0
 
 **Worth reading if anything but a browser calls your app.** The framework

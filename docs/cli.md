@@ -98,6 +98,7 @@ or set it for this project only, in askr.toml:
 | Command | Writes |
 |---|---|
 | `askr make model <Name> [--migration]` | `app/Models/App.Models.<Name>.pas` |
+| `askr make model <Name> name:type ...` | The model **and** its migration, from one spec |
 | `askr make controller <Name>` | `app/Http/App.Http.<Name>Controller.pas` |
 | `askr make migration <Name>` | `database/App.Migrations.<Name>.pas` |
 | `askr make seeder <Name>` | `database/App.Seeders.<Name>.pas` |
@@ -113,6 +114,65 @@ edit them.
 
 The index is read from the directory, not from a list. A file added by hand
 or deleted cannot become invisible.
+
+**`make` never writes over a file that is there.** A generated file is yours
+the moment it exists. If any file a command would write already exists,
+nothing is written and the file is named; `--force` replaces it.
+
+### A model from a spec
+
+```sh
+askr make model Gadget name:string(60) notes:text? qty:int price:money \
+                       born:date maker:references
+```
+
+The model and its migration come from the same spec, so they start out
+agreeing — which a model and a migration written by hand stop doing one
+column at a time.
+
+| Type | Column | Property |
+|---|---|---|
+| `string`, `string(n)` | `VARCHAR(n)`, 255 when no length is given | `string` |
+| `text` | `TEXT` | `string` |
+| `int`, `bigint` | `INTEGER`, `BIGINT` | `Int64` |
+| `bool` | the dialect's boolean | `Boolean` |
+| `money` | `NUMERIC(12,2)` | `Currency` |
+| `float` | the dialect's double | `Double` |
+| `datetime`, `date` | the dialect's timestamp and date | `TDateTime` |
+| `json`, `uuid` | the dialect's JSON and UUID where it has them | `string` |
+| `thing:references` | `thing_id BIGINT`, a foreign key to `things` | `Int64` |
+
+A trailing `?` makes a column nullable. Timestamps are on by default, in
+both files together — `--no-timestamps` leaves them out of both.
+
+`Rules` gets what the spec **states**: `Required` for a NOT NULL text,
+date or reference, and `MaxLen(n)` for a `string(n)`. Not for a NOT NULL
+number or boolean — zero and false are values, and Required would refuse
+the one nobody thinks of as missing. **Nothing is inferred from a name**:
+a column called `email` is not therefore an email.
+
+**Refused, with a message saying why:**
+
+- A type that is not on the list. `name:strng` would otherwise become a
+  column of some kind, and a typo should not decide which.
+- A name the model would not map back to. A model finds a property's
+  column with `SnakeCase` at run time, so the property written for a
+  column has to snake_case back to exactly that column. `abc_2x` would
+  become `Abc2x`, which maps to `abc2x`.
+- A Pascal keyword — `label`, `type`, `end`. The usual escape, a trailing
+  underscore, is what breaks the mapping: the model would read `label_`
+  while the migration made `label`. That happened in Askr once, by hand.
+- `id`, `created_at` or `updated_at`, which are there already; a column
+  given twice; and `thing_id:references`, which is written `thing:references`.
+
+It does not migrate. A `make` command that changes the database is a
+surprise, and in production it is the wrong one. It prints the next step:
+
+```
+Next:
+  askr migrate     makes the gadgets table
+  askr schema      types its columns from the database
+```
 
 ## Migrations
 

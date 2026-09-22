@@ -71,6 +71,8 @@ type
     Kind: TColumnKind;
     { False for a generated primary key: the database sets it. }
     Insertable: Boolean;
+    { An empty string goes in as NULL. Set with TSchema.EmptyIsNull. }
+    EmptyIsNull: Boolean;
   end;
 
   TRelationKind = (rkHasMany, rkBelongsTo, rkHasOne);
@@ -174,6 +176,24 @@ type
     procedure Column(const APropName, AColumnName: string);
     { The property is not mapped to any column. }
     procedure Ignore(const APropName: string);
+
+    { An empty string in this property is written as NULL.
+
+      Pascal has no null string, so a nullable text column set from a
+      model was never NULL: an empty field went in as '', and WhereNull
+      found nothing. It is the TDateTime problem again, for strings -- and
+      for a JSON or a UUID column it is worse than wrong, because '' is
+      not a value there at all. Postgres and MySQL both refuse it, and the
+      save fails. Found when `askr make model` round-tripped a nullable
+      json column on each database.
+
+      It has to be asked for, rather than done for every string: in a
+      column that is NOT NULL, '' is a legitimate value distinct from
+      absent, and turning it into NULL would make the save fail instead.
+      `askr make model` asks for it on every column its spec marked with
+      a `?`. The property has to be a mapped string, or this raises --
+      a setting that silently did nothing would look like it worked. }
+    procedure EmptyIsNull(const APropName: string);
 
     { The model sets created_at at INSERT and updated_at at both.
 
@@ -630,6 +650,24 @@ begin
   SetLength(FMeta.FColumns, Length(FMeta.FColumns) - 1);
 end;
 
+procedure TSchema.EmptyIsNull(const APropName: string);
+var
+  I: Integer;
+begin
+  I := FMeta.IndexOfProp(APropName);
+  if I < 0 then
+    raise EModelError.CreateFmt(
+      '%s: EmptyIsNull(''%s'') names no mapped property. Check the ' +
+      'spelling -- it is the property name, not the column.',
+      [FMeta.ModelClass.ClassName, APropName]);
+  if FMeta.FColumns[I].Kind <> ckString then
+    raise EModelError.CreateFmt(
+      '%s: EmptyIsNull(''%s'') is for a string property. A TDateTime of ' +
+      'zero is written as NULL already, and a number has no empty.',
+      [FMeta.ModelClass.ClassName, APropName]);
+  FMeta.FColumns[I].EmptyIsNull := True;
+end;
+
 { Common to Timestamps and SoftDeletes: the column has to exist as a
   mapped TDateTime property. Without the check the field would quietly
   fail to be set, and it would look as if the timestamps worked. }
@@ -775,6 +813,7 @@ begin
       Result.FColumns[N].Prop := Props^[I];
       Result.FColumns[N].Kind := Kind;
       Result.FColumns[N].Insertable := True;
+      Result.FColumns[N].EmptyIsNull := False;
     end;
   finally
     if Props <> nil then
@@ -1418,7 +1457,10 @@ begin
     ckString:
       begin
         S := GetStrProp(Model, Col.Prop);
-        Result := DbParam(A, S);
+        if Col.EmptyIsNull and (S = '') then
+          Result := DbNull
+        else
+          Result := DbParam(A, S);
       end;
     ckCurrency:
       Result := DbParam(A, PropAsCurrency(Model, Col.Prop));

@@ -12,11 +12,16 @@ unit Askr.Cli.Scaffold;
 interface
 
 uses
-  SysUtils, Classes, Askr.Core.Crypto, Askr.Core.Version;
+  SysUtils, Classes, Askr.Core.Crypto, Askr.Core.Version, Askr.Cli.Fields;
 
 procedure NewProject(const ParentDir, Name: string;
   WithAuth: Boolean = False);
 procedure MakeModel(const Root, Name: string; WithMigration: Boolean);
+{ A model and its migration from one field spec, so they cannot disagree.
+  Refuses to write anything when a file it would write is already there,
+  unless Force -- and then says which. Returns False when it refused. }
+function MakeModelFromFields(const Root, Name: string;
+  const Fields: TFieldSpecs; Timestamps, Force: Boolean): Boolean;
 procedure MakeController(const Root, Name: string);
 procedure MakeMigration(const Root, Name: string);
 procedure MakeSeeder(const Root, Name: string);
@@ -28,6 +33,9 @@ procedure MakeMiddleware(const Root, Name: string);
   outputs. }
 procedure Emit(const Path_, Content_: string);
 function Stamp: string;
+{ The version for a new migration: now, or one past the highest version
+  already in database/, whichever is later. See the implementation. }
+function NextVersion(const Root: string): string;
 procedure UpdateIndex(const Root, Folder, IndexUnit, Prefix: string);
 
 implementation
@@ -36,7 +44,7 @@ uses
   { In implementation, not in interface: Askr.Cli.Auth uses Emit and
     UpdateIndex from here, and Pascal allows the circle only when at least
     one of them is here. }
-  Askr.Cli.Auth;
+  Askr.Cli.Auth, Askr.Urd.Model;
 
 const
   Q = '''';
@@ -103,26 +111,17 @@ begin
   end;
 end;
 
-{ English plurals, to the extent a table needs them. The same rules
-  Askr.Urd.Model uses, and they are deliberately simple: a model with an
-  irregular name sets the table name itself in Describe. }
+{ English plurals, to the extent a table needs them, and deliberately
+  simple: a model with an irregular name sets the table name itself in
+  Describe.
+
+  It used to be a copy of Askr.Urd.Model's rule, with a comment saying it
+  was the same. A copy with a note on it is still a copy, and the table
+  `make model` creates has to be the one `customer:references` points at
+  and the one the model maps to. One rule, called from all three. }
 function Plural(const S: string): string;
-var
-  Sis: Char;
 begin
-  if S = '' then
-    Exit(S);
-  Sis := S[Length(S)];
-  if (Sis = 'y') and (Length(S) > 1) and
-     (Pos(S[Length(S) - 1], 'aeiou') = 0) then
-    Exit(Copy(S, 1, Length(S) - 1) + 'ies');
-  if (Sis = 's') or (Sis = 'x') or (Sis = 'z') then
-    Exit(S + 'es');
-  if (Length(S) >= 2) and
-     ((Copy(S, Length(S) - 1, 2) = 'ch') or
-      (Copy(S, Length(S) - 1, 2) = 'sh')) then
-    Exit(S + 'es');
-  Result := S + 's';
+  Result := Pluralize(S);
 end;
 
 function Stamp: string;
@@ -132,6 +131,62 @@ begin
   DecodeDate(Now, Y, M, D);
   DecodeTime(Now, H, Mi, Se, Ms);
   Result := Format('%.4d%.2d%.2d%.2d%.2d%.2d', [Y, M, D, H, Mi, Se]);
+end;
+
+{ The time alone is not enough. It has a resolution of one second, and two
+  `askr make model` in a row -- a script, or two lines pasted at once --
+  land in the same second and get the same version. The migrator then ran
+  the second one's DDL and failed to record it, and on MySQL left a table
+  behind with nothing to say it had been made. Found by make:check, which
+  does exactly that.
+
+  So: the versions already in the project are read, the same way
+  UpdateIndex reads the directory rather than a list, and the new one is
+  put after the highest of them. The number stays an ordering key and
+  stops being a promise about the clock, which is all it was ever used
+  for. }
+function NextVersion(const Root: string): string;
+var
+  R: TSearchRec;
+  L: TStringList;
+  Dir, Line, Digits: string;
+  I, P, Q: Integer;
+  Highest, Now_, V: Int64;
+begin
+  Now_ := StrToInt64(Stamp);
+  Highest := 0;
+  Dir := IncludeTrailingPathDelimiter(IncludeTrailingPathDelimiter(Root) +
+    'database');
+  if FindFirst(Dir + 'App.Migrations.*.pas', faAnyFile, R) = 0 then
+  begin
+    L := TStringList.Create;
+    try
+      repeat
+        L.LoadFromFile(Dir + R.Name);
+        for I := 0 to L.Count - 1 do
+        begin
+          Line := L[I];
+          P := Pos('Result := ''', Line);
+          if P = 0 then
+            Continue;
+          P := P + Length('Result := ''');
+          Q := P;
+          while (Q <= Length(Line)) and (Line[Q] in ['0'..'9']) do
+            Inc(Q);
+          Digits := Copy(Line, P, Q - P);
+          if (Length(Digits) = 14) and TryStrToInt64(Digits, V) and
+             (V > Highest) then
+            Highest := V;
+        end;
+      until FindNext(R) <> 0;
+    finally
+      L.Free;
+      FindClose(R);
+    end;
+  end;
+  if Highest >= Now_ then
+    Now_ := Highest + 1;
+  Result := IntToStr(Now_);
 end;
 
 { The framework's root. ASKR_HOME first, then upwards from this directory
@@ -941,6 +996,205 @@ begin
     MakeMigration(Root, 'Create' + PascalName(Table_));
 end;
 
+{ Every path a generator is about to write, checked before any of them is
+  written. Half a set -- a model with no migration because the migration
+  was refused -- is worse than none, because it looks like it worked. }
+function RefuseExisting(const Paths: array of string; Force: Boolean): Boolean;
+var
+  I: Integer;
+  Any: Boolean;
+begin
+  Result := False;
+  if Force then
+    Exit;
+  Any := False;
+  for I := 0 to High(Paths) do
+    if FileExists(Paths[I]) then
+    begin
+      if not Any then
+        WriteLn('These are already there, and nothing was written:');
+      WriteLn('  ' + Paths[I]);
+      Any := True;
+    end;
+  if Any then
+  begin
+    WriteLn('');
+    WriteLn('A generated file is yours the moment it exists, and this would');
+    WriteLn('have written over it. Delete it, or pass --force to replace it.');
+    Result := True;
+  end;
+end;
+
+function MakeModelFromFields(const Root, Name: string;
+  const Fields: TFieldSpecs; Timestamps, Force: Boolean): Boolean;
+var
+  N, Table_, MigName, ModelPath, MigPath, VersionStr, Rule: string;
+  I: Integer;
+  B: TStringList;
+
+  procedure A(const S: string);
+  begin
+    B.Add(S);
+  end;
+
+begin
+  N := PascalName(Name);
+  Table_ := Plural(SnakeName(N));
+  MigName := 'Create' + PascalName(Table_);
+  ModelPath := IncludeTrailingPathDelimiter(Root) + 'app/Models/App.Models.' +
+    N + '.pas';
+  MigPath := IncludeTrailingPathDelimiter(Root) + 'database/App.Migrations.' +
+    MigName + '.pas';
+
+  if RefuseExisting([ModelPath, MigPath], Force) then
+    Exit(False);
+
+  { ---- the model ---- }
+  B := TStringList.Create;
+  try
+    A('unit App.Models.' + N + ';');
+    A('');
+    A('{$mode Delphi}{$H+}');
+    A('');
+    A('interface');
+    A('');
+    A('uses');
+    A('  SysUtils, Askr.Urd.Model;');
+    A('');
+    A('type');
+    A('  { Written by askr make model from the spec below, together with its');
+    A('    migration -- so the two start out agreeing. After that it is yours.');
+    A('');
+    for I := 0 to High(Fields) do
+      A('      ' + Fields[I].Column + ': ' + PascalTypeOf(Fields[I]) +
+        BoolToStr(Fields[I].Nullable, ' (nullable)', ''));
+    A('  }');
+    A('  T' + N + ' = class(TModel)');
+    A('  private');
+    A('    FId: Int64;');
+    for I := 0 to High(Fields) do
+      A('    F' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) + ';');
+    if Timestamps then
+    begin
+      A('    FCreatedAt: TDateTime;');
+      A('    FUpdatedAt: TDateTime;');
+    end;
+    A('  published');
+    A('    property Id: Int64 read FId write FId;');
+    for I := 0 to High(Fields) do
+      A('    property ' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) +
+        ' read F' + Fields[I].Prop + ' write F' + Fields[I].Prop + ';');
+    if Timestamps then
+    begin
+      A('    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;');
+      A('    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;');
+    end;
+    A('  public');
+    A('    class procedure Describe(S: TSchema); override;');
+    A('    procedure Rules(V: TValidator); override;');
+    A('  end;');
+    A('');
+    A('implementation');
+    A('');
+    A('class procedure T' + N + '.Describe(S: TSchema);');
+    A('begin');
+    A('  S.Table(''' + Table_ + ''');');
+    for I := 0 to High(Fields) do
+      if DescribeLineOf(Fields[I]) <> '' then
+        A('  ' + DescribeLineOf(Fields[I]));
+    if Timestamps then
+    begin
+      { Together with the migration's Timestamps, or not at all. A model
+        that maps NOT NULL created_at without setting it is the one way the
+        TDateTime-as-NULL change turns into a constraint error. }
+      A('  S.Timestamps;');
+    end;
+    A('  { S.SoftDeletes;  Delete sets deleted_at instead of removing }');
+    A('end;');
+    A('');
+    A('procedure T' + N + '.Rules(V: TValidator);');
+    A('begin');
+    A('  { What the spec stated, and nothing inferred from a name. A column');
+    A('    called email is not therefore an email: say so here if it is. }');
+    Rule := '';
+    for I := 0 to High(Fields) do
+      if RuleLineOf(Fields[I]) <> '' then
+      begin
+        A('  ' + RuleLineOf(Fields[I]));
+        Rule := 'yes';
+      end;
+    A('end;');
+    A('');
+    A('end.');
+    Emit(ModelPath, B.Text);
+  finally
+    B.Free;
+  end;
+
+  { ---- the migration ---- }
+  VersionStr := NextVersion(Root);
+  B := TStringList.Create;
+  try
+    A('unit App.Migrations.' + MigName + ';');
+    A('');
+    A('{$mode Delphi}{$H+}');
+    A('');
+    A('interface');
+    A('');
+    A('uses');
+    A('  Askr.Norn.Schema, Askr.Norn.Migration;');
+    A('');
+    A('type');
+    A('  T' + MigName + ' = class(TMigration)');
+    A('  public');
+    A('    class function Version: string; override;');
+    A('    procedure Up(S: TSchemaBuilder); override;');
+    A('    procedure Down(S: TSchemaBuilder); override;');
+    A('  end;');
+    A('');
+    A('implementation');
+    A('');
+    A('class function T' + MigName + '.Version: string;');
+    A('begin');
+    A('  Result := ''' + VersionStr + ''';');
+    A('end;');
+    A('');
+    A('procedure T' + MigName + '.Up(S: TSchemaBuilder);');
+    A('begin');
+    A('  with S.Create(''' + Table_ + ''') do');
+    A('  begin');
+    A('    Id;');
+    for I := 0 to High(Fields) do
+      A('    ' + MigrationLineOf(Fields[I]));
+    if Timestamps then
+      A('    Timestamps;');
+    A('  end;');
+    A('end;');
+    A('');
+    A('procedure T' + MigName + '.Down(S: TSchemaBuilder);');
+    A('begin');
+    A('  S.Drop(''' + Table_ + ''');');
+    A('end;');
+    A('');
+    A('initialization');
+    A('  RegisterMigration(T' + MigName + ');');
+    A('');
+    A('end.');
+    Emit(MigPath, B.Text);
+  finally
+    B.Free;
+  end;
+  UpdateIndex(Root, 'database', 'App.Migrations', 'App.Migrations.');
+
+  WriteLn('');
+  WriteLn('Next:');
+  WriteLn('  askr migrate     makes the ' + Table_ + ' table');
+  WriteLn('  askr schema      types its columns from the database');
+  { The generator does not migrate. A make command that changes the
+    database is a surprise, and in production it is the wrong one. }
+  Result := True;
+end;
+
 procedure MakeController(const Root, Name: string);
 var
   N, Path_: string;
@@ -983,7 +1237,7 @@ var
   N, VersionStr, Table_: string;
 begin
   N := PascalName(Name);
-  VersionStr := Stamp;
+  VersionStr := NextVersion(Root);
   Table_ := SnakeName(N);
   if Copy(Table_, 1, 7) = 'create_' then
     Delete(Table_, 1, 7);

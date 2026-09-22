@@ -24,7 +24,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
@@ -1617,6 +1617,240 @@ begin
     F.Free;
     Anchors.Free;
   end;
+end;
+
+{ -------------------------------------------------------- field specs -- }
+
+{ `name:type` into a model and a migration. What is accepted, what each
+  becomes, and -- the larger half -- what is refused and why. }
+function SpecRefused(const Arg: string; out Msg: string): Boolean;
+begin
+  Msg := '';
+  try
+    ParseFields([Arg]);
+    Result := False;
+  except
+    on E: EFieldSpec do
+    begin
+      Msg := E.Message;
+      Result := True;
+    end;
+  end;
+end;
+
+{ The version a new migration gets. Two `askr make model` in the same
+  second used to get the same one, and the migrator ran the second's DDL
+  and then failed to record it. The gate for the generators found it only
+  because the two happened to land in one second -- so the rule is held
+  here, where the clock does not decide. }
+{ EmptyIsNull on a name that is not there, or on something that is not a
+  string. A setting that silently did nothing would look like it worked,
+  and the column would go on being '' where it should be NULL. }
+type
+  TEmptyTypo = class(TModel)
+  private
+    FId: Int64;
+    FNote: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Note: string read FNote write FNote;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+  TEmptyOnNumber = class(TModel)
+  private
+    FId: Int64;
+    FQty: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property Qty: Int64 read FQty write FQty;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+  TEmptyRight = class(TModel)
+  private
+    FId: Int64;
+    FNote: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Note: string read FNote write FNote;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+class procedure TEmptyTypo.Describe(S: TSchema);
+begin
+  S.Table('empty_typos');
+  S.EmptyIsNull('Notes');
+end;
+
+class procedure TEmptyOnNumber.Describe(S: TSchema);
+begin
+  S.Table('empty_numbers');
+  S.EmptyIsNull('Qty');
+end;
+
+class procedure TEmptyRight.Describe(S: TSchema);
+begin
+  S.Table('empty_rights');
+  S.EmptyIsNull('Note');
+end;
+
+procedure TestEmptyIsNull;
+var
+  Msg: string;
+begin
+  Msg := '';
+  try
+    TEmptyTypo.Meta;
+  except
+    on E: EModelError do
+      Msg := E.Message;
+  end;
+  AssertContains(Msg, 'Notes', 'a property that is not there is named');
+
+  Msg := '';
+  try
+    TEmptyOnNumber.Meta;
+  except
+    on E: EModelError do
+      Msg := E.Message;
+  end;
+  AssertContains(Msg, 'string', 'and a number is refused, saying what it is for');
+
+  AssertTrue(TEmptyRight.Meta.Columns[TEmptyRight.Meta.IndexOfProp('Note')]
+    .EmptyIsNull, 'a string property is marked');
+  AssertFalse(TEmptyRight.Meta.Columns[TEmptyRight.Meta.IndexOfProp('Id')]
+    .EmptyIsNull, 'and only that one');
+end;
+
+procedure TestNextVersion;
+const
+  Root = '.build/nextversion-test';
+var
+  L: TStringList;
+  V: string;
+begin
+  ForceDirectories(Root + '/database');
+  DeleteFile(Root + '/database/App.Migrations.Later.pas');
+  AssertEqual(Length(NextVersion(Root)), 14, 'a version is fourteen digits');
+  AssertTrue(NextVersion(Root) >= Stamp, 'and not earlier than now');
+
+  { A migration already in the project with a version later than now --
+    written by hand, or by a clock that was ahead. The next one has to come
+    after it, not at "now". }
+  L := TStringList.Create;
+  try
+    L.Add('unit App.Migrations.Later;');
+    L.Add('class function TLater.Version: string;');
+    L.Add('begin');
+    L.Add('  Result := ''99990101000000'';');
+    L.Add('end;');
+    L.SaveToFile(Root + '/database/App.Migrations.Later.pas');
+  finally
+    L.Free;
+  end;
+  V := NextVersion(Root);
+  AssertEqual(V, '99990101000001',
+    'the next version comes after the highest one there is');
+  AssertTrue(V <> '99990101000000', 'and is never the same as one');
+end;
+
+procedure TestFieldSpecs;
+var
+  F: TFieldSpecs;
+  Msg: string;
+begin
+  F := ParseFields(['name:string(60)', 'notes:text?', 'qty:int',
+    'active:bool', 'price:money', 'seen_at:datetime?', 'born:date',
+    'maker:references', 'address2:string']);
+  AssertEqual(Length(F), 9, 'every argument became a field');
+
+  AssertEqual(F[0].Column, 'name', 'the column is the name as given');
+  AssertEqual(F[0].Prop, 'Name', 'and the property its Pascal form');
+  AssertEqual(F[0].Length, 60, 'with the length it was given');
+  AssertEqual(MigrationLineOf(F[0]), 'Text(''name'', 60);', 'into the migration');
+  AssertEqual(RuleLineOf(F[0]), 'V.Field(''Name'').Required.MaxLen(60);',
+    'and a rule that says what the column already says');
+
+  AssertTrue(F[1].Nullable, 'a trailing ? is nullable');
+  AssertEqual(MigrationLineOf(F[1]), 'Text(''notes'').Nullable;',
+    'and says so in the migration');
+  AssertEqual(RuleLineOf(F[1]), '', 'and is not required');
+
+  { A NOT NULL number or boolean is not Required. Zero and false are
+    values; Required would refuse the one value nobody thinks of as
+    missing. }
+  AssertEqual(RuleLineOf(F[2]), '', 'an int is not required for being NOT NULL');
+  AssertEqual(RuleLineOf(F[3]), '', 'nor is a bool');
+  AssertEqual(PascalTypeOf(F[4]), 'Currency', 'money is Currency, not a Double');
+  AssertEqual(PascalTypeOf(F[5]), 'TDateTime', 'a datetime is a TDateTime');
+  { A NOT NULL date is required: a zero TDateTime is written as NULL, and
+    against NOT NULL that is a constraint error -- a 500 where a 422 is
+    the right answer. }
+  AssertEqual(RuleLineOf(F[6]), 'V.Field(''Born'').Required;',
+    'a NOT NULL date is required, or it becomes a constraint error');
+
+  AssertEqual(F[7].Column, 'maker_id', 'a reference is the thing plus _id');
+  AssertEqual(F[7].RefTable, 'makers', 'pointing at its table');
+  AssertEqual(MigrationLineOf(F[7]), 'ForeignKey(''maker_id'', ''makers'');',
+    'as a foreign key');
+  AssertEqual(F[8].Prop, 'Address2', 'a digit in a name is kept');
+
+  { A NOT NULL json is required: '' is not JSON, so the database would
+    refuse it with an error a long way from the form. }
+  F := ParseFields(['meta:json', 'extra:json?']);
+  AssertEqual(RuleLineOf(F[0]), 'V.Field(''Meta'').Required;',
+    'a NOT NULL json is required, or the database refuses it');
+  AssertEqual(DescribeLineOf(F[0]), '', 'and needs no EmptyIsNull');
+  AssertEqual(DescribeLineOf(F[1]), 'S.EmptyIsNull(''Extra'');',
+    'a nullable json has its empty written as NULL');
+
+  { Nothing is inferred from a name. }
+  F := ParseFields(['email:string']);
+  AssertEqual(RuleLineOf(F[0]), 'V.Field(''Email'').Required.MaxLen(255);',
+    'a column called email is not therefore an email');
+
+  { ---- refused ---- }
+  AssertTrue(SpecRefused('name:strng', Msg), 'an unknown type is refused');
+  AssertContains(Msg, 'string', 'and the message lists the ones there are');
+  AssertTrue(SpecRefused('name', Msg), 'a name with no type is refused');
+  AssertTrue(SpecRefused('qty:int(4)', Msg), 'a length on anything but string');
+  AssertTrue(SpecRefused('name:string(0)', Msg), 'a length of zero');
+  AssertTrue(SpecRefused('name:string(x)', Msg), 'a length that is not a number');
+  AssertTrue(SpecRefused('Name:string', Msg), 'a column name with a capital');
+  AssertTrue(SpecRefused('first-name:string', Msg), 'or a hyphen');
+  AssertTrue(SpecRefused('id:int', Msg), 'id, which every model has');
+  AssertTrue(SpecRefused('created_at:datetime', Msg),
+    'created_at, which comes with the timestamps');
+  AssertTrue(SpecRefused('maker_id:references', Msg),
+    'a reference written as its column');
+  AssertContains(Msg, 'maker:references', 'and it says how to write it');
+
+  { **The Label_ bug, both halves.** A keyword cannot be a property, and
+    the usual escape -- a trailing underscore -- makes the model map to a
+    column the migration never made. It happened here by hand once. }
+  AssertTrue(SpecRefused('label:string', Msg), 'a Pascal keyword is refused');
+  AssertContains(Msg, 'label_', 'and it says what would have gone wrong');
+  AssertTrue(SpecRefused('type:string', Msg), 'type too');
+
+  { And a name that does not come back as itself. The model does this
+    conversion at run time, with Urd's SnakeCase; the check uses the same
+    function, not a copy of it. }
+  AssertTrue(SpecRefused('abc_2x:string', Msg),
+    'a name that snake_cases back to something else is refused');
+  AssertContains(Msg, 'abc2x', 'naming what the model would have used');
+
+  Msg := '';
+  try
+    ParseFields(['name:string', 'name:text']);
+  except
+    on E: EFieldSpec do
+      Msg := E.Message;
+  end;
+  AssertContains(Msg, 'twice', 'a column given twice is refused');
 end;
 
 { ----------------------------------------------------------- openapi -- }
@@ -6309,6 +6543,14 @@ begin
   Group('API tokens');
   Test('hashed at rest, scoped, revocable, and never from a URL',
     @TestApiTokens);
+
+  Group('Field specs');
+  Test('name:type into a model and a migration, and what is refused',
+    @TestFieldSpecs);
+  Test('a new migration never shares a version with one that is there',
+    @TestNextVersion);
+  Test('EmptyIsNull marks a string, and refuses anything else',
+    @TestEmptyIsNull);
 
   Group('OpenAPI');
   Test('generated from the models and the routes, and checked against both',
