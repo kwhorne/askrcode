@@ -79,6 +79,23 @@ That id is what you search for in Resend's own dashboard when someone asks
 whether a receipt went out. Addresses are not logged — they are personal
 data, and a delivery log is not the place for them.
 
+### What has actually been run
+
+A real send through `api.resend.com` with a real key, in
+`examples/mail/resendprobe.lpr`: a message accepted with an id back, the
+same idempotency key twice giving the **same id rather than a second
+message**, and an unverified sender refused as `EResendError` with the
+status and the name Resend used.
+
+It sends to Resend's own test addresses, so no real inbox is touched and
+no address goes into a third party's payload. That means it proves a
+message is **accepted**, not that one arrived in somebody's inbox — no API
+call can prove the second, and this does not claim to.
+
+It is an example rather than a test: a suite that only runs for people
+holding a key is one most people cannot run, and a suite that emits mail
+as a side effect is worse.
+
 ### Errors tell you whether to try again
 
 ```pascal

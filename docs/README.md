@@ -94,26 +94,29 @@ queue uses the database you already have. See [Deployment](deployment.md).
 
 ## What is not here
 
-Askr is honest about what has not been done. Two things are **written but
-never run in earnest**, and they are marked as such everywhere they
-appear:
+Askr is honest about what has not been done. **One thing is written but
+never run in earnest**, and it is marked as such everywhere it appears:
 
 - **The Windows WebView2 shell.** Compiled and type-checked against FPC's
-  own `rtl/win` declarations; never started on a Windows machine.
-- **The Resend transport with a real API key.** The wire path is proven —
-  `api.resend.com` returns a 401 that parses into `EResendError` — but no
-  mail has been sent from here with a valid key.
+  own `rtl/win` declarations; never started on a Windows machine. The next
+  step there is a run, not more code.
 
-**The AI layer was on that list until it was run with a real key**, and
-all four things it offers work: text, streaming, tool calls and structured
-output. That run is `examples/ai/aiprobe.lpr`.
+The other two came off that list by being run, and what the runs cost is
+the argument for keeping such a list rather than a reason to be quiet
+about it.
 
-It is worth saying what the run cost, because it is the argument for
-keeping such a list at all. It found a bug the suite could not: the tool
-loop sent the assistant turn back without the `tool_use` blocks it had
-asked with, which the API refuses. The suite had been green throughout,
-because it checked the shape the author believed in rather than the one
-the API requires.
+**The AI layer** works against the real API — text, streaming, tool calls,
+structured output ([`examples/ai/aiprobe.lpr`](../examples/ai/aiprobe.lpr)).
+The run found a bug the suite could not: the tool loop sent the assistant
+turn back without the `tool_use` blocks it had asked with, which the API
+refuses. The suite had been green throughout, because it checked the shape
+the author believed in rather than the one the API requires.
+
+**The Resend transport** sends
+([`examples/mail/resendprobe.lpr`](../examples/mail/resendprobe.lpr)): a
+message accepted with an id, the same idempotency key giving the same id
+rather than a second message, and a refusal arriving as `EResendError`.
+That run found nothing wrong. Both outcomes are worth having.
 
 Things that deliberately do **not** exist here, with the reasons, are
 listed on each relevant page. Every page has that section, and it is the

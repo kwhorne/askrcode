@@ -12,6 +12,26 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **`examples/mail/resendprobe.lpr`** — the Resend transport against the
+  real API, with a real key: a message accepted with an id, the same
+  idempotency key giving the same id rather than a second message, and an
+  unverified sender refused as `EResendError` with its status and name.
+
+  It sends to Resend's own test address, so it proves a message is
+  **accepted** — not that one arrived in an inbox, which no API call can
+  prove. It reads `mail.from` when there is one, so the run exercises the
+  domain an application will actually send from, which is where a 403
+  lives if it was never verified.
+
+  **The Resend transport is out of the "never run in earnest" list.** Only
+  the Windows shell is still in it. That run found nothing wrong, unlike
+  the AI one — and a list of what has not been tried is worth nothing if
+  only the things expected to work get tried.
+
 ## 0.11.1 — 2026-09-22
 
 ### Fixed

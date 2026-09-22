@@ -1756,14 +1756,24 @@ parkert kode som ikke bygges, råtner.
 varig kø, modell-livskvalitet, HTTP-klient, AI, kommandolinja og
 auth-stillaset. Ingenting i «stopper produksjon»-tabellen står åpent.
 
-**To ting står uten en kjøring med ekte legitimasjon**, og begge skal stå
-slik til noen har gjort det: Windows-webviewen, og Resend-transporten med
-en gyldig nøkkel. Resend har et ekte 401 bak seg — DNS, TLS, requestform og
-feilsti er prøvd — men ingen epost er sendt.
+**Én ting står uten en kjøring med ekte legitimasjon**, og den skal stå
+slik til noen har gjort det: Windows-webviewen.
 
-**AI-laget er ute av den lista.** Det er kjørt mot `api.anthropic.com` med
-en gyldig nøkkel, og kjøringen fant en ekte feil i verktøyløkka. Se
-AI-delen over.
+**AI-laget og Resend er ute av den lista**, begge kjørt med en gyldig
+nøkkel. AI-kjøringen fant en ekte feil i verktøyløkka; Resend-kjøringen
+fant ingenting. Begge utfallene er verdt å ha — en liste over hva som ikke
+er prøvd er verdiløs hvis man bare kjører de tingene man tror virker.
+
+`examples/mail/resendprobe.lpr` sender til Resends egne testadresser, så
+den beviser at en melding **aksepteres** med en id tilbake — ikke at noe
+havnet i en innboks. Det siste kan ikke bevises av et API-kall, og
+formuleringen skal ikke skli.
+
+**Probe-en gikk selv i idempotensfella første gang.** Nøkkelen var fast i
+kilden, og Resend binder den til kroppen i 24 timer — så andre kjøring med
+en annen avsender fikk 409 «used with a different body». Det er
+funksjonen som virker. Nøkkelen er unik per kjøring nå, og stabil inne i
+den, som er det idempotens betyr.
 
 **LARAVEL.md er slettet.** Den var et arbeidsnotat som målte Askr mot
 Laravel punkt for punkt, og den hadde gjort jobben sin: alt i «stopper
