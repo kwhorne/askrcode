@@ -112,10 +112,28 @@ C.Save;
 Without that split, `Askr.Http` would have to know `Askr.Urd`, and that
 would bind the desktop shell and plain JSON services to the data layer.
 
-It reads a JSON body or form fields, matching on published property names,
-and converts to the property's type.
+It reads a JSON body or form fields, matching on **column** names — the
+same keys a model goes out with, so `released_on` in and `released_on`
+out — and converts to the property's type.
 
 > **The primary key is never filled from a request.** Do not "improve" that.
+
+### Only the fields the form has
+
+```pascal
+Req.FillInto(C, [Customers.Name.Name, Customers.Email.Name]);
+```
+
+`FillInto(C)` fills **every** column the model maps that the request
+carries. A form with two fields does not stop a client from adding a third
+to the body — `created_at`, `is_admin`, a column you hide from JSON — and
+the one-argument form sets it. The two-argument form fills the columns it
+is given and ignores the rest of the body. Name them with the typed columns
+from `askr schema`, as above, so a column that goes away is a compile
+error; a name the model does not map raises rather than being skipped,
+because a field that silently did not save looks like one that did.
+
+`askr make resource` writes the two-argument form in every controller.
 
 The parsed JSON body is cached per request. The cache cannot be keyed on the
 request pointer alone — the arena reuses addresses, so the next request

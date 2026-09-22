@@ -18,13 +18,13 @@ uses
   Askr.Http.Welcome, Askr.Http.Server, Askr.Http.Client,
   Askr.Http.Cors, Askr.Http.RateLimit, Askr.OpenApi,
   Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Sqlite,
-  Askr.Urd.Bind,
+  Askr.Urd.Bind, Askr.Urd.Json,
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Plan, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
@@ -1698,6 +1698,81 @@ begin
   S.EmptyIsNull('Note');
 end;
 
+type
+  { A date that may be unset, and one the rules require. }
+  TDated = class(TModel)
+  private
+    FId: Int64;
+    FSeenAt: TDateTime;
+    FBorn: TDateTime;
+  published
+    property Id: Int64 read FId write FId;
+    property SeenAt: TDateTime read FSeenAt write FSeenAt;
+    property Born: TDateTime read FBorn write FBorn;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
+class procedure TDated.Describe(S: TSchema);
+begin
+  S.Table('dateds');
+end;
+
+procedure TDated.Rules(V: TValidator);
+begin
+  V.Field('Born').Required;
+end;
+
+{ An unset date, three ways: as text from a form, as JSON out, and to the
+  rules. Zero is what an unset TDateTime is; JSON wrote it as a real date,
+  1899-12-30. The rules already read it as blank, and this holds that. }
+procedure TestUnsetDates;
+var
+  A: TArena;
+  D: TDated;
+  V: TDateTime;
+  W: TJsonWriter;
+  Json: string;
+begin
+  AssertTrue(SqlToDateTime(Str('2026-01-02 03:04:05'), V) and
+    (FormatDateTime('yyyy-mm-dd hh:nn:ss', V) = '2026-01-02 03:04:05'),
+    'a date with seconds');
+  { What <input type="datetime-local"> sends whenever the seconds are
+    zero. It used to be refused, and FillInto then kept the old value
+    without a word. }
+  AssertTrue(SqlToDateTime(Str('2026-01-02T03:04'), V) and
+    (FormatDateTime('yyyy-mm-dd hh:nn:ss', V) = '2026-01-02 03:04:00'),
+    'a date and time without seconds, as a browser sends it');
+  AssertTrue(SqlToDateTime(Str('2026-01-02'), V), 'a date alone');
+  AssertFalse(SqlToDateTime(Str('2026-01-02T03'), V), 'but not an hour alone');
+  AssertFalse(SqlToDateTime(Str('2026-01-02T03:04:5'), V),
+    'nor half a second');
+  AssertFalse(SqlToDateTime(Str('2026-01-02T03-04'), V),
+    'nor a dash where the colon goes');
+
+  A := TArena.Create(16 * 1024);
+  UseArena(A);
+  try
+    D := TDated.Create;
+    D.Born := EncodeDate(2026, 1, 2);
+    W.Init(A, 256);
+    WriteModel(W, D);
+    Json := W.ToStr.ToString;
+    AssertContains(Json, '"seen_at":null', 'an unset date goes out as null');
+    AssertNotContains(Json, '1899', 'and not as the day zero happens to be');
+    AssertContains(Json, '"born":"2026-01-02 00:00:00"', 'a set one as its text');
+
+    AssertTrue(D.Validate, 'a set date satisfies Required');
+    D.Born := 0;
+    AssertFalse(D.Validate, 'an unset one does not');
+    AssertTrue(D.Errors.Has('born'), 'and the error is on the column');
+  finally
+    UseArena(nil);
+    A.Free;
+  end;
+end;
+
 procedure TestEmptyIsNull;
 var
   Msg: string;
@@ -1797,6 +1872,9 @@ begin
   AssertEqual(F[7].RefTable, 'makers', 'pointing at its table');
   AssertEqual(MigrationLineOf(F[7]), 'ForeignKey(''maker_id'', ''makers'');',
     'as a foreign key');
+  { Every reference, nullable or not: no table has a row 0. }
+  AssertEqual(DescribeLineOf(F[7]), 'S.ZeroIsNull(''MakerId'');',
+    'and zero is no row, to the database and to JSON');
   AssertEqual(F[8].Prop, 'Address2', 'a digit in a name is kept');
 
   { A NOT NULL json is required: '' is not JSON, so the database would
@@ -2094,6 +2172,260 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------ zero is null -- }
+
+type
+  TPart = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FMakerId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property MakerId: Int64 read FMakerId write FMakerId;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
+  TPartOnString = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+class procedure TPart.Describe(S: TSchema);
+begin
+  S.Table('zero_parts');
+  S.ZeroIsNull('MakerId');
+end;
+
+procedure TPart.Rules(V: TValidator);
+begin
+  V.Field('MakerId').Required;
+end;
+
+class procedure TPartOnString.Describe(S: TSchema);
+begin
+  S.Table('zero_strings');
+  S.ZeroIsNull('Name');
+end;
+
+{ A reference to no row. Pascal has no null Int64, so without this a
+  nullable reference could not be NULL: an empty select wrote 0, a foreign
+  key to a row that does not exist. Required refusing 0 is IsBlank's, and
+  is held here so that it stays so. }
+procedure TestZeroIsNull;
+var
+  A: TArena;
+  C: TDbConnection;
+  P: TPart;
+  W: TJsonWriter;
+  Msg: string;
+begin
+  A := TArena.Create(32 * 1024);
+  UseArena(A);
+  C := OpenDbConnection('sqlite::memory:');
+  UseDb(C);
+  try
+    C.Exec(A, 'CREATE TABLE zero_parts (id INTEGER PRIMARY KEY, name TEXT, ' +
+      'maker_id BIGINT)');
+    P := TPart.Create;
+    P.Name := 'loose';
+    AssertFalse(P.Validate, 'zero is blank to Required');
+    AssertTrue(P.Errors.Has('maker_id'), 'and the error is on the column');
+    P.Save;
+    AssertEqual(C.Exec(A, 'SELECT count(*) FROM zero_parts WHERE maker_id IS NULL')
+      .AsInt64(0, 0), 1, 'zero is written as NULL');
+    W.Init(A, 256);
+    WriteModel(W, P);
+    AssertContains(W.ToStr.ToString, '"maker_id":null', 'and goes out as null');
+
+    P.MakerId := 7;
+    AssertTrue(P.Validate, 'a real id satisfies Required');
+    W.Init(A, 256);
+    WriteModel(W, P);
+    AssertContains(W.ToStr.ToString, '"maker_id":7', 'and goes out as itself');
+
+    Msg := '';
+    try
+      TPartOnString.Meta;
+    except
+      on E: EModelError do
+        Msg := E.Message;
+    end;
+    AssertContains(Msg, 'integer', 'ZeroIsNull on a string is refused, saying what it is for');
+  finally
+    UseDb(nil);
+    UseArena(nil);
+    C.Free;
+    A.Free;
+  end;
+end;
+
+{ ------------------------------------------------------- make resource -- }
+
+function TextOf(const F: TGenFiles; const Suffix: string): string;
+var
+  I: Integer;
+begin
+  for I := 0 to High(F) do
+    if Copy(F[I].Path, Length(F[I].Path) - Length(Suffix) + 1, MaxInt) = Suffix then
+      Exit(F[I].Content);
+  Result := '';
+end;
+
+{ The files make resource writes, held against what they have to be:
+  typed columns, only the form's fields filled from a request, no secret
+  anywhere a client sees, and a select only where there is a model to
+  query it with. The gate builds and runs them; this says why. }
+procedure TestResourceFiles;
+const
+  Root = '.build/resource-test';
+var
+  A: TArena;
+  C: TDbConnection;
+  S: TDbSchema;
+  P, Locked: TResourcePlan;
+  Parents: TParentInfos;
+  F: TGenFiles;
+  Ctl, Fields, Index_, Show, Test_, Model: string;
+  PC: TPlanColumn;
+  L: TStringList;
+begin
+  ForceDirectories(Root + '/app/Models');
+  DeleteFile(Root + '/app/Models/App.Models.Maker.pas');
+  A := TArena.Create(64 * 1024);
+  C := OpenDbConnection('sqlite::memory:');
+  try
+    C.Exec(A, 'CREATE TABLE makers (id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL)');
+    C.Exec(A, 'CREATE TABLE gadgets (id INTEGER PRIMARY KEY, ' +
+      'name VARCHAR(60) NOT NULL, qty INTEGER NOT NULL, ' +
+      'status VARCHAR(20) NOT NULL DEFAULT ''new'', ' +
+      'api_token VARCHAR(64), "type" VARCHAR(10), ' +
+      'maker_id BIGINT NOT NULL REFERENCES makers(id), ' +
+      'created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)');
+    C.Exec(A, 'CREATE TABLE locks (id INTEGER PRIMARY KEY, ' +
+      'name VARCHAR(20) NOT NULL, password_hash VARCHAR(255) NOT NULL)');
+    S := IntrospectSchema(C);
+    try
+      P := PlanResource(S, 'Gadget');
+
+      { Without a model for makers, maker_id is a number. }
+      Parents := ParentsOf(S, P, Root);
+      AssertEqual(Length(Parents), 1, 'one table to point at');
+      AssertFalse(Parents[0].Available, 'with no model for it, there is no select');
+      F := ResourceFiles(P, Parents, True);
+      AssertContains(TextOf(F, 'Fields.svelte'),
+        'label="Maker" required description="The id of a row in makers"',
+        'and the field is a number that says what it is');
+
+      L := TStringList.Create;
+      try
+        L.Text := 'unit App.Models.Maker;';
+        L.SaveToFile(Root + '/app/Models/App.Models.Maker.pas');
+      finally
+        L.Free;
+      end;
+      Parents := ParentsOf(S, P, Root);
+      AssertTrue(Parents[0].Available, 'with one, there is');
+      AssertEqual(Parents[0].LabelColumn, 'name', 'labelled by its first string');
+
+      F := ResourceFiles(P, Parents, True);
+      Ctl := TextOf(F, 'App.Http.GadgetsController.pas');
+      Fields := TextOf(F, 'Fields.svelte');
+      Index_ := TextOf(F, 'Index.svelte');
+      Show := TextOf(F, 'Show.svelte');
+      Test_ := TextOf(F, 'App.Tests.Gadgets.pas');
+      Model := TextOf(F, 'App.Models.Gadget.pas');
+      AssertTrue((Ctl <> '') and (Fields <> '') and (Index_ <> '') and (Show <> '') and
+        (Test_ <> '') and (Model <> '') and (TextOf(F, 'Add.svelte') <> '') and
+        (TextOf(F, 'Edit.svelte') <> ''), 'every file is written');
+
+      { The controller. }
+      AssertContains(Ctl, 'Req.FillInto(M, [Gadgets.Name.Name,',
+        'a request fills only the fields the form has, by typed column');
+      AssertNotContains(Ctl, 'Gadgets.ApiToken.Name', 'never the secret');
+      AssertNotContains(Ctl, 'Gadgets.CreatedAt.Name', 'nor a timestamp');
+      AssertNotContains(Ctl, 'Req.FillInto(M);', 'and never everything the model maps');
+      AssertContains(Ctl, 'G.Sortable(''name'', Gadgets.Name);',
+        'a list sorts by typed column');
+      AssertContains(Ctl, 'Gadgets.Type_.Name', 'a keyword column by its escaped member');
+      AssertContains(Ctl, '.OrderBy(Makers.Name)', 'and the select is ordered by its label');
+      AssertNotContains(Ctl, 'function Create(', 'no method hides the constructor');
+      AssertNotContains(Ctl, 'function Destroy(', 'nor the destructor');
+      AssertContains(Ctl, 'R.Put(''/gadgets/:id'', Ctl.Update);', 'the routes are all there');
+      AssertContains(Ctl, 'R.Delete(''/gadgets/:id'', Ctl.Remove);', 'the delete too');
+
+      { The form. }
+      AssertContains(Fields, '<Field name="name" label="Name" required>',
+        'a required field says so');
+      AssertNotContains(Fields, 'name="status" label="Status" required',
+        'a column with a default is not required');
+      AssertContains(Fields, 'status: ''new'',', 'and starts from the default');
+      AssertNotContains(Fields, 'api_token', 'the secret is not in the form');
+      AssertNotContains(Fields, 'created_at', 'nor a timestamp');
+      AssertContains(Fields, '<Select placeholder="Choose a maker">', 'a reference is a select');
+      AssertContains(Fields, 'maker_id: r.maker_id == null ? '''' : String(r.maker_id)',
+        'whose value is text, as its options are');
+
+      { The list and the page. }
+      AssertContains(Index_, 'align: ''right''', 'a number is aligned the way DataGrid knows');
+      AssertNotContains(Index_, 'api_token', 'the secret is not a column');
+      AssertNotContains(Show, 'api_token', 'nor on the page');
+      AssertContains(Show, 'maker ? shown(maker.name)', 'the page names the maker');
+
+      { The model, for a table that had none. }
+      AssertContains(Model, 'S.Column(''Type_'', ''type'');', 'a keyword is mapped by hand');
+      AssertContains(Model, 'H.Add(Gadgets.ApiToken);', 'the secret is hidden from JSON');
+      AssertContains(Model, 'S.ZeroIsNull(''MakerId'');', 'zero is no maker');
+
+      { The test. }
+      AssertContains(Test_, '@TestUpdate', 'the test edits');
+      AssertContains(Test_, '"created_at":"2001-01-01 00:00:00"',
+        'with a forged created_at in the body');
+      AssertContains(Test_, 'P0.Name := ''Sample'';', 'and makes the maker first');
+
+      { A table whose NOT NULL secret the form cannot set: the test does
+        not pretend to write. }
+      Locked := PlanResource(S, 'Lock');
+      AssertFalse(Locked.CanCreate, 'a NOT NULL secret with no default means no create');
+      F := ResourceFiles(Locked, nil, True);
+      AssertNotContains(TextOf(F, 'App.Tests.Locks.pas'), '@TestStore',
+        'so the test does not try');
+      AssertContains(TextOf(F, 'App.Tests.Locks.pas'), 'Nothing that writes is tested',
+        'and says why');
+
+      { Defaults, as each database reports them. }
+      PC := P.Columns[PlanColumnIndex(P, 'status')];
+      PC.DefaultExpr := '''new''::character varying';
+      AssertEqual(DefaultLiteral(PC), '''new''', 'Postgres');
+      PC.DefaultExpr := 'new';
+      AssertEqual(DefaultLiteral(PC), '''new''', 'MySQL, unquoted');
+      PC.DefaultExpr := '''it''''s''';
+      AssertEqual(DefaultLiteral(PC), '''it\''s''', 'a quote, escaped for JavaScript');
+      PC.DefaultExpr := 'CURRENT_TIMESTAMP';
+      AssertEqual(DefaultLiteral(PC), '', 'a function is left to the database');
+      PC := P.Columns[PlanColumnIndex(P, 'qty')];
+      PC.DefaultExpr := '0';
+      AssertEqual(DefaultLiteral(PC), '0', 'a number as a number');
+      PC.DefaultExpr := 'nextval(''x'')';
+      AssertEqual(DefaultLiteral(PC), '', 'and a sequence is not one');
+    finally
+      S.Free;
+    end;
+  finally
+    C.Free;
+    A.Free;
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -2265,9 +2597,10 @@ begin
         `2026-09-22 13:00:00` -- a space, and no zone -- which is not
         RFC 3339. A generated client told otherwise would build a parser
         that fails on every row. }
-      AssertEqual(ProblemMember(Json_,
-        'components.schemas.ApiPage.properties.published_at.type'), 'string',
-        'a datetime goes out as a string');
+      { And it may be null: an unset date goes out as null, and nothing
+        in a model says which of its dates are never unset. }
+      AssertContains(Json_, '"published_at":{"type":["string","null"]',
+        'a datetime goes out as a string, or as null when it is unset');
       AssertEqual(ProblemMember(Json_,
         'components.schemas.ApiPage.properties.published_at.format'), '',
         'and is not claimed to be RFC 3339');
@@ -3701,7 +4034,21 @@ type
     function Vis(Req: TRequest): TResponse;
     function Save(Req: TRequest): TResponse;
     function Webhook(Req: TRequest): TResponse;
+    { An Inertia page that asks for nothing, and a reply that is not a
+      page at all. }
+    function InertiaPage(Req: TRequest): TResponse;
+    function Plain(Req: TRequest): TResponse;
   end;
+
+function TCsrfCtl.InertiaPage(Req: TRequest): TResponse;
+begin
+  Result := Inertia('Things/Add', []);
+end;
+
+function TCsrfCtl.Plain(Req: TRequest): TResponse;
+begin
+  Result := RespondText('ok', 200);
+end;
 
 function TCsrfCtl.Vis(Req: TRequest): TResponse;
 begin
@@ -3796,6 +4143,8 @@ begin
   CsrfR.Get('/form', CsrfC.Vis);
   CsrfR.Post('/form', CsrfC.Save);
   CsrfR.Post('/webhooks/stripe', CsrfC.Webhook);
+  CsrfR.Get('/page', CsrfC.InertiaPage);
+  CsrfR.Get('/plain', CsrfC.Plain);
   UseSessions(CsrfR);
   UseCsrf(CsrfR);
   CsrfK := TTestClient.Create(CsrfR);
@@ -3983,6 +4332,44 @@ begin
   end;
 end;
 
+{ **An Inertia page makes the token.** The client sends only what the
+  XSRF-TOKEN cookie holds, and the cookie is set only once the token
+  exists. Before this nothing on an Inertia page asked for it, so a new
+  visitor's first POST from a Lauf <Form> answered 419 -- and the client
+  meets 419 by reloading, which asked for nothing either. Found by
+  driving a generated resource in Chrome. }
+procedure TestCsrfInertiaPage;
+var
+  Res: TResponse;
+  Session_, Xsrf: string;
+begin
+  CsrfSetup;
+  try
+    Res := CsrfK.AsInertia.Get('/page');
+    AssertEqual(Res.StatusCode, 200, 'the page answers');
+    Xsrf := CookieValue(SetCookieLine(Res, CsrfK.Arena, 'XSRF-TOKEN'));
+    Session_ := CookieValue(SetCookieLine(Res, CsrfK.Arena, 'askr_session'));
+    AssertTrue(Xsrf <> '', 'a first visit to an Inertia page gets the XSRF cookie');
+    AssertTrue(Session_ <> '', 'and the session it belongs to');
+
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Session_)
+      .WithHeader('X-XSRF-Token', Xsrf).AsInertia.Post('/form', '{}');
+    AssertEqual(Res.StatusCode, 200,
+      'so the POST the Inertia client then makes is accepted');
+
+    { The full page, the first request of all, does the same. }
+    Res := CsrfK.Get('/page');
+    AssertTrue(SetCookieLine(Res, CsrfK.Arena, 'XSRF-TOKEN') <> '',
+      'the HTML shell of a first visit sets it too');
+
+    { And what is not a page still costs nothing. }
+    Res := CsrfK.Get('/plain');
+    AssertEqual(SetCookieCount(Res, CsrfK.Arena), 0,
+      'a reply that is not a page makes no token and no session');
+  finally
+    CsrfRydd;
+  end;
+end;
 
 { ----------------------------------------------------------------- auth -- }
 
@@ -6793,6 +7180,16 @@ begin
   Test('EmptyIsNull marks a string, and refuses anything else',
     @TestEmptyIsNull);
 
+  Group('Unset dates');
+  Test('an unset date is blank to a form, to JSON and to the rules',
+    @TestUnsetDates);
+
+  Group('Zero is null');
+  Test('a reference to no row is NULL, null and blank', @TestZeroIsNull);
+
+  Group('make resource');
+  Test('what it writes, held against what it has to be', @TestResourceFiles);
+
   Group('Resource plan');
   Test('a table read into a resource, and the tables that cannot be one',
     @TestResourcePlan);
@@ -6822,6 +7219,8 @@ begin
   Test('an exception for webhooks', @TestCsrfUnntakForWebhooks);
   Test('the session cookie and the XSRF cookie live side by side',
     @TestCsrfCookiesSideBySide);
+  Test('an Inertia page makes the token, so a form from it is accepted',
+    @TestCsrfInertiaPage);
 
   Group('Auth');
   Test('signing in changes the session id, signing out clears it', @TestAuthInnOgUt);

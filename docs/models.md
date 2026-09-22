@@ -74,6 +74,26 @@ nothing would look like it worked.
 It is the same argument as a `TDateTime` of zero being written as NULL
 (see [Timestamps](#timestamps)), made for strings.
 
+### ZeroIsNull
+
+```pascal
+S.ZeroIsNull('MakerId');
+```
+
+The same for an integer that refers to a row. No table has a row 0, so 0
+is how Pascal says "none": it is written as NULL and goes out in JSON as
+`null`. Without it a nullable reference could never be NULL — an empty
+select wrote 0, a foreign key to a row that is not there. `Required`
+refuses 0 on its own, as it does any zero number. `askr make model` asks
+for it on every `references` column, nullable or not. An integer property
+only, or it raises.
+
+### An unset date
+
+A `TDateTime` of zero is an unset date. It is written as NULL, is blank to
+`Required`, and goes out in JSON as `null` — it used to go out as
+`1899-12-30 00:00:00`, and a form filled from it showed that.
+
 > A `published` field must come **before** properties in the same section,
 > and a forward-declared class cannot be used as a type argument to
 > `TModelList<M>`. So the child model must be fully declared before the

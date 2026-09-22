@@ -16,6 +16,35 @@ with the zero-major caveat that minor releases may break things until
 
 ### Added
 
+- **`askr make resource <Name>`**: the seven actions over a table that
+  exists, read from the database -- a controller on the typed columns
+  from `askr schema`, its routes in one procedure `app.lpr` and the test
+  both call, `Index`, `Show`, `Add` and `Edit` pages in Lauf, a model when
+  there is none, and a test that drives every action through the router
+  on `TEST_DATABASE_URL`, or `sqlite::memory:` without one.
+
+  What the table says, the resource does: NOT NULL without a default is
+  required, a default fills a new form, `VARCHAR(n)` is a length, a
+  foreign key to a table with a model is a select of its rows, a column
+  named like a secret is hidden everywhere a client looks, and
+  `deleted_at` makes the delete soft. It never writes over a file.
+
+  `./askr make:check` builds three of them, runs their tests on SQLite,
+  Postgres and MySQL, and then drives the pages in Chrome -- create,
+  show, edit, a refused form, the list, search, sort and delete -- with
+  axe, contrast included, over every page light and dark at 1280 and
+  390 px, empty and with rows.
+
+- **`Req.FillInto(M, [columns])`** fills only the columns named. The
+  one-argument form fills every mapped column the body carries, so a
+  client could set `created_at` or a hidden column by adding it. A name
+  the model does not map raises.
+
+- **`TSchema.ZeroIsNull('Prop')`** for an integer that refers to a row: 0
+  goes in as NULL and out as `null`. Without it a nullable reference could
+  never be NULL. `askr make model` writes it for every `references`
+  column.
+
 - **`askr schema:check`**: whether the typed columns still describe the
   database, in both directions, and non-zero when they do not.
 
@@ -83,6 +112,29 @@ with the zero-major caveat that minor releases may break things until
   boolean; it was `INTEGER`.
 
 ### Fixed
+
+- **Every POST from an Inertia page in a new app answered 419.** The
+  Inertia client sends only what the `XSRF-TOKEN` cookie holds, and the
+  cookie was set only once a token existed -- which nothing on an Inertia
+  page made. The client meets 419 by reloading, so the form could never
+  be sent. An Inertia page makes the token now when `UseCsrf` is on.
+  Found by driving a generated resource in Chrome.
+
+- **An unset date went out in JSON as `1899-12-30 00:00:00`.** It is
+  `null`, and the OpenAPI document allows it.
+
+- **A date and time without seconds was not a date.** `<input
+  type="datetime-local">` leaves the seconds out when they are zero, and
+  `FillInto` dropped the value and kept the old one without a word.
+  `YYYY-MM-DDTHH:MM` is read now.
+
+- **An empty DataGrid could not be reached from the keyboard.** The one
+  cell in the tab order was on the first row, so with no rows -- an empty
+  table, a search with no hits -- nothing was, sort buttons included.
+  Found by axe in Chrome, on a generated list with nothing in it.
+
+- `docs/requests.md` said `FillInto` matches property names. It matches
+  column names.
 
 - **`askr schema` escaped 41 Pascal keywords, and Delphi mode reserves
   67.** A column called `until`, `with`, `on`, `out`, `string`, `try`,

@@ -541,11 +541,15 @@ begin
       W.Field('type', 'boolean');
     ckDateTime:
       begin
-        W.Field('type', 'string');
+        { null as well: an unset date goes out as null, and a model
+          cannot say which of its dates are never unset. }
+        W.Key('type');
+        W.Raw(Askr.Core.Text.Str('["string","null"]'));
         W.Field('example', '2026-09-22 13:00:00');
         W.Field('description',
-          'Date and time as YYYY-MM-DD HH:MM:SS. Not RFC 3339: there is ' +
-          'no T between date and time, and no time zone.');
+          'Date and time as YYYY-MM-DD HH:MM:SS, or null when it is not ' +
+          'set. Not RFC 3339: there is no T between date and time, and ' +
+          'no time zone.');
       end;
     ckEnum:
       begin

@@ -23,6 +23,24 @@ procedure MakeModel(const Root, Name: string; WithMigration: Boolean);
 function MakeModelFromFields(const Root, Name: string;
   const Fields: TFieldSpecs; Timestamps, Force: Boolean): Boolean;
 procedure MakeController(const Root, Name: string);
+
+{ The unit a model is, from what it maps. make model and make resource
+  both write their models here, so a model reads the same whichever of
+  them wrote it. Fields leaves out the key and the timestamps; Describe
+  and Rules are the bodies of the two methods, line by line; Hidden are
+  typed-column members of SchemaVar, which lives in SchemaUnit. }
+function ModelUnitText(const N: string; const Intro: TStringArray;
+  const Fields: TFieldSpecs; Timestamps, SoftDeletes: Boolean;
+  const Describe, Rules, Hidden: TStringArray;
+  const SchemaUnit, SchemaVar: string): string;
+
+{ customer, order_item -> Customer, OrderItem. }
+function PascalName(const S: string): string;
+
+{ True, having said which, when any of Paths is there already and Force is
+  not set. Every path is checked before any is written: half a set is
+  worse than none. }
+function RefuseExisting(const Paths: array of string; Force: Boolean): Boolean;
 procedure MakeMigration(const Root, Name: string);
 procedure MakeSeeder(const Root, Name: string);
 procedure MakeJob(const Root, Name: string);
@@ -999,6 +1017,115 @@ end;
 { Every path a generator is about to write, checked before any of them is
   written. Half a set -- a model with no migration because the migration
   was refused -- is worse than none, because it looks like it worked. }
+procedure Say(var A: TStringArray; const S: string);
+begin
+  SetLength(A, Length(A) + 1);
+  A[High(A)] := S;
+end;
+
+function ModelUnitText(const N: string; const Intro: TStringArray;
+  const Fields: TFieldSpecs; Timestamps, SoftDeletes: Boolean;
+  const Describe, Rules, Hidden: TStringArray;
+  const SchemaUnit, SchemaVar: string): string;
+var
+  B: TStringList;
+  I: Integer;
+
+  procedure A(const S: string);
+  begin
+    B.Add(S);
+  end;
+
+begin
+  B := TStringList.Create;
+  try
+    A('unit App.Models.' + N + ';');
+    A('');
+    A('{$mode Delphi}{$H+}');
+    A('');
+    A('interface');
+    A('');
+    A('uses');
+    A('  SysUtils, Askr.Urd.Model;');
+    A('');
+    A('type');
+    for I := 0 to High(Intro) do
+      if I = 0 then
+        A('  { ' + Intro[I])
+      else if Intro[I] = '' then
+        A('')
+      else
+        A('    ' + Intro[I]);
+    A('  }');
+    A('  T' + N + ' = class(TModel)');
+    A('  private');
+    A('    FId: Int64;');
+    for I := 0 to High(Fields) do
+      A('    F' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) + ';');
+    if Timestamps then
+    begin
+      A('    FCreatedAt: TDateTime;');
+      A('    FUpdatedAt: TDateTime;');
+    end;
+    if SoftDeletes then
+      A('    FDeletedAt: TDateTime;');
+    A('  published');
+    A('    property Id: Int64 read FId write FId;');
+    for I := 0 to High(Fields) do
+      A('    property ' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) +
+        ' read F' + Fields[I].Prop + ' write F' + Fields[I].Prop + ';');
+    if Timestamps then
+    begin
+      A('    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;');
+      A('    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;');
+    end;
+    if SoftDeletes then
+      A('    property DeletedAt: TDateTime read FDeletedAt write FDeletedAt;');
+    A('  public');
+    A('    class procedure Describe(S: TSchema); override;');
+    if Length(Hidden) > 0 then
+      A('    class procedure HideFromJson(H: TJsonHidden); override;');
+    A('    procedure Rules(V: TValidator); override;');
+    A('  end;');
+    A('');
+    A('implementation');
+    A('');
+    if Length(Hidden) > 0 then
+    begin
+      { The typed Add is a class helper in Askr.Urd.Query, next to the
+        typed columns it takes. }
+      A('uses');
+      A('  Askr.Urd.Query, ' + SchemaUnit + ';');
+      A('');
+    end;
+    A('class procedure T' + N + '.Describe(S: TSchema);');
+    A('begin');
+    for I := 0 to High(Describe) do
+      A('  ' + Describe[I]);
+    A('end;');
+    A('');
+    if Length(Hidden) > 0 then
+    begin
+      A('class procedure T' + N + '.HideFromJson(H: TJsonHidden);');
+      A('begin');
+      for I := 0 to High(Hidden) do
+        A('  H.Add(' + SchemaVar + '.' + Hidden[I] + ');');
+      A('end;');
+      A('');
+    end;
+    A('procedure T' + N + '.Rules(V: TValidator);');
+    A('begin');
+    for I := 0 to High(Rules) do
+      A('  ' + Rules[I]);
+    A('end;');
+    A('');
+    A('end.');
+    Result := B.Text;
+  finally
+    B.Free;
+  end;
+end;
+
 function RefuseExisting(const Paths: array of string; Force: Boolean): Boolean;
 var
   I: Integer;
@@ -1028,9 +1155,10 @@ end;
 function MakeModelFromFields(const Root, Name: string;
   const Fields: TFieldSpecs; Timestamps, Force: Boolean): Boolean;
 var
-  N, Table_, MigName, ModelPath, MigPath, VersionStr, Rule: string;
+  N, Table_, MigName, ModelPath, MigPath, VersionStr: string;
   I: Integer;
   B: TStringList;
+  Intro, Describe, Rules: TStringArray;
 
   procedure A(const S: string);
   begin
@@ -1050,86 +1178,32 @@ begin
     Exit(False);
 
   { ---- the model ---- }
-  B := TStringList.Create;
-  try
-    A('unit App.Models.' + N + ';');
-    A('');
-    A('{$mode Delphi}{$H+}');
-    A('');
-    A('interface');
-    A('');
-    A('uses');
-    A('  SysUtils, Askr.Urd.Model;');
-    A('');
-    A('type');
-    A('  { Written by askr make model from the spec below, together with its');
-    A('    migration -- so the two start out agreeing. After that it is yours.');
-    A('');
-    for I := 0 to High(Fields) do
-      A('      ' + Fields[I].Column + ': ' + PascalTypeOf(Fields[I]) +
-        BoolToStr(Fields[I].Nullable, ' (nullable)', ''));
-    A('  }');
-    A('  T' + N + ' = class(TModel)');
-    A('  private');
-    A('    FId: Int64;');
-    for I := 0 to High(Fields) do
-      A('    F' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) + ';');
-    if Timestamps then
-    begin
-      A('    FCreatedAt: TDateTime;');
-      A('    FUpdatedAt: TDateTime;');
-    end;
-    A('  published');
-    A('    property Id: Int64 read FId write FId;');
-    for I := 0 to High(Fields) do
-      A('    property ' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) +
-        ' read F' + Fields[I].Prop + ' write F' + Fields[I].Prop + ';');
-    if Timestamps then
-    begin
-      A('    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;');
-      A('    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;');
-    end;
-    A('  public');
-    A('    class procedure Describe(S: TSchema); override;');
-    A('    procedure Rules(V: TValidator); override;');
-    A('  end;');
-    A('');
-    A('implementation');
-    A('');
-    A('class procedure T' + N + '.Describe(S: TSchema);');
-    A('begin');
-    A('  S.Table(''' + Table_ + ''');');
-    for I := 0 to High(Fields) do
-      if DescribeLineOf(Fields[I]) <> '' then
-        A('  ' + DescribeLineOf(Fields[I]));
-    if Timestamps then
-    begin
-      { Together with the migration's Timestamps, or not at all. A model
-        that maps NOT NULL created_at without setting it is the one way the
-        TDateTime-as-NULL change turns into a constraint error. }
-      A('  S.Timestamps;');
-    end;
-    A('  { S.SoftDeletes;  Delete sets deleted_at instead of removing }');
-    A('end;');
-    A('');
-    A('procedure T' + N + '.Rules(V: TValidator);');
-    A('begin');
-    A('  { What the spec stated, and nothing inferred from a name. A column');
-    A('    called email is not therefore an email: say so here if it is. }');
-    Rule := '';
-    for I := 0 to High(Fields) do
-      if RuleLineOf(Fields[I]) <> '' then
-      begin
-        A('  ' + RuleLineOf(Fields[I]));
-        Rule := 'yes';
-      end;
-    A('end;');
-    A('');
-    A('end.');
-    Emit(ModelPath, B.Text);
-  finally
-    B.Free;
-  end;
+  Intro := nil;
+  Say(Intro, 'Written by askr make model from the spec below, together with its');
+  Say(Intro, 'migration -- so the two start out agreeing. After that it is yours.');
+  Say(Intro, '');
+  for I := 0 to High(Fields) do
+    Say(Intro, '  ' + Fields[I].Column + ': ' + PascalTypeOf(Fields[I]) +
+      BoolToStr(Fields[I].Nullable, ' (nullable)', ''));
+  Describe := nil;
+  Say(Describe, 'S.Table(''' + Table_ + ''');');
+  for I := 0 to High(Fields) do
+    if DescribeLineOf(Fields[I]) <> '' then
+      Say(Describe, DescribeLineOf(Fields[I]));
+  { Together with the migration's Timestamps, or not at all. A model that
+    maps NOT NULL created_at without setting it is the one way the
+    TDateTime-as-NULL change turns into a constraint error. }
+  if Timestamps then
+    Say(Describe, 'S.Timestamps;');
+  Say(Describe, '{ S.SoftDeletes;  Delete sets deleted_at instead of removing }');
+  Rules := nil;
+  Say(Rules, '{ What the spec stated, and nothing inferred from a name. A column');
+  Say(Rules, '  called email is not therefore an email: say so here if it is. }');
+  for I := 0 to High(Fields) do
+    if RuleLineOf(Fields[I]) <> '' then
+      Say(Rules, RuleLineOf(Fields[I]));
+  Emit(ModelPath, ModelUnitText(N, Intro, Fields, Timestamps, False,
+    Describe, Rules, nil, '', ''));
 
   { ---- the migration ---- }
   VersionStr := NextVersion(Root);

@@ -114,6 +114,13 @@ function RemoveStaleSources(const Files: TGeneratedFiles;
 { The fingerprint written in a generated file's header, or ''. Reads the
   older Norwegian wording too, since projects still have files from before
   the language sweep. }
+{ What `askr schema` does, as one call: generate every unit, write the
+  ones that changed, remove the ones whose table is gone. `make resource`
+  calls it too, so the typed columns a generated controller uses are
+  the ones `askr schema` would have written -- not a second opinion. }
+procedure RegenerateSchema(Schema: TDbSchema; const Opts: TCodegenOptions;
+  out Files: TGeneratedFiles; out Changed, Removed: TStringArray);
+
 function FingerprintIn(const Source: string): string;
 
 { Naming conventions, exposed because the tests and the manifest use
@@ -679,6 +686,14 @@ begin
     SetLength(Result, N + 1);
     Result[N] := Files[I].FileName;
   end;
+end;
+
+procedure RegenerateSchema(Schema: TDbSchema; const Opts: TCodegenOptions;
+  out Files: TGeneratedFiles; out Changed, Removed: TStringArray);
+begin
+  Files := GenerateSources(Schema, Opts);
+  Changed := WriteSources(Files, Opts);
+  Removed := RemoveStaleSources(Files, Opts);
 end;
 
 function FingerprintIn(const Source: string): string;

@@ -96,10 +96,20 @@ function CsrfIsExempt(const Path: TStr): Boolean;
   request through. }
 procedure UseCsrf(R: TRouter);
 
+{ True once UseCsrf has run. Askr.Inertia asks, so that a page makes the
+  token only in an app that checks it. }
+function CsrfInUse: Boolean;
+
 implementation
 
 var
   GExempt: array of string;
+  GInUse: Boolean;
+
+function CsrfInUse: Boolean;
+begin
+  Result := GInUse;
+end;
 
 function CsrfMethodNeedsCheck(M: THttpMethod): Boolean;
 begin
@@ -292,6 +302,7 @@ begin
     says what needs saying. The call is here so the error comes at startup
     and not at the first POST. }
   Sessions;
+  GInUse := True;
   R.Use(TCsrfGuard.Check);
   R.After(TCsrfGuard.SetCookie);
 end;

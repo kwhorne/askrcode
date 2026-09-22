@@ -99,6 +99,7 @@ or set it for this project only, in askr.toml:
 |---|---|
 | `askr make model <Name> [--migration]` | `app/Models/App.Models.<Name>.pas` |
 | `askr make model <Name> name:type ...` | The model **and** its migration, from one spec |
+| `askr make resource <Name> [--table=t]` | Pages over a table that exists — see [below](#a-resource-from-a-table) |
 | `askr make controller <Name>` | `app/Http/App.Http.<Name>Controller.pas` |
 | `askr make migration <Name>` | `database/App.Migrations.<Name>.pas` |
 | `askr make seeder <Name>` | `database/App.Seeders.<Name>.pas` |
@@ -173,6 +174,77 @@ Next:
   askr migrate     makes the gadgets table
   askr schema      types its columns from the database
 ```
+
+### A resource from a table
+
+```sh
+askr make model Gadget name:string(60) born:date maker:references
+askr migrate
+askr make resource Gadget
+```
+
+The table is read from the database the project is configured with — the
+one that **exists**, not a spec — and becomes the seven actions over it:
+
+| Written | |
+|---|---|
+| `app/Http/App.Http.GadgetsController.pas` | `Index`, `Show`, `Add`, `Store`, `Edit`, `Update`, `Remove`, and `GadgetsRoutes(R)` |
+| `frontend/src/pages/Gadgets/` | `Index`, `Show`, `Add` and `Edit`, in Lauf, and `Fields` shared by the two forms |
+| `tests/App.Tests.Gadgets.pas` | Every action, through the router |
+| `app/Models/App.Models.Gadget.pas` | Only when there is none; one that is there is used as it is |
+| `app/Schema/` | The typed columns, exactly as `askr schema` writes them |
+
+and puts `GadgetsRoutes(R);` in `app.lpr` and the test in
+`tests/app_tests.lpr`, at the lines `askr new` left — or, when those lines
+are gone, prints what to add. It refuses a table that is not there, has no
+primary key, a key of two columns, or a key that is not a whole number, and
+says which.
+
+**The controller uses the typed columns** — `Gadgets.Name`, not `'name'` —
+so a column dropped later is a compile error in the controller rather than
+a 500 on the page. That is the reason to generate Pascal instead of
+interpreting a table at run time. **The Svelte pages are not typed against
+anything**: a rename breaks the controller and leaves the pages showing an
+empty cell. They say so at the top.
+
+`Add` and `Remove`, not `Create` and `Destroy`: those are `TObject`'s
+constructor and destructor, and a method with either name hides it.
+
+**A request fills only the fields the form has.**
+`Req.FillInto(M, [Gadgets.Name.Name, ...])`, not `Req.FillInto(M)` — the
+one-argument form fills every column the model maps, so a client that added
+`created_at` to the body would have set it. The generated test sends a
+forged `created_at` and checks it did not land.
+
+What the table says, the resource does:
+
+- `NOT NULL` without a default is `Required`, and the field is marked
+  required. A column **with** a default is not required, and a new form
+  starts from the default when it is a plain value (`'draft'`, `0`,
+  `false`); a function such as `now()` is left to the database.
+- `VARCHAR(n)` is `MaxLen(n)` and `maxlength="n"`.
+- A foreign key to a table whose model exists is a select of its rows,
+  labelled by its first string column and capped at a thousand — a select
+  with more is the wrong control. Without a model for it, it is a number,
+  and says what it points at. A key to a table that is not there is not a
+  relation.
+- A column named like a secret — `password`, `token`, `hash`, `secret`,
+  `salt` — is hidden from JSON, and is in neither the form, the list nor
+  the page. A guess, made in the direction whose failure is loud.
+- A type a form cannot show, such as a blob, stays out of the pages, and
+  out of a model this writes.
+- `deleted_at` makes it soft: `Remove` sets it.
+
+**The test runs on `TEST_DATABASE_URL`, and on `sqlite::memory:` without
+one**, with the migrations run first. A test that wrote into the database
+you develop against would leave its rows there. When it cannot make a row —
+a `NOT NULL` column the form leaves out, with no default — it tests the
+list and the 404 and says why it does not write.
+
+Not here yet: showing the rows of a has-many relation on the parent's page;
+checking that a foreign key points at a row before saving, or that a unique
+column is unique — both fail in the database instead of on the form; and a
+nullable number other than a reference, which Pascal cannot tell from zero. `--api`, for a JSON resource, is the next step.
 
 ## Migrations
 

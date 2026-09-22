@@ -51,7 +51,8 @@ one thing this is built not to do.
 writes `2026-09-22 13:00:00` — a space instead of a `T`, and no zone —
 which is not RFC 3339. A generated client told otherwise would build a
 date parser that fails on every row. The document says `string` and
-describes the shape in words, which is true.
+describes the shape in words, which is true — and allows `null`, which is
+how an unset date goes out.
 
 ## The rest is read off what is running
 

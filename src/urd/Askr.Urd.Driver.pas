@@ -156,8 +156,9 @@ function SqlToInt64(const S: TStr; out V: Int64): Boolean;
 function SqlToCurrency(const S: TStr; out V: Currency): Boolean;
 function SqlToFloat(const S: TStr; out V: Double): Boolean;
 function SqlToBool(const S: TStr; out V: Boolean): Boolean;
-{ Tolerates 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', an ISO T between date
-  and time, fractional seconds and a trailing time zone. }
+{ Tolerates 'YYYY-MM-DD', 'YYYY-MM-DD HH:MM:SS', 'YYYY-MM-DD HH:MM', an
+  ISO T between date and time, fractional seconds and a trailing time
+  zone. }
 function SqlToDateTime(const S: TStr; out V: TDateTime): Boolean;
 
 implementation
@@ -658,11 +659,22 @@ begin
   Sep := (S.Data + 10)^;
   if (Sep <> Ord(' ')) and (Sep <> Ord('T')) and (Sep <> Ord('t')) then
     Exit(False);
-  if S.Len < 19 then
+  if S.Len < 16 then
     Exit(False);
   if not TwoDigits(S, 11, H) then Exit(False);
+  if (S.Data + 13)^ <> Ord(':') then Exit(False);
   if not TwoDigits(S, 14, Mi) then Exit(False);
-  if not TwoDigits(S, 17, Se) then Exit(False);
+  { Seconds are optional. <input type="datetime-local"> leaves them out
+    whenever they are zero -- the HTML spec's shortest form -- and a date
+    from a form was otherwise not a date at all: FillInto skipped it and
+    the old value stayed, with nothing said. }
+  Se := 0;
+  if S.Len > 16 then
+  begin
+    if (S.Len < 19) or ((S.Data + 16)^ <> Ord(':')) then
+      Exit(False);
+    if not TwoDigits(S, 17, Se) then Exit(False);
+  end;
   if not TryEncodeTime(Word(H), Word(Mi), Word(Se), 0, Tm) then
     Exit(False);
 

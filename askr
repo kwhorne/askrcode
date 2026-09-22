@@ -796,6 +796,85 @@ cmd_api_check() {
 # not replaced by a Linux one.
 #
 # Written in English like cmd_mcp_check and cmd_api_check.
+# The pages make resource wrote, driven in a real Chrome through the app
+# in its container and Vite on the host: forms that save, a date that
+# survives an edit, errors on the fields they belong to, and axe with
+# contrast. Skips itself, saying why, without node, Chrome or a network
+# for npm -- the same as lauf:check.
+make_check_browser() {
+  chrome=${ASKR_CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+  [ -x "$chrome" ] || chrome=$(command -v google-chrome || command -v chromium || true)
+  if ! command -v node >/dev/null 2>&1 || [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
+    echo "  skip  needs node and Chrome (ASKR_CHROME)"
+    return 0
+  fi
+  if [ ! -d "$ROOT/frontend/lauf/node_modules/axe-core" ]; then
+    echo "  skip  needs npm install in frontend/lauf"
+    return 0
+  fi
+  web_port=${ASKR_MAKE_PORT:-8353}
+  front="$work/shop/frontend"
+  # The scaffold was made in the container, so Lauf is file:/work/...; on
+  # the host it is this checkout.
+  sed -i.bak "s|\"file:/work/frontend/lauf\"|\"file:$ROOT/frontend/lauf\"|" "$front/package.json"
+  rm -f "$front/package.json.bak"
+  if ! ( cd "$front" && npm install --no-fund --no-audit >"$work/web-npm.log" 2>&1 ); then
+    echo "  skip  npm install failed (see $work/web-npm.log)"
+    return 0
+  fi
+  if curl -s -o /dev/null "http://127.0.0.1:5173/" 2>/dev/null; then
+    echo "  skip  something is already on port 5173, where the pages load Vite from"
+    return 0
+  fi
+  ( cd "$front" && exec npx vite --host 127.0.0.1 ) >"$work/web-vite.log" 2>&1 &
+  vite_pid=$!
+  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/browser.sqlite\n' > "$work/shop/.env"
+  in_box "rm -f storage/browser.sqlite && $askr_bin migrate" shop >"$work/web-migrate.log" 2>&1 || true
+  docker rm -f askr-makecheck-web >/dev/null 2>&1
+  docker run -d --name askr-makecheck-web -p "$web_port:$web_port" $DOCKER_PLATFORM \
+    -v "$ROOT":/work -w "/work/${work#$ROOT/}/shop" "$IMAGE" \
+    sh -c "./.build/bin/app $web_port 0.0.0.0" >/dev/null
+  profile=$(mktemp -d)
+  "$chrome" --headless --disable-gpu --remote-debugging-port=9224 \
+    --user-data-dir="$profile" about:blank >/dev/null 2>&1 &
+  chrome_pid=$!
+  n=0
+  until curl -s -o /dev/null "http://127.0.0.1:9224/json/list" &&
+        curl -s -o /dev/null "http://localhost:$web_port/gadgets" &&
+        curl -s -o /dev/null "http://127.0.0.1:5173/build/src/main.js"; do
+    n=$((n + 1))
+    if [ $n -gt 80 ]; then
+      bad "the app, Vite and Chrome start" "$(docker logs askr-makecheck-web 2>&1 | tail -3)"
+      break
+    fi
+    sleep 0.25
+  done
+  if [ $n -le 80 ]; then
+    if BASE="http://localhost:$web_port" CDP=http://127.0.0.1:9224 \
+         node "$ROOT/tools/make-check/axe.mjs" >"$work/web-axe-empty.log" 2>&1; then
+      ok "axe finds nothing on the empty lists and the new forms ($(grep -c '^  ok' "$work/web-axe-empty.log") pages)"
+    else
+      bad "axe finds nothing on the empty lists" "$(grep -E 'FAIL' -A2 "$work/web-axe-empty.log" | head -14)"
+    fi
+    if BASE="http://localhost:$web_port" CDP=http://127.0.0.1:9224 \
+         node "$ROOT/tools/make-check/browser.mjs" >"$work/web-browser.log" 2>&1; then
+      ok "create, show, edit, refuse, list, search, sort and delete, in Chrome ($(grep -c '^  ok' "$work/web-browser.log") checks)"
+    else
+      bad "the pages work in Chrome" "$(grep -E 'FAIL|got|Error|errors' -A1 "$work/web-browser.log" | head -14)"
+    fi
+    if AXE_EXPECT_ROWS=1 BASE="http://localhost:$web_port" CDP=http://127.0.0.1:9224 \
+         node "$ROOT/tools/make-check/axe.mjs" >"$work/web-axe.log" 2>&1; then
+      ok "and with rows, their pages and their forms: contrast included, light and dark, 1280 and 390 px ($(grep -c '^  ok' "$work/web-axe.log") pages)"
+    else
+      bad "axe finds nothing on the pages" "$(grep -E 'FAIL' -A2 "$work/web-axe.log" | head -14)"
+    fi
+  fi
+  kill "$vite_pid" "$chrome_pid" 2>/dev/null
+  wait "$vite_pid" "$chrome_pid" 2>/dev/null
+  docker rm -f askr-makecheck-web >/dev/null 2>&1
+  rm -rf "$profile" 2>/dev/null
+}
+
 cmd_make_check() {
   prepare
   fail=0
@@ -954,6 +1033,167 @@ cmd_make_check() {
     fi
   done
 
+  echo
+  echo "- askr make resource"
+
+  # A table with no model, written by hand the way a person would: a
+  # keyword for a column name, a secret, a default, soft deletes. make
+  # resource has to write the model for this one; for Gadget it uses the
+  # one make model wrote.
+  cat > "$work/shop/database/App.Migrations.CreateNotes.pas" <<'EOF'
+unit App.Migrations.CreateNotes;
+
+{$mode Delphi}{$H+}
+
+interface
+
+uses
+  Askr.Norn.Schema, Askr.Norn.Migration;
+
+type
+  TCreateNotes = class(TMigration)
+  public
+    class function Version: string; override;
+    procedure Up(S: TSchemaBuilder); override;
+  end;
+
+implementation
+
+class function TCreateNotes.Version: string;
+begin
+  Result := '29990101000000';
+end;
+
+procedure TCreateNotes.Up(S: TSchemaBuilder);
+begin
+  with S.Create('notes') do
+  begin
+    Id;
+    Text('title', 80);
+    Text('type', 20).Nullable;
+    Text('status', 20).Default('draft');
+    Text('api_token', 64).Nullable;
+    Bool('pinned').Default(False);
+    Timestamps;
+    SoftDeletes;
+  end;
+end;
+
+initialization
+  RegisterMigration(TCreateNotes);
+
+end.
+EOF
+  # make migration regenerates the index, which puts CreateNotes in it.
+  # The round trip's tests go: make resource writes the test program.
+  in_box "rm -f storage/resource.sqlite tests/app_tests.lpr && $askr_bin make migration Noop2" \
+    shop >/dev/null 2>&1 || true
+  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/resource.sqlite\n' > "$work/shop/.env"
+  if ! in_box "$askr_bin build && $askr_bin migrate" shop >"$work/res-migrate.log" 2>&1; then
+    bad "the project migrates before make resource" "$(grep -E 'rror|Fatal' "$work/res-migrate.log" | head -5)"
+    return 1
+  fi
+
+  for model in Gadget Maker Note; do
+    if in_box "$askr_bin make resource $model" shop >"$work/res-$model.log" 2>&1; then
+      ok "make resource $model"
+    else
+      bad "make resource $model" "$(tail -6 "$work/res-$model.log")"
+    fi
+  done
+  if grep -q "App.Models.Gadget.pas, which is there" "$work/res-Gadget.log"; then
+    ok "it uses the model make model wrote, and does not rewrite it"
+  else
+    bad "it uses the model make model wrote" "$(head -20 "$work/res-Gadget.log")"
+  fi
+  if [ -f "$work/shop/app/Models/App.Models.Note.pas" ]; then
+    ok "and writes one for a table that had none"
+  else
+    bad "and writes one for a table that had none"
+  fi
+
+  before=$(cksum < "$work/shop/app/Http/App.Http.GadgetsController.pas")
+  if in_box "$askr_bin make resource Gadget" shop >"$work/res-again.log" 2>&1; then
+    bad "making it again is refused" "it exited 0"
+  else
+    ok "making it again is refused"
+  fi
+  after=$(cksum < "$work/shop/app/Http/App.Http.GadgetsController.pas")
+  [ "$before" = "$after" ] && ok "and the controller is left exactly as it was" ||
+    bad "and the controller is left exactly as it was"
+  # grep -c exits 1 on a count of 0, and under set -e the whole gate then
+  # died here without a word -- exactly when it had something to say.
+  n_routes=$(grep -c 'GadgetsRoutes(R);' "$work/shop/app.lpr" || true)
+  [ "$n_routes" = "1" ] && ok "and the routes are in app.lpr once" ||
+    bad "and the routes are in app.lpr once" "found $n_routes"
+
+  if in_box "$askr_bin make resource Widget" shop >"$work/res-none.log" 2>&1; then
+    bad "a table that is not there is refused" "it exited 0"
+  else
+    ok "a table that is not there is refused"
+  fi
+  if grep -q "widgets" "$work/res-none.log" && grep -q "gadgets" "$work/res-none.log"; then
+    ok "and it says which it looked for, and which there are"
+  else
+    bad "and it says which it looked for" "$(cat "$work/res-none.log")"
+  fi
+  [ -f "$work/shop/app/Http/App.Http.WidgetsController.pas" ] &&
+    bad "and nothing was written" || ok "and nothing was written"
+
+  if in_box "$askr_bin build" shop >"$work/res-build.log" 2>&1; then
+    ok "the project builds with the three resources in it"
+  else
+    bad "the project builds with the three resources in it" \
+      "$(grep -E 'rror|Fatal' "$work/res-build.log" | head -8)"
+    return 1
+  fi
+  if grep -iE 'warning' "$work/res-build.log" | grep -E 'Controller|App.Models.Note|App.Tests' >/dev/null; then
+    bad "and what it wrote compiles without a warning" \
+      "$(grep -iE 'warning' "$work/res-build.log" | grep -E 'Controller|App.Models.Note|App.Tests' | head -5)"
+  else
+    ok "and what it wrote compiles without a warning"
+  fi
+
+  # The generated tests, on the database they default to and then on the
+  # two servers. TEST_DATABASE_URL is theirs, so this is the path a user
+  # takes too.
+  for tdsn in \
+      "" \
+      "postgresql://askr:askr@askr-postgres:5432/askr_make" \
+      "mysql://askr:askr@askr-mysql:3306/askr_make"; do
+    label=${tdsn%%:*}
+    [ -z "$tdsn" ] && label="sqlite::memory:"
+    if in_box "TEST_DATABASE_URL='$tdsn' $askr_bin test" shop >"$work/res-test-${label%%:*}.log" 2>&1; then
+      ok "the generated tests pass on $label"
+    else
+      bad "the generated tests pass on $label" \
+        "$(grep -E 'FAIL|got|expected|rror' "$work/res-test-${label%%:*}.log" | head -12)"
+    fi
+  done
+  count=$(grep -c '^    ok' "$work/res-test-sqlite.log" 2>/dev/null || echo 0)
+  if [ "$count" -ge 14 ]; then
+    ok "and they are all there: $count"
+  else
+    bad "and they are all there" "only $count ran"
+  fi
+
+  # The pages compile, and import nothing Lauf does not export. Svelte is
+  # not typed against the table, so this is as far as a gate can see
+  # without a browser.
+  if command -v node >/dev/null 2>&1 && [ -d "$ROOT/frontend/lauf/node_modules/svelte" ]; then
+    if node "$ROOT/tools/make-check/pages.mjs" "$work/shop/frontend/src/pages" \
+         >"$work/res-pages.log" 2>&1; then
+      ok "the pages compile, and every import is one Lauf has"
+    else
+      bad "the pages compile" "$(head -12 "$work/res-pages.log")"
+    fi
+  else
+    echo "  skip  the pages: needs node and npm install in frontend/lauf"
+  fi
+
+  echo
+  echo "- the pages in a browser"
+  make_check_browser
   echo
   echo "- two migrations with one version"
 

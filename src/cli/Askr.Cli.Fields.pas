@@ -76,8 +76,9 @@ function MigrationLineOf(const F: TFieldSpec): string;
   column is, not what the application means by it. }
 function RuleLineOf(const F: TFieldSpec): string;
 
-{ The line in Describe that makes a nullable string column NULL when it is
-  empty, or ''. Only for a column the spec marked with `?`. }
+{ The line in Describe that makes an empty value NULL, or '': EmptyIsNull
+  for a string column the spec marked with `?`, ZeroIsNull for every
+  reference. }
 function DescribeLineOf(const F: TFieldSpec): string;
 
 { The names that are accepted, for a message that lists them. }
@@ -369,6 +370,13 @@ begin
     is not even a value the column accepts. }
   if F.Nullable and (F.Kind in [ftString, ftText, ftJson, ftUuid]) then
     Result := 'S.EmptyIsNull(''' + F.Prop + ''');'
+  { Every reference, nullable or not: no table has a row 0. Nullable, it
+    lets "none" be NULL at all; either way it goes out in JSON as null,
+    which is what an empty select shows. Required already refuses 0 --
+    IsBlank reads a zero number as blank -- so a NOT NULL one is refused
+    on the form either way. }
+  else if F.Kind = ftReferences then
+    Result := 'S.ZeroIsNull(''' + F.Prop + ''');'
   else
     Result := '';
 end;

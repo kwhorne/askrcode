@@ -57,7 +57,13 @@ type
     Member: string;
     ColAlias: string;
     IsPrimaryKey: Boolean;
+    { False for a type a form or a list cannot show -- a blob. It is not
+      mapped on a model the plan writes. }
+    Supported: Boolean;
     HasDefault: Boolean;
+    { The default as the database reports it, raw: 'new'::character
+      varying on Postgres, 'new' on the other two. }
+    DefaultExpr: string;
     IsTimestamp: Boolean;
     IsSoftDelete: Boolean;
     LooksSecret: Boolean;
@@ -92,6 +98,10 @@ type
     HasTimestamps: Boolean;
     HasSoftDeletes: Boolean;
     DefaultSort: string;
+    { False when a row cannot be made through the form: a NOT NULL column
+      with no default that the form leaves out, because it is a secret or
+      a type it cannot show. The notes say which. }
+    CanCreate: Boolean;
     { Non-empty means this table cannot be a resource, and says why. }
     Problems: TStringArray;
     { Things a human should decide, and what the plan did meanwhile. }
@@ -112,6 +122,11 @@ function PlanColumnIndex(const P: TResourcePlan; const Column: string): Integer;
 function DescribeLinesOf(const P: TResourcePlan): TStringArray;
 function RuleLinesOf(const P: TResourcePlan): TStringArray;
 function HiddenColumnsOf(const P: TResourcePlan): TStringArray;
+
+{ Whether the rules make this column Required. The form marks the same
+  fields required, from this and not from a second reading of the
+  column, so the asterisk and the error cannot disagree. }
+function IsRequired(const PC: TPlanColumn): Boolean;
 
 { What `make resource --dry-run` prints: the plan, in words. }
 function PlanText(const P: TResourcePlan): string;
@@ -318,6 +333,7 @@ begin
   Result.HasTimestamps := False;
   Result.HasSoftDeletes := False;
   Result.DefaultSort := '';
+  Result.CanCreate := True;
   Result.Problems := nil;
   Result.Notes := nil;
 
@@ -367,6 +383,8 @@ begin
     PC.Searchable := False;
 
     Supported := KindOf(C, Kind, Len);
+    PC.Supported := Supported;
+    PC.DefaultExpr := C.DefaultExpr;
     PC.Field.Kind := Kind;
     PC.Field.Length := Len;
     PC.Field.Nullable := C.Nullable;
@@ -462,6 +480,16 @@ begin
         'in the schema says which this is; it is treated as a string of 36.',
         [C.Name]));
 
+    if not PC.Editable and not C.Nullable and not PC.HasDefault and
+       not PC.IsPrimaryKey and not PC.IsTimestamp then
+    begin
+      Result.CanCreate := False;
+      Say(Result.Notes, Format(
+        '%s is NOT NULL with no default, and the form leaves it out, so a ' +
+        'row cannot be made through this resource until something sets ' +
+        'it -- in Store, or with a default in a migration.', [C.Name]));
+    end;
+
     if (FirstString = '') and (PC.Field.Kind = ftString) and PC.Sortable then
       FirstString := C.Name;
 
@@ -549,6 +577,11 @@ begin
   Result := PC.Field;
   if PC.HasDefault then
     Result.Nullable := True;
+end;
+
+function IsRequired(const PC: TPlanColumn): Boolean;
+begin
+  Result := PC.Editable and (Pos('.Required', RuleLineOf(ForRules(PC))) > 0);
 end;
 
 function DescribeLinesOf(const P: TResourcePlan): TStringArray;

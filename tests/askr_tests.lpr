@@ -2340,6 +2340,7 @@ var
   PrevA: TArena;
   Req: TRequest;
   K: TTestCustomer;
+  Msg: string;
 begin
   Group('Binding');
   A := TArena.Create(32 * 1024);
@@ -2403,6 +2404,32 @@ begin
     Check(K.Balance = 42, 'a sent field is updated');
     CheckEqS(K.Name, 'Unchanged', 'a field that was not sent is untouched');
     CheckEqS(K.Email, 'unchanged@example.com', 'and the second one too');
+
+    { **Only the columns named.** The one-argument form fills whatever a
+      client sends that the model maps; a form that has two fields should
+      not let a third be set by adding it to the body. }
+    A.Reset;
+    Req := MakeRequestWithBody(A,
+      'PUT /customers/1 HTTP/1.1'#13#10'Host: t'#13#10 +
+      'Content-Type: application/json'#13#10'Content-Length: 60',
+      '{"name":"Ada","email":"forged@example.com","balance":1}');
+    K := A.New<TTestCustomer>;
+    K.Email := 'kept@example.com';
+    Req.FillInto(K, ['name', 'balance']);
+    CheckEqS(K.Name, 'Ada', 'a named column is filled');
+    Check(K.Balance = 1, 'and the other named one');
+    CheckEqS(K.Email, 'kept@example.com',
+      'a column that was sent but not named is left alone');
+
+    Msg := '';
+    try
+      Req.FillInto(K, ['name', 'nmae']);
+    except
+      on E: EModelError do
+        Msg := E.Message;
+    end;
+    Check(Pos('nmae', Msg) > 0,
+      'a name the model does not map raises, and says which');
 
     { Input og HasInput. }
     A.Reset;

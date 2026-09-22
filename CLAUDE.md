@@ -782,6 +782,52 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **Én nøkkelordliste**, `IsPascalKeyword` i `Askr.Norn.Codegen`. Den gamle
   i Norn hadde 41 av 67, `make model` hadde sin egen lengre, og en kolonne
   som het `until` ga en schema-unit som ikke kompilerte.
+* **`make resource` kjører i verktøyet, ikke i app-binæren.** Den trenger
+  databasen, og det var grunnen til å tenke app-binær — men verktøyet
+  linker alt driverne og introspeksjonen for Rún. Da slipper kommandoen å
+  kreve en app som bygger før filene som får den til å bygge finnes, og
+  den ligger ved siden av de andre `make`-kommandoene og `RefuseExisting`.
+* **`Add` og `Remove`, ikke `Create` og `Destroy`.** Det er konstruktøren
+  og destruktoren til `TObject`, og en metode med samme navn skygger.
+* **`Req.FillInto(M, [kolonner])` er det genererte kontrollere bruker.**
+  Énargumentsformen fyller alt modellen mapper, og en klient som la
+  `created_at` i kroppen satte den. Den genererte testen sender en
+  forfalsket `created_at` og sjekker at den ikke landet — mutasjonssjekket
+  begge veier.
+* **Rutene er én prosedyre i kontroller-uniten**, kalt av både `app.lpr`
+  og testen. To lister over de samme sju rutene ville vært to lister.
+* **Testen kjører på `TEST_DATABASE_URL`, og `sqlite::memory:` uten**, med
+  migrasjonene først. Den kan ikke skrive i databasen man utvikler mot.
+* **Svelte-sidene er ikke typet mot noe.** Det er det ene stedet kjeden
+  ikke er lukket, og sidene sier det øverst. `pages.mjs` sjekker at de
+  kompilerer uten advarsel og at hver import finnes — ikke at de virker.
+* **Det gjør nettleserdelen av `make:check`.** Appen i containeren, Vite
+  på verten, Chrome over CDP: opprett, vis, rediger, avvist skjema, liste,
+  søk, sortering og sletting, og axe med kontrast over hver side, lys og
+  mørk, 1280 og 390 px, **både tom og med rader**. Den fant tre ting ingen
+  annen del av porten så:
+  - **Hver POST fra en Inertia-side ga 419.** XSRF-kaka settes bare når
+    tokenet finnes, og ingenting på en Inertia-side laget det. Klienten
+    svarer 419 med å laste på nytt, så skjemaet kunne aldri sendes — i
+    enhver ny app, ikke bare en generert. En Inertia-side lager tokenet nå.
+  - **`align: 'end'`** på tallkolonnene. DataGrid kjenner bare `'right'`.
+  - **En tom DataGrid hadde ingen tabstopp.** Den ene cellen i
+    tabrekkefølgen sto på første rad, så uten rader var tabellen,
+    sorteringsknappene med, utenfor rekkevidde for tastatur. axe så det
+    bare på den tomme lista; første kjøring hadde en rad liggende igjen og
+    var grønn. Derfor to axe-runder, og den andre feiler hvis raden mangler.
+* **Tre feil ble funnet ved å lese, før nettleseren:** en tom dato ble
+  `1899-12-30` i JSON; `datetime-local` sender ikke sekunder når de er
+  null — `SqlToDateTime` avviste det, og `FillInto` beholdt den gamle
+  verdien uten et ord; og en nullbar referanse kunne aldri bli NULL, fordi
+  0 er det Pascal har. `ZeroIsNull` er svaret, og `make model` skriver den
+  for hver referanse.
+* **En fjerde «feil» var ingen, og mutasjonssjekken sa det.** Jeg trodde
+  `Required` på en dato ikke kunne feile, fordi validatorens `AsStr` gjør
+  0 om til `1899-12-30`, og rettet den. Mutasjonen som fjernet rettelsen
+  overlevde: `Required` spør `IsBlank`, som alltid har lest en dato og et
+  tall på 0 som tomme. Rettelsen er tatt ut igjen, og changeloggen sier
+  ikke noe om den. En mutasjon som overlever er et svar, ikke bare et hull.
 
 ## Mail og providere
 

@@ -201,6 +201,32 @@ describe('DataGrid — tastatur', () => {
     expect(tabbare).toHaveLength(1)
   })
 
+  // With no rows the marker's cell does not exist. Something still has to
+  // be in the tab order, or the grid -- sort buttons and all -- cannot be
+  // reached from the keyboard.
+  it('keeps one cell in the tab order when there are no rows', () => {
+    const { container } = render(GridDemo, { rows: [] })
+    const reachable = [...container.querySelectorAll('[tabindex]')].filter(
+      (e) => e.tabIndex === 0
+    )
+    expect(reachable).toHaveLength(1)
+    expect(reachable[0].closest('thead')).not.toBeNull()
+  })
+
+  it('keeps it on a row that exists when the rows get fewer', async () => {
+    const { container, rerender } = render(GridDemo, { rows })
+    const g = grid(container)
+    for (let i = 0; i < 20; i++) await fireEvent.keyDown(g, { key: 'ArrowDown' })
+    await rerender({ rows: rows.slice(0, 1) })
+    await waitFor(() => {
+      const reachable = [...container.querySelectorAll('[tabindex]')].filter(
+        (e) => e.tabIndex === 0
+      )
+      expect(reachable).toHaveLength(1)
+      expect(reachable[0].closest('tr')).toBe(kropp(container)[0])
+    })
+  })
+
   it('flytter markøren med piltastene', async () => {
     const { container } = render(GridDemo, { rows })
     const g = grid(container)

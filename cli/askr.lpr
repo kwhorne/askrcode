@@ -17,7 +17,8 @@ uses
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
   Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
-  Askr.Console.Commands, Askr.Cli.Fields,
+  Askr.Console.Commands, Askr.Cli.Fields, Askr.Cli.Resource,
+  Askr.Urd.Driver, Askr.Norn.Introspect,
   Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
 
 { Free Pascal leter etter fpc.cfg i ~/.fpc.cfg og /etc/fpc.cfg på Unix, ikke
@@ -192,6 +193,7 @@ begin
   Si('  askr routes              show the routing table');
   Si('  askr about               what this app is configured with');
   Si('  askr make model <Name>   new model');
+  Si('  askr make resource <Name>  pages over a table: list, show, add, edit');
   Si('  askr make controller <Name>');
   Si('  askr make migration <Name>');
   Si('  askr make seeder|job|middleware <Name>');
@@ -708,6 +710,50 @@ begin
   Result := False;
 end;
 
+{ The value of --name=value, or ''. }
+function FlagText(const Name_: string): string;
+var
+  I: Integer;
+begin
+  for I := 1 to ParamCount do
+    if Copy(ParamStr(I), 1, Length(Name_) + 3) = '--' + Name_ + '=' then
+      Exit(Copy(ParamStr(I), Length(Name_) + 4, MaxInt));
+  Result := '';
+end;
+
+{ `askr make resource`: read from the database the project is configured
+  with, in the tool -- which links the drivers and the introspection
+  already, for Rún. The app binary is not needed, and not built: this runs
+  before the files that would make it build are there. }
+function CmdMakeResource(P: TProject; const Name_: string): Boolean;
+var
+  Dsn: string;
+  C: TDbConnection;
+  S: TDbSchema;
+begin
+  SetCurrentDir(P.Root);
+  LoadConfig(P.Root);
+  Dsn := Cfg('database.url');
+  if Dsn = '' then
+  begin
+    Si('make resource reads the table from the database, and DATABASE_URL');
+    Si('is not set. Put it in .env, then askr migrate, then try again.');
+    Exit(False);
+  end;
+  C := OpenDbConnection(Dsn);
+  try
+    S := IntrospectSchema(C);
+    try
+      Result := MakeResource(P.Root, S, PascalName(Name_), FlagText('table'),
+        HasFlag('force'));
+    finally
+      S.Free;
+    end;
+  finally
+    C.Free;
+  end;
+end;
+
 { Skal prosjektet ha innlogging?
 
   --auth og --no-auth svarer for den som kjører fra et skript. Without et av
@@ -750,6 +796,8 @@ begin
     Si('       askr make model <Name> name:type ...   with its migration');
     Si('         types: ' + TypeNames + '; string(n) for a length,');
     Si('         a trailing ? for nullable. --no-timestamps, --force');
+    Si('       askr make resource <Name> [--table=name] [--force]');
+    Si('         the seven actions, pages and a test, from the table');
     Si('       askr make auth [--force]');
     Halt(1);
   end;
@@ -782,6 +830,11 @@ begin
                not HasFlag('no-timestamps'), HasFlag('force')) then
         Halt(1);
     end;
+  end
+  else if Slag = 'resource' then
+  begin
+    if not CmdMakeResource(P, Name_) then
+      Halt(1);
   end
   else if Slag = 'controller' then
     MakeController(P.Root, Name_)

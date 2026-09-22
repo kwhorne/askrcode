@@ -54,6 +54,14 @@ The cookie is only set when the token already exists. Creating one there
 would give every request, including static files and health checks, a write
 to the session, and therefore a session per anonymous visitor.
 
+**An Inertia page makes the token.** The Inertia client sends only what the
+`XSRF-TOKEN` cookie holds, so a page that did not make one gave a new
+visitor a form whose first POST answered 419 — and the client meets 419 by
+reloading, which made no token either. When `UseCsrf` is on, rendering an
+Inertia page creates the token, and with it the session. That is a session
+per visitor who sees a page. A page is where a form is, and it is the price
+of the form working; a static file or a health check still costs nothing.
+
 ## What is checked
 
 `POST`, `PUT`, `PATCH` and `DELETE`. `GET`, `HEAD` and `OPTIONS` are not —

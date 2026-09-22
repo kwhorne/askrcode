@@ -48,7 +48,8 @@ interface
 uses
   SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response,
-  Askr.Urd.Model, Askr.Urd.Json, Askr.Urd.Bind, Askr.Session, Askr.Core.Url;
+  Askr.Urd.Model, Askr.Urd.Json, Askr.Urd.Bind, Askr.Session, Askr.Core.Url,
+  Askr.Csrf;
 
 type
   EInertiaError = class(Exception);
@@ -768,6 +769,17 @@ begin
        Req.HasHeader('x-inertia-version') and
        not Req.Header('x-inertia-version').EqualsStr(TInertia.Version) then
       Exit(InertiaLocation(Req.Target.ToString));
+
+    { **A page makes the CSRF token.** The Inertia client sends only what
+      the XSRF-TOKEN cookie holds, and UseCsrf sets that cookie only once
+      the token exists -- so that a static file or a health check does
+      not cost a session. Nothing else on an Inertia page asked for it,
+      and every POST from a visitor who had not been to a server-rendered
+      form answered 419, which the client meets by reloading and trying
+      again. A page is where a form is; this is the price of the form
+      working, and it is a session per visitor who sees a page. }
+    if CsrfInUse and (CurrentSession <> nil) then
+      CsrfToken;
 
     Payload := BuildPayload(A, Req, Component, Props, Deferred);
 

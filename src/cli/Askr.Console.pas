@@ -648,14 +648,12 @@ begin
     try
       Opts := DefaultCodegenOptions;
       Opts.OutputDir := Cfg('schema.dir', 'app/Schema');
-      Filer := GenerateSources(S, Opts);
-      Changed := WriteSources(Filer, Opts);
-      for I := 0 to High(Filer) do
-        Si('  ' + Opts.OutputDir + '/' + Filer[I].FileName);
       { A file for a table that is gone makes a false claim, and code
         using its columns keeps compiling against a table that is not
-        there. schema:check reports it; this is what fixes it. }
-      Removed := RemoveStaleSources(Filer, Opts);
+        there. schema:check reports it; RegenerateSchema removes it. }
+      RegenerateSchema(S, Opts, Filer, Changed, Removed);
+      for I := 0 to High(Filer) do
+        Si('  ' + Opts.OutputDir + '/' + Filer[I].FileName);
       for I := 0 to High(Removed) do
         Si('  ' + Opts.OutputDir + '/' + Removed[I] + '  (removed: no such table)');
       Si('');

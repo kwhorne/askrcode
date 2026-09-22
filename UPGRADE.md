@@ -31,6 +31,19 @@ instead of `INTEGER`. A table made from now on types its booleans as
 `Int64` on SQLite only will stop compiling, which is where it should.
 Tables that exist are not touched.
 
+**An unset date is `null` in JSON**, not `"1899-12-30 00:00:00"`. A
+frontend that tested for that string, or that assumed a date is always a
+string, needs to handle `null`. The OpenAPI document says
+`["string", "null"]` for every date, so a generated client changes too.
+
+**When `UseCsrf` is on, an Inertia page creates the session.** Every
+visitor who sees a page gets a session cookie and a slot in the session
+store. It is what lets a form on that page be sent at all; if you counted
+on sessions only for signed-in users, that is no longer true for pages.
+
+**`askr make model` writes `S.ZeroIsNull` for a reference.** Nothing to do
+for a model that exists; a new one gets the line.
+
 ## 0.12.0
 
 **Worth reading if anything but a browser calls your app.** The framework

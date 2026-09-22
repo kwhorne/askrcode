@@ -73,6 +73,8 @@ type
     Insertable: Boolean;
     { An empty string goes in as NULL. Set with TSchema.EmptyIsNull. }
     EmptyIsNull: Boolean;
+    { Zero goes in as NULL and out as null. Set with TSchema.ZeroIsNull. }
+    ZeroIsNull: Boolean;
   end;
 
   TRelationKind = (rkHasMany, rkBelongsTo, rkHasOne);
@@ -194,6 +196,14 @@ type
       a `?`. The property has to be a mapped string, or this raises --
       a setting that silently did nothing would look like it worked. }
     procedure EmptyIsNull(const APropName: string);
+
+    { Zero is NULL, for an integer that refers to a row: no table has a
+      row 0, so 0 is how Pascal says "none". It goes in as NULL -- without
+      this a nullable reference could never be NULL, and an empty select
+      wrote a foreign key to a row that is not there -- and comes out in
+      JSON as null. `askr make model` asks for it on every references
+      column. An integer property only, or this raises. }
+    procedure ZeroIsNull(const APropName: string);
 
     { The model sets created_at at INSERT and updated_at at both.
 
@@ -663,9 +673,28 @@ begin
   if FMeta.FColumns[I].Kind <> ckString then
     raise EModelError.CreateFmt(
       '%s: EmptyIsNull(''%s'') is for a string property. A TDateTime of ' +
-      'zero is written as NULL already, and a number has no empty.',
+      'zero is written as NULL already; for an integer that refers to a ' +
+      'row, use ZeroIsNull.',
       [FMeta.ModelClass.ClassName, APropName]);
   FMeta.FColumns[I].EmptyIsNull := True;
+end;
+
+procedure TSchema.ZeroIsNull(const APropName: string);
+var
+  I: Integer;
+begin
+  I := FMeta.IndexOfProp(APropName);
+  if I < 0 then
+    raise EModelError.CreateFmt(
+      '%s: ZeroIsNull(''%s'') names no mapped property. Check the ' +
+      'spelling -- it is the property name, not the column.',
+      [FMeta.ModelClass.ClassName, APropName]);
+  if FMeta.FColumns[I].Kind <> ckInteger then
+    raise EModelError.CreateFmt(
+      '%s: ZeroIsNull(''%s'') is for an integer property, the id of a ' +
+      'row somewhere else.',
+      [FMeta.ModelClass.ClassName, APropName]);
+  FMeta.FColumns[I].ZeroIsNull := True;
 end;
 
 { Common to Timestamps and SoftDeletes: the column has to exist as a
@@ -814,6 +843,7 @@ begin
       Result.FColumns[N].Kind := Kind;
       Result.FColumns[N].Insertable := True;
       Result.FColumns[N].EmptyIsNull := False;
+      Result.FColumns[N].ZeroIsNull := False;
     end;
   finally
     if Props <> nil then
@@ -1453,7 +1483,10 @@ var
 begin
   case Col.Kind of
     ckInteger:
-      Result := DbParam(A, GetInt64Prop(Model, Col.Prop));
+      if Col.ZeroIsNull and (GetInt64Prop(Model, Col.Prop) = 0) then
+        Result := DbNull
+      else
+        Result := DbParam(A, GetInt64Prop(Model, Col.Prop));
     ckString:
       begin
         S := GetStrProp(Model, Col.Prop);

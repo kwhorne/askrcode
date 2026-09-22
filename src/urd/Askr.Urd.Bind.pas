@@ -31,7 +31,18 @@ type
   TRequestBindHelper = class helper for TRequest
   public
     { Fyller modellens published properties fra requesten. }
-    procedure FillInto(M: TModel);
+    procedure FillInto(M: TModel); overload;
+    { Only the columns named, and nothing else the request carries.
+
+        Req.FillInto(C, [Customers.Name.Name, Customers.Email.Name]);
+
+      The one-argument form fills every column the model maps, so a
+      client that adds `created_at` or `is_admin` to the body sets it.
+      This is the form for a handler that knows which fields its form
+      has -- which `askr make resource` always does. A name the model
+      does not map raises: skipping it would look like a field that
+      saved. }
+    procedure FillInto(M: TModel; const Only: array of string); overload;
     { One value, whether it came as JSON, form or query. }
     function Input(const AName: string): TStr;
     function HasInput(const AName: string): Boolean;
@@ -181,40 +192,56 @@ begin
     Result := Default;
 end;
 
-procedure TRequestBindHelper.FillInto(M: TModel);
+procedure FillColumns(Req: TRequest; M: TModel; const Only: array of string;
+  UseOnly: Boolean);
 var
   Meta: TModelMeta;
-  I, PkIdx: Integer;
+  I, J, PkIdx: Integer;
+  Found: Boolean;
   Col: TColumnInfo;
   S: TStr;
   I64: Int64;
   Cur: Currency;
   Dbl: Double;
   Dt: TDateTime;
-  B: Boolean;
 begin
   if M = nil then
     Exit;
   Meta := M.Meta;
   PkIdx := Meta.PrimaryKeyIndex;
 
+  for J := 0 to High(Only) do
+    if Meta.IndexOfColumn(Only[J]) < 0 then
+      raise EModelError.CreateFmt(
+        'FillInto was told to fill %s, and %s maps no column of that name.',
+        [Only[J], M.ClassName]);
+
   for I := 0 to Meta.ColumnCount - 1 do
   begin
     if I = PkIdx then
       Continue;
     Col := Meta.Columns[I];
-    if not HasInput(Col.ColumnName) then
+    if UseOnly then
+    begin
+      Found := False;
+      for J := 0 to High(Only) do
+        if Only[J] = Col.ColumnName then
+          Found := True;
+      if not Found then
+        Continue;
+    end;
+    if not Req.HasInput(Col.ColumnName) then
       Continue;
 
     case Col.Kind of
       ckBoolean:
         SetOrdProp(M, Col.Prop,
-          Ord(InputBool(Col.ColumnName, GetOrdProp(M, Col.Prop) <> 0)));
+          Ord(Req.InputBool(Col.ColumnName, GetOrdProp(M, Col.Prop) <> 0)));
       ckString:
-        SetStrProp(M, Col.Prop, Input(Col.ColumnName).ToString);
+        SetStrProp(M, Col.Prop, Req.Input(Col.ColumnName).ToString);
       ckInteger:
         begin
-          S := Input(Col.ColumnName);
+          S := Req.Input(Col.ColumnName);
           if SqlToInt64(S, I64) then
             SetInt64Prop(M, Col.Prop, I64)
           else if S.Len = 0 then
@@ -222,7 +249,7 @@ begin
         end;
       ckCurrency:
         begin
-          S := Input(Col.ColumnName);
+          S := Req.Input(Col.ColumnName);
           if SqlToCurrency(S, Cur) then
             SetFloatProp(M, Col.Prop, Cur)
           else if S.Len = 0 then
@@ -230,7 +257,7 @@ begin
         end;
       ckFloat:
         begin
-          S := Input(Col.ColumnName);
+          S := Req.Input(Col.ColumnName);
           if SqlToFloat(S, Dbl) then
             SetFloatProp(M, Col.Prop, Dbl)
           else if S.Len = 0 then
@@ -238,7 +265,7 @@ begin
         end;
       ckDateTime:
         begin
-          S := Input(Col.ColumnName);
+          S := Req.Input(Col.ColumnName);
           if SqlToDateTime(S, Dt) then
             SetFloatProp(M, Col.Prop, Dt)
           else if S.Len = 0 then
@@ -246,12 +273,23 @@ begin
         end;
       ckEnum:
         begin
-          S := Input(Col.ColumnName);
+          S := Req.Input(Col.ColumnName);
           if SqlToInt64(S, I64) then
             SetOrdProp(M, Col.Prop, LongInt(I64));
         end;
     end;
   end;
 end;
+
+procedure TRequestBindHelper.FillInto(M: TModel);
+begin
+  FillColumns(Self, M, [], False);
+end;
+
+procedure TRequestBindHelper.FillInto(M: TModel; const Only: array of string);
+begin
+  FillColumns(Self, M, Only, True);
+end;
+
 
 end.

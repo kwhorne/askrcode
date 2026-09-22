@@ -251,8 +251,18 @@
     }
   }
 
+  // The cell that is in the tab order, kept to cells that exist. The
+  // marker starts on the first row, and a list with no rows -- an empty
+  // table, a search that found nothing, a last page that got shorter --
+  // then had no cell with tabindex 0 at all: the whole grid, its sort
+  // buttons included, was out of reach of a keyboard. With no rows it is
+  // the header. Found by axe in a real Chrome against a generated list,
+  // as a scroll box nothing inside could be focused in.
+  const focusRow = $derived(siden.length === 0 ? -1 : Math.min(aktiv.r, siden.length - 1))
+  const focusCol = $derived(Math.max(0, Math.min(aktiv.c, kolonneAntall - 1)))
+
   function tabIndex(r, c) {
-    return aktiv.r === r && aktiv.c === c ? 0 : -1
+    return focusRow === r && focusCol === c ? 0 : -1
   }
 
   const sortRetning = (col) =>

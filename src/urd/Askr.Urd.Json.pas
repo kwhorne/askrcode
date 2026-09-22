@@ -45,7 +45,11 @@ begin
   W.Key(Col.ColumnName);
   case Col.Kind of
     ckInteger:
-      W.Int(GetInt64Prop(M, Col.Prop));
+      { A reference to no row. See TSchema.ZeroIsNull. }
+      if Col.ZeroIsNull and (GetInt64Prop(M, Col.Prop) = 0) then
+        W.Null
+      else
+        W.Int(GetInt64Prop(M, Col.Prop));
     ckString:
       W.Str(GetStrProp(M, Col.Prop));
     ckCurrency:
@@ -55,8 +59,14 @@ begin
     ckBoolean:
       W.Bool(GetOrdProp(M, Col.Prop) <> 0);
     ckDateTime:
-      { ISO 8601, which is what JavaScript understands unaided. }
-      W.Str(DateTimeToSql(GetFloatProp(M, Col.Prop)));
+      { A TDateTime of zero is what an unset date is -- it is written to
+        the database as NULL for the same reason -- so it goes out as
+        null. As text it was 1899-12-30 00:00:00, a real date nobody
+        meant, and a form filled from it showed that. }
+      if GetFloatProp(M, Col.Prop) = 0 then
+        W.Null
+      else
+        W.Str(DateTimeToSql(GetFloatProp(M, Col.Prop)));
     ckEnum:
       W.Int(GetOrdProp(M, Col.Prop));
   end;
