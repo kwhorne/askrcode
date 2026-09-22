@@ -86,6 +86,34 @@ type
     LocalKey: string;
   end;
 
+  { Columns a model never puts in JSON.
+
+    `WriteModel` writes every mapped column, which is the right default for
+    a query builder and the wrong one for anything that leaves the process.
+    A model with a `PasswordHash` property -- which `askr new --auth`
+    generates -- serialises the hash into any JSON response or Inertia prop
+    that carries the model. Measured, not feared.
+
+    So a model says what must never go out, once, next to the model rather
+    than at every place that serialises it. Naming a column that does not
+    exist is a compile error, because the argument is the typed constant
+    `askr schema` generates and not a string. }
+  TJsonHidden = class
+  private
+    FNames: array of string;
+  public
+    { The column name, snake_case, as it appears in JSON.
+
+      Callers do not use this: the typed `Add` overloads are a class
+      helper in Askr.Urd.Query, because the typed column lives there and
+      this unit is below it. The same arrangement as `Req.FillInto`, and
+      for the same reason -- a dependency in this direction would make
+      every model drag the query builder in. }
+    procedure AddColumn(const ColumnName: string);
+    function Has(const ColumnName: string): Boolean;
+    function Count: Integer;
+  end;
+
   TModelMeta = class
   private
     FModelClass: TModelClass;
@@ -99,9 +127,14 @@ type
     FUpdatedAtColumn: string;
     FSoftDeletes: Boolean;
     FDeletedAtColumn: string;
+    FHidden: TJsonHidden;
     function GetColumn(Index: Integer): TColumnInfo;
     function GetRelation(Index: Integer): TRelationInfo;
   public
+    destructor Destroy; override;
+    { True when this column never goes in JSON. Asked by the
+      serialisers; a caller building its own payload should ask too. }
+    function IsHidden(const ColumnName: string): Boolean;
     function ColumnCount: Integer;
     function RelationCount: Integer;
     function IndexOfColumn(const AColumnName: string): Integer;
@@ -255,6 +288,19 @@ type
     { Overridden by the model to change the table name, the columns and the
       relations. }
     class procedure Describe(S: TSchema); virtual;
+    { Columns this model never puts in JSON. Override and add them; the
+      default hides nothing, which is what a model with nothing to hide
+      wants.
+
+        class procedure TUser.HideFromJson(H: TJsonHidden);
+        begin
+          H.Add(Users.PasswordHash);
+        end;
+
+      It is about serialisation only. A hidden column is still selected,
+      still written, still queryable -- it just never leaves the process
+      in a payload. }
+    class procedure HideFromJson(H: TJsonHidden); virtual;
     { Built once per class and cached. }
     class function Meta: TModelMeta;
 
@@ -742,11 +788,26 @@ begin
     S.Free;
   end;
 
+  { Asked once, with the meta, rather than on every serialisation. }
+  Result.FHidden := TJsonHidden.Create;
+  AClass.HideFromJson(Result.FHidden);
+
   { After Describe, because the primary key may have been changed
     there. }
   PkIndex := Result.PrimaryKeyIndex;
   if (PkIndex >= 0) and Result.FAutoIncrement then
     Result.FColumns[PkIndex].Insertable := False;
+end;
+
+destructor TModelMeta.Destroy;
+begin
+  FHidden.Free;
+  inherited Destroy;
+end;
+
+function TModelMeta.IsHidden(const ColumnName: string): Boolean;
+begin
+  Result := (FHidden <> nil) and FHidden.Has(ColumnName);
 end;
 
 class function TModel.Meta: TModelMeta;
@@ -787,6 +848,37 @@ end;
 class procedure TModel.Describe(S: TSchema);
 begin
   { The conventions hold. Models needing something else override. }
+end;
+
+class procedure TModel.HideFromJson(H: TJsonHidden);
+begin
+  { Nothing by default. A model with a secret in it says so. }
+end;
+
+procedure TJsonHidden.AddColumn(const ColumnName: string);
+var
+  N: Integer;
+begin
+  if Has(ColumnName) then
+    Exit;
+  N := Length(FNames);
+  SetLength(FNames, N + 1);
+  FNames[N] := ColumnName;
+end;
+
+function TJsonHidden.Has(const ColumnName: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 0 to High(FNames) do
+    if SameText(FNames[I], ColumnName) then
+      Exit(True);
+end;
+
+function TJsonHidden.Count: Integer;
+begin
+  Result := Length(FNames);
 end;
 
 { TErrors }

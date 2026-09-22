@@ -12,6 +12,31 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Fixed
+
+- **A model's every column went into JSON, including the ones that must
+  not.** `WriteModel` writes each mapped column — right for a query,
+  wrong for anything leaving the process. A model with a `PasswordHash`
+  property put the hash into any JSON response, Inertia prop, list or
+  relation carrying it, and `askr new --auth` generates exactly that
+  model. Measured before it was fixed, not feared.
+
+  `TModel.HideFromJson` declares what never leaves, once, on the model.
+  The argument is the typed constant from `askr schema`, so a column
+  renamed later stops compiling instead of quietly starting to leak; the
+  generated user hides its hash from now on.
+
+  The gate is a sentinel sweep across all four paths a model reaches JSON
+  by — the same shape as the sweep that found two DSN leaks. Removing the
+  check fails eight assertions.
+
+  **An existing project keeps its behaviour until it says otherwise.**
+  Nothing is hidden by default, because the framework cannot know which of
+  your columns are secrets. Add `HideFromJson` to any model that has one —
+  the generated `TUser` is the obvious first.
+
 ## 0.11.2 — 2026-09-22
 
 ### Added

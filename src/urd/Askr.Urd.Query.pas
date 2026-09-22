@@ -49,6 +49,25 @@ type
     Table: ShortString;
   end;
 
+  { The typed way to name a hidden column.
+
+    A class helper, because TJsonHidden is declared with the model and the
+    typed column is declared here -- the same arrangement as
+    `Req.FillInto`, and for the same reason: a dependency the other way
+    would make every model drag the query builder in.
+
+    Six overloads that do one thing. The types are the point: a column
+    that is not on this model, or that has been renamed since, does not
+    compile. }
+  TJsonHiddenHelper = class helper for TJsonHidden
+    procedure Add(const C: TCol<Int64>); overload;
+    procedure Add(const C: TCol<string>); overload;
+    procedure Add(const C: TCol<Currency>); overload;
+    procedure Add(const C: TCol<Double>); overload;
+    procedure Add(const C: TCol<Boolean>); overload;
+    procedure Add(const C: TCol<TDateTime>); overload;
+  end;
+
   TColInt64 = TCol<Int64>;
   TColStr = TCol<string>;
   TColCurrency = TCol<Currency>;
@@ -225,6 +244,36 @@ function ColBool(const ATable, AName: string): TColBool;
 function ColDateTime(const ATable, AName: string): TColDateTime;
 
 implementation
+
+procedure TJsonHiddenHelper.Add(const C: TCol<Int64>);
+begin
+  AddColumn(string(C.Name));
+end;
+
+procedure TJsonHiddenHelper.Add(const C: TCol<string>);
+begin
+  AddColumn(string(C.Name));
+end;
+
+procedure TJsonHiddenHelper.Add(const C: TCol<Currency>);
+begin
+  AddColumn(string(C.Name));
+end;
+
+procedure TJsonHiddenHelper.Add(const C: TCol<Double>);
+begin
+  AddColumn(string(C.Name));
+end;
+
+procedure TJsonHiddenHelper.Add(const C: TCol<Boolean>);
+begin
+  AddColumn(string(C.Name));
+end;
+
+procedure TJsonHiddenHelper.Add(const C: TCol<TDateTime>);
+begin
+  AddColumn(string(C.Name));
+end;
 
 function ColInt64(const ATable, AName: string): TColInt64;
 begin

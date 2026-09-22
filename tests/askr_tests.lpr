@@ -18,7 +18,7 @@ uses
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
-  Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url,
+  Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url, Askr.Urd.Json,
   Askr.Http.Robots, Askr.Http.Sitemap;
 
 var
@@ -1898,6 +1898,60 @@ end;
 { ------------------------------------------------------------- validering -- }
 
 type
+{ A model with something in it that must never leave the process, and a
+  parent that carries it as a relation. Both are needed: the check lives
+  in one place, and the way to find out whether that place is the right
+  one is to reach it from every direction. }
+  TSecretUser = class(TModel)
+  private
+    FId: Int64;
+    FEmail: string;
+    FPasswordHash: string;
+    FResetToken: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Email: string read FEmail write FEmail;
+    property PasswordHash: string read FPasswordHash write FPasswordHash;
+    property ResetToken: string read FResetToken write FResetToken;
+  public
+    class procedure Describe(S: TSchema); override;
+    class procedure HideFromJson(H: TJsonHidden); override;
+  end;
+
+  TSecretUserList = TModelList<TSecretUser>;
+
+{ What `askr schema` would generate for this table. Written by hand here
+  because the test has no database; the point is that the names are typed
+  constants and not strings. }
+const
+  SecretUsers: record
+    Id: TColInt64;
+    Email: TColStr;
+    PasswordHash: TColStr;
+    ResetToken: TColStr;
+  end = (
+    Id: (Name: 'id'; Table: 'secret_users');
+    Email: (Name: 'email'; Table: 'secret_users');
+    PasswordHash: (Name: 'password_hash'; Table: 'secret_users');
+    ResetToken: (Name: 'reset_token'; Table: 'secret_users'));
+
+type
+
+  TSecretTeam = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    { The relation is a published FIELD, not a property: that is what
+      FieldAddress finds, and a published field has to come before the
+      properties in the same section. }
+    Members: TSecretUserList;
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
   TTestCustomer = class(TModel)
   private
     FId: Int64;
@@ -1917,6 +1971,114 @@ type
     class procedure Describe(S: TSchema); override;
     procedure Rules(V: TValidator); override;
   end;
+
+class procedure TSecretUser.Describe(S: TSchema);
+begin
+  S.Table('secret_users');
+end;
+
+class procedure TSecretUser.HideFromJson(H: TJsonHidden);
+begin
+  { Typed, so a column that is renamed later stops compiling instead of
+    starting to leak. }
+  H.Add(SecretUsers.PasswordHash);
+  H.Add(SecretUsers.ResetToken);
+end;
+
+class procedure TSecretTeam.Describe(S: TSchema);
+begin
+  S.Table('secret_teams');
+  S.HasMany('Members', TSecretUser, 'team_id');
+end;
+
+{ Nothing a model hides may appear in any payload.
+
+  WriteModel writes every mapped column, which is right for a query
+  builder and wrong for anything that leaves the process. `askr new --auth`
+  generates a user with a PasswordHash property, so before this a single
+  `Inertia('Page', ['user', U])` put the hash on the wire. Measured, not
+  feared: a program written to check printed an object with id, email and
+  a password_hash field carrying the hash verbatim.
+
+  So: a sentinel in the secret, and a sweep of every way a model reaches
+  JSON. The same shape as the sweep that found two DSN leaks -- finding
+  the string anywhere is the failure, and a path added later is covered by
+  the same assertion. }
+procedure TestHiddenColumns;
+const
+  Sentinel = 'SENTINEL-HASH-MUST-NOT-LEAK';
+  TokenSentinel = 'SENTINEL-TOKEN-MUST-NOT-LEAK';
+var
+  A: TArena;
+  PrevA: TArena;
+  U: TSecretUser;
+  Team: TSecretTeam;
+  L: TSecretUserList;
+  W: TJsonWriter;
+  Json_: string;
+
+  procedure Sweep(const What, Payload: string);
+  begin
+    Check(Pos(Sentinel, Payload) = 0, What + ': no password hash');
+    Check(Pos(TokenSentinel, Payload) = 0, What + ': no reset token');
+  end;
+
+begin
+  Group('Hidden columns');
+  A := TArena.Create(32 * 1024);
+  PrevA := UseArena(A);
+  try
+    U := A.New<TSecretUser>;
+    U.Id := 7;
+    U.Email := 'kh@example.com';
+    U.PasswordHash := Sentinel;
+    U.ResetToken := TokenSentinel;
+
+    { 1. the model on its own }
+    W.Init(A, 512);
+    WriteModel(W, U);
+    Json_ := W.ToString;
+    Sweep('a model', Json_);
+    { And the rest is still there: hiding two columns must not hide the
+      object. }
+    Check(Pos('"email":"kh@example.com"', Json_) > 0,
+      'a model: what is not hidden still goes out');
+    Check(Pos('"id":7', Json_) > 0, 'a model: including the key');
+
+    { 2. a list }
+    L := A.New<TSecretUserList>;
+    L.Add(U);
+    W.Init(A, 512);
+    WriteModelList(W, L);
+    Sweep('a list', W.ToString);
+
+    { 3. as a relation on a parent }
+    Team := A.New<TSecretTeam>;
+    Team.Id := 1;
+    Team.Name := 'Core';
+    Team.Members := L;
+    W.Init(A, 1024);
+    WriteModel(W, Team);
+    Json_ := W.ToString;
+    Sweep('a relation', Json_);
+    Check(Pos('"members"', Json_) > 0,
+      'a relation: the relation itself is still there');
+
+    { 4. as an Inertia prop, which is the one that shipped it }
+    UseRequest(MakeRequest(A, 'GET /team HTTP/1.1'#13#10'Host: t'));
+    Sweep('an Inertia prop',
+      Inertia('Team/Show', ['user', U, 'team', Team]).Body.ToString);
+    UseRequest(nil);
+
+    { The meta answers directly too, so a caller building its own payload
+      can ask instead of guessing. }
+    Check(TSecretUser.Meta.IsHidden('password_hash'), 'the meta says so');
+    Check(not TSecretUser.Meta.IsHidden('email'), 'and only about those');
+  finally
+    UseArena(PrevA);
+    A.Free;
+  end;
+end;
 
 class procedure TTestCustomer.Describe(S: TSchema);
 begin
@@ -3965,6 +4127,7 @@ begin
   TestJsonWrite;
   TestJsonRead;
   TestInertia;
+  TestHiddenColumns;
   TestRuter;
   TestValidering;
   TestBinding;

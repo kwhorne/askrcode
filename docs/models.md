@@ -205,6 +205,36 @@ without knowing the element type — without it, every consumer would have to
 be specialised per model, which is the boilerplate generics were supposed to
 remove.
 
+## What never goes in a payload
+
+```pascal
+class procedure TUser.HideFromJson(H: TJsonHidden);
+begin
+  H.Add(Users.PasswordHash);
+end;
+```
+
+**The serialiser writes every mapped column.** That is right for a query
+and wrong for anything that leaves the process: a model with a
+`PasswordHash` property puts the hash into any JSON response, any Inertia
+prop, any list, and any relation that carries it. `askr new --auth`
+generates exactly such a model, so this is not hypothetical — it was
+measured before it was fixed.
+
+`HideFromJson` is declared once, on the model, rather than at each place
+that serialises. There are four such places and they all end in the same
+function, which is where the check lives; putting it at the call sites
+instead is how one of them ends up shipping the hash.
+
+The argument is the typed constant `askr schema` generates, so a column
+renamed later **stops compiling** rather than quietly starting to leak.
+`H.AddColumn('password_hash')` takes the name directly, for a project that
+has not run `askr schema` yet.
+
+It is about serialisation only. A hidden column is still selected, still
+written, still queryable — it just never leaves in a payload. Ask
+`Meta.IsHidden(ColumnName)` when you build a payload yourself.
+
 ## Validation
 
 ```pascal

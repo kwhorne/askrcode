@@ -65,7 +65,17 @@ begin
   Meta := M.Meta;
   W.BeginObject;
   for I := 0 to Meta.ColumnCount - 1 do
+  begin
+    { A column the model said never leaves.
+
+      One check, because every path funnels here: a model on its own, a
+      list, a relation on a parent, and an Inertia prop all end up in
+      WriteModel. Putting it at the four call sites instead is how one of
+      them ends up shipping the hash. }
+    if Meta.IsHidden(Meta.Columns[I].ColumnName) then
+      Continue;
     WriteColumn(W, M, Meta.Columns[I]);
+  end;
 
   for I := 0 to Meta.RelationCount - 1 do
   begin

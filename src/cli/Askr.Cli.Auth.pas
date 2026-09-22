@@ -73,10 +73,26 @@ begin
     '    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;' + #10 +
     '  public' + #10 +
     '    class procedure Describe(S: TSchema); override;' + #10 +
+    '    class procedure HideFromJson(H: TJsonHidden); override;' + #10 +
     '    procedure Rules(V: TValidator); override;' + #10 +
     '  end;' + #10 + #10 +
     '  TUserList = TModelList<TUser>;' + #10 + #10 +
     'implementation' + #10 + #10 +
+    '{ The hash never goes in a payload.' + #10 +
+    '' + #10 +
+    '  Without this a single Inertia prop or JSON response carrying a' + #10 +
+    '  user puts it on the wire: the serialiser writes every mapped' + #10 +
+    '  column, which is right for a query and wrong for anything that' + #10 +
+    '  leaves the process.' + #10 +
+    '' + #10 +
+    '  The argument is the typed constant from `askr schema`, so a' + #10 +
+    '  column renamed later stops compiling instead of starting to' + #10 +
+    '  leak. Until you have run `askr schema` there is no Users' + #10 +
+    '  constant, and the string form below is the stand-in. }' + #10 +
+    'class procedure TUser.HideFromJson(H: TJsonHidden);' + #10 +
+    'begin' + #10 +
+    '  H.AddColumn(' + Q + 'password_hash' + Q + ');' + #10 +
+    'end;' + #10 + #10 +
     'class procedure TUser.Describe(S: TSchema);' + #10 +
     'begin' + #10 +
     '  S.Table(' + Q + 'users' + Q + ');' + #10 +
