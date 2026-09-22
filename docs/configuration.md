@@ -130,6 +130,43 @@ way around is noticed immediately.
 `APP_ENV` changes exactly one thing by itself: the default log format is
 text locally and JSON in production. See [Logging](logging.md).
 
+## `app.url`, and why it is not the request
+
+```pascal
+uses Askr.Core.Url;
+
+AppUrl                              { https://example.com, or '' }
+AbsoluteUrl('/docs/queries')        { https://example.com/docs/queries }
+AbsoluteUrlOrFail('/reset/' + Tok)  { the same, refusing when unset }
+```
+
+Every absolute URL an application emits names one origin: a link in a
+password-reset email, and later a canonical link and a sitemap entry.
+**That origin is configuration, and it is never taken from the request.**
+
+`Host` is a header, which means it is text the client writes. A request
+carrying `Host: evil.example` and a canonical built from it tells a search
+engine the page lives on the attacker's domain; the same header in a reset
+link sends the token there. Host-header injection is the ordinary name for
+both.
+
+So the functions above have **no way to see a request at all**. The
+property is not that Askr remembers to ignore `Host` — it is that there is
+nothing here to ignore it with. The end-to-end test drives a real socket
+with a forged `Host` and requires the configured origin to come back.
+
+`app.url` is an **origin**: scheme, host, optional port. A trailing slash
+is normalised away; scheme and host are lowercased, because a URL differing
+only in case is a second URL to a crawler. A path in it is refused rather
+than dropped or kept — serving under a sub-path needs the router to agree
+about the prefix too, and Askr does not do that yet.
+
+`AppUrl` is empty when nothing is set, so a caller that can do without an
+absolute URL leaves it out: a canonical link pointing at the wrong place is
+worse than none. `AbsoluteUrlOrFail` is for where an absolute URL is the
+whole point — a reset email with an empty `href` looks like a link and is
+not one.
+
 ## Failing at startup, not on request 47
 
 ```pascal

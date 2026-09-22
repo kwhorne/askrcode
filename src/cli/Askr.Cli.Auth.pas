@@ -130,7 +130,7 @@ begin
     A('');
     A('uses');
     A('  SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,');
-    A('  Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Log,');
+    A('  Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Log, Askr.Core.Url,');
     A('  Askr.Http.Request, Askr.Http.Response,');
     A('  Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query,');
     A('  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Mail, Askr.Cache,');
@@ -637,8 +637,11 @@ begin
     A('      [DbParam(A, Email), DbParam(A, Sha256Hex(Token)),');
     A('       DbParam(A, UnixNowMs + ResetLifetimeMs), DbParam(A, UnixNowMs)]);');
     A('');
-    A('    Link_ := Cfg(''app.url'', ''http://127.0.0.1:8080'') +');
-    A('      ''/reset-password/'' + Token;');
+    A('    { AbsoluteUrl, not string concatenation: a trailing slash in');
+    A('      app.url would otherwise give //reset-password, and a missing');
+    A('      app.url a link to nowhere. OrFail because a reset email');
+    A('      without a working link is worse than a mail that did not go. }');
+    A('    Link_ := AbsoluteUrlOrFail(''/reset-password/'' + Token);');
     A('');
     A('    { In development TLogTransport writes the email to a file, so');
     A('      that the link can actually be tried without an SMTP server. }');

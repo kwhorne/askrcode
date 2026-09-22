@@ -12,6 +12,36 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **`Askr.Core.Url` — the address the application answers on.** `AppUrl`,
+  `AbsoluteUrl`, and `AbsoluteUrlOrFail` for where a missing origin is the
+  bug. `app.url` in configuration, `APP_URL` in the environment.
+
+  **It is never taken from the request, and cannot be.** `Host` is a header
+  the client writes: a canonical link built from it tells a search engine
+  the page lives on the attacker's domain, and a reset link built from it
+  sends the token there. These functions have no request parameter at all —
+  the property is structural rather than remembered. The end-to-end test
+  drives a real socket with `Host: evil.example`, and with
+  `Host: example.com.evil.example` so it is not passing merely because the
+  forgery looked obviously wrong.
+
+  An origin is a scheme, a host and an optional port. A trailing slash is
+  normalised; scheme and host are lowercased, because a URL differing only
+  in case is a second URL to a crawler. A path is refused with a reason
+  rather than dropped or kept.
+
+### Changed
+
+- **The reset link in `askr make auth` is built with `AbsoluteUrlOrFail`**
+  rather than by concatenating `Cfg('app.url', ...)`. It never used the
+  request, so nothing was exposed — but a trailing slash in `app.url` gave
+  `//reset-password`, and an unset one silently fell back to a localhost
+  link in an email that had already been sent.
+
 ## 0.10.1 — 2026-09-21
 
 ### Fixed

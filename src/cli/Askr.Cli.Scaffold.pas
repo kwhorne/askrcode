@@ -717,7 +717,10 @@ begin
     '# Real environment variables always win over what is set here.' + #10 +
     #10 +
     'APP_ENV=local' + #10 +
-    '# Used in links the app sends by mail, such as password resets.' + #10 +
+    '# The address this app answers on from the outside. Every absolute' + #10 +
+    '# URL comes from here -- links in mail, and later canonical and' + #10 +
+    '# sitemap. Never taken from the request: Host is a header the' + #10 +
+    '# client writes.' + #10 +
     'APP_URL=http://127.0.0.1:8080' + #10 +
     '# The port lives in askr.toml as [app] port. Uncomment to override' + #10 +
     '# it here; a real environment variable wins over both.' + #10 +

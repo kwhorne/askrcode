@@ -13,7 +13,7 @@ uses
 {$ENDIF}
   SysUtils, Classes, StrUtils, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Json,
-  Askr.Core.Env, Askr.Core.Config, Askr.Core.Log,
+  Askr.Core.Env, Askr.Core.Config, Askr.Core.Log, Askr.Core.Url,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Http.Welcome, Askr.Http.Server, Askr.Http.Client,
   Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Sqlite,
@@ -4096,6 +4096,116 @@ end;
   back a page that reads as confirmation, and the agent would write the
   wrong call with documentation apparently behind it. So both directions
   are asserted, and the second is the one worth keeping. }
+{ The origin an application answers on, and the one thing that must never
+  feed it.
+
+  Every absolute URL a site emits names an origin, and the request cannot
+  be asked what it is: `Host` is a header the client writes. A canonical
+  built from it hands a search engine the attacker's domain; a reset link
+  built from it hands over the token. The end-to-end half of this is in
+  askr_tests, which drives a real socket with a forged Host -- here is the
+  unit, where the property is structural: there is no request to take it
+  from. }
+procedure TestAppUrl;
+var
+  Folder: string;
+  L: TStringList;
+
+  procedure WithEnv(const Line: string);
+  begin
+    L := TStringList.Create;
+    try
+      L.Add('APP_ENV=local');
+      if Line <> '' then
+        L.Add(Line);
+      L.SaveToFile(Folder + '/.env');
+    finally
+      L.Free;
+    end;
+    ClearConfig;
+    LoadConfig(Folder);
+  end;
+
+begin
+  Folder := '.build/cfg-url';
+  ForceDirectories(Folder);
+
+  { Not set: empty, not guessed. A caller that can do without an absolute
+    URL leaves it out; the second-best guess available is the request. }
+  WithEnv('');
+  AssertEqual(AppUrl, '', 'no app.url gives no origin');
+  AssertEqual(AbsoluteUrl('/docs'), '', 'and no absolute URL');
+
+  WithEnv('APP_URL=https://example.com');
+  AssertEqual(AppUrl, 'https://example.com', 'a plain origin comes back');
+  AssertEqual(AbsoluteUrl('/docs'), 'https://example.com/docs', 'joined');
+  AssertEqual(AbsoluteUrl('docs'), 'https://example.com/docs',
+    'with or without the leading slash');
+  AssertEqual(AbsoluteUrl('/docs/'), 'https://example.com/docs',
+    'and no trailing one');
+  AssertEqual(AbsoluteUrl(''), 'https://example.com', 'the origin itself');
+  AssertEqual(AbsoluteUrl('/'), 'https://example.com', 'and for "/" too');
+
+  { A trailing slash is what a browser shows, so it is normalised rather
+    than refused. Case is normalised because a canonical URL differing only
+    in case is a second URL to a crawler. }
+  WithEnv('APP_URL=HTTPS://Example.COM/');
+  AssertEqual(AppUrl, 'https://example.com',
+    'scheme and host are lowercased, the trailing slash dropped');
+
+  WithEnv('APP_URL=http://localhost:8080');
+  AssertEqual(AppUrl, 'http://localhost:8080', 'a port is kept');
+  AssertEqual(AbsoluteUrl('/a'), 'http://localhost:8080/a', 'and joined');
+
+  { A value somebody typed and got wrong says so once, loudly, rather than
+    producing links that are wrong where nobody looks. }
+  AssertTrue(UrlProblem('example.com') <> '', 'no scheme is a problem');
+  AssertTrue(UrlProblem('https://') <> '', 'no host is a problem');
+  AssertTrue(Pos('sub-path', UrlProblem('https://example.com/app')) > 0,
+    'a path is refused, and says why');
+  AssertTrue(UrlProblem('https://example.com?a=1') <> '',
+    'so is a query');
+  AssertEqual(UrlProblem('https://example.com'), '', 'a good one is fine');
+  AssertEqual(UrlProblem(''), '', 'and so is nothing at all');
+
+  WithEnv('APP_URL=example.com');
+  try
+    AppUrl;
+    AssertTrue(False, 'a bad app.url raises');
+  except
+    on E: EUrlError do
+      AssertTrue(Pos('example.com', E.Message) > 0,
+        'and the message shows the value');
+  end;
+
+  { OrFail is for the places where a missing origin is the bug: a sitemap,
+    a link in an email. It names the key and the environment variable, as
+    CfgOrFail does. }
+  WithEnv('');
+  try
+    AppUrlOrFail;
+    AssertTrue(False, 'OrFail refuses when it is not set');
+  except
+    on E: EUrlError do
+    begin
+      AssertTrue(Pos('APP_URL', E.Message) > 0, 'naming the variable');
+      AssertTrue(Pos('Host', E.Message) > 0, 'and saying why not the request');
+    end;
+  end;
+
+  { The link in a reset email refuses rather than coming out relative. An
+    empty href looks like a link and is not one. }
+  try
+    AbsoluteUrlOrFail('/reset-password/abc');
+    AssertTrue(False, 'an absolute URL with no origin refuses');
+  except
+    on E: EUrlError do
+      AssertTrue(Pos('APP_URL', E.Message) > 0, 'and says which key');
+  end;
+
+  ClearConfig;
+end;
+
 procedure TestDocsSearchAndRead;
 var
   Dir, Text_, Err: string;
@@ -4259,6 +4369,9 @@ begin
   Group('Scheduler');
   Group('MCP');
   Test('the handshake, the tool list and the error shapes', @TestMcpProtocol);
+
+  Group('The public origin');
+  Test('app.url is configuration, never the request', @TestAppUrl);
 
   Group('Docs');
   Test('search is exact, and a name that does not exist is not found',

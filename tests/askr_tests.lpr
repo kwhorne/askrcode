@@ -18,7 +18,7 @@ uses
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
-  Askr.Cache, Askr.Queue;
+  Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url;
 
 var
   Passed: Integer = 0;
@@ -3273,6 +3273,12 @@ begin
     Exit(Respond(200).WithContentType('text/plain').WithBody(Req.Body));
   if Req.Path.EqualsStr('/name') then
     Exit(RespondText(Req.Query('name').ToString));
+  { The absolute URL of this very request, which is where a canonical link
+    or a link in an email would come from. The handler has the request in
+    its hand and still cannot build the origin out of it -- AbsoluteUrl
+    takes a path and nothing else. }
+  if Req.Path.EqualsStr('/absolute') then
+    Exit(RespondText(AbsoluteUrl(Req.Path.ToString)));
   if Req.Path.EqualsStr('/upload') then
   begin
     if not Req.Multipart.Ok then
@@ -3346,6 +3352,48 @@ begin
     C.SendRaw('GET /does-not-exist HTTP/1.1'#13#10'Host: test'#13#10#13#10);
     C.ReadResponse(Head, Body);
     Check(Pos('HTTP/1.1 404 Not Found', Head) = 1, '404');
+
+    { ---- an absolute URL is never built from the Host header ----
+
+      Host is a header, which means it is text the client writes. A
+      canonical link built from it tells a search engine the page lives on
+      the attacker's domain; a password-reset link built from it sends the
+      token there. Host-header injection is the ordinary name for both.
+
+      So: a forged Host, over a real socket, and the answer has to be the
+      configured origin. The unit is shaped so that it cannot go wrong --
+      AbsoluteUrl takes a path and has no request to look at -- and this is
+      the end of the wire that proves the shape survived the journey. }
+    ForceDirectories('.build' + PathDelim + 'e2e-url');
+    StaticFile := TStringList.Create;
+    try
+      StaticFile.Add('APP_ENV=local');
+      StaticFile.Add('APP_URL=https://example.com');
+      StaticFile.SaveToFile('.build' + PathDelim + 'e2e-url' +
+        PathDelim + '.env');
+    finally
+      StaticFile.Free;
+    end;
+    ClearConfig;
+    LoadConfig('.build' + PathDelim + 'e2e-url');
+
+    C.SendRaw('GET /absolute HTTP/1.1'#13#10 +
+      'Host: evil.example'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'the request with a forged Host');
+    CheckEqS(Body, 'https://example.com/absolute',
+      'the absolute URL comes from app.url');
+    Check(Pos('evil.example', Body) = 0,
+      'and the Host header is nowhere in it');
+
+    { The same with a Host that would pass any sanity check, so that the
+      assertion above is not passing merely because the forgery looked
+      obviously wrong. }
+    C.SendRaw('GET /absolute HTTP/1.1'#13#10 +
+      'Host: example.com.evil.example'#13#10#13#10);
+    Check(C.ReadResponse(Head, Body), 'and one that starts with the real host');
+    CheckEqS(Body, 'https://example.com/absolute', 'same answer');
+
+    ClearConfig;
 
     { A static file as a follow-up on the same connection.
 
@@ -3453,10 +3501,12 @@ begin
     CheckEqI(Reserved2, Reserved1, 'the arena does not grow under sustained load');
     Check(Server.TotalArenaHighWater < 64 * 1024,
       'toppforbruket per request holder seg lite');
-    { 13 valid requests above, then 50 + 1 + 500 here. The two rejected
+    { 15 valid requests above, then 50 + 1 + 500 here. The two rejected
       ones (400 and 501) are not counted, because they never reached a
-      handler. }
-    CheckEqI(Server.TotalRequests, 565, 'every valid request was counted');
+      handler. The number is written out rather than computed: the point
+      of it is that the server's own count agrees with what the suite
+      actually sent, and a computed one would agree with itself. }
+    CheckEqI(Server.TotalRequests, 567, 'every valid request was counted');
     C.Close;
   finally
     Server.Free;
