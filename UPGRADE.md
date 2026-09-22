@@ -24,6 +24,13 @@ runs anything. If you have two, `askr migrate` will say which and stop;
 change the `Version` of one of them. It used to run one of them and fail
 to record it.
 
+**A new SQLite boolean column is a `TColBool`.** `askr schema` reads what
+a table was declared with, and a SQLite migration declares `BOOLEAN` now
+instead of `INTEGER`. A table made from now on types its booleans as
+`Boolean` on SQLite as on the other two; code that treated one as an
+`Int64` on SQLite only will stop compiling, which is where it should.
+Tables that exist are not touched.
+
 ## 0.12.0
 
 **Worth reading if anything but a browser calls your app.** The framework

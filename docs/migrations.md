@@ -94,14 +94,14 @@ end;
 | `Id` | `BIGSERIAL` | `BIGINT AUTO_INCREMENT` | `INTEGER` |
 | `Text(n, len)` | `VARCHAR(len)` or `TEXT` | same | same |
 | `Int`, `BigInt`, `SmallInt` | | | |
-| `Bool` | `BOOLEAN` | `TINYINT(1)` | `TINYINT(1)` |
+| `Bool` | `BOOLEAN` | `TINYINT(1)` | `BOOLEAN` |
 | `Money` | `NUMERIC(12,2)` | | |
 | `Numeric(n, p, s)` | | | |
 | `Float` | `DOUBLE PRECISION` | `DOUBLE` | `REAL` |
 | `Timestamp` | `TIMESTAMPTZ` | `DATETIME` | `DATETIME` |
 | `Date` | `DATE` | | |
-| `Json` | `JSONB` | `JSON` | `TEXT` |
-| `Uuid` | `UUID` | `CHAR(36)` | `TEXT` |
+| `Json` | `JSONB` | `JSON` | `JSON TEXT` |
+| `Uuid` | `UUID` | `CHAR(36)` | `UUID` |
 | `Bytes` | `BYTEA` | `BLOB` | `BLOB` |
 
 Modifiers chain and return the column:
@@ -235,3 +235,12 @@ pointed at.
 **SQLite declares `DATETIME`, not `TEXT`.** SQLite stores text regardless,
 but the declared type is what introspection reads — with `TEXT` it could not
 tell a date from any other string.
+
+**The same goes for `BOOLEAN`, `JSON TEXT` and `UUID`.** Until 0.13 SQLite
+was told `INTEGER` for a boolean and `TEXT` for JSON and a UUID, so the
+same migration gave a `TColBool` on Postgres and a `TColInt64` on SQLite,
+and nothing reading the schema back could tell a UUID from a name. The
+declared type decides only SQLite's *affinity*: `BOOLEAN` and `UUID` get
+NUMERIC and store 0 and 1 and text exactly as before, and `JSON TEXT`
+contains `TEXT`, so it keeps TEXT affinity. Tables made before keep what
+they were declared with — nothing is migrated for you.

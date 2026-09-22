@@ -221,9 +221,11 @@ begin
      (T = 'int8') or (T = 'smallint') or (T = 'int2') or (T = 'serial') or
      (T = 'bigserial') then
     Exit('TColInt64');
-  { MySQL and SQLite have no boolean type of their own: both write
-    TINYINT(1), and it is the convention that makes it boolean. The width
-    therefore has to be read before the parentheses are stripped. }
+  { MySQL has no boolean type of its own and writes TINYINT(1); the width
+    is the convention that makes it boolean, so it has to be read before
+    the parentheses are stripped. SQLite used to write INTEGER, which no
+    reader can tell from a number -- this comment said it wrote TINYINT(1)
+    as well, and it did not. It writes BOOLEAN now. }
   if (T = 'tinyint(1)') or (T = 'bit(1)') then
     Exit('TColBool');
   { SQLite reports the type the way it was declared: NUMERIC(12,2),

@@ -828,6 +828,11 @@ cmd_make_check() {
     bad "the tool builds" "$(grep -iE 'error|fatal' "$work/cli.log" | head -3)"
     return 1
   fi
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags tools/make-check/plancheck.lpr >"$work/plancheck.log" 2>&1; then
+    bad "the plan check builds" "$(grep -iE 'error|fatal' "$work/plancheck.log" | head -3)"
+    return 1
+  fi
 
   echo
   echo "- askr make model, from a spec"
@@ -937,6 +942,15 @@ cmd_make_check() {
     else
       bad "every column comes back as it went in" \
         "$(grep -E 'FAIL|got:|rror' "$work/test-$dialect.log" | head -12)"
+    fi
+    # The other direction: the table, read back into a plan, gives the
+    # spec that made it. Run by the framework's program, not the app's.
+    if in_box "DATABASE_URL='$dsn' /work/${mk_bin#$ROOT/}/plancheck Gadget $spec" shop \
+         >"$work/plan-$dialect.log" 2>&1; then
+      ok "the table reads back as the spec that made it"
+    else
+      bad "the table reads back as the spec that made it" \
+        "$(grep -E 'FAIL|got:|rror' "$work/plan-$dialect.log" | head -12)"
     fi
   done
 

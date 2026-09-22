@@ -24,7 +24,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Plan, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
@@ -1851,6 +1851,247 @@ begin
       Msg := E.Message;
   end;
   AssertContains(Msg, 'twice', 'a column given twice is refused');
+end;
+
+{ -------------------------------------------------------- resource plan -- }
+
+{ A table read into what a resource needs. One table with every case the
+  plan has to handle in it -- a keyword for a column name, a secret, a
+  default, a blob, a reference to a table that is gone, a boolean from
+  before SQLite declared them -- and the tables that cannot be resources
+  at all. }
+function PlanHas(const Lines: TStringArray; const S: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Lines) do
+    if Lines[I] = S then
+      Exit(True);
+  Result := False;
+end;
+
+function NoteMentions(const P: TResourcePlan; const S: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(P.Notes) do
+    if Pos(S, P.Notes[I]) > 0 then
+      Exit(True);
+  Result := False;
+end;
+
+procedure TestResourcePlan;
+var
+  C: TDbConnection;
+  A: TArena;
+  S: TDbSchema;
+  P: TResourcePlan;
+  I: Integer;
+  Col: TPlanColumn;
+  Lines: TStringArray;
+  B: TSchemaBuilder;
+  Ddl: string;
+
+  function ColOf(const Name_: string): TPlanColumn;
+  var
+    K: Integer;
+  begin
+    K := PlanColumnIndex(P, Name_);
+    AssertTrue(K >= 0, 'the plan has ' + Name_);
+    Result := P.Columns[K];
+  end;
+
+begin
+  { What SQLite is told to call them now. }
+  B := TSchemaBuilder.Create(sdSqlite);
+  try
+    with B.Create('probe') do
+    begin
+      Id;
+      Bool('flag');
+      Json('doc');
+      Uuid('ref');
+    end;
+    Ddl := B.ToSql[0];
+  finally
+    B.Free;
+  end;
+  AssertContains(Ddl, '"flag" BOOLEAN', 'SQLite declares a boolean as BOOLEAN');
+  AssertContains(Ddl, '"doc" JSON TEXT', 'JSON as JSON TEXT, keeping TEXT affinity');
+  AssertContains(Ddl, '"ref" UUID', 'and a UUID as UUID');
+
+  AssertEqual(MemberName('until'), 'Until_', 'until is a keyword to askr schema now');
+  AssertEqual(MemberName('string'), 'String_', 'so is string');
+  AssertEqual(MemberName('with'), 'With_', 'and with');
+
+  A := TArena.Create(64 * 1024);
+  C := OpenDbConnection('sqlite::memory:');
+  try
+    C.Exec(A, 'CREATE TABLE makers (id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL)');
+    C.Exec(A, 'CREATE TABLE gadgets (' +
+      'id INTEGER PRIMARY KEY, ' +
+      'name VARCHAR(60) NOT NULL, ' +
+      'notes TEXT, ' +
+      'qty INTEGER NOT NULL, ' +
+      'active BOOLEAN NOT NULL, ' +
+      'is_old INTEGER NOT NULL, ' +
+      'price NUMERIC(12,2) NOT NULL, ' +
+      'ratio REAL NOT NULL, ' +
+      'seen_at DATETIME, ' +
+      'born DATE NOT NULL, ' +
+      'meta JSON TEXT, ' +
+      'tag UUID, ' +
+      'status VARCHAR(20) NOT NULL DEFAULT ''new'', ' +
+      '"type" VARCHAR(10), ' +
+      'password_hash VARCHAR(255) NOT NULL, ' +
+      'photo BLOB, ' +
+      'maker_id BIGINT NOT NULL REFERENCES makers(id), ' +
+      'ghost_id BIGINT REFERENCES ghosts(id), ' +
+      'created_at DATETIME NOT NULL, ' +
+      'updated_at DATETIME NOT NULL, ' +
+      'deleted_at DATETIME)');
+    C.Exec(A, 'CREATE TABLE parts (id INTEGER PRIMARY KEY, ' +
+      'gadget_id BIGINT REFERENCES gadgets(id), sku VARCHAR(10))');
+    C.Exec(A, 'CREATE TABLE nokeys (a INTEGER, b TEXT)');
+    C.Exec(A, 'CREATE TABLE twokeys (a INTEGER, b INTEGER, PRIMARY KEY (a, b))');
+    C.Exec(A, 'CREATE TABLE textkeys (code TEXT PRIMARY KEY, name TEXT)');
+
+    S := IntrospectSchema(C);
+    try
+      P := PlanResource(S, 'Gadget');
+      AssertEqual(Length(P.Problems), 0, 'gadgets can be a resource');
+      AssertEqual(P.Table, 'gadgets', 'Gadget is read from gadgets');
+      AssertEqual(P.PrimaryKey, 'id', 'with id as its key');
+
+      Col := ColOf('name');
+      AssertTrue(Col.Field.Kind = ftString, 'a VARCHAR is a string');
+      { SQLite reports only the text VARCHAR(60). The length is read out of
+        it here and not in the introspection, where it would have changed
+        every SQLite table's fingerprint on upgrade. }
+      AssertEqual(Col.Field.Length, 60, 'with its length, read out of the declared type');
+      AssertEqual(Col.Member, 'Name', 'and the typed constant askr schema writes for it');
+      AssertEqual(Col.ColAlias, 'TColStr', 'of the type askr schema gives it');
+
+      AssertTrue(ColOf('active').Field.Kind = ftBool, 'BOOLEAN is a bool');
+      AssertEqual(ColOf('active').ColAlias, 'TColBool', 'and askr schema says so too now');
+      AssertTrue(ColOf('is_old').Field.Kind = ftInt,
+        'an INTEGER from before stays a number: nothing in the schema says otherwise');
+      AssertTrue(NoteMentions(P, 'is_old'), 'but the plan points it out');
+      AssertTrue(ColOf('price').Field.Kind = ftMoney, 'NUMERIC(12,2) is money');
+      AssertTrue(ColOf('meta').Field.Kind = ftJson, 'JSON TEXT is json');
+      AssertTrue(ColOf('tag').Field.Kind = ftUuid, 'UUID is a uuid');
+      AssertTrue(ColOf('born').Field.Kind = ftDate, 'DATE is a date');
+      AssertTrue(ColOf('seen_at').Field.Kind = ftDateTime, 'DATETIME a datetime');
+
+      { A keyword for a column name. The property takes the underscore the
+        typed constant takes, and Describe maps it, because SnakeCase of
+        Type_ is not type. This is the Label_ bug, handled rather than
+        refused: the table exists, and refusing it helps nobody. }
+      Col := ColOf('type');
+      AssertEqual(Col.Field.Prop, 'Type_', 'a keyword column gets an underscore');
+      AssertEqual(Col.Member, 'Type_', 'the same one the typed constant has');
+      AssertFalse(Col.MapsByName, 'and does not map back by name');
+      Lines := DescribeLinesOf(P);
+      AssertTrue(PlanHas(Lines, 'S.Column(''Type_'', ''type'');'),
+        'so Describe maps it by hand');
+
+      Lines := RuleLinesOf(P);
+      AssertTrue(PlanHas(Lines, 'V.Field(''Name'').Required.MaxLen(60);'),
+        'the rule the schema states');
+      AssertTrue(PlanHas(Lines, 'V.Field(''MakerId'').Required;'),
+        'a NOT NULL reference is required');
+      { A database default is not what an insert through the model gets
+        -- a model writes every column it maps -- so the column is not
+        Required; the form starts with the default instead. }
+      AssertTrue(PlanHas(Lines, 'V.Field(''Status'').MaxLen(20);'),
+        'a column with a default is not required, but keeps its length');
+      AssertTrue(NoteMentions(P, 'status'), 'and the plan says why');
+      AssertFalse(PlanHas(Lines, 'V.Field(''Qty'').Required;'),
+        'a NOT NULL number is not required: zero is a number');
+
+      Lines := DescribeLinesOf(P);
+      AssertTrue(PlanHas(Lines, 'S.EmptyIsNull(''Notes'');'),
+        'a nullable text is NULL when it is empty');
+      AssertTrue(PlanHas(Lines, 'S.EmptyIsNull(''Meta'');'), 'so is a nullable json');
+      AssertTrue(PlanHas(Lines, 'S.Timestamps;'), 'the timestamps are recognised');
+      AssertTrue(PlanHas(Lines, 'S.SoftDeletes;'), 'and deleted_at');
+
+      { **A secret is hidden.** The one guess in the plan, made in the
+        direction whose failure is loud. }
+      Col := ColOf('password_hash');
+      AssertTrue(Col.LooksSecret, 'password_hash looks like a secret');
+      AssertFalse(Col.Editable, 'and is not in the form');
+      AssertFalse(Col.Listed, 'or the list');
+      AssertFalse(Col.Searchable, 'or searched');
+      AssertTrue(PlanHas(HiddenColumnsOf(P), 'password_hash'),
+        'and is hidden from JSON');
+      AssertFalse(PlanHas(RuleLinesOf(P), 'V.Field(''PasswordHash'').Required.MaxLen(255);'),
+        'and has no rule a form would have to satisfy');
+
+      AssertFalse(ColOf('photo').Editable, 'a blob is not a form field');
+      AssertFalse(ColOf('photo').Listed, 'or a column in a list');
+      AssertTrue(NoteMentions(P, 'photo'), 'and the plan says so');
+
+      AssertFalse(ColOf('created_at').Editable, 'a timestamp is not edited');
+      AssertFalse(ColOf('deleted_at').Listed, 'and deleted_at is not listed');
+      AssertFalse(ColOf('id').Editable, 'nor is the key');
+      AssertTrue(ColOf('id').Sortable, 'though it can be sorted by');
+      AssertFalse(ColOf('notes').Listed, 'a long text is not a list column');
+      AssertTrue(ColOf('notes').Searchable, 'but it is searched');
+      AssertFalse(ColOf('active').Sortable, 'a bool is not sortable: TQuery has no order for one');
+
+      { References. }
+      AssertTrue(ColOf('maker_id').Field.Kind = ftReferences, 'maker_id is a reference');
+      AssertEqual(ColOf('maker_id').Field.RefTable, 'makers', 'to makers');
+      AssertTrue(ColOf('ghost_id').Field.Kind <> ftReferences,
+        'a key pointing at a table that is not there is not a relation');
+      AssertTrue(NoteMentions(P, 'ghosts'), 'and the plan says where it pointed');
+
+      AssertEqual(Length(P.Relations), 2, 'one relation each way');
+      for I := 0 to High(P.Relations) do
+        if P.Relations[I].Kind = prBelongsTo then
+        begin
+          AssertEqual(P.Relations[I].Name, 'Maker', 'belongs to Maker');
+          AssertEqual(P.Relations[I].Model, 'Maker', 'the model TMaker');
+          AssertEqual(P.Relations[I].ForeignKey, 'maker_id', 'by maker_id');
+        end
+        else
+        begin
+          AssertEqual(P.Relations[I].Name, 'Parts', 'has many Parts');
+          AssertEqual(P.Relations[I].Model, 'Part', 'of TPart');
+          AssertEqual(P.Relations[I].ForeignKey, 'gadget_id', 'by parts.gadget_id');
+        end;
+
+      AssertEqual(P.DefaultSort, 'name', 'sorted by its first string column');
+      AssertContains(PlanText(P), 'Hidden from JSON', 'the dry run says what it hid');
+
+      { ---- what cannot be a resource ---- }
+      P := PlanResource(S, 'Widget');
+      AssertTrue(Length(P.Problems) = 1, 'a table that is not there is a problem');
+      AssertContains(P.Problems[0], 'widgets', 'naming the table it looked for');
+      AssertContains(P.Problems[0], 'gadgets', 'and the ones there are');
+
+      P := PlanResource(S, 'Nokey', 'nokeys');
+      AssertTrue((Length(P.Problems) > 0) and (Pos('no primary key', P.Problems[0]) > 0),
+        'a table with no key cannot be a resource');
+      P := PlanResource(S, 'Twokey', 'twokeys');
+      AssertTrue((Length(P.Problems) > 0) and (Pos('2 columns', P.Problems[0]) > 0),
+        'nor one whose key is two columns');
+      P := PlanResource(S, 'Textkey', 'textkeys');
+      AssertTrue((Length(P.Problems) > 0) and (Pos('whole number', P.Problems[0]) > 0),
+        'nor one whose key is text');
+
+      AssertEqual(SingularOf('makers'), 'maker', 'makers comes from maker');
+      AssertEqual(SingularOf('categories'), 'category', 'categories from category');
+      AssertEqual(SingularOf('boxes'), 'box', 'boxes from box');
+      AssertEqual(SingularOf('people'), '', 'and people from nothing the rule makes');
+    finally
+      S.Free;
+    end;
+  finally
+    C.Free;
+    A.Free;
+  end;
 end;
 
 { ----------------------------------------------------------- openapi -- }
@@ -6551,6 +6792,10 @@ begin
     @TestNextVersion);
   Test('EmptyIsNull marks a string, and refuses anything else',
     @TestEmptyIsNull);
+
+  Group('Resource plan');
+  Test('a table read into a resource, and the tables that cannot be one',
+    @TestResourcePlan);
 
   Group('OpenAPI');
   Test('generated from the models and the routes, and checked against both',

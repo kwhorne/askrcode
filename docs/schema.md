@@ -63,8 +63,10 @@ SchemaAvtrykk;                            { the fingerprint }
 
 Two of those rows are where the bodies are buried:
 
-**`tinyint(1)` is boolean, `tinyint(4)` is an integer.** MySQL and SQLite
-have no boolean type; the width is the convention that makes it one. The
+**`tinyint(1)` is boolean, `tinyint(4)` is an integer.** MySQL has no
+boolean type; the width is the convention that makes it one. SQLite reports
+whatever a table was declared with, and a migration declares `BOOLEAN`
+there since 0.13 — a table made earlier reads its booleans as `INTEGER`. The
 introspector reads `column_type`, not `data_type`, precisely because that is
 the one that keeps the width.
 
@@ -76,6 +78,12 @@ floating point, and it is better to say so than to lose precision silently.
 `snake_case` in SQL, `PascalCase` in Pascal. `customer_id` becomes
 `CustomerId`; the SQL name is preserved in the generated constant, so the
 query is correct and the Pascal reads like Pascal.
+
+A column named like a Pascal keyword gets a trailing underscore: `type`
+becomes `Type_`, `until` becomes `Until_`. The list is every word Free
+Pascal reserves in Delphi mode — before 0.13 it was missing 26 of them,
+`until`, `with`, `on` and `string` among them, and a column with one of
+those names gave a unit that did not compile.
 
 ## Writing files
 

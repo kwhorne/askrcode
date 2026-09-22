@@ -122,6 +122,10 @@ function PascalCase(const S: string): string;
 function TableTypeName(const Table: string): string;
 function TableConstName(const Table: string): string;
 function MemberName(const Column: string): string;
+{ True for a word Free Pascal reserves in Delphi mode. One list, used by
+  the schema units and by `askr make model`, so the two cannot disagree
+  about which names need an underscore. }
+function IsPascalKeyword(const S: string): Boolean;
 function SchemaFingerprint(Schema: TDbSchema): string;
 { The fingerprint for one table. It lives in the table's own file, so that
   a change in customers does not make orders look changed. }
@@ -130,15 +134,43 @@ function TableFingerprint(T: TDbTable): string;
 implementation
 
 const
-  { Words that cannot be used as field names. If a column name collides
-    with one of them, the member gets a trailing underscore. }
-  Reserved: array[0..40] of string = (
-    'and', 'array', 'as', 'begin', 'case', 'class', 'const', 'div', 'do',
-    'downto', 'else', 'end', 'except', 'file', 'for', 'function', 'goto',
-    'if', 'implementation', 'in', 'inherited', 'interface', 'is', 'label',
-    'mod', 'nil', 'not', 'object', 'of', 'or', 'procedure', 'program',
-    'record', 'repeat', 'set', 'then', 'to', 'type', 'unit', 'uses', 'var'
-  );
+  { Every word Free Pascal reserves in Delphi mode: Turbo Pascal's, then
+    Object Pascal's. A column with one of these names cannot be a field
+    of that name, so the member gets a trailing underscore.
+
+    The list used to have 41 of them. `until`, `while`, `with`, `try`,
+    `on`, `out`, `string`, `raise`, `property`, `xor` and sixteen more
+    were missing, so a column called any of those produced a schema unit
+    that did not compile. `askr make model` had a longer list of its own
+    for the same rule; it uses this one now. }
+  PascalKeywords: array[0..66] of string = (
+    'and', 'array', 'as', 'asm', 'begin', 'case', 'class', 'const',
+    'constructor', 'destructor', 'dispinterface', 'div', 'do', 'downto',
+    'else', 'end', 'except', 'exports', 'file', 'finalization', 'finally',
+    'for', 'function', 'goto', 'if', 'implementation', 'in', 'inherited',
+    'initialization', 'inline', 'interface', 'is', 'label', 'library',
+    'mod', 'nil', 'not', 'object', 'of', 'on', 'operator', 'or', 'out',
+    'packed', 'procedure', 'program', 'property', 'raise', 'record',
+    'repeat', 'resourcestring', 'set', 'shl', 'shr', 'string', 'then',
+    'threadvar', 'to', 'try', 'type', 'unit', 'until', 'uses', 'var',
+    'while', 'with', 'xor');
+
+function IsPascalKeyword(const S: string): Boolean;
+var
+  I: Integer;
+  L: string;
+begin
+  L := LowerCase(S);
+  for I := Low(PascalKeywords) to High(PascalKeywords) do
+    if PascalKeywords[I] = L then
+      Exit(True);
+  Result := False;
+end;
+
+function IsReserved(const S: string): Boolean;
+begin
+  Result := IsPascalKeyword(S);
+end;
 
 function DefaultCodegenOptions: TCodegenOptions;
 begin
@@ -157,18 +189,6 @@ begin
     writing the check that would have reported it. }
   Result.SkipTables := MigrationsTable +
     ',askr_jobs,askr_failed_jobs,api_tokens';
-end;
-
-function IsReserved(const S: string): Boolean;
-var
-  I: Integer;
-  L: string;
-begin
-  L := LowerCase(S);
-  for I := Low(Reserved) to High(Reserved) do
-    if Reserved[I] = L then
-      Exit(True);
-  Result := False;
 end;
 
 function PascalCase(const S: string): string;

@@ -83,29 +83,24 @@ function DescribeLineOf(const F: TFieldSpec): string;
 { The names that are accepted, for a message that lists them. }
 function TypeNames: string;
 
+{ customer_id -> CustomerId. The property a column is given, here and in
+  `askr make resource`, so the two name things the same way. }
+function PropFor(const Column: string): string;
+
 implementation
 
 uses
   { SnakeCase and Pluralize: the functions the model uses at run time.
     Copies of them here would be a second naming rule to drift from the
     first -- the way the command list once did. }
-  Askr.Urd.Model;
+  Askr.Urd.Model,
+  { IsPascalKeyword: the same list the schema units are written with. }
+  Askr.Norn.Codegen;
 
 const
   TypeWords: array[TFieldType] of string = (
     'string', 'text', 'int', 'bigint', 'bool', 'money', 'float',
     'datetime', 'date', 'json', 'uuid', 'references');
-
-  Keywords: array[0..62] of string = (
-    'and', 'array', 'as', 'asm', 'begin', 'case', 'class', 'const',
-    'constructor', 'destructor', 'dispinterface', 'div', 'do', 'downto',
-    'else', 'end', 'except', 'exports', 'file', 'finalization', 'finally',
-    'for', 'function', 'goto', 'if', 'implementation', 'in', 'inherited',
-    'initialization', 'inline', 'interface', 'is', 'label', 'library',
-    'mod', 'nil', 'not', 'object', 'of', 'operator', 'or', 'out', 'packed',
-    'procedure', 'program', 'property', 'raise', 'record', 'repeat',
-    'resourcestring', 'set', 'shl', 'shr', 'string', 'then', 'threadvar',
-    'to', 'try', 'type', 'unit', 'until', 'uses', 'var');
 
 function TypeNames: string;
 var
@@ -121,15 +116,8 @@ begin
 end;
 
 function IsKeyword(const S: string): Boolean;
-var
-  I: Integer;
-  L: string;
 begin
-  L := LowerCase(S);
-  for I := Low(Keywords) to High(Keywords) do
-    if Keywords[I] = L then
-      Exit(True);
-  Result := False;
+  Result := IsPascalKeyword(S);
 end;
 
 { customer_id -> CustomerId. }

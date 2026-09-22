@@ -240,7 +240,13 @@ begin
       case Dialect of
         sdPostgres: Result := 'BOOLEAN';
         sdMySql:    Result := 'TINYINT(1)';
-        sdSqlite:   Result := 'INTEGER';
+        { BOOLEAN, not INTEGER, for the same reason as DATETIME below. The
+          declared type is what the introspection reads, and with INTEGER
+          `askr schema` typed a boolean as TColInt64 on SQLite and as
+          TColBool on the other two -- from the same migration. BOOLEAN
+          has NUMERIC affinity and the values are 0 and 1, so what is
+          stored does not change; only the name that says what it is. }
+        sdSqlite:   Result := 'BOOLEAN';
       end;
     ctNumeric:  Result := Format('NUMERIC(%d,%d)', [Precision, Scale]);
     ctFloat:
@@ -270,13 +276,22 @@ begin
       case Dialect of
         sdPostgres: Result := 'JSONB';
         sdMySql:    Result := 'JSON';
-        sdSqlite:   Result := 'TEXT';
+        { Two words on purpose. A plain JSON would name it, but would give
+          the column NUMERIC affinity, and SQLite then turns a document
+          that is only a large number into a REAL and loses digits. The
+          word TEXT in the name keeps TEXT affinity -- the storage is
+          what it was -- and JSON in front of it is what lets a reader of
+          the schema tell a document from any other text. }
+        sdSqlite:   Result := 'JSON TEXT';
       end;
     ctUuid:
       case Dialect of
         sdPostgres: Result := 'UUID';
         sdMySql:    Result := 'CHAR(36)';
-        sdSqlite:   Result := 'TEXT';
+        { UUID has NUMERIC affinity, which is harmless here: a UUID always
+          has four hyphens in it, so it is never a well-formed number and
+          SQLite leaves it as text. The name is what changes. }
+        sdSqlite:   Result := 'UUID';
       end;
     ctBytes:
       case Dialect of

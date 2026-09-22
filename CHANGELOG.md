@@ -47,7 +47,10 @@ with the zero-major caveat that minor releases may break things until
   `./askr make:check` is the gate: a scaffolded project, a model with
   every type, built, migrated and round-tripped through the generated
   model on **SQLite, Postgres and MySQL**, 31 checks each, including
-  that the nullable ones are NULL in the database and not `''`.
+  that the nullable ones are NULL in the database and not `''`. Then the
+  other direction: the table read back from each database must give the
+  exact `Describe` and `Rules` lines make model wrote -- the reader
+  `askr make resource` will be built on.
 
 - **`TSchema.EmptyIsNull('Prop')`**: an empty string in that property is
   written as NULL. Pascal has no null string, so a nullable text column
@@ -71,7 +74,21 @@ with the zero-major caveat that minor releases may break things until
 
 - The migrator says `up` and `down`, not `opp` and `ned`.
 
+- **SQLite migrations declare `BOOLEAN`, `JSON TEXT` and `UUID`**, not
+  `INTEGER` and `TEXT`. The same migration used to give a `TColBool` on
+  Postgres and a `TColInt64` on SQLite, and a UUID read back as any other
+  text. Storage is unchanged: the declared type only picks SQLite's
+  affinity, and `JSON TEXT` keeps TEXT's. Tables already made keep their
+  declarations. `docs/migrations.md` said `TINYINT(1)` for a SQLite
+  boolean; it was `INTEGER`.
+
 ### Fixed
+
+- **`askr schema` escaped 41 Pascal keywords, and Delphi mode reserves
+  67.** A column called `until`, `with`, `on`, `out`, `string`, `try`,
+  `property` or any of nineteen more gave a schema unit that did not
+  compile. There is one list now, the whole one, and `askr make model`
+  uses it too instead of a longer copy of its own.
 
 - **Two `askr make model` in the same second made two migrations with one
   version.** The version was the time to the second. The migrator ran

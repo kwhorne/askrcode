@@ -754,6 +754,35 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   vilje. `^0.6.0` følger npm-regelen for nullmajor og slipper ikke
   `0.7.0` gjennom.
 
+## Generatorene
+
+* **`Askr.Cli.Plan` leser en tabell til det en resource trenger, og skriver
+  ingenting.** Den lager en `TFieldSpec` per kolonne — samme record som
+  `make model` parser fra kommandolinja — og regel, type og
+  `EmptyIsNull`-linje kommer fra de samme funksjonene. Porten i
+  `./askr make:check` er nettopp det: spesifikasjon, migrer, les tilbake,
+  og planen skal gi **linjene make model skrev i fila**, begge veier. Å
+  telle linjer var første utkast, og det ville gått grønt med én linje
+  byttet mot en annen.
+* **Lengden leses ut av den deklarerte typen i planen, ikke i
+  introspeksjonen.** SQLite oppgir bare teksten `VARCHAR(60)`. `MaxLength`
+  er med i avtrykket, så å fylle den der ville fått hver SQLite-tabell til
+  å se endret ut for `schema:check` etter en oppgradering.
+* **SQLite deklarerer `BOOLEAN`, `JSON TEXT` og `UUID` for nye tabeller.**
+  Affiniteten avgjøres av den deklarerte typen, og `JSON TEXT` inneholder
+  `TEXT` og beholder derfor TEXT-affinitet. Eksisterende tabeller er urørt.
+  `docs/migrations.md` hadde sagt `TINYINT(1)` for en SQLite-boolsk; det
+  var `INTEGER`.
+* **MySQLs uuid er CHAR(36) og leses tilbake som string(36)**, fordi det er
+  det den er. Det er det ene unntaket porten har, og det den sjekker der er
+  at planen sier det i et notat — ikke at den gjetter.
+* **Hemmeligheter skjules, lukket til noen åpner.** En kolonne som ser ut
+  som et passord, token eller hash skjules fra JSON og holdes ute av skjema
+  og liste. Feilen i den retningen merkes; en lekket hash gjør ikke det.
+* **Én nøkkelordliste**, `IsPascalKeyword` i `Askr.Norn.Codegen`. Den gamle
+  i Norn hadde 41 av 67, `make model` hadde sin egen lengre, og en kolonne
+  som het `until` ga en schema-unit som ikke kompilerte.
+
 ## Mail og providere
 
 * **`TMailTransport` er hele grensesnittet: `Send` og `Describe`.** En
