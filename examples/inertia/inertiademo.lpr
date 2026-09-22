@@ -294,6 +294,11 @@ var
   A: TArena;
 begin
   A := Req.Arena;
+  { What this page is without JavaScript. The client empties the mount
+    element before it mounts, so it is replaced rather than doubled. }
+  TInertia.PageFallback(
+    '<h1>Askr</h1>' +
+    '<p>FALLBACK-SENTINEL: one binary, no sidecars.</p>');
   Result := Inertia('Home',
     ['rammeverk', 'Askr',
      'versjon', TInertia.Version,
@@ -394,7 +399,7 @@ begin
     '</head>' + #10 +
     '<body>' + #10 +
     '  <script data-page="{{root}}" type="application/json">{{page}}</script>' + #10 +
-    '  <div id="{{root}}"></div>' + #10 +
+    '  <div id="{{root}}">{{fallback}}</div>' + #10 +
     '</body>' + #10 +
     '</html>' + #10);
 

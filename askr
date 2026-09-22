@@ -486,6 +486,105 @@ cmd_run_demo() {
 # Den sjekker også at stdout er ren. Én WriteLn på feil side av McpServe, og
 # klienten ser en parse-feil i stedet for et svar, uten noe som sier hvor den
 # kom fra.
+# What a reader without JavaScript gets, and whether the client replaces it.
+#
+# The server half is in askr_tests: strip the scripts, count the characters.
+# This is the half that needs a browser -- Svelte 5 mounts by appending, so
+# whether the fallback is replaced or left beside the app depends on one
+# line in main.js, and neither jsdom nor a Pascal test runs Inertia's mount.
+#
+# Skips itself without node or Chrome, like the desktop suite without GTK.
+# A skip that does not say why is worse than a failure.
+cmd_seo_check() {
+  prepare
+
+  if ! command -v node >/dev/null 2>&1; then
+    echo "seo:check hoppet over: node finnes ikke."
+    return 0
+  fi
+  chrome=${ASKR_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}
+  if [ ! -x "$chrome" ]; then
+    chrome=$(command -v google-chrome || command -v chromium || true)
+  fi
+  if [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
+    echo "seo:check hoppet over: fant ingen Chrome."
+    echo "  Sett ASKR_CHROME til en kjørbar Chrome for å kjøre den."
+    return 0
+  fi
+
+  if [ ! -f "$ROOT/examples/inertia/public/build/.vite/manifest.json" ]; then
+    echo "Bygger demoens frontend ..."
+    ( cd "$ROOT/examples/inertia/frontend" &&
+      npm install --silent --no-fund --no-audit && npm run build ) >/dev/null
+  fi
+
+  fpc_run examples/inertia/inertiademo.lpr
+
+  port=8133
+  cdpport=9224
+  # Natively when there is a local fpc, otherwise in the container with the
+  # port mapped out -- fpc_run builds for whichever one it used, and a Linux
+  # binary does not run on the host that Chrome is on.
+  if have_local_fpc; then
+    ASKR_WEB_ROOT="$ROOT/examples/inertia" "$BIN/inertiademo" "$port" \
+      >/tmp/askr-seo-demo.log 2>&1 &
+  else
+    ensure_image
+    docker run --rm -p "$port:$port" $DOCKER_PLATFORM -v "$ROOT":/work \
+      -w /work -e ASKR_WEB_ROOT=/work/examples/inertia "$IMAGE" \
+      "/work/${BIN#$ROOT/}/inertiademo" "$port" 0.0.0.0 \
+      >/tmp/askr-seo-demo.log 2>&1 &
+  fi
+  demopid=$!
+  "$chrome" --headless=new --remote-debugging-port=$cdpport \
+    --user-data-dir=/tmp/askr-seo-cdp --no-first-run --disable-gpu \
+    about:blank >/tmp/askr-seo-chrome.log 2>&1 &
+  chromepid=$!
+  # Both are killed whatever happens below, including a failure.
+  trap 'kill $demopid $chromepid 2>/dev/null' EXIT INT TERM
+  sleep 6
+
+  echo "askr - seo"
+  echo
+  echo "- what a reader without JavaScript gets"
+  body=$(curl -s --max-time 10 "http://127.0.0.1:$port/" || true)
+  visible=$(printf '%s' "$body" | python3 -c "
+import sys, re
+h = sys.stdin.read()
+m = re.search(r'<body[^>]*>(.*)</body>', h, re.S)
+b = m.group(1) if m else ''
+t = re.sub(r'<script.*?</script>', '', b, flags=re.S)
+t = re.sub(r'<[^>]+>', ' ', t)
+print(len(' '.join(t.split())))
+" 2>/dev/null || echo 0)
+  if [ "${visible:-0}" -gt 20 ]; then
+    echo "  ok    the body has $visible characters to read"
+  else
+    echo "  FAIL  the body has $visible characters to read"
+    fail=1
+  fi
+
+  echo
+  echo "- and whether the client replaces it"
+  if ASKR_CDP="http://127.0.0.1:$cdpport" \
+     ASKR_URL="http://127.0.0.1:$port/" \
+     node "$ROOT/tests/browser/hydration.mjs"; then
+    :
+  else
+    fail=1
+  fi
+
+  kill $demopid $chromepid 2>/dev/null
+  trap - EXIT INT TERM
+
+  echo
+  if [ "${fail:-0}" -ne 0 ]; then
+    echo "seo:check feilet."
+    return 1
+  fi
+  echo "seo:check holder: en leser uten JavaScript får noe å lese."
+}
+
 cmd_mcp_check() {
   prepare
   fpc_run cli/askr.lpr
@@ -1155,6 +1254,7 @@ case "${1:-}" in
   test)  shift; cmd_test "$@" ;;
   test:amd64) shift; ASKR_ARCH=amd64 exec "$0" test "$@" ;;
   mcp:check) shift; cmd_mcp_check "$@" ;;
+  seo:check) shift; cmd_seo_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;

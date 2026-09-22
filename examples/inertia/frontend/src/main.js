@@ -28,6 +28,10 @@ createInertiaApp({
     return page
   },
   setup({ el, App, props }) {
+    // Empty it first. Svelte 5 mounts by appending, so the fallback the
+    // server rendered for readers without JavaScript would stay behind
+    // the app instead of being replaced by it.
+    el.innerHTML = ''
     mount(App, { target: el, props })
   },
 })

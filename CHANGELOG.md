@@ -34,6 +34,31 @@ with the zero-major caveat that minor releases may break things until
   in case is a second URL to a crawler. A path is refused with a reason
   rather than dropped or kept.
 
+- **`TInertia.PageFallback` — what a reader without JavaScript gets.** An
+  Inertia page answers a crawler with a payload in a script element and an
+  empty div: strip the scripts and the body has **zero characters**. The
+  fallback is markup placed inside the mount element, which the client
+  empties before mounting.
+
+  **That last part needed a browser to settle.** Svelte 5 mounts by
+  appending, so without `el.innerHTML = ''` the reader sees the page twice
+  — measured in a real Chrome, both ways: with the line the sentinel is
+  gone and the mount element has 2 children, without it the sentinel is in
+  the visible text and it has 4. `askr new` writes the line; an application
+  from before this needs it added, and a custom root template needs a
+  `{{fallback}}` placeholder.
+
+  A page that sets a fallback against a template with nowhere to put it
+  raises rather than dropping it. That fired the first time the demo ran,
+  which is how a custom template was found to need updating.
+
+  **This is not server-side rendering.** Inertia's SSR needs a Node process
+  beside the binary, and one binary with no sidecars is the point.
+
+- **`./askr seo:check`** — the two halves of that, measured: characters in
+  the body without JavaScript, and hydration in a real Chrome. It skips
+  itself with a reason when node or Chrome is missing.
+
 - **The head of a page: `TInertia.PageTitle`, `PageDescription`,
   `PageCanonical`, `PageOg` and `PageJsonLd`.** `SetTitle` stays the site's
   default; these are this page's, and they are **per thread** for the same

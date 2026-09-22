@@ -125,6 +125,58 @@ request — see [`app.url`](configuration.md#appurl-and-why-it-is-not-the-reques
 Without `app.url` the link is left out rather than guessed: a canonical
 pointing at the wrong place is worse than none.
 
+### What a reader without JavaScript gets
+
+```pascal
+TInertia.PageFallback('<h1>Queries</h1><p>The typed query builder.</p>');
+Result := Inertia('Docs/Show', ['page', P]);
+```
+
+**This answers a measured problem.** An Inertia page without a fallback
+sends a crawler a payload in a script element and an empty div — strip the
+scripts and there are **zero characters** of text in the body. Googlebot
+runs scripts and copes; the fetchers behind most language models do not.
+
+The markup goes inside the mount element, and the client empties that
+element before it mounts — Svelte 5 mounts by *appending*, so without that
+line the reader would see the page twice. That is one line in the
+generated `main.js`:
+
+```js
+setup({ el, App, props }) {
+  el.innerHTML = ''
+  mount(App, { target: el, props })
+}
+```
+
+**An application from before this needs that line added.** `askr new`
+writes it, and a custom root template needs `{{fallback}}` inside the mount
+element:
+
+```html
+<div id="{{root}}">{{fallback}}</div>
+```
+
+A page that sets a fallback against a template with nowhere to put it
+raises rather than dropping it — quietly losing it would leave the page
+empty for exactly the readers it was written for.
+
+**It is markup, and it is not escaped.** Everything in it is yours to get
+right, as with `SetHead`. Interpolating anything a user wrote without
+escaping it first is stored XSS, served to every crawler as well.
+
+### This is not server-side rendering
+
+Askr does not run your components on the server. Inertia's SSR needs a Node
+process beside the binary, and one binary with no sidecars is the point of
+the thing. What goes in a fallback is whatever the page *is* without its
+interactivity — for a document, the document.
+
+`./askr seo:check` measures both halves: the characters in the body
+without JavaScript, and, in a real Chrome, that the app replaces the
+fallback rather than standing beside it. The second cannot be read off the
+source and jsdom cannot answer it either.
+
 ### Two escapings, and where each applies
 
 An attribute value takes HTML escaping. A `"` in a description that is not

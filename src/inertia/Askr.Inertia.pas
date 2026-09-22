@@ -126,6 +126,26 @@ type
       element, so JSON escaping applies and not HTML escaping — the
       distinction that made `/` in an Inertia payload a bug once. }
     class procedure PageJsonLd(const AJson: string); static;
+    { What this page looks like before the JavaScript has run: markup
+      placed inside the mount element, which the client empties when it
+      mounts.
+
+      **This is the answer to a measured problem.** A crawler that does
+      not execute JavaScript receives an Inertia page as a payload in a
+      script element and an empty div -- zero characters of text. Googlebot
+      renders scripts and copes; the fetchers behind most language models
+      do not, and neither do several others.
+
+      **It is markup, and it is not escaped.** Everything in it is yours to
+      get right, exactly as with SetHead. Interpolating anything a user
+      wrote without escaping it first is stored XSS, and this is a place
+      where it would be served to every crawler as well.
+
+      Askr does not render your components on the server: that needs a
+      Node process beside the binary, and one binary with no sidecars is
+      the point of the thing. What goes here is whatever the page *is*
+      without its interactivity -- for a document, the document. }
+    class procedure PageFallback(const AHtml: string); static;
     { Forgets everything set for this page. Called for you when an
       Inertia response is built. }
     class procedure ClearPageHead; static;
@@ -210,7 +230,7 @@ const
     '</head>' + #10 +
     '<body>' + #10 +
     '  <script data-page="{{root}}" type="application/json">{{page}}</script>' + #10 +
-    '  <div id="{{root}}"></div>' + #10 +
+    '  <div id="{{root}}">{{fallback}}</div>' + #10 +
     '</body>' + #10 +
     '</html>' + #10;
 
@@ -228,6 +248,7 @@ threadvar
   GPageOgKeys: array of string;
   GPageOgValues: array of string;
   GPageJsonLd: string;
+  GPageFallback: string;
 
 var
   GVersion: string = '1';
@@ -253,6 +274,14 @@ end;
 
 class procedure TInertia.SetRootTemplate(const AHtml: string);
 begin
+  { Empty means the built-in one, which is what the getter has always
+    meant by it. The setter refusing what the getter accepts left no way
+    back to the default once a template had been set. }
+  if AHtml = '' then
+  begin
+    GRootTemplate := '';
+    Exit;
+  end;
   if Pos('{{page}}', AHtml) = 0 then
     raise EInertiaError.Create(
       'The HTML shell must contain {{page}} where the payload goes');
@@ -308,8 +337,14 @@ begin
   GPageJsonLd := AJson;
 end;
 
+class procedure TInertia.PageFallback(const AHtml: string);
+begin
+  GPageFallback := AHtml;
+end;
+
 class procedure TInertia.ClearPageHead;
 begin
+  GPageFallback := '';
   GPageTitle := '';
   GPageDescription := '';
   GPageCanonical := '';
@@ -672,6 +707,17 @@ begin
   Tpl := StringReplace(Tpl, '{{title}}',
     HtmlAttrEscape(A, Askr.Core.Text.Str(Title_)).ToString,
     [rfReplaceAll]);
+
+  { Not escaped: it is markup by intent, like the head tags SetHead takes.
+    A template that has no place for it while a page supplies one is a
+    mistake worth stopping on -- dropping it silently would leave the page
+    empty for exactly the readers it was written for, and nothing would
+    say so. }
+  if (GPageFallback <> '') and (Pos('{{fallback}}', Tpl) = 0) then
+    raise EInertiaError.Create('A page set a fallback, but the root ' +
+      'template has no {{fallback}} placeholder. Add it inside the mount ' +
+      'element: <div id="{{root}}">{{fallback}}</div>');
+  Tpl := StringReplace(Tpl, '{{fallback}}', GPageFallback, [rfReplaceAll]);
   { Inside a script element it is JSON escaping that applies, not HTML
     escaping. See JsonScriptEscape. }
   Escaped := JsonScriptEscape(A, Payload);

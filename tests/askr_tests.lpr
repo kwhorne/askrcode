@@ -1275,6 +1275,74 @@ begin
   Result := B.ToString;
 end;
 
+{ Characters of text in the body, outside every script element, with the
+  tags removed.
+
+  The same thing a `curl | strip scripts | count` does, because that is the
+  measurement the fallback exists for: 213 kB of HTML with nothing to read
+  in it was the finding, and a proxy for it would not have been.
+
+  The body, not the whole document -- the <title> is real text and a
+  crawler does read it, but a title is not a page. }
+function VisibleTextLength(const Html: string): Integer;
+var
+  I, Depth, BodyAt: Integer;
+  InTag, InScript: Boolean;
+  Low_: string;
+begin
+  Result := 0;
+  Low_ := LowerCase(Html);
+  BodyAt := Pos('<body', Low_);
+  if BodyAt > 0 then
+  begin
+    Low_ := Copy(Low_, BodyAt, MaxInt);
+    I := 1;
+    Low_ := LowerCase(Copy(Html, BodyAt, MaxInt));
+  end
+  else
+    I := 1;
+  InScript := False;
+  while I <= Length(Low_) do
+  begin
+    if (not InScript) and (Copy(Low_, I, 7) = '<script') then
+    begin
+      InScript := True;
+      Inc(I, 7);
+      Continue;
+    end;
+    if InScript then
+    begin
+      if Copy(Low_, I, 9) = '</script>' then
+      begin
+        InScript := False;
+        Inc(I, 9);
+        Continue;
+      end;
+      Inc(I);
+      Continue;
+    end;
+    if Low_[I] = '<' then
+    begin
+      Depth := 1;
+      InTag := True;
+      while (I <= Length(Low_)) and InTag do
+      begin
+        Inc(I);
+        if (I <= Length(Low_)) and (Low_[I] = '>') then
+        begin
+          Dec(Depth);
+          InTag := Depth > 0;
+        end;
+      end;
+      Inc(I);
+      Continue;
+    end;
+    if not (Low_[I] in [#9, #10, #13, ' ']) then
+      Inc(Result);
+    Inc(I);
+  end;
+end;
+
 procedure TestInertia;
 var
   A: TArena;
@@ -1284,6 +1352,7 @@ var
   R: TResponse;
   Body, Raw: string;
   Lines: TStringList;
+  Raised_: Boolean;
 begin
   Group('Inertia');
   A := TArena.Create(32 * 1024);
@@ -1358,6 +1427,62 @@ begin
     Check(Pos('ld+json', Raw) = 0, 'nor the JSON-LD');
     Check(Pos('<title>Askr</title>', Raw) > 0,
       'and the title is the site default again');
+
+    { ---- what a reader without JavaScript gets ----
+
+      This is the measurement, not a proxy for it. Strip every script
+      element and count what is left. An Inertia page without a fallback
+      answers a crawler with a payload in a script element and an empty
+      div: zero characters. Googlebot runs scripts and copes; the fetchers
+      behind most language models do not. }
+    A.Reset;
+    Req := MakeRequest(A, 'GET /docs/queries HTTP/1.1'#13#10'Host: test');
+    UseRequest(Req);
+    R := Inertia('Docs/Show', ['slug', 'queries']);
+    CheckEqI(VisibleTextLength(R.Body.ToString), 0,
+      'without a fallback there is nothing to read outside the scripts');
+
+    A.Reset;
+    Req := MakeRequest(A, 'GET /docs/queries HTTP/1.1'#13#10'Host: test');
+    UseRequest(Req);
+    TInertia.PageFallback('<h1>Queries</h1><p>The typed query builder.</p>');
+    R := Inertia('Docs/Show', ['slug', 'queries']);
+    Raw := R.Body.ToString;
+    Check(VisibleTextLength(Raw) > 20,
+      'with one there is, and it is real text');
+    Check(Pos('<h1>Queries</h1>', Raw) > 0, 'the markup is not escaped');
+    { Inside the mount element, so the client replaces it rather than
+      leaving it beside the app. }
+    Check(Pos('<div id="app"><h1>Queries</h1>', Raw) > 0,
+      'and it sits inside the mount element');
+
+    { It is per page, like the rest of the head. }
+    A.Reset;
+    Req := MakeRequest(A, 'GET /other HTTP/1.1'#13#10'Host: test');
+    UseRequest(Req);
+    R := Inertia('Other', []);
+    CheckEqI(VisibleTextLength(R.Body.ToString), 0,
+      'and the next page does not inherit it');
+
+    { A template with nowhere to put it is a mistake worth stopping on.
+      Dropping it quietly would leave the page empty for exactly the
+      readers it was written for. }
+    A.Reset;
+    TInertia.SetRootTemplate('<html><body><div id="{{root}}"></div>' +
+      '<script>{{page}}</script></body></html>');
+    Req := MakeRequest(A, 'GET /x HTTP/1.1'#13#10'Host: test');
+    UseRequest(Req);
+    TInertia.PageFallback('<p>hei</p>');
+    Raised_ := False;
+    try
+      Inertia('X', []);
+    except
+      on E: EInertiaError do
+        Raised_ := True;
+    end;
+    Check(Raised_, 'a template with no {{fallback}} refuses the page');
+    TInertia.SetRootTemplate('');
+    TInertia.ClearPageHead;
 
     ClearConfig;
     A.Reset;

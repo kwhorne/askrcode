@@ -599,6 +599,16 @@ begin
     '  see frontend/ and askr.toml. }' + #10 +
     'function THomeController.Demo(Req: TRequest): TResponse;' + #10 +
     'begin' + #10 +
+    '  { What this page is for a reader that does not run JavaScript.' + #10 +
+    '    Without it a crawler gets a payload in a script element and an' + #10 +
+    '    empty div — zero characters of text. The client empties this' + #10 +
+    '    element before it mounts, so nobody sees it twice.' + #10 +
+    '' + #10 +
+    '    It is markup, and it is not escaped: escape anything a user' + #10 +
+    '    wrote before it goes in here. }' + #10 +
+    '  TInertia.PageFallback(' + #10 +
+    '    ' + Q + '<h1>' + Name + '</h1>' + Q + ' +' + #10 +
+    '    ' + Q + '<p>An Askr application.</p>' + Q + ');' + #10 +
     '  Result := Inertia(' + Q + 'Home' + Q + ', [' + Q + 'name' + Q + ', ' + Q + Name + Q + ']);' + #10 +
     'end;' + #10 + #10 +
     'end.' + #10);
@@ -707,6 +717,11 @@ begin
     '    return pages[`./pages/${name}.svelte`]' + #10 +
     '  },' + #10 +
     '  setup({ el, App, props }) {' + #10 +
+    '    // Empty it first. Svelte 5 mounts by appending, so anything the' + #10 +
+    '    // server put there -- the fallback a page renders for crawlers' + #10 +
+    '    // that do not run JavaScript -- would stay behind the app' + #10 +
+    '    // instead of being replaced by it.' + #10 +
+    '    el.innerHTML = ' + Q + Q + #10 +
     '    mount(App, { target: el, props })' + #10 +
     '  },' + #10 +
     '})' + #10);
