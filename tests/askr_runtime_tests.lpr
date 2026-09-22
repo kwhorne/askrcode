@@ -22,7 +22,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs;
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Http.Robots;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -4083,6 +4083,76 @@ end;
   These are the shapes a client actually sends. A server that answers
   `initialize` and nothing else looks like it works right up until the
   client asks for the tool list. }
+{ What crawlers are told, and the one thing the default has to get right.
+
+  A missing robots.txt means "index everything" -- that is what a crawler
+  assumes on a 404. So the dangerous state is not a wrong file but no file,
+  on a staging site nobody thought about, and the first sign of it is the
+  unreleased pages showing up in somebody's search results.
+
+  The assertion that matters is therefore not that production is open. It
+  is that **everything else is closed, without anybody opting in.** }
+procedure TestRobots;
+var
+  Folder: string;
+  L: TStringList;
+
+  procedure WithEnv(const EnvLine, UrlLine: string);
+  begin
+    L := TStringList.Create;
+    try
+      if EnvLine <> '' then
+        L.Add(EnvLine);
+      if UrlLine <> '' then
+        L.Add(UrlLine);
+      L.SaveToFile(Folder + '/.env');
+    finally
+      L.Free;
+    end;
+    ClearConfig;
+    LoadConfig(Folder);
+  end;
+
+begin
+  Folder := '.build/cfg-robots';
+  ForceDirectories(Folder);
+
+  WithEnv('APP_ENV=production', 'APP_URL=https://example.com');
+  AssertContains(RobotsText, 'User-agent: *', 'production names the agents');
+  AssertContains(RobotsText, 'Disallow:'#10,
+    'and disallows nothing, which is how you say all of it');
+  AssertNotContains(RobotsText, 'Disallow: /',
+    'it is not closed');
+  AssertContains(RobotsText, 'Sitemap: https://example.com/sitemap.xml',
+    'and points at the sitemap, absolutely');
+
+  { Without an origin there is nowhere truthful to get an absolute URL
+    from -- not the request. So the line is left out rather than guessed. }
+  WithEnv('APP_ENV=production', '');
+  AssertNotContains(RobotsText, 'Sitemap:',
+    'no app.url, no Sitemap line');
+  AssertNotContains(RobotsText, 'Disallow: /',
+    'but production is still open');
+
+  { The three that have to be closed, and the third is the one that
+    matters: nothing configured at all. }
+  WithEnv('APP_ENV=local', 'APP_URL=https://example.com');
+  AssertContains(RobotsText, 'Disallow: /', 'local is closed');
+  WithEnv('APP_ENV=staging', 'APP_URL=https://example.com');
+  AssertContains(RobotsText, 'Disallow: /', 'staging is closed');
+  WithEnv('', '');
+  AssertContains(RobotsText, 'Disallow: /',
+    'and a server with no configuration at all is closed, not open');
+
+  { The environment is named, because the question this file is asked is
+    "why is my site not indexed" and the answer is nearly always that the
+    environment is not what somebody thought. }
+  WithEnv('APP_ENV=staging', '');
+  AssertContains(RobotsText, 'staging', 'and it says which environment');
+
+  ClearConfig;
+end;
+
 { The docs tools, against this repository's own docs/.
 
   The property that matters is not that a search finds things — it is what
@@ -4372,6 +4442,10 @@ begin
 
   Group('The public origin');
   Test('app.url is configuration, never the request', @TestAppUrl);
+
+  Group('Crawlers');
+  Test('robots.txt is closed unless the environment is production',
+    @TestRobots);
 
   Group('Docs');
   Test('search is exact, and a name that does not exist is not found',

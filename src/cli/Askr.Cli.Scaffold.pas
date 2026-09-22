@@ -406,6 +406,7 @@ begin
     '  Askr.Console,' + #10 +
     '  Askr.Http.Request, Askr.Http.Response,' + #10 +
     '  Askr.Http.Server, Askr.Http.Router, Askr.Http.Static,' + #10 +
+    '  Askr.Http.Robots,' + #10 +
     '  Askr.Session, Askr.Csrf, Askr.Auth,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
@@ -492,7 +493,12 @@ begin
     '  R.Use(StaticFiles.Serve);' + #10 +
     '  { askr down / askr up. It comes after the static files, so that a' + #10 +
     '    maintenance page with css can still be served. }' + #10 +
-    '  UseMaintenance(R);' + #10 + #10 +
+    '  UseMaintenance(R);' + #10 +
+    '  { robots.txt. The default follows APP_ENV and only production is' + #10 +
+    '    open, because a missing robots.txt means "index everything" —' + #10 +
+    '    the dangerous state is a staging site nobody thought about.' + #10 +
+    '    Your own public/robots.txt is served above and wins. }' + #10 +
+    '  UseRobots(R);' + #10 + #10 +
     '  { The database, if DATABASE_URL is set. An app without a database' + #10 +
     '    must not be refused a start. }' + #10 +
     '  if Cfg(' + Q + 'database.url' + Q + ') <> ' + Q + Q + ' then' + #10 +

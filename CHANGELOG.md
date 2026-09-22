@@ -34,6 +34,21 @@ with the zero-major caveat that minor releases may break things until
   in case is a second URL to a crawler. A path is refused with a reason
   rather than dropped or kept.
 
+- **`Askr.Http.Robots` — `UseRobots(R)`, and a default that is closed.**
+  The body follows `APP_ENV`: production allows everything and adds a
+  `Sitemap:` line when `app.url` is set; anything else answers
+  `Disallow: /`, including a server with nothing configured at all.
+
+  A missing robots.txt means "index everything" — that is what a crawler
+  assumes on a 404 — so the dangerous state is not a wrong file but no
+  file, on a staging site nobody thought about. Mutation-checked by making
+  it always open.
+
+  It names no crawler. Whether GPTBot or ClaudeBot may read a site is a
+  decision about that site, and a default with an opinion in it would make
+  that decision for every application, silently. `askr new` registers it
+  after the static files, so your own `public/robots.txt` wins.
+
 - **Conditional GET.** `TResponse.WithETag`, and a comparison in the server
   so that no handler has to do it: a `GET` or `HEAD` whose `If-None-Match`
   matches answers **304 with no body**. Static files get an ETag from

@@ -98,6 +98,46 @@ R.Use(@RequireJson);
 Middleware is **global** today. Per-route and per-group middleware is a real
 gap, and not yet built.
 
+## robots.txt
+
+```pascal
+uses Askr.Http.Robots;
+
+UseRobots(R);     { after the static files }
+```
+
+**The default follows `APP_ENV`, and only production is open.** Anything
+else answers `Disallow: /`, including a server with no configuration at
+all — `AppEnv` is `local` when nothing is set.
+
+That asymmetry is the point. A missing robots.txt does not mean "do not
+index"; it means "index everything", because that is what a crawler
+assumes when it asks and gets a 404. The dangerous state is not a wrong
+file, it is no file on a staging site nobody thought about, and the first
+sign of it is the unreleased pages in somebody's search results.
+
+In production it allows everything and adds a `Sitemap:` line — but only
+when `app.url` is set, since `Sitemap` takes an absolute URL and there is
+nowhere truthful to get one from otherwise. The non-production body names
+the environment, because the question this file gets asked is "why is my
+site not being indexed" and the answer is nearly always that the
+environment is not what somebody thought.
+
+`askr new` registers it after the static files, so your own
+`public/robots.txt` is found first and wins.
+
+### What it does not decide
+
+**It names no crawler.** Whether GPTBot, ClaudeBot or PerplexityBot may
+read a site is a decision about that site. A framework that shipped an
+opinion in the default would be making it for every application built on
+it, silently, in a file most people never open. Write
+`public/robots.txt` when you have decided.
+
+**None of it is enforcement.** robots.txt is a request that well-behaved
+crawlers honour; it keeps nothing private and stops nobody. A page that
+must not be read needs a guard, not a line in a text file.
+
 ## Response filters
 
 Middleware alone is not enough. The session must be written back and the

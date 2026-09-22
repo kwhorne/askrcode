@@ -18,7 +18,8 @@ uses
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
-  Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url;
+  Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url,
+  Askr.Http.Robots;
 
 var
   Passed: Integer = 0;
@@ -1602,6 +1603,27 @@ begin
     finally
       Lines.Free;
     end;
+
+    { robots.txt is a route, not middleware: it costs nothing on requests
+      that are not for it, and an application's own public/robots.txt is
+      served by the static files ahead of the router and wins without this
+      having to know about it.
+
+      Registered after the count above, so that the route table this test
+      describes stays the one it was written for. }
+    UseRobots(R);
+    A.Reset;
+    Req := MakeRequest(A, 'GET /robots.txt HTTP/1.1'#13#10'Host: t');
+    Reply_ := R.Handle(Req);
+    CheckEqI(Reply_.StatusCode, 200, 'robots.txt is answered');
+    Check(Pos('text/plain', Reply_.HeaderValue('Content-Type')) > 0,
+      'as text');
+    Check(Pos('User-agent: *', Reply_.Body.ToString) > 0, 'with a body');
+
+    A.Reset;
+    Req := MakeRequest(A, 'POST /robots.txt HTTP/1.1'#13#10'Host: t');
+    Reply_ := R.Handle(Req);
+    Check((Reply_ = nil) or (Reply_.StatusCode <> 200), 'and only by GET');
   finally
     R.Free;
     Spor.Free;
