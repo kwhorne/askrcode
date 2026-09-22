@@ -44,6 +44,12 @@ on sessions only for signed-in users, that is no longer true for pages.
 **`askr make model` writes `S.ZeroIsNull` for a reference.** Nothing to do
 for a model that exists; a new one gets the line.
 
+**After-filters now run when a handler raises.** Before, an exception
+skipped them. A filter of yours that assumed it only ever saw the
+handler's own response will now also see the 403, 404 or 500 the request
+ended with. A test that expected `EForbidden` to come out of
+`TTestClient` gets a 403 response instead.
+
 ## 0.12.0
 
 **Worth reading if anything but a browser calls your app.** The framework

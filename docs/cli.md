@@ -241,10 +241,43 @@ you develop against would leave its rows there. When it cannot make a row —
 a `NOT NULL` column the form leaves out, with no default — it tests the
 list and the 404 and says why it does not write.
 
+#### As JSON: `--api`
+
+```sh
+askr make resource Gadget --api          # JSON only
+askr make resource Gadget --web --api    # both
+```
+
+| Written | |
+|---|---|
+| `app/Http/App.Http.GadgetsApiController.pas` | `GET`, `POST`, `PATCH` and `DELETE` under `/api/gadgets`, `GadgetsApiRoutes(R)`, and `GadgetsApiDoc(D)` |
+| `app/Http/App.Http.ApiDoc.pas` | `AppApiDoc`, the first time; each resource after that is two lines in it |
+| `tests/App.Tests.GadgetsApi.pas` | Every action, with real tokens |
+
+and `UseOpenApi(R, @AppApiDoc)` in `app.lpr`, once.
+
+Reading needs a token with `gadgets:read`, writing one with
+`gadgets:write` — `askr token:issue 7 ci --scopes=gadgets:read,gadgets:write`.
+A list is the [envelope](lists.md); a row is the model's JSON; a refusal
+is a [problem document](api.md). `POST` answers 201 with a `Location`,
+`DELETE` 204 with nothing. A change is a `PATCH`, not a `PUT`: what the
+body leaves out is left as it is, which is what `FillInto` does and what
+`PATCH` means.
+
+**The description sits next to the routes it describes**, in the same
+unit, and `askr openapi --check` fails when the two disagree. `make:check`
+runs it straight after generating, and runs the document through a real
+OpenAPI validator — a generated API that drifted on its first run would be
+the generator being wrong about itself.
+
+The request body in the document is the model's, `created_at` included,
+though the controller fills only the form's fields. OpenAPI has a place
+for that (`readOnly`); Askr does not write it yet.
+
 Not here yet: showing the rows of a has-many relation on the parent's page;
 checking that a foreign key points at a row before saving, or that a unique
 column is unique — both fail in the database instead of on the form; and a
-nullable number other than a reference, which Pascal cannot tell from zero. `--api`, for a JSON resource, is the next step.
+nullable number other than a reference, which Pascal cannot tell from zero.
 
 ## Migrations
 

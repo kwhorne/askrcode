@@ -801,6 +801,107 @@ cmd_api_check() {
 # survives an edit, errors on the fields they belong to, and axe with
 # contrast. Skips itself, saying why, without node, Chrome or a network
 # for npm -- the same as lauf:check.
+# The generated API the way a user meets it: a token from askr token:issue,
+# the server on a socket, and curl. The generated tests drive the router;
+# this is the server's own answer to a refusal, its WWW-Authenticate, the
+# 204 with nothing in it, and /openapi.json served from what is running.
+make_check_socket() {
+  api_port=${ASKR_MAKE_API_PORT:-8354}
+  base="http://127.0.0.1:$api_port"
+  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/api.sqlite\n' > "$work/shop/.env"
+  in_box "rm -f storage/api.sqlite && $askr_bin migrate" shop >"$work/sock-migrate.log" 2>&1 || true
+  in_box "$askr_bin token:issue 1 writer --scopes=gadgets:read,gadgets:write" shop \
+    >"$work/sock-writer.log" 2>&1 || true
+  in_box "$askr_bin token:issue 1 reader --scopes=gadgets:read" shop \
+    >"$work/sock-reader.log" 2>&1 || true
+  wtok=$(grep -E '^  askr_' "$work/sock-writer.log" | tr -d ' ' | head -1)
+  rtok=$(grep -E '^  askr_' "$work/sock-reader.log" | tr -d ' ' | head -1)
+  if [ -z "$wtok" ] || [ -z "$rtok" ]; then
+    bad "askr token:issue gives two tokens" "$(tail -4 "$work/sock-writer.log")"
+    return 0
+  fi
+  ok "askr token:issue gives a token that may write and one that may only read"
+  in_box "python3 -c \"import sqlite3; c=sqlite3.connect('storage/api.sqlite'); c.execute(\\\"insert into makers(name, created_at, updated_at) values('Acme', datetime('now'), datetime('now'))\\\"); c.commit()\"" \
+    shop >/dev/null 2>&1 || true
+
+  docker rm -f askr-makecheck-api >/dev/null 2>&1
+  docker run -d --name askr-makecheck-api -p "$api_port:$api_port" $DOCKER_PLATFORM \
+    -v "$ROOT":/work -w "/work/${work#$ROOT/}/shop" "$IMAGE" \
+    sh -c "./.build/bin/app $api_port 0.0.0.0" >/dev/null
+  n=0
+  until curl -s -o /dev/null "$base/openapi.json"; do
+    n=$((n + 1))
+    if [ $n -gt 80 ]; then
+      bad "the app answers on a socket" "$(docker logs askr-makecheck-api 2>&1 | tail -3)"
+      docker rm -f askr-makecheck-api >/dev/null 2>&1
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  J='Accept: application/json'
+  code() { curl -s -o "$work/sock-body" -D "$work/sock-head" -w '%{http_code}' "$@"; }
+
+  c=$(code -H "$J" "$base/api/gadgets")
+  if [ "$c" = "401" ] && grep -qi '^www-authenticate: Bearer' "$work/sock-head"; then
+    ok "no token: 401, with the challenge that says what to send"
+  else
+    bad "no token: 401 with WWW-Authenticate" "got $c: $(head -3 "$work/sock-head")"
+  fi
+  c=$(code -H "$J" -H "Authorization: Bearer $rtok" "$base/api/gadgets")
+  [ "$c" = "200" ] && grep -q '"data":\[' "$work/sock-body" &&
+    ok "a reader gets the list, in the envelope" ||
+    bad "a reader gets the list" "got $c: $(head -c 200 "$work/sock-body")"
+  c=$(code -H "$J" -H "Authorization: Bearer $rtok" -H 'Content-Type: application/json' \
+        -d '{"name":"nope"}' "$base/api/gadgets")
+  [ "$c" = "403" ] && grep -qi 'content-type: application/problem+json' "$work/sock-head" &&
+    ok "and a 403 as a problem document when it tries to write" ||
+    bad "a reader may not write" "got $c"
+
+  # More refusals than the pool has connections, and then an ordinary
+  # request. When a handler raised, the after-filters did not run, and
+  # ReleaseDb is one: every 403 kept its connection.
+  i=0
+  while [ $i -lt 40 ]; do
+    curl -s -o /dev/null -H "$J" -H "Authorization: Bearer $rtok" \
+      -H 'Content-Type: application/json' -d '{}' "$base/api/gadgets"
+    i=$((i + 1))
+  done
+  c=$(code -H "$J" -H "Authorization: Bearer $rtok" "$base/api/gadgets")
+  [ "$c" = "200" ] &&
+    ok "forty refusals later the pool still has a connection to give" ||
+    bad "forty refusals later the pool still has a connection" "got $c: $(head -c 200 "$work/sock-body")"
+
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -d '{"name":"Over a socket","born":"2026-01-02","maker_id":1,"qty":2}' "$base/api/gadgets")
+  loc=$(grep -i '^location:' "$work/sock-head" | tr -d '\r' | sed 's/^[Ll]ocation: *//')
+  if [ "$c" = "201" ] && [ -n "$loc" ]; then
+    ok "a writer creates one: 201, and where it is"
+  else
+    bad "a writer creates one" "got $c: $(head -c 300 "$work/sock-body")"
+  fi
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -X PATCH -d '{"name":"Patched"}' "$base$loc")
+  if [ "$c" = "200" ] && grep -q '"name":"Patched"' "$work/sock-body" &&
+     grep -q '"qty":2' "$work/sock-body"; then
+    ok "a PATCH changes what was sent and leaves the rest"
+  else
+    bad "a PATCH changes what was sent" "got $c: $(head -c 300 "$work/sock-body")"
+  fi
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -X DELETE "$base$loc")
+  size=$(wc -c < "$work/sock-body" | tr -d ' ')
+  [ "$c" = "204" ] && [ "$size" = "0" ] &&
+    ok "a delete is 204, with nothing in it" || bad "a delete is 204" "got $c, $size bytes"
+  c=$(code -H "$J" -H "Authorization: Bearer $rtok" "$base$loc")
+  [ "$c" = "404" ] && ok "and then it is a 404" || bad "and then it is a 404" "got $c"
+  c=$(code "$base/openapi.json")
+  [ "$c" = "200" ] && grep -q '"/api/gadgets/{id}"' "$work/sock-body" &&
+    ok "/openapi.json describes it, from what is running" ||
+    bad "/openapi.json describes it" "got $c"
+
+  docker rm -f askr-makecheck-api >/dev/null 2>&1
+}
+
 make_check_browser() {
   chrome=${ASKR_CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
   [ -x "$chrome" ] || chrome=$(command -v google-chrome || command -v chromium || true)
@@ -1140,6 +1241,33 @@ EOF
   [ -f "$work/shop/app/Http/App.Http.WidgetsController.pas" ] &&
     bad "and nothing was written" || ok "and nothing was written"
 
+  echo
+  echo "- askr make resource --api"
+  # On top of the pages: the same tables as JSON, which is the case a real
+  # app is in -- and the one where app.lpr already has a resource in it.
+  for model in Gadget Note; do
+    if in_box "$askr_bin make resource $model --api" shop >"$work/res-api-$model.log" 2>&1; then
+      ok "make resource $model --api"
+    else
+      bad "make resource $model --api" "$(tail -6 "$work/res-api-$model.log")"
+    fi
+  done
+  n_doc=$(grep -c 'UseOpenApi(R, @AppApiDoc);' "$work/shop/app.lpr" || true)
+  [ "$n_doc" = "1" ] && ok "UseOpenApi is in app.lpr once, for two of them" ||
+    bad "UseOpenApi is in app.lpr once" "found $n_doc"
+  if grep -q 'GadgetsApiDoc(D);' "$work/shop/app/Http/App.Http.ApiDoc.pas" &&
+     grep -q 'NotesApiDoc(D);' "$work/shop/app/Http/App.Http.ApiDoc.pas"; then
+    ok "and the document describes both"
+  else
+    bad "and the document describes both" "$(cat "$work/shop/app/Http/App.Http.ApiDoc.pas" 2>&1 | tail -8)"
+  fi
+  if in_box "$askr_bin make resource Gadget --api" shop >"$work/res-api-again.log" 2>&1; then
+    bad "making the API again is refused" "it exited 0"
+  else
+    ok "making the API again is refused"
+  fi
+
+  echo
   if in_box "$askr_bin build" shop >"$work/res-build.log" 2>&1; then
     ok "the project builds with the three resources in it"
   else
@@ -1170,8 +1298,37 @@ EOF
         "$(grep -E 'FAIL|got|expected|rror' "$work/res-test-${label%%:*}.log" | head -12)"
     fi
   done
+  # The document, straight after generation: no drift, and valid to a
+  # validator that is not ours. A resource whose description disagreed
+  # with its routes would be the generator lying on the first run.
+  if in_box "$askr_bin openapi --check" shop >"$work/res-drift.log" 2>&1; then
+    ok "askr openapi --check finds no drift, straight after make"
+  else
+    bad "askr openapi --check finds no drift" "$(head -8 "$work/res-drift.log")"
+  fi
+  if in_box "$askr_bin openapi" shop >"$work/res-openapi.json" 2>"$work/res-openapi.err"; then
+    if grep -q '"api_token"' "$work/res-openapi.json"; then
+      bad "the document does not name the secret"
+    else
+      ok "the document does not name the secret"
+    fi
+    if command -v node >/dev/null 2>&1; then
+      if [ ! -d "$ROOT/tools/openapi/node_modules" ]; then
+        ( cd "$ROOT/tools/openapi" &&
+          npm install --silent --no-fund --no-audit ) >/dev/null 2>&1 || true
+      fi
+      out=$(cd "$ROOT" && node tools/openapi/validate.mjs "$work/res-openapi.json" 2>&1) &&
+        ok "a real validator accepts it: ${out#ok: }" ||
+        bad "a real validator accepts it" "$out"
+    else
+      echo "  skip  the validator: node is not here"
+    fi
+  else
+    bad "askr openapi prints the document" "$(head -5 "$work/res-openapi.err")"
+  fi
+
   count=$(grep -c '^    ok' "$work/res-test-sqlite.log" 2>/dev/null || echo 0)
-  if [ "$count" -ge 14 ]; then
+  if [ "$count" -ge 32 ]; then
     ok "and they are all there: $count"
   else
     bad "and they are all there" "only $count ran"
@@ -1190,6 +1347,10 @@ EOF
   else
     echo "  skip  the pages: needs node and npm install in frontend/lauf"
   fi
+
+  echo
+  echo "- the API over a socket"
+  make_check_socket
 
   echo
   echo "- the pages in a browser"
@@ -1591,8 +1752,13 @@ LPR
   #
   # A fabricated tree with its own version and its own single page is the
   # only way to tell the two apart in one repository.
-  fake="$BUILD/mcpfakefw"
-  rm -rf "$fake"
+  # A new directory every run, not one deleted and made again: Docker
+  # Desktop's mount cache let the container read the old tree after the
+  # host had replaced it, and the scenario failed one run in a few with
+  # nothing wrong. The same trap as askr new refusing a directory the
+  # host had removed.
+  rm -rf "$BUILD"/mcpfakefw-* "$BUILD"/mcpfakeproj-*
+  fake="$BUILD/mcpfakefw-$$"
   mkdir -p "$fake/src/core" "$fake/cli" "$fake/docs"
   cat > "$fake/src/core/Askr.Core.Version.pas" <<'PAS'
 unit Askr.Core.Version;
@@ -1609,7 +1775,7 @@ PAS
 
 sentinel-only-in-the-fake-tree
 MD
-  fakeproj="$BUILD/mcpfakeproj"
+  fakeproj="$BUILD/mcpfakeproj-$$"
   mkdir -p "$fakeproj"
   if have_local_fpc; then fakepath="$fake"; else fakepath="/work/${fake#$ROOT/}"; fi
   cat > "$fakeproj/askr.toml" <<TOML
@@ -1622,7 +1788,7 @@ path = "$fakepath"
 TOML
   fakeframes='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"sentinel-only-in-the-fake-tree"}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"BackWithErrors"}}}'
-  out=$(run_mcp_in "${BUILD#$ROOT/}/mcpfakeproj" "$fakeframes" 2>/dev/null || true)
+  out=$(run_mcp_in "${fakeproj#$ROOT/}" "$fakeframes" 2>/dev/null || true)
   check "the pinned trees own page is found" "$out" 'onlyfake.md:'
   check "and its version is reported"      "$out" 'for Askr 0.0.1-fake'
   # The decisive one: this repositorys docs are NOT what answered.

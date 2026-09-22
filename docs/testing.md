@@ -59,6 +59,10 @@ K.AsInertia.Get('/customers');               { sets X-Inertia }
 The client drives the router directly. No port, no socket, no waiting, and
 tests can run in parallel without fighting over ports.
 
+A refusal a handler raises — `AuthorizeScope`, a gate — comes back as the
+403 or 401 the server would send, because the router answers it. A real
+fault still raises out of the test: an exception says more than a 500.
+
 `K.Arena` is the arena it uses, if you need to allocate alongside.
 
 ## Testing the arena

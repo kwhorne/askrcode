@@ -728,6 +728,7 @@ end;
 function CmdMakeResource(P: TProject; const Name_: string): Boolean;
 var
   Dsn: string;
+  Web, Api: Boolean;
   C: TDbConnection;
   S: TDbSchema;
 begin
@@ -744,8 +745,12 @@ begin
   try
     S := IntrospectSchema(C);
     try
+      { --web unless something else was asked for, and both when both
+        were. }
+      Api := HasFlag('api');
+      Web := HasFlag('web') or not Api;
       Result := MakeResource(P.Root, S, PascalName(Name_), FlagText('table'),
-        HasFlag('force'));
+        P.Name, HasFlag('force'), Web, Api);
     finally
       S.Free;
     end;
@@ -796,8 +801,8 @@ begin
     Si('       askr make model <Name> name:type ...   with its migration');
     Si('         types: ' + TypeNames + '; string(n) for a length,');
     Si('         a trailing ? for nullable. --no-timestamps, --force');
-    Si('       askr make resource <Name> [--table=name] [--force]');
-    Si('         the seven actions, pages and a test, from the table');
+    Si('       askr make resource <Name> [--web] [--api] [--table=name] [--force]');
+    Si('         from the table: pages (--web, the default), JSON (--api), or both');
     Si('       askr make auth [--force]');
     Halt(1);
   end;

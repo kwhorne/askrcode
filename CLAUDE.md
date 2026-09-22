@@ -816,6 +816,21 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
     sorteringsknappene med, utenfor rekkevidde for tastatur. axe så det
     bare på den tomme lista; første kjøring hadde en rad liggende igjen og
     var grønn. Derfor to axe-runder, og den andre feiler hvis raden mangler.
+* **`--api` fant det verste av alt, over en socket.** Når en handler
+  kastet, kjørte ikke etterfiltrene — og `ReleaseDb` er ett. Hver 403 fra
+  `AuthorizeScope` og hver 500 beholdt forbindelsen sin fra poolen til den
+  var tom. Symptomet som fant det var mindre: en 401 uten
+  `WWW-Authenticate`, fordi token-filteret som legger den på heller ikke
+  kjørte. `TTestClient` driver ruteren og så det aldri — der kom 403 ut
+  som et unntak, så ingen test kunne se den. Ruteren svarer nå et
+  `EHttpError` under 500 selv og kjører filtrene; alt annet får filtrene
+  kjørt med en 500 i hånda og kastes videre. Porten sender førti
+  avvisninger og ber så om lista, og mutasjonen som tar det bort feiler.
+* **Beskrivelsen av et API står ved siden av rutene**, i samme unit, og
+  `askr openapi --check` kjøres rett etter genereringen. En generator som
+  drev fra seg selv første gang ville vært en løgn i sin egen port.
+* **`PATCH`, ikke `PUT`.** `FillInto` lar det som ikke sendes stå, og det
+  er det `PATCH` betyr. En `PUT` ville lovet å erstatte hele raden.
 * **Tre feil ble funnet ved å lese, før nettleseren:** en tom dato ble
   `1899-12-30` i JSON; `datetime-local` sender ikke sekunder når de er
   null — `SqlToDateTime` avviste det, og `FillInto` beholdt den gamle

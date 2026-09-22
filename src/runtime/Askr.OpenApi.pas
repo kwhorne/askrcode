@@ -99,6 +99,9 @@ type
     { Answers with the list envelope over these: data, meta, links. }
     function ReturnsList(C: TModelClass): TApiOp;
     { Another status this can answer with, in words. }
+    { 204 and no body -- what a delete answers. Returns would describe a
+      body that is not there, and Answers describes an error. }
+    function NoContent: TApiOp;
     function Answers(Code: Integer; const Text_: string): TApiOp;
     { Needs a bearer token, and optionally a scope. The 401 and the 403
       are then written for you. }
@@ -221,6 +224,14 @@ begin
   FReturns := C;
   FList := True;
   FOkStatus := 200;
+  Result := Self;
+end;
+
+function TApiOp.NoContent: TApiOp;
+begin
+  FReturns := nil;
+  FList := False;
+  FOkStatus := 204;
   Result := Self;
 end;
 

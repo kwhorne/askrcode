@@ -120,6 +120,7 @@ type
       middleware — has to go through that one place for the filters to
       see them all. }
     function Route(Req: TRequest): TResponse;
+    function RunAfter(Req: TRequest; Res: TResponse): TResponse;
   public
     constructor Create;
     destructor Destroy; override;
@@ -167,6 +168,9 @@ type
   end;
 
 implementation
+
+uses
+  Askr.Core.Log;
 
 { TRoute }
 
@@ -418,11 +422,11 @@ begin
   FSorted := True;
 end;
 
-function TRouter.Handle(Req: TRequest): TResponse;
+function TRouter.RunAfter(Req: TRequest; Res: TResponse): TResponse;
 var
   I: Integer;
 begin
-  Result := Route(Req);
+  Result := Res;
   { Reverse order: Use(A); After(A2); Use(B); After(B2) should give
     A, B, handler, B2, A2. }
   for I := High(FAfter) downto 0 do
@@ -430,6 +434,61 @@ begin
       Result := FAfter[I].F(Req, Result)
     else
       Result := FAfter[I].P(Req, Result);
+end;
+
+{ **The after-filters run however the handler ended.** They already ran
+  when middleware cut a request short; they did not when a handler
+  raised, and that is where they matter most. ReleaseDb is one: every 403
+  from AuthorizeScope, and every 500, kept its pooled connection -- forty
+  refusals, measured, and every request after them answered 500. The
+  session was not written, and a 401 went out without the challenge the
+  token filter adds -- which is how it was found: a generated API, driven
+  over a socket, answered 401 with no WWW-Authenticate.
+
+  An exception that says which status it is below 500 is an answer, and
+  is answered here, logged as the server logged it. Anything else runs
+  the filters with a 500 in hand, for what they clean up, and is raised
+  again so the server logs it as the fault it is and closes the
+  connection. }
+function TRouter.Handle(Req: TRequest): TResponse;
+var
+  Status_: Integer;
+begin
+  try
+    Result := Route(Req);
+  except
+    on E: EHttpError do
+    begin
+      Status_ := E.HttpStatus;
+      if Status_ >= 500 then
+      begin
+        try
+          RunAfter(Req, ErrorResponse(Status_));
+        except
+          { The fault that brought us here is the one to report. }
+        end;
+        raise;
+      end;
+      { Below 500 it is not a fault, so it is not logged as one. The
+        message is kept, because "why did this 403" is the question that
+        gets asked. }
+      LogInfo('request refused',
+        ['status', Int64(Status_),
+         'method', Askr.Http.Types.MethodName(Req.Method),
+         'path', Req.Path.ToString,
+         'reason', E.Message]);
+      Result := ErrorResponse(Status_, E.PublicDetail);
+    end;
+    on E: Exception do
+    begin
+      try
+        RunAfter(Req, ErrorResponse(500));
+      except
+      end;
+      raise;
+    end;
+  end;
+  Result := RunAfter(Req, Result);
 end;
 
 function TRouter.Route(Req: TRequest): TResponse;

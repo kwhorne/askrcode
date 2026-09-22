@@ -79,14 +79,25 @@ type
     PagesDir: string;    { Gadgets }
     TestUnit: string;    { App.Tests.Gadgets }
     TestsProc: string;   { GadgetsTests }
+    { The same, for --api. }
+    ApiUrl: string;          { /api/gadgets }
+    ApiCtlUnit: string;      { App.Http.GadgetsApiController }
+    ApiCtlClass: string;     { TGadgetsApiController }
+    ApiRoutesProc: string;   { GadgetsApiRoutes }
+    ApiDocProc: string;      { GadgetsApiDoc }
+    ApiTestUnit: string;     { App.Tests.GadgetsApi }
+    ApiTestsProc: string;    { GadgetsApiTests }
+    ScopeRead: string;       { gadgets:read }
+    ScopeWrite: string;      { gadgets:write }
   end;
 
 function ResourceNamesOf(const P: TResourcePlan): TResourceNames;
 
 { Every file a resource is, from its plan. Writes nothing, so a test can
-  hold the text; WithModel adds the model unit. }
+  hold the text. WithModel adds the model unit, Web the controller, pages
+  and test for a browser, Api the JSON controller and its test. }
 function ResourceFiles(const P: TResourcePlan; const Parents: TParentInfos;
-  WithModel: Boolean): TGenFiles;
+  WithModel, Web, Api: Boolean): TGenFiles;
 
 { The tables P points at, as its form needs them: a select for each
   whose model is in Root, a number for the rest. }
@@ -102,7 +113,7 @@ function DefaultLiteral(const PC: TPlanColumn): string;
   schema units and the files, and put the routes and the tests in place.
   Prints what it did. Returns False when it refused, having said why. }
 function MakeResource(const Root: string; Schema: TDbSchema;
-  const ModelName, Table: string; Force: Boolean): Boolean;
+  const ModelName, Table, Title: string; Force, Web, Api: Boolean): Boolean;
 
 implementation
 
@@ -151,6 +162,23 @@ begin
   Result.PagesDir := Result.Plural;
   Result.TestUnit := 'App.Tests.' + Result.Plural;
   Result.TestsProc := Result.Plural + 'Tests';
+  Result.ApiUrl := '/api' + Result.Url;
+  Result.ApiCtlUnit := 'App.Http.' + Result.Plural + 'ApiController';
+  Result.ApiCtlClass := 'T' + Result.Plural + 'ApiController';
+  Result.ApiRoutesProc := Result.Plural + 'ApiRoutes';
+  Result.ApiDocProc := Result.Plural + 'ApiDoc';
+  Result.ApiTestUnit := 'App.Tests.' + Result.Plural + 'Api';
+  Result.ApiTestsProc := Result.Plural + 'ApiTests';
+  Result.ScopeRead := P.Table + ':read';
+  Result.ScopeWrite := P.Table + ':write';
+end;
+
+function AOrAn(const Human: string): string;
+begin
+  if (Human <> '') and (Pos(LowerCase(Human[1]), 'aeiou') > 0) then
+    Result := 'an ' + Human
+  else
+    Result := 'a ' + Human;
 end;
 
 function Capital(const S: string): string;
@@ -270,15 +298,79 @@ end;
 
 { ------------------------------------------------------- controller -- }
 
+{ The procedure both controllers fill a model with. One emitter, so the
+  web and the API controller cannot be written with different lists. }
+function FillText(const P: TResourcePlan): string;
+var
+  N: TResourceNames;
+  Ed: TPlanColumns;
+  I: Integer;
+  Only: string;
+begin
+  N := ResourceNamesOf(P);
+  Ed := EditableOf(P);
+  { The columns a request may set. Everything else a client adds to the
+    body is ignored: the one-argument FillInto fills whatever the model
+    maps, created_at and hidden columns included. }
+  Only := '';
+  for I := 0 to High(Ed) do
+  begin
+    if Only <> '' then
+      Only := Only + ',' + #10 + '    ';
+    Only := Only + N.SchemaVar + '.' + Ed[I].Member + '.Name';
+  end;
+  Result :=
+    '{ The columns the form has, and the only ones a request may set. The' + #10 +
+    '  one-argument FillInto fills anything the model maps, so a client that' + #10 +
+    '  added created_at to the body would have set it. }' + #10 +
+    'procedure Fill(Req: TRequest; M: T' + N.Model + ');' + #10 +
+    'begin' + #10;
+  if Only = '' then
+    Result := Result + '  { The table has no column a form can set. }' + #10
+  else
+    Result := Result + '  Req.FillInto(M, [' + Only + ']);' + #10;
+  Result := Result + 'end;' + #10;
+end;
+
+{ The Index body both controllers share: the grid, its allowlist, its
+  search. Returns the lines up to and including PerPage. }
+function GridText(const P: TResourcePlan): string;
+var
+  N: TResourceNames;
+  I: Integer;
+  PC: TPlanColumn;
+  Cols: string;
+begin
+  N := ResourceNamesOf(P);
+  Result := '  G := TGrid<T' + N.Model + '>.New;' + #10 + '  G.Read(Req);' + #10;
+  for I := 0 to High(P.Columns) do
+  begin
+    PC := P.Columns[I];
+    if PC.Sortable and PC.Listed then
+      Result := Result + '  G.Sortable(''' + PC.Field.Column + ''', ' +
+        N.SchemaVar + '.' + PC.Member + ');' + #10;
+  end;
+  Cols := '';
+  for I := 0 to High(P.Columns) do
+    if P.Columns[I].Searchable then
+    begin
+      if Cols <> '' then
+        Cols := Cols + ', ';
+      Cols := Cols + N.SchemaVar + '.' + P.Columns[I].Member;
+    end;
+  if Cols <> '' then
+    Result := Result + '  G.Searchable([' + Cols + ']);' + #10;
+  Result := Result + '  G.DefaultSort(''' + P.DefaultSort + ''');' + #10 +
+    '  G.PerPage(25, 200);';
+end;
+
 function ControllerText(const P: TResourcePlan;
   const Parents: TParentInfos): string;
 var
   B: TStringList;
   N: TResourceNames;
   I: Integer;
-  PC: TPlanColumn;
-  Ed: TPlanColumns;
-  Uses_, Only, Opt: string;
+  Uses_, Opt: string;
   Par: TParentInfo;
 
   procedure A(const S: string);
@@ -301,7 +393,6 @@ var
 
 begin
   N := ResourceNamesOf(P);
-  Ed := EditableOf(P);
   B := TStringList.Create;
   try
     Uses_ := '  ' + N.ModelUnit + ', ' + N.SchemaUnit;
@@ -377,27 +468,7 @@ begin
     A('end;');
     A('');
 
-    { The columns a request may set. Everything else a client adds to the
-      body is ignored: the one-argument FillInto fills whatever the model
-      maps, created_at and hidden columns included. }
-    Only := '';
-    for I := 0 to High(Ed) do
-    begin
-      if Only <> '' then
-        Only := Only + ',' + #10 + '    ';
-      Only := Only + N.SchemaVar + '.' + Ed[I].Member + '.Name';
-    end;
-    A('{ The columns the form has, and the only ones a request may set. The');
-    A('  one-argument FillInto fills anything the model maps, so a client that');
-    A('  added created_at to the body would have set it. }');
-    A('procedure Fill(Req: TRequest; M: T' + N.Model + ');');
-    A('begin');
-    if Only = '' then
-      A('  { The table has no column a form can set. }')
-    else
-      A('  Req.FillInto(M, [' + Only + ']);');
-    A('end;');
-    A('');
+    B.Add(FillText(P));
 
     for I := 0 to High(Parents) do
       if Parents[I].Available then
@@ -437,27 +508,7 @@ begin
     A('var');
     A('  G: TGrid<T' + N.Model + '>;');
     A('begin');
-    A('  G := TGrid<T' + N.Model + '>.New;');
-    A('  G.Read(Req);');
-    for I := 0 to High(P.Columns) do
-    begin
-      PC := P.Columns[I];
-      if PC.Sortable and PC.Listed then
-        A('  G.Sortable(''' + PC.Field.Column + ''', ' + N.SchemaVar + '.' +
-          PC.Member + ');');
-    end;
-    Opt := '';
-    for I := 0 to High(P.Columns) do
-      if P.Columns[I].Searchable then
-      begin
-        if Opt <> '' then
-          Opt := Opt + ', ';
-        Opt := Opt + N.SchemaVar + '.' + P.Columns[I].Member;
-      end;
-    if Opt <> '' then
-      A('  G.Searchable([' + Opt + ']);');
-    A('  G.DefaultSort(''' + P.DefaultSort + ''');');
-    A('  G.PerPage(25, 200);');
+    A(GridText(P));
     A('  Result := Inertia(''' + N.PagesDir + '/Index'',');
     A('    [''rows'', G.Rows(TQuery<T' + N.Model + '>.New), ''grid'', G]);');
     A('end;');
@@ -561,6 +612,213 @@ begin
   finally
     B.Free;
   end;
+end;
+
+
+{ The same seven, less the two that are pages, as JSON for a program:
+  the list envelope, problem documents, a scope per verb, and the lines
+  that describe it to the OpenAPI document next to the routes they
+  describe. }
+function ApiControllerText(const P: TResourcePlan): string;
+var
+  B: TStringList;
+  N: TResourceNames;
+
+  procedure A(const S: string);
+  begin
+    B.Add(S);
+  end;
+
+  procedure Head(const Name_, Scope: string);
+  begin
+    A('function ' + N.ApiCtlClass + '.' + Name_ + '(Req: TRequest): TResponse;');
+    A('var');
+    A('  M: T' + N.Model + ';');
+    A('begin');
+    A('  AuthorizeScope(''' + Scope + ''');');
+  end;
+
+  procedure Found;
+  begin
+    A('  M := Find(Req);');
+    A('  if M = nil then');
+    A('    Exit(NotFound);');
+  end;
+
+begin
+  N := ResourceNamesOf(P);
+  B := TStringList.Create;
+  try
+    A('{ ' + Capital(N.HumanPlural) + ' as JSON, for a program: the ' + P.Table +
+      ' table under ' + N.ApiUrl + '.');
+    A('');
+    A('  Written by askr make resource --api. It is yours now: nothing');
+    A('  regenerates it, and askr make will not write over it.');
+    A('');
+    A('  Reading needs a token with ' + N.ScopeRead + ', writing one with');
+    A('  ' + N.ScopeWrite + ':  askr token:issue <user-id> <name> --scopes=' +
+      N.ScopeRead + ',' + N.ScopeWrite);
+    A('');
+    A('  ' + N.ApiDocProc + ' describes these routes to the OpenAPI document, and');
+    A('  askr openapi --check fails when the two disagree -- a route here that');
+    A('  nothing describes, or a description of a route that is gone. }');
+    A('unit ' + N.ApiCtlUnit + ';');
+    A('');
+    A('{$mode Delphi}{$H+}');
+    A('');
+    A('interface');
+    A('');
+    A('uses');
+    A('  SysUtils,');
+    A('  Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,');
+    A('  Askr.Auth.Token, Askr.OpenApi,');
+    A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Grid, Askr.Urd.Bind, Askr.Urd.Json,');
+    A('  ' + N.ModelUnit + ', ' + N.SchemaUnit + ';');
+    A('');
+    A('type');
+    A('  ' + N.ApiCtlClass + ' = class');
+    A('  public');
+    A('    function Index(Req: TRequest): TResponse;');
+    A('    function Show(Req: TRequest): TResponse;');
+    A('    function Store(Req: TRequest): TResponse;');
+    A('    function Update(Req: TRequest): TResponse;');
+    A('    function Remove(Req: TRequest): TResponse;');
+    A('  end;');
+    A('');
+    A('{ The routes, called by app.lpr and by the test. }');
+    A('procedure ' + N.ApiRoutesProc + '(R: TRouter);');
+    A('');
+    A('{ What the routes are, for the OpenAPI document. AppApiDoc calls it. }');
+    A('procedure ' + N.ApiDocProc + '(D: TOpenApi);');
+    A('');
+    A('implementation');
+    A('');
+    A('var');
+    A('  Ctl: ' + N.ApiCtlClass + ';');
+    A('');
+    A('procedure ' + N.ApiRoutesProc + '(R: TRouter);');
+    A('begin');
+    A('  if Ctl = nil then');
+    A('    Ctl := ' + N.ApiCtlClass + '.Create;');
+    A('  R.Get(''' + N.ApiUrl + ''', Ctl.Index);');
+    A('  R.Get(''' + N.ApiUrl + '/:id'', Ctl.Show);');
+    A('  R.Post(''' + N.ApiUrl + ''', Ctl.Store);');
+    A('  R.Patch(''' + N.ApiUrl + '/:id'', Ctl.Update);');
+    A('  R.Delete(''' + N.ApiUrl + '/:id'', Ctl.Remove);');
+    A('end;');
+    A('');
+    A('procedure ' + N.ApiDocProc + '(D: TOpenApi);');
+    A('begin');
+    A('  D.Get(''' + N.ApiUrl + ''').Summary(''Every ' + N.Human + ', a page at a time'')');
+    A('   .ReturnsList(T' + N.Model + ').Secured(''' + N.ScopeRead + ''');');
+    A('  D.Get(''' + N.ApiUrl + '/:id'').Summary(''One ' + N.Human + ''')');
+    A('   .Returns(T' + N.Model + ').Secured(''' + N.ScopeRead + ''');');
+    A('  D.Post(''' + N.ApiUrl + ''').Summary(''Add ' + AOrAn(N.Human) + ''')');
+    A('   .Body(T' + N.Model + ').Returns(T' + N.Model + ', 201).Secured(''' + N.ScopeWrite + ''');');
+    A('  D.Patch(''' + N.ApiUrl + '/:id'').Summary(''Change ' + AOrAn(N.Human) +
+      '; what is not sent is left as it is'')');
+    A('   .Body(T' + N.Model + ').Returns(T' + N.Model + ').Secured(''' + N.ScopeWrite + ''');');
+    A('  D.Delete(''' + N.ApiUrl + '/:id'').Summary(''Remove ' + AOrAn(N.Human) + ''')');
+    A('   .NoContent.Secured(''' + N.ScopeWrite + ''');');
+    A('end;');
+    A('');
+    A('{ The row the path names, or nil. }');
+    A('function Find(Req: TRequest): T' + N.Model + ';');
+    A('begin');
+    A('  Result := TQuery<T' + N.Model + '>.New.Find(Req.Param(''id'').ToIntDef(0));');
+    A('end;');
+    A('');
+    A('function NotFound: TResponse;');
+    A('begin');
+    A('  Result := Problem(404, ''No ' + N.Human + ' with that id.'');');
+    A('end;');
+    A('');
+    B.Add(FillText(P));
+    A('');
+    A('{ The envelope: data, meta and links, with the search and the sort read');
+    A('  off the query string and done in the database. }');
+    A('function ' + N.ApiCtlClass + '.Index(Req: TRequest): TResponse;');
+    A('var');
+    A('  G: TGrid<T' + N.Model + '>;');
+    A('begin');
+    A('  AuthorizeScope(''' + N.ScopeRead + ''');');
+    A(GridText(P));
+    A('  Result := G.ListResponse(G.Rows(TQuery<T' + N.Model + '>.New));');
+    A('end;');
+    A('');
+    Head('Show', N.ScopeRead);
+    Found;
+    A('  Result := RespondModel(M);');
+    A('end;');
+    A('');
+    Head('Store', N.ScopeWrite);
+    A('  M := T' + N.Model + '.Create;');
+    A('  Fill(Req, M);');
+    A('  if not M.Validate then');
+    A('    Exit(ValidationProblem(M.Errors));');
+    A('  M.Save;');
+    A('  Result := RespondModel(M, 201)');
+    A('    .WithHeader(''Location'', ''' + N.ApiUrl + '/'' + IntToStr(M.Id));');
+    A('end;');
+    A('');
+    A('{ PATCH, not PUT: a field that is not in the body is left as it is,');
+    A('  which is what FillInto does and what PATCH means. }');
+    Head('Update', N.ScopeWrite);
+    Found;
+    A('  Fill(Req, M);');
+    A('  if not M.Validate then');
+    A('    Exit(ValidationProblem(M.Errors));');
+    A('  M.Save;');
+    A('  Result := RespondModel(M);');
+    A('end;');
+    A('');
+    Head('Remove', N.ScopeWrite);
+    Found;
+    A('  M.Delete;');
+    A('  Result := Respond(204);');
+    A('end;');
+    A('');
+    A('finalization');
+    A('  Ctl.Free;');
+    A('');
+    A('end.');
+    Result := B.Text;
+  finally
+    B.Free;
+  end;
+end;
+
+const
+  ApiDocUsesMarker = '  { askr make resource --api adds the controllers below. }';
+  ApiDocCallMarker = '  { askr make resource --api adds each description below. }';
+
+{ The one AppApiDoc, written the first time --api runs. Each resource
+  after that is two lines at the markers. }
+function ApiDocUnitText(const N: TResourceNames; const Title: string): string;
+begin
+  Result :=
+    '{ The API document: what the app says about the routes under /api.' + #10 +
+    '  GET /openapi.json serves it, askr openapi prints it, and' + #10 +
+    '  askr openapi --check fails when a route and its description disagree.' + #10 + #10 +
+    '  Written by askr make resource --api, which adds each resource at the' + #10 +
+    '  two marked lines. }' + #10 +
+    'unit App.Http.ApiDoc;' + #10 + #10 +
+    '{$mode Delphi}{$H+}' + #10 + #10 +
+    'interface' + #10 + #10 +
+    'uses' + #10 +
+    '  Askr.OpenApi;' + #10 + #10 +
+    'procedure AppApiDoc(D: TOpenApi);' + #10 + #10 +
+    'implementation' + #10 + #10 +
+    'uses' + #10 +
+    ApiDocUsesMarker + #10 +
+    '  ' + N.ApiCtlUnit + ';' + #10 + #10 +
+    'procedure AppApiDoc(D: TOpenApi);' + #10 +
+    'begin' + #10 +
+    '  D.Title(' + PasStr(Title) + ').Version(''1.0'').Covers(''/api'');' + #10 +
+    ApiDocCallMarker + #10 +
+    '  ' + N.ApiDocProc + '(D);' + #10 +
+    'end;' + #10 + #10 +
+    'end.' + #10;
 end;
 
 { ------------------------------------------------------------ model -- }
@@ -1059,7 +1317,7 @@ begin
 end;
 
 function TestUnitText(const P: TResourcePlan; const Parents: TParentInfos;
-  out Why: string): string;
+  Api: Boolean; out Why: string): string;
 var
   B: TStringList;
   N: TResourceNames;
@@ -1067,9 +1325,11 @@ var
   I, K: Integer;
   PC: TPlanColumn;
   Body, Args, First, Firstmember, RequiredCol, Uses_: string;
+  CtlUnit, Url, RoutesProc, TestUnit, TestsProc, RD, WR: string;
   CanWrite: Boolean;
   Par: TParentInfo;
   ParentIdx: array of Integer;
+  Hidden: TStringArray;
 
   procedure A(const S: string);
   begin
@@ -1110,10 +1370,36 @@ var
     Result := '{' + Result + '}';
   end;
 
+  function FirstLen(const Text_: string): string;
+  begin
+    Result := PasStr(Copy(Text_, 1, P.Columns[PlanColumnIndex(P, First)].Field.Length));
+  end;
+
 begin
   N := ResourceNamesOf(P);
   Ed := EditableOf(P);
+  Hidden := HiddenColumnsOf(P);
   Why := '';
+  if Api then
+  begin
+    CtlUnit := N.ApiCtlUnit;
+    Url := N.ApiUrl;
+    RoutesProc := N.ApiRoutesProc;
+    TestUnit := N.ApiTestUnit;
+    TestsProc := N.ApiTestsProc;
+    RD := 'Reader';
+    WR := 'Writer';
+  end
+  else
+  begin
+    CtlUnit := N.CtlUnit;
+    Url := N.Url;
+    RoutesProc := N.RoutesProc;
+    TestUnit := N.TestUnit;
+    TestsProc := N.TestsProc;
+    RD := 'Client.AsInertia';
+    WR := 'Client.AsInertia';
+  end;
 
   { The actions that write need a row the rules accept. }
   CanWrite := P.CanCreate and (Length(Ed) > 0);
@@ -1153,30 +1439,39 @@ begin
 
   B := TStringList.Create;
   try
-    Uses_ := '  ' + N.CtlUnit + ', ' + N.ModelUnit;
+    Uses_ := '  ' + CtlUnit + ', ' + N.ModelUnit;
     for I := 0 to High(ParentIdx) do
       Uses_ := Uses_ + ', App.Models.' + Parents[ParentIdx[I]].Rel.Model;
 
-    A('{ Every action of ' + N.CtlUnit + ', through the router.');
+    A('{ Every action of ' + CtlUnit + ', through the router.');
     A('');
     A('  Written by askr make resource. The database is TEST_DATABASE_URL, and');
     A('  sqlite::memory: when that is not set, with the migrations run first:');
     A('  a test that wrote into the database you develop against would leave');
     A('  its rows there. Pending migrations are run on TEST_DATABASE_URL too,');
-    A('  so point it at a database that is only for this. }');
-    A('unit ' + N.TestUnit + ';');
+    if Api then
+    begin
+      A('  so point it at a database that is only for this. The tokens are');
+      A('  issued there as well, one that may read and one that may write. }');
+    end
+    else
+      A('  so point it at a database that is only for this. }');
+    A('unit ' + TestUnit + ';');
     A('');
     A('{$mode Delphi}{$H+}');
     A('');
     A('interface');
     A('');
-    A('procedure ' + N.TestsProc + ';');
+    A('procedure ' + TestsProc + ';');
     A('');
     A('implementation');
     A('');
     A('uses');
     A('  SysUtils, Askr.Core.Arena, Askr.Core.Env, Askr.Testing,');
-    A('  Askr.Http.Response, Askr.Http.Router, Askr.Session,');
+    if Api then
+      A('  Askr.Http.Response, Askr.Http.Router, Askr.Auth.Token,')
+    else
+      A('  Askr.Http.Response, Askr.Http.Router, Askr.Session,');
     A('  Askr.Urd.Driver, Askr.Urd.Sqlite, Askr.Urd.Pg, Askr.Urd.MySql,');
     A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Norn.Migration,');
     A('  App.Migrations,');
@@ -1187,10 +1482,21 @@ begin
     A('  Arena: TArena;');
     A('  Router: TRouter;');
     A('  Client: TTestClient;');
+    if Api then
+      A('  ReadToken, WriteToken: string;');
     A('');
-    A('{ Once for all of them: the database, the migrations, and a router with');
-    A('  sessions -- BackWithErrors keeps the errors there -- and this');
-    A('  resource''s routes, from the same procedure app.lpr calls. }');
+    if Api then
+    begin
+      A('{ Once for all of them: the database, the migrations, two tokens, and');
+      A('  a router that reads them, with this resource''s routes from the same');
+      A('  procedure app.lpr calls. }');
+    end
+    else
+    begin
+      A('{ Once for all of them: the database, the migrations, and a router with');
+      A('  sessions -- BackWithErrors keeps the errors there -- and this');
+      A('  resource''s routes, from the same procedure app.lpr calls. }');
+    end;
     A('procedure Ready;');
     A('var');
     A('  M: TMigrator;');
@@ -1207,19 +1513,46 @@ begin
     A('  finally');
     A('    M.Free;');
     A('  end;');
-    A('  SetSessions(TSessionStore.Create);');
     A('  Router := TRouter.Create;');
-    A('  UseSessions(Router);');
-    A('  ' + N.RoutesProc + '(Router);');
+    if Api then
+    begin
+      A('  EnsureTokenSchema(Conn);');
+      A('  ReadToken := IssueToken(Conn, ''test'', ''read'', [''' + N.ScopeRead + ''']);');
+      A('  WriteToken := IssueToken(Conn, ''test'', ''write'',');
+      A('    [''' + N.ScopeRead + ''', ''' + N.ScopeWrite + ''']);');
+      A('  UseTokenAuth(Router);');
+    end
+    else
+    begin
+      A('  SetSessions(TSessionStore.Create);');
+      A('  UseSessions(Router);');
+    end;
+    A('  ' + RoutesProc + '(Router);');
     A('  Client := TTestClient.Create(Router);');
     A('end;');
     A('');
+    if Api then
+    begin
+      A('{ A program that asked for JSON, with one of the two tokens. }');
+      A('function Reader: TTestClient;');
+      A('begin');
+      A('  Result := Client.WithHeader(''Accept'', ''application/json'')');
+      A('    .WithHeader(''Authorization'', ''Bearer '' + ReadToken);');
+      A('end;');
+      A('');
+      A('function Writer: TTestClient;');
+      A('begin');
+      A('  Result := Client.WithHeader(''Accept'', ''application/json'')');
+      A('    .WithHeader(''Authorization'', ''Bearer '' + WriteToken);');
+      A('end;');
+      A('');
+    end;
     A('function Count: Int64;');
     A('begin');
     A('  Result := TQuery<T' + N.Model + '>.New.Count;');
     A('end;');
     A('');
-    A('{ The id at the end of a Location: /' + P.Table + '/7 -> 7. }');
+    A('{ The id at the end of a Location: ' + Url + '/7 -> 7. }');
     A('function IdIn(Res: TResponse): Int64;');
     A('var');
     A('  L: string;');
@@ -1265,11 +1598,14 @@ begin
           Inc(K);
         end;
       if Args = '' then
-        A('  Res := Client.AsInertia.Post(''' + N.Url + ''', ' + PasStr(Body) + ');')
+        A('  Res := ' + WR + '.Post(''' + Url + ''', ' + PasStr(Body) + ');')
       else
-        A('  Res := Client.AsInertia.Post(''' + N.Url + ''', Format(' + PasStr(Body) +
+        A('  Res := ' + WR + '.Post(''' + Url + ''', Format(' + PasStr(Body) +
           ', [' + Args + ']));');
-      A('  AssertStatus(Res, 302, ''a valid ' + N.Human + ' is saved, and the browser is sent on'');');
+      if Api then
+        A('  AssertStatus(Res, 201, ''a valid ' + N.Human + ' is created'');')
+      else
+        A('  AssertStatus(Res, 302, ''a valid ' + N.Human + ' is saved, and the browser is sent on'');');
       A('  Result := IdIn(Res);');
       A('end;');
       A('');
@@ -1281,11 +1617,16 @@ begin
     A('  Res: TResponse;');
     A('begin');
     A('  Ready;');
-    A('  Res := Client.AsInertia.Get(''' + N.Url + ''');');
+    A('  Res := ' + RD + '.Get(''' + Url + ''');');
     A('  AssertStatus(Res, 200, ''the list answers'');');
-    A('  AssertContains(Res.Body.ToString, ''"component":"' + N.PagesDir + '/Index"'',');
-    A('    ''with its page'');');
-    A('  Res := Client.AsInertia.Get(''' + N.Url + '?sort=nothing&dir=sideways&page=-1'');');
+    if Api then
+      A('  AssertContains(Res.Body.ToString, ''"data":['', ''with the rows in data'');')
+    else
+    begin
+      A('  AssertContains(Res.Body.ToString, ''"component":"' + N.PagesDir + '/Index"'',');
+      A('    ''with its page'');');
+    end;
+    A('  Res := ' + RD + '.Get(''' + Url + '?sort=nothing&dir=sideways&page=-1'');');
     A('  AssertStatus(Res, 200, ''and a sort key it does not know falls back, not over'');');
     A('end;');
     A('');
@@ -1294,12 +1635,38 @@ begin
     A('  Res: TResponse;');
     A('begin');
     A('  Ready;');
-    A('  Res := Client.AsInertia.Get(''' + N.Url + '/0'');');
+    A('  Res := ' + RD + '.Get(''' + Url + '/0'');');
     A('  AssertStatus(Res, 404, ''a row that is not there is a 404'');');
-    A('  Res := Client.AsInertia.Get(''' + N.Url + '/abc/edit'');');
+    if Api then
+    begin
+      A('  AssertContains(Res.HeaderValue(''Content-Type''), ''application/problem+json'',');
+      A('    ''as a problem document'');');
+      A('  Res := ' + RD + '.Get(''' + Url + '/abc'');');
+    end
+    else
+      A('  Res := ' + RD + '.Get(''' + Url + '/abc/edit'');');
     A('  AssertStatus(Res, 404, ''and so is a path that is not a number'');');
     A('end;');
     A('');
+
+    if Api then
+    begin
+      A('{ 401 and 403 are two refusals: no token, and a token that may not. }');
+      A('procedure TestTokens;');
+      A('var');
+      A('  Before: Int64;');
+      A('begin');
+      A('  Ready;');
+      A('  AssertStatus(Client.WithHeader(''Accept'', ''application/json'').Get(''' + Url + '''),');
+      A('    401, ''without a token the list is a 401'');');
+      A('  Before := Count;');
+      A('  AssertStatus(Reader.Post(''' + Url + ''', ''{}''), 403,');
+      A('    ''a token that may only read cannot create'');');
+      A('  AssertStatus(Reader.Delete(''' + Url + '/1''), 403, ''or delete'');');
+      A('  AssertEqual(Count, Before, ''and nothing changed'');');
+      A('end;');
+      A('');
+    end;
 
     if CanWrite then
     begin
@@ -1307,6 +1674,8 @@ begin
       A('var');
       A('  Before, Id: Int64;');
       A('  M: T' + N.Model + ';');
+      if Api then
+        A('  Res: TResponse;');
       A('begin');
       A('  Ready;');
       A('  Before := Count;');
@@ -1316,15 +1685,26 @@ begin
       A('  M := TQuery<T' + N.Model + '>.New.Find(Id);');
       A('  AssertNotNil(M, ''and it can be found'');');
       if Firstmember <> '' then
-        A('  AssertEqual(M.' + Firstmember + ', ' +
-          PasStr(Copy('Sample', 1, P.Columns[PlanColumnIndex(P, First)].Field.Length)) +
+        A('  AssertEqual(M.' + Firstmember + ', ' + FirstLen('Sample') +
           ', ''with what was sent'');');
-      A('  AssertStatus(Client.AsInertia.Get(''' + N.Url + '/'' + IntToStr(Id)), 200,');
-      A('    ''its page answers'');');
-      A('  AssertStatus(Client.AsInertia.Get(''' + N.Url + '/'' + IntToStr(Id) + ''/edit''), 200,');
-      A('    ''and so does its form'');');
-      A('  AssertStatus(Client.AsInertia.Get(''' + N.Url + '/new''), 200,');
-      A('    ''and the form for a new one'');');
+      if Api then
+      begin
+        A('  Res := Reader.Get(''' + Url + '/'' + IntToStr(Id));');
+        A('  AssertStatus(Res, 200, ''it can be read back'');');
+        A('  AssertContains(Res.Body.ToString, ''"id":'' + IntToStr(Id), ''as itself'');');
+        for I := 0 to High(Hidden) do
+          A('  AssertNotContains(Res.Body.ToString, ''"' + Hidden[I] + '"'',' + #10 +
+            '    ''and ' + Hidden[I] + ', which looks like a secret, is not in it'');');
+      end
+      else
+      begin
+        A('  AssertStatus(' + RD + '.Get(''' + Url + '/'' + IntToStr(Id)), 200,');
+        A('    ''its page answers'');');
+        A('  AssertStatus(' + RD + '.Get(''' + Url + '/'' + IntToStr(Id) + ''/edit''), 200,');
+        A('    ''and so does its form'');');
+        A('  AssertStatus(' + RD + '.Get(''' + Url + '/new''), 200,');
+        A('    ''and the form for a new one'');');
+      end;
       A('end;');
       A('');
 
@@ -1340,8 +1720,17 @@ begin
         { The references are 0 here: the rules refuse the row before
           anything looks at them. }
         Body := StringReplace(BodyWith(RequiredCol, '""'), '%d', '0', [rfReplaceAll]);
-        A('  Res := Client.AsInertia.Post(''' + N.Url + ''', ' + PasStr(Body) + ');');
-        A('  AssertStatus(Res, 302, ''an empty ' + RequiredCol + ' is sent back to the form'');');
+        A('  Res := ' + WR + '.Post(''' + Url + ''', ' + PasStr(Body) + ');');
+        if Api then
+        begin
+          A('  AssertStatus(Res, 422, ''an empty ' + RequiredCol + ' is refused'');');
+          A('  AssertContains(Res.HeaderValue(''Content-Type''), ''application/problem+json'',');
+          A('    ''as a problem document'');');
+          A('  AssertContains(Res.Body.ToString, ''"' + RequiredCol + '":'',');
+          A('    ''that names the field, as the column'');');
+        end
+        else
+          A('  AssertStatus(Res, 302, ''an empty ' + RequiredCol + ' is sent back to the form'');');
         A('  AssertEqual(Count, Before, ''and nothing is saved'');');
         A('end;');
         A('');
@@ -1362,14 +1751,22 @@ begin
           '","id":999999,"created_at":"2001-01-01 00:00:00"}'
       else
         Body := '{"id":999999}';
-      A('  Res := Client.AsInertia.Put(''' + N.Url + '/'' + IntToStr(Id), ' + PasStr(Body) + ');');
-      A('  AssertStatus(Res, 303, ''a save answers 303, so the browser does not repeat the PUT'');');
+      if Api then
+      begin
+        A('  Res := Writer.Send(''PATCH'', ''' + Url + '/'' + IntToStr(Id), ' + PasStr(Body) +
+          ', ''application/json'');');
+        A('  AssertStatus(Res, 200, ''a change answers with the row as it is now'');');
+      end
+      else
+      begin
+        A('  Res := ' + WR + '.Put(''' + Url + '/'' + IntToStr(Id), ' + PasStr(Body) + ');');
+        A('  AssertStatus(Res, 303, ''a save answers 303, so the browser does not repeat the PUT'');');
+      end;
       if Firstmember <> '' then
       begin
         A('  M := TQuery<T' + N.Model + '>.New.Find(Id);');
         A('  AssertNotNil(M, ''the id in the body did not move it'');');
-        A('  AssertEqual(M.' + Firstmember + ', ' +
-          PasStr(Copy('Changed', 1, P.Columns[PlanColumnIndex(P, First)].Field.Length)) +
+        A('  AssertEqual(M.' + Firstmember + ', ' + FirstLen('Changed') +
           ', ''the change is saved'');');
         if P.HasTimestamps then
           A('  AssertTrue(M.CreatedAt > EncodeDate(2002, 1, 1),' + #10 +
@@ -1384,21 +1781,36 @@ begin
       A('begin');
       A('  Ready;');
       A('  Id := Made;');
-      A('  AssertStatus(Client.AsInertia.Delete(''' + N.Url + '/'' + IntToStr(Id)), 303,');
-      A('    ''a delete answers 303'');');
+      if Api then
+      begin
+        A('  AssertStatus(Writer.Delete(''' + Url + '/'' + IntToStr(Id)), 204,');
+        A('    ''a delete answers 204, with nothing in it'');');
+        A('  AssertStatus(Reader.Get(''' + Url + '/'' + IntToStr(Id)), 404,');
+        A('    ''and the row is not there to read'');');
+      end
+      else
+      begin
+        A('  AssertStatus(' + WR + '.Delete(''' + Url + '/'' + IntToStr(Id)), 303,');
+        A('    ''a delete answers 303'');');
+      end;
       A('  AssertNil(TQuery<T' + N.Model + '>.New.Find(Id), ''and the row is gone'');');
       A('end;');
       A('');
     end;
 
-    A('procedure ' + N.TestsProc + ';');
+    A('procedure ' + TestsProc + ';');
     A('begin');
-    A('  Group(''' + Capital(N.HumanPlural) + ''');');
+    if Api then
+      A('  Group(''' + Capital(N.HumanPlural) + ', as JSON'');')
+    else
+      A('  Group(''' + Capital(N.HumanPlural) + ''');');
     A('  Test(''the list answers, whatever it is asked to sort by'', @TestList);');
     A('  Test(''a row that is not there is a 404'', @TestMissing);');
+    if Api then
+      A('  Test(''no token is a 401, and a token without the scope a 403'', @TestTokens);');
     if CanWrite then
     begin
-      A('  Test(''a new one is saved and can be shown and edited'', @TestStore);');
+      A('  Test(''a new one is saved and can be read back'', @TestStore);');
       if RequiredCol <> '' then
         A('  Test(''what the rules refuse is not saved'', @TestRefused);');
       A('  Test(''an edit is saved, and only the fields the form has'', @TestUpdate);');
@@ -1428,7 +1840,7 @@ const
   TestsMarkerUses = '  Askr.Testing,';
   TestsMarkerRun = '  RunTestsAndHalt;';
 
-function TestProgramText(const N: TResourceNames): string;
+function TestProgramText(const TestUnit, TestsProc: string): string;
 begin
   Result :=
     '{ The tests `askr test` runs. `askr make resource` adds its tests at' + #10 +
@@ -1441,9 +1853,9 @@ begin
     '  cthreads,' + #10 +
     '{$ENDIF}' + #10 +
     TestsMarkerUses + #10 +
-    '  ' + N.TestUnit + ';' + #10 + #10 +
+    '  ' + TestUnit + ';' + #10 + #10 +
     'begin' + #10 +
-    '  ' + N.TestsProc + ';' + #10 +
+    '  ' + TestsProc + ';' + #10 +
     TestsMarkerRun + #10 +
     'end.' + #10;
 end;
@@ -1458,7 +1870,7 @@ begin
 end;
 
 function ResourceFiles(const P: TResourcePlan; const Parents: TParentInfos;
-  WithModel: Boolean): TGenFiles;
+  WithModel, Web, Api: Boolean): TGenFiles;
 var
   N: TResourceNames;
   Pages, Why: string;
@@ -1468,20 +1880,41 @@ begin
   Pages := 'frontend/src/pages/' + N.PagesDir + '/';
   if WithModel then
     AddFile(Result, 'app/Models/' + N.ModelUnit + '.pas', ModelText(P));
-  AddFile(Result, 'app/Http/' + N.CtlUnit + '.pas', ControllerText(P, Parents));
-  AddFile(Result, Pages + 'Index.svelte', IndexText(P));
-  AddFile(Result, Pages + 'Show.svelte', ShowText(P, Parents));
-  AddFile(Result, Pages + 'Add.svelte', FormPageText(P, Parents, False));
-  AddFile(Result, Pages + 'Edit.svelte', FormPageText(P, Parents, True));
-  AddFile(Result, Pages + 'Fields.svelte', FieldsText(P, Parents));
-  AddFile(Result, 'tests/' + N.TestUnit + '.pas', TestUnitText(P, Parents, Why));
+  if Web then
+  begin
+    AddFile(Result, 'app/Http/' + N.CtlUnit + '.pas', ControllerText(P, Parents));
+    AddFile(Result, Pages + 'Index.svelte', IndexText(P));
+    AddFile(Result, Pages + 'Show.svelte', ShowText(P, Parents));
+    AddFile(Result, Pages + 'Add.svelte', FormPageText(P, Parents, False));
+    AddFile(Result, Pages + 'Edit.svelte', FormPageText(P, Parents, True));
+    AddFile(Result, Pages + 'Fields.svelte', FieldsText(P, Parents));
+    AddFile(Result, 'tests/' + N.TestUnit + '.pas', TestUnitText(P, Parents, False, Why));
+  end;
+  if Api then
+  begin
+    AddFile(Result, 'app/Http/' + N.ApiCtlUnit + '.pas', ApiControllerText(P));
+    AddFile(Result, 'tests/' + N.ApiTestUnit + '.pas', TestUnitText(P, Parents, True, Why));
+  end;
 end;
 
 { ----------------------------------------------------- the command -- }
 
-{ app.lpr at the lines `askr new` wrote. The same markers make auth uses:
-  the uses line of the home controller, and the /demo route. }
-function InstallRoutes(const Root: string; const N: TResourceNames): Boolean;
+function HasLine(L: TStringList; const S: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to L.Count - 1 do
+    if Trim(L[I]) = Trim(S) then
+      Exit(True);
+  Result := False;
+end;
+
+{ app.lpr at the lines `askr new` wrote -- the same markers make auth
+  uses: the uses line of the home controller, and the /demo route. Each
+  line goes in only when it is not there, so a second resource does not
+  add UseOpenApi twice. False when the markers are gone. }
+function InstallInApp(const Root: string; const UsesLines,
+  RouteLines: array of string): Boolean;
 const
   MarkerUses = '  App.Http.HomeController;';
   MarkerRoutes = '  R.Get(''/demo'', Home.Demo);';
@@ -1489,6 +1922,7 @@ var
   L: TStringList;
   Path_: string;
   I, IdxUses, IdxRoutes: Integer;
+  Changed: Boolean;
 begin
   Result := False;
   Path_ := IncludeTrailingPathDelimiter(Root) + 'app.lpr';
@@ -1497,9 +1931,6 @@ begin
   L := TStringList.Create;
   try
     L.LoadFromFile(Path_);
-    for I := 0 to L.Count - 1 do
-      if Trim(L[I]) = N.RoutesProc + '(R);' then
-        Exit(True);
     IdxUses := -1;
     IdxRoutes := -1;
     for I := 0 to L.Count - 1 do
@@ -1511,21 +1942,80 @@ begin
     end;
     if (IdxUses < 0) or (IdxRoutes < 0) then
       Exit(False);
+    Changed := False;
     { From the back, so the first insertion does not move the second. }
-    L.Insert(IdxRoutes + 1, '  ' + N.RoutesProc + '(R);');
-    L.Insert(IdxUses, '  ' + N.CtlUnit + ',');
-    L.SaveToFile(Path_);
-    WriteLn('  edited app.lpr');
+    for I := High(RouteLines) downto 0 do
+      if not HasLine(L, RouteLines[I]) then
+      begin
+        L.Insert(IdxRoutes + 1, RouteLines[I]);
+        Changed := True;
+      end;
+    for I := 0 to High(UsesLines) do
+      if not HasLine(L, UsesLines[I]) then
+      begin
+        L.Insert(IdxUses, UsesLines[I]);
+        Inc(IdxUses);
+        Changed := True;
+      end;
+    if Changed then
+    begin
+      L.SaveToFile(Path_);
+      WriteLn('  edited app.lpr');
+    end;
     Result := True;
   finally
     L.Free;
   end;
 end;
 
-{ tests/app_tests.lpr: written when there is none, edited at its two
-  markers when there is, and left alone -- with the lines to add -- when
-  they are not there. }
-function InstallTests(const Root: string; const N: TResourceNames): Boolean;
+{ A file this command owns the markers of: written when it is not there,
+  edited at its markers when it is, and left alone -- False -- when they
+  are gone. Each line goes in after its marker, once. }
+function InstallAtMarkers(const Path_, FreshText: string;
+  const Markers, Lines: array of string): Boolean;
+var
+  L: TStringList;
+  I, J, Idx: Integer;
+  Changed: Boolean;
+begin
+  if not FileExists(Path_) then
+  begin
+    Emit(Path_, FreshText);
+    Exit(True);
+  end;
+  Result := False;
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Path_);
+    Changed := False;
+    for I := 0 to High(Markers) do
+    begin
+      Idx := -1;
+      for J := 0 to L.Count - 1 do
+        if L[J] = Markers[I] then
+          Idx := J;
+      if Idx < 0 then
+        Exit(False);
+      if not HasLine(L, Lines[I]) then
+      begin
+        L.Insert(Idx + 1, Lines[I]);
+        Changed := True;
+      end;
+    end;
+    if Changed then
+    begin
+      L.SaveToFile(Path_);
+      WriteLn('  edited ', ExtractFileName(Path_));
+    end;
+    Result := True;
+  finally
+    L.Free;
+  end;
+end;
+
+{ tests/app_tests.lpr. The uses goes after Askr.Testing, the call before
+  RunTestsAndHalt -- the one marker a line goes in front of. }
+function InstallTests(const Root, TestUnit, TestsProc: string): Boolean;
 var
   L: TStringList;
   Path_: string;
@@ -1534,16 +2024,15 @@ begin
   Path_ := IncludeTrailingPathDelimiter(Root) + 'tests/app_tests.lpr';
   if not FileExists(Path_) then
   begin
-    Emit(Path_, TestProgramText(N));
+    Emit(Path_, TestProgramText(TestUnit, TestsProc));
     Exit(True);
   end;
   Result := False;
   L := TStringList.Create;
   try
     L.LoadFromFile(Path_);
-    for I := 0 to L.Count - 1 do
-      if Trim(L[I]) = N.TestsProc + ';' then
-        Exit(True);
+    if HasLine(L, TestsProc + ';') then
+      Exit(True);
     IdxUses := -1;
     IdxRun := -1;
     for I := 0 to L.Count - 1 do
@@ -1555,14 +2044,23 @@ begin
     end;
     if (IdxUses < 0) or (IdxRun < 0) then
       Exit(False);
-    L.Insert(IdxRun, '  ' + N.TestsProc + ';');
-    L.Insert(IdxUses + 1, '  ' + N.TestUnit + ',');
+    L.Insert(IdxRun, '  ' + TestsProc + ';');
+    L.Insert(IdxUses + 1, '  ' + TestUnit + ',');
     L.SaveToFile(Path_);
     WriteLn('  edited tests/app_tests.lpr');
     Result := True;
   finally
     L.Free;
   end;
+end;
+
+procedure SayTestLines(const TestUnit, TestsProc: string);
+begin
+  WriteLn('');
+  WriteLn('tests/app_tests.lpr is there without the lines this recognises.');
+  WriteLn('Add these yourself:');
+  WriteLn('  uses   ' + TestUnit + ';');
+  WriteLn('  and, before RunTestsAndHalt:  ' + TestsProc + ';');
 end;
 
 function ParentsOf(Schema: TDbSchema; const P: TResourcePlan;
@@ -1597,7 +2095,7 @@ begin
 end;
 
 function MakeResource(const Root: string; Schema: TDbSchema;
-  const ModelName, Table: string; Force: Boolean): Boolean;
+  const ModelName, Table, Title: string; Force, Web, Api: Boolean): Boolean;
 var
   P: TResourcePlan;
   N: TResourceNames;
@@ -1627,7 +2125,7 @@ begin
 
   ModelPath := Base + 'app/Models/' + N.ModelUnit + '.pas';
   WithModel := not FileExists(ModelPath);
-  Files := ResourceFiles(P, Parents, WithModel);
+  Files := ResourceFiles(P, Parents, WithModel, Web, Api);
 
   Paths := nil;
   for I := 0 to High(Files) do
@@ -1655,28 +2153,62 @@ begin
   for I := 0 to High(Files) do
     Emit(Base + Files[I].Path, Files[I].Content);
 
-  if not InstallRoutes(Root, N) then
+  if Web then
   begin
-    WriteLn('');
-    WriteLn('Could not find the markers in app.lpr. Add these yourself:');
-    WriteLn('  uses   ' + N.CtlUnit + ';');
-    WriteLn('  and, with the other routes:  ' + N.RoutesProc + '(R);');
-  end;
-  if not InstallTests(Root, N) then
-  begin
-    WriteLn('');
-    WriteLn('tests/app_tests.lpr is there without the lines this recognises.');
-    WriteLn('Add these yourself:');
-    WriteLn('  uses   ' + N.TestUnit + ';');
-    WriteLn('  and, before RunTestsAndHalt:  ' + N.TestsProc + ';');
+    if not InstallInApp(Root, ['  ' + N.CtlUnit + ','], ['  ' + N.RoutesProc + '(R);']) then
+    begin
+      WriteLn('');
+      WriteLn('Could not find the markers in app.lpr. Add these yourself:');
+      WriteLn('  uses   ' + N.CtlUnit + ';');
+      WriteLn('  and, with the other routes:  ' + N.RoutesProc + '(R);');
+    end;
+    if not InstallTests(Root, N.TestUnit, N.TestsProc) then
+      SayTestLines(N.TestUnit, N.TestsProc);
   end;
 
-  TestUnitText(P, Parents, Why);
+  if Api then
+  begin
+    if not InstallInApp(Root,
+         ['  Askr.OpenApi, App.Http.ApiDoc,', '  ' + N.ApiCtlUnit + ','],
+         ['  ' + N.ApiRoutesProc + '(R);',
+          '  { GET /openapi.json, and askr openapi --check. See App.Http.ApiDoc. }',
+          '  UseOpenApi(R, @AppApiDoc);']) then
+    begin
+      WriteLn('');
+      WriteLn('Could not find the markers in app.lpr. Add these yourself:');
+      WriteLn('  uses   Askr.OpenApi, App.Http.ApiDoc, ' + N.ApiCtlUnit + ';');
+      WriteLn('  and, with the other routes:  ' + N.ApiRoutesProc + '(R);');
+      WriteLn('                               UseOpenApi(R, @AppApiDoc);');
+    end;
+    if not InstallAtMarkers(Base + 'app/Http/App.Http.ApiDoc.pas',
+         ApiDocUnitText(N, Title),
+         [ApiDocUsesMarker, ApiDocCallMarker],
+         ['  ' + N.ApiCtlUnit + ',', '  ' + N.ApiDocProc + '(D);']) then
+    begin
+      WriteLn('');
+      WriteLn('app/Http/App.Http.ApiDoc.pas is there without the lines this');
+      WriteLn('recognises. Add these yourself:');
+      WriteLn('  uses   ' + N.ApiCtlUnit + ';');
+      WriteLn('  and, in AppApiDoc:  ' + N.ApiDocProc + '(D);');
+    end;
+    if not InstallTests(Root, N.ApiTestUnit, N.ApiTestsProc) then
+      SayTestLines(N.ApiTestUnit, N.ApiTestsProc);
+  end;
+
+  TestUnitText(P, Parents, Api, Why);
   WriteLn('');
   if Why <> '' then
     WriteLn('The test does not create, edit or delete: ' + Why + '.');
-  WriteLn('Next: askr build, then askr test. The pages are under');
-  WriteLn('frontend/src/pages/' + N.PagesDir + ', and ' + N.Url + ' lists them.');
+  WriteLn('Next: askr build, then askr test.');
+  if Web then
+    WriteLn('The pages are under frontend/src/pages/' + N.PagesDir + ', and ' +
+      N.Url + ' lists them.');
+  if Api then
+  begin
+    WriteLn(N.ApiUrl + ' needs a token:  askr token:issue <user-id> <name> --scopes=' +
+      N.ScopeRead + ',' + N.ScopeWrite);
+    WriteLn('askr openapi --check says whether the document still describes the routes.');
+  end;
   Result := True;
 end;
 

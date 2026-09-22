@@ -2295,7 +2295,7 @@ var
   P, Locked: TResourcePlan;
   Parents: TParentInfos;
   F: TGenFiles;
-  Ctl, Fields, Index_, Show, Test_, Model: string;
+  Ctl, Fields, Index_, Show, Test_, Model, Api: string;
   PC: TPlanColumn;
   L: TStringList;
 begin
@@ -2321,7 +2321,7 @@ begin
       Parents := ParentsOf(S, P, Root);
       AssertEqual(Length(Parents), 1, 'one table to point at');
       AssertFalse(Parents[0].Available, 'with no model for it, there is no select');
-      F := ResourceFiles(P, Parents, True);
+      F := ResourceFiles(P, Parents, True, True, False);
       AssertContains(TextOf(F, 'Fields.svelte'),
         'label="Maker" required description="The id of a row in makers"',
         'and the field is a number that says what it is');
@@ -2337,7 +2337,7 @@ begin
       AssertTrue(Parents[0].Available, 'with one, there is');
       AssertEqual(Parents[0].LabelColumn, 'name', 'labelled by its first string');
 
-      F := ResourceFiles(P, Parents, True);
+      F := ResourceFiles(P, Parents, True, True, True);
       Ctl := TextOf(F, 'App.Http.GadgetsController.pas');
       Fields := TextOf(F, 'Fields.svelte');
       Index_ := TextOf(F, 'Index.svelte');
@@ -2386,7 +2386,28 @@ begin
       AssertContains(Model, 'H.Add(Gadgets.ApiToken);', 'the secret is hidden from JSON');
       AssertContains(Model, 'S.ZeroIsNull(''MakerId'');', 'zero is no maker');
 
+      { --api. }
+      Api := TextOf(F, 'App.Http.GadgetsApiController.pas');
+      AssertContains(Api, 'AuthorizeScope(''gadgets:read'');', 'reading needs a scope');
+      AssertContains(Api, 'AuthorizeScope(''gadgets:write'');', 'and writing another');
+      AssertContains(Api, 'Req.FillInto(M, [Gadgets.Name.Name,',
+        'a program fills only the same fields as the form');
+      AssertContains(Api, 'R.Patch(''/api/gadgets/:id'', Ctl.Update);',
+        'a change is a PATCH: what is not sent is left alone');
+      AssertNotContains(Api, 'R.Put(', 'and not a PUT, which would mean the whole row');
+      AssertContains(Api, 'Exit(ValidationProblem(M.Errors));', 'a refusal is a problem document');
+      AssertContains(Api, 'Problem(404,', 'and so is a row that is not there');
+      AssertContains(Api, 'G.ListResponse(', 'a list is the envelope');
+      AssertContains(Api, '.NoContent.Secured(''gadgets:write'');', 'a delete is described as 204');
+      AssertContains(Api, 'Result := Respond(204);', 'and answers it');
+      AssertContains(Api, 'D.Patch(''/api/gadgets/:id'')', 'every route is described next to it');
+      Test_ := TextOf(F, 'App.Tests.GadgetsApi.pas');
+      AssertContains(Test_, '@TestTokens', 'the API test asks without a token and with too little of one');
+      AssertContains(Test_, 'Writer.Send(''PATCH''', 'and changes a row with PATCH');
+      AssertContains(Test_, '''"api_token"''', 'and looks for the secret in what it reads back');
+
       { The test. }
+      Test_ := TextOf(F, 'App.Tests.Gadgets.pas');
       AssertContains(Test_, '@TestUpdate', 'the test edits');
       AssertContains(Test_, '"created_at":"2001-01-01 00:00:00"',
         'with a forged created_at in the body');
@@ -2396,7 +2417,7 @@ begin
         not pretend to write. }
       Locked := PlanResource(S, 'Lock');
       AssertFalse(Locked.CanCreate, 'a NOT NULL secret with no default means no create');
-      F := ResourceFiles(Locked, nil, True);
+      F := ResourceFiles(Locked, nil, True, True, False);
       AssertNotContains(TextOf(F, 'App.Tests.Locks.pas'), '@TestStore',
         'so the test does not try');
       AssertContains(TextOf(F, 'App.Tests.Locks.pas'), 'Nothing that writes is tested',
@@ -2710,6 +2731,26 @@ begin
            (Pos('nothing describes it', Problems_[I]) > 0) then
           Found := True;
       AssertTrue(Found, 'a route nobody described is reported too');
+    finally
+      D.Free;
+    end;
+
+    { A delete answers 204 with nothing in it. Returns would claim a
+      body, and Answers would claim an error. }
+    D := TOpenApi.Create;
+    try
+      OaDoc(D);
+      D.Delete('/api/pages/:id').Summary('Remove one').NoContent;
+      Json_ := D.ToJson;
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages/{id}.delete.responses.204.description'), 'No Content',
+        'NoContent is a 204');
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages/{id}.delete.responses.204.content'), '',
+        'with no body');
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages/{id}.delete.responses.200.description'), '',
+        'and not a 200 as well');
     finally
       D.Free;
     end;
@@ -4039,6 +4080,77 @@ type
     function InertiaPage(Req: TRequest): TResponse;
     function Plain(Req: TRequest): TResponse;
   end;
+
+type
+  { A handler that refuses, and one that breaks. }
+  TRefuseCtl = class
+    function Refuse(Req: TRequest): TResponse;
+    function Break_(Req: TRequest): TResponse;
+  end;
+
+function TRefuseCtl.Refuse(Req: TRequest): TResponse;
+begin
+  raise EForbidden.Create('Not authorized: scope things:write');
+end;
+
+function TRefuseCtl.Break_(Req: TRequest): TResponse;
+begin
+  raise Exception.Create('a real fault');
+end;
+
+{ **A refusal a handler raises is an answer, and the after-filters run.**
+  The router answers it now, so a test sees the 403 the server would send
+  -- before, it came out of the test as an exception. A real fault still
+  raises, and the filters ran on the way out: ReleaseDb is one, and every
+  refusal used to keep its pooled connection. }
+var
+  AfterRuns: Integer;
+
+function CountAfter(Req: TRequest; Res: TResponse): TResponse;
+begin
+  Inc(AfterRuns);
+  Result := Res;
+end;
+
+procedure TestClientAnswersRefusals;
+var
+  R: TRouter;
+  C: TRefuseCtl;
+  K: TTestClient;
+  Res: TResponse;
+  Raised: Boolean;
+begin
+  C := TRefuseCtl.Create;
+  R := TRouter.Create;
+  R.Get('/refuse', C.Refuse);
+  R.Get('/break', C.Break_);
+  R.After(@CountAfter);
+  K := TTestClient.Create(R);
+  try
+    AfterRuns := 0;
+    Res := K.Get('/refuse');
+    AssertEqual(Res.StatusCode, 403, 'a refusal is a 403, not an exception');
+    AssertEqual(AfterRuns, 1, 'and the after-filters ran on it');
+    AssertNotContains(Res.Body.ToString, 'things:write',
+      'and its message stays out of the reply, as on the server');
+    Res := K.WithHeader('Accept', 'application/json').Get('/refuse');
+    AssertContains(Res.HeaderValue('Content-Type'), 'application/problem+json',
+      'a program gets a problem document');
+    Raised := False;
+    try
+      K.Get('/break');
+    except
+      on E: Exception do
+        Raised := E.Message = 'a real fault';
+    end;
+    AssertTrue(Raised, 'a real fault still raises');
+    AssertEqual(AfterRuns, 3, 'after the filters ran on the way out');
+  finally
+    K.Free;
+    R.Free;
+    C.Free;
+  end;
+end;
 
 function TCsrfCtl.InertiaPage(Req: TRequest): TResponse;
 begin
@@ -7221,6 +7333,8 @@ begin
     @TestCsrfCookiesSideBySide);
   Test('an Inertia page makes the token, so a form from it is accepted',
     @TestCsrfInertiaPage);
+  Test('a refusal a handler raises is an answer, and the after-filters run',
+    @TestClientAnswersRefusals);
 
   Group('Auth');
   Test('signing in changes the session id, signing out clears it', @TestAuthInnOgUt);

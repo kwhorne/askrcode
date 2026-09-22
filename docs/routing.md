@@ -227,6 +227,15 @@ Use(A); After(A'); Use(B); After(B')
 They also run when middleware short-circuited the request. Otherwise a 401
 from a guard would lose its session cookie.
 
+**And they run when the handler raised.** An exception that says which
+status it is below 500 — `EForbidden` from a gate or `AuthorizeScope`,
+your own `EHttpError` — is answered by the router, and the filters run on
+that answer. Anything else runs the filters with a 500 in hand and is
+raised again, so the server logs it as a fault. Until 0.13 they did not
+run at all when a handler raised: `ReleaseDb` is an after-filter, so every
+refusal and every 500 kept its pooled connection, until the pool had none
+left to give.
+
 ## The standard stack
 
 A project from `askr new` wires this, in this order:

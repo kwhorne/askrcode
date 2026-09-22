@@ -16,6 +16,20 @@ with the zero-major caveat that minor releases may break things until
 
 ### Added
 
+- **`askr make resource <Name> --api`**: the same table as JSON under
+  `/api`, scoped `<table>:read` and `<table>:write` -- the list envelope,
+  `RespondModel`, problem documents, 201 with a `Location`, `PATCH` for a
+  change and 204 for a delete -- with its OpenAPI description in the same
+  unit as its routes, `AppApiDoc` and `UseOpenApi` wired the first time,
+  and a test that issues real tokens. `--web --api` writes both.
+
+  `./askr make:check` runs `askr openapi --check` straight after
+  generating, puts the document through a real OpenAPI validator, and then
+  drives the API over a socket with tokens from `askr token:issue` and
+  curl.
+
+- **`TApiOp.NoContent`**: a 204 with no body, for a delete.
+
 - **`askr make resource <Name>`**: the seven actions over a table that
   exists, read from the database -- a controller on the typed columns
   from `askr schema`, its routes in one procedure `app.lpr` and the test
@@ -112,6 +126,20 @@ with the zero-major caveat that minor releases may break things until
   boolean; it was `INTEGER`.
 
 ### Fixed
+
+- **When a handler raised, the after-filters did not run.** `ReleaseDb`
+  is one, so every 403 from `AuthorizeScope` and every 500 kept its pooled
+  connection, until the pool had none left and every request failed; the
+  session was not written either, and a 401 went out without the
+  `WWW-Authenticate` RFC 9110 requires. The router now answers an
+  `EHttpError` below 500 itself and runs the filters on it, and runs them
+  on the way out of any other exception before raising it again. Found by
+  driving a generated API over a socket; `make:check` sends forty refusals
+  and then asks for the list.
+
+- **`TTestClient` could not test a 401 or a 403 a handler raised** -- it
+  came out of the test as an exception. It is the router's answer now, so
+  the test sees what the server sends.
 
 - **Every POST from an Inertia page in a new app answered 419.** The
   Inertia client sends only what the `XSRF-TOKEN` cookie holds, and the

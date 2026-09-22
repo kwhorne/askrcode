@@ -110,6 +110,10 @@ insists on lives in `TModel.Rules`, which is code that runs rather than a
 declaration that can be read. Guessing at it is the one thing this is
 built not to do.
 
+**A delete says `NoContent`.** `D.Delete(...).NoContent` is a 204 with no
+body. `Returns` would describe a body that is not there, and `Answers`
+describes an error.
+
 **Your own error responses are not in it unless you say so.** `Answers`
 adds one. The framework writes the statuses it answers with itself, and
 knows nothing about the 409 your handler raises.
