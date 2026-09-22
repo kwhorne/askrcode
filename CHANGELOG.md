@@ -12,6 +12,43 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Fixed
+
+- **The tool loop sent an assistant turn without the `tool_use` blocks it
+  asked with**, and the API refuses the results that follow:
+  `each tool_result block must have a corresponding tool_use block in the
+  previous message`. The comment above the line said the belief out loud —
+  "the text is enough" — and it is not.
+
+  The other half of the same bug: every result was in its own message.
+  Only the first is then in the message after the assistant turn, so the
+  rest are refused. Results for one turn now go in one user message.
+
+  **Found by a real call, not by reading.** The suite was green the whole
+  time, because it checked the shape the author believed in rather than
+  the one the API requires — the limit of any fake. It now asserts that
+  the assistant turn carries the `tool_use` block, that it comes *before*
+  the result answering it, and, in a round with two parallel tool calls,
+  that both results are in one message. A single-tool round could not see
+  the second half: a mutation dropping all but the first result went
+  straight through it.
+
+  `TAiMessage` now carries `ToolCalls` and `ToolResults` instead of a
+  single `ToolUseId`/`IsToolResult`/`IsError`. `ToolResultMsg` still works
+  and makes a one-element version.
+
+### Added
+
+- **`examples/ai/aiprobe.lpr`** — the AI layer against the real API, with
+  a real key. Text, streaming, tool calls, structured output and adaptive
+  thinking, in that order. An example rather than a test: a suite that
+  only runs for people holding a credential is one most people cannot run.
+
+  **The AI layer is out of the "never run in earnest" list.** Windows and
+  the Resend transport are still in it.
+
 ## 0.11.0 — 2026-09-22
 
 ### Added

@@ -3606,6 +3606,22 @@ begin
   end;
 end;
 
+{ How many times Needle is in S. }
+function Occurs(const S, Needle: string): Integer;
+var
+  P, At_: Integer;
+begin
+  Result := 0;
+  At_ := 1;
+  repeat
+    P := PosEx(Needle, S, At_);
+    if P = 0 then
+      Break;
+    Inc(Result);
+    At_ := P + Length(Needle);
+  until False;
+end;
+
 procedure TestAiVerktoey;
 var
   K: TAiClient;
@@ -3652,6 +3668,25 @@ begin
       'and points back with an id');
     AssertTrue(Pos('temp_c', Sendt) > 0, 'with what the tool returned');
 
+    { And the half a fake could not tell me was missing.
+
+      The assistant turn has to go back carrying the tool_use blocks it
+      asked with. Without them the API refuses the results that follow --
+      `each tool_result block must have a corresponding tool_use block in
+      the previous message` -- and this suite was green the whole time,
+      because it checked the shape I believed in rather than the one the
+      API requires. Found by a real call, not by reading.
+
+      The order matters as much as the presence: the tool_use has to be
+      in the message BEFORE the tool_result, not merely somewhere. }
+    AssertTrue(Pos('"type":"tool_use"', Sendt) > 0,
+      'the assistant turn carries the tool_use block it asked with');
+    AssertTrue(Pos('"type":"tool_use"', Sendt) <
+               Pos('"type":"tool_result"', Sendt),
+      'and it comes before the result that answers it');
+    AssertTrue(Pos('"id":"tu_1"', Sendt) > 0,
+      'with the same id the result points back to');
+
     { A tool that raises must not take down the loop — the model gets the
       error. }
     K.ClearTools;
@@ -3690,6 +3725,34 @@ begin
     end;
     AssertTrue(Pos('did not finish within 2 turns', Err) > 0,
       'a loop that never ends is stopped');
+
+    { Two tools in one turn, which is ordinary and is where the other half
+      of the same bug lives: every result has to be in ONE user message.
+      One message each puts all but the first out of reach of the
+      assistant turn they answer, and the API refuses them.
+
+      A single-tool round cannot show this -- the first version of this
+      test had only one, and a mutation that dropped every result but the
+      first went straight through it. }
+    AiVerktoeyKall := 0;
+    F.Enqueue('{"content":[' +
+      '{"type":"tool_use","id":"tu_a","name":"weather",' +
+      '"input":{"place":"Oslo"}},' +
+      '{"type":"tool_use","id":"tu_b","name":"weather",' +
+      '"input":{"place":"Bergen"}}],"stop_reason":"tool_use"}');
+    F.Enqueue(AiReply('Rain in both.'));
+    R := K.RunTools('weather in Oslo and Bergen');
+    AssertEqual(AiVerktoeyKall, 2, 'both tools ran');
+
+    { The last request the fake saw: the one carrying both results. }
+    Sendt := F.Sent[F.Sent.Count - 1];
+    AssertTrue(Pos('"tool_use_id":"tu_a"', Sendt) > 0, 'the first result');
+    AssertTrue(Pos('"tool_use_id":"tu_b"', Sendt) > 0, 'and the second');
+    { Both inside the same message: there is exactly one user turn after
+      the assistant one, so counting the roles is the check. }
+    AssertEqual(Occurs(Sendt, '"role":"user"'), 2,
+      'and they are in one user message, not one each');
+
   finally
     K.Free;
   end;

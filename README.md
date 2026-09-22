@@ -78,20 +78,29 @@ Phases 1 and 2 are complete on **macOS and Linux**, on **aarch64 and
 x86_64**. The data layer is complete for all three dialects. The CLI has 26
 commands. Documentation is 36 pages under [`docs/`](docs/).
 
-Three things are **written and have never been run in earnest**, and they
+Two things are **written and have never been run in earnest**, and they
 will say so until someone runs them:
 
 - **Windows.** The WebView2 binding is written and type-checked; nobody has
   started it on a Windows machine. It does not count as finished until they
   have. The next step there is a run, not more code.
-- **The AI layer against a real API key.** What has been exercised against
-  `api.anthropic.com` is a real call *without* a key, which came back as a
-  401 with Anthropic's own error JSON, parsed correctly. That proves DNS,
-  TLS, the request shape and the error path — not that a response with
-  content comes back.
-- **The Resend transport against a real API key.** Same story, same
-  evidence: a real 401 from `api.resend.com`, its error JSON parsed into
-  `EResendError`. No mail has been sent from here with a valid key.
+- **The Resend transport against a real API key.** What has been exercised
+  against `api.resend.com` is a real call *without* a key, which came back
+  as a 401 with Resend's own error JSON, parsed into `EResendError`. That
+  proves DNS, TLS, the request shape and the error path — not that a
+  message is delivered. No mail has been sent from here with a valid key.
+
+**The AI layer has been run against `api.anthropic.com` with a real key**,
+and all four things it offers work: text, streaming, tool calls and
+structured output, plus adaptive thinking. `examples/ai/aiprobe.lpr` is
+that run, and it is an example rather than a test because a suite that
+only runs for people holding a credential is a suite most people cannot
+run.
+
+That run found a bug no fake could: the tool loop sent the assistant's
+text back without the `tool_use` blocks it asked with, and the API refuses
+the results that follow. The suite had been green the whole time, because
+it checked the shape the author believed in.
 
 ## Getting started
 

@@ -651,18 +651,36 @@ og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
   ingen JSON Schema-validator. Å slå det på uten den er å bytte en kjent
   begrensning mot en stille.
 
-### Hva som ikke er prøvd
+### Hva som er prøvd, og hva det avslørte
 
-**Ingen kall med en gyldig nøkkel er gjort fra dette repoet.** Det er det
-samme forbeholdet som på Windows-skallet, og det skal stå til noen har
-kjørt det.
+**Laget er kjørt mot `api.anthropic.com` med en gyldig nøkkel**, og alle
+fire tingene virker: tekst, strømming, verktøykall og strukturert utdata,
+pluss adaptiv tenkning. `examples/ai/aiprobe.lpr` er den kjøringen. Den er
+et *eksempel* og ikke en test, fordi en suite som bare kan kjøres av folk
+med en legitimasjon er en suite de fleste ikke kan kjøre.
 
-Det som **er** prøvd mot `api.anthropic.com`: et ekte kall uten gyldig
-nøkkel, som kom tilbake som 401 med Anthropics egen feil-JSON, riktig
-parset til `EAiError` med status og type. Det beviser DNS, TLS,
-requestformen og feilhåndteringen — ikke at et svar med innhold kommer
-tilbake. Alt annet er testet mot `TFakeAiTransport`, som holder JSON-en
-som sendes opp mot det den skal være.
+**Den kjøringen fant en feil ingen fake kunne finne.** Verktøyløkka sendte
+assistentens *tekst* tilbake uten `tool_use`-blokkene den hadde spurt med,
+og API-et avviser da resultatene som følger:
+
+> each `tool_result` block must have a corresponding `tool_use` block in
+> the previous message
+
+Kommentaren i koden sa troen rett ut: «The text is enough». Suiten var
+grønn hele tiden, fordi den sjekket formen jeg trodde på — ikke den
+API-et krever. **Det er hele grensen for en fake: den holder JSON-en opp
+mot din egen forestilling.**
+
+Den andre halvdelen av samme feil: hvert resultat lå i sin egen melding.
+Bare det første er da i meldingen rett etter assistentens tur, så resten
+avvises. Fake-testen hadde bare ett verktøykall per tur og kunne ikke se
+det — en mutasjon som droppet alle resultater unntatt det første gikk rett
+gjennom. Testen har nå en runde med to parallelle verktøykall, og begge
+halvdelene er mutasjonssjekket.
+
+**Adaptiv tenkning finnes ikke på alle modeller.** Haiku 4.5 svarer 400
+med «adaptive thinking is not supported on this model» — som er feilstien
+som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 
 ## Changelog
 
@@ -1738,11 +1756,14 @@ parkert kode som ikke bygges, råtner.
 varig kø, modell-livskvalitet, HTTP-klient, AI, kommandolinja og
 auth-stillaset. Ingenting i «stopper produksjon»-tabellen står åpent.
 
-**Tre ting står uten en kjøring med ekte legitimasjon**, og alle tre skal
-stå slik til noen har gjort det: Windows-webviewen, AI-laget med en gyldig
-API-nøkkel, og Resend-transporten med en gyldig nøkkel. De to siste har
-begge et ekte 401 bak seg — DNS, TLS, requestform og feilsti er prøvd — men
-ingen av dem har fått et svar med innhold.
+**To ting står uten en kjøring med ekte legitimasjon**, og begge skal stå
+slik til noen har gjort det: Windows-webviewen, og Resend-transporten med
+en gyldig nøkkel. Resend har et ekte 401 bak seg — DNS, TLS, requestform og
+feilsti er prøvd — men ingen epost er sendt.
+
+**AI-laget er ute av den lista.** Det er kjørt mot `api.anthropic.com` med
+en gyldig nøkkel, og kjøringen fant en ekte feil i verktøyløkka. Se
+AI-delen over.
 
 **LARAVEL.md er slettet.** Den var et arbeidsnotat som målte Askr mot
 Laravel punkt for punkt, og den hadde gjort jobben sin: alt i «stopper

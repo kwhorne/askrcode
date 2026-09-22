@@ -78,20 +78,31 @@ type
     form with budget_tokens is rejected with a 400 by the models here. }
   TAiThinking = (atOff, atAdaptive);
 
-  TAiMessage = record
-    Role: TAiRole;
-    Text: string;
-    { Set when the message is the answer to a tool call. }
-    ToolUseId: string;
-    IsToolResult: Boolean;
-    IsError: Boolean;
-  end;
-
   TAiToolCall = record
     Id: string;
     Name: string;
     { The arguments as JSON, the way the model sent them. }
     InputJson: string;
+  end;
+
+  TAiToolResult = record
+    ToolUseId: string;
+    Content: string;
+    IsError: Boolean;
+  end;
+
+  TAiMessage = record
+    Role: TAiRole;
+    Text: string;
+    { An assistant turn that asked for tools has to carry the tool_use
+      blocks it asked with. The API refuses a tool_result whose id has no
+      matching tool_use in the message before it -- the text of the turn
+      is not enough, which is what this record used to assume. }
+    ToolCalls: array of TAiToolCall;
+    { And the user turn answering it carries every result, in one
+      message. One message per result puts all but the first out of reach
+      of the assistant turn they belong to. }
+    ToolResults: array of TAiToolResult;
   end;
 
   TAiUsage = record
@@ -266,6 +277,11 @@ type
 { Helpers for building message lists. }
 function UserMsg(const Text: string): TAiMessage;
 function AssistantMsg(const Text: string): TAiMessage;
+{ The assistant turn that asked for tools, with the blocks it asked with. }
+function AssistantToolMsg(const Text: string;
+  const Calls: array of TAiToolCall): TAiMessage;
+{ Every result for one assistant turn, in one user message. }
+function ToolResultsMsg(const Results: array of TAiToolResult): TAiMessage;
 function ToolResultMsg(const ToolUseId, Result_: string;
   IsError: Boolean = False): TAiMessage;
 
@@ -286,9 +302,8 @@ function UserMsg(const Text: string): TAiMessage;
 begin
   Result.Role := arUser;
   Result.Text := Text;
-  Result.ToolUseId := '';
-  Result.IsToolResult := False;
-  Result.IsError := False;
+  Result.ToolCalls := nil;
+  Result.ToolResults := nil;
 end;
 
 function AssistantMsg(const Text: string): TAiMessage;
@@ -297,16 +312,43 @@ begin
   Result.Role := arAssistant;
 end;
 
+function AssistantToolMsg(const Text: string;
+  const Calls: array of TAiToolCall): TAiMessage;
+var
+  I: Integer;
+begin
+  Result := AssistantMsg(Text);
+  SetLength(Result.ToolCalls, Length(Calls));
+  for I := 0 to High(Calls) do
+    Result.ToolCalls[I] := Calls[I];
+end;
+
+function ToolResultsMsg(const Results: array of TAiToolResult): TAiMessage;
+var
+  I: Integer;
+begin
+  Result := UserMsg('');
+  SetLength(Result.ToolResults, Length(Results));
+  for I := 0 to High(Results) do
+    Result.ToolResults[I] := Results[I];
+end;
+
 function ToolResultMsg(const ToolUseId, Result_: string;
   IsError: Boolean): TAiMessage;
+var
+  R: TAiToolResult;
 begin
   { A tool result is a user message with a tool_result block. That is not
     obvious, and it is the most common mistake when you build the loop
-    yourself. }
-  Result := UserMsg(Result_);
-  Result.ToolUseId := ToolUseId;
-  Result.IsToolResult := True;
-  Result.IsError := IsError;
+    yourself.
+
+    The second, which only a real call shows: the block has to answer a
+    tool_use in the message immediately before it. So one result on its
+    own is only right when the turn asked for one tool. }
+  R.ToolUseId := ToolUseId;
+  R.Content := Result_;
+  R.IsError := IsError;
+  Result := ToolResultsMsg([R]);
 end;
 
 { ---------------------------------------------------------- TAiResponse -- }
@@ -533,7 +575,7 @@ function TAiClient.BuildBody(const Messages: array of TAiMessage;
 var
   A: TArena;
   W: TJsonWriter;
-  I: Integer;
+  I, J: Integer;
 begin
   A := TArena.Create(64 * 1024);
   try
@@ -597,19 +639,50 @@ begin
         W.Field('role', 'user')
       else
         W.Field('role', 'assistant');
-      if Messages[I].IsToolResult then
+      if Length(Messages[I].ToolResults) > 0 then
       begin
-        { A tool result is a block in a user message, not a role of its
-          own. }
+        { Tool results are blocks in a user message, not a role of their
+          own -- and all of them go in this one message, because each has
+          to answer a tool_use in the message immediately before. }
         W.Key('content');
         W.BeginArray;
-        W.BeginObject;
-        W.Field('type', 'tool_result');
-        W.Field('tool_use_id', Messages[I].ToolUseId);
-        W.Field('content', Messages[I].Text);
-        if Messages[I].IsError then
-          W.Field('is_error', True);
-        W.EndObject;
+        for J := 0 to High(Messages[I].ToolResults) do
+        begin
+          W.BeginObject;
+          W.Field('type', 'tool_result');
+          W.Field('tool_use_id', Messages[I].ToolResults[J].ToolUseId);
+          W.Field('content', Messages[I].ToolResults[J].Content);
+          if Messages[I].ToolResults[J].IsError then
+            W.Field('is_error', True);
+          W.EndObject;
+        end;
+        W.EndArray;
+      end
+      else if Length(Messages[I].ToolCalls) > 0 then
+      begin
+        { The assistant turn that asked. Without the tool_use blocks here
+          the API refuses the results that follow: `each tool_result block
+          must have a corresponding tool_use block in the previous
+          message`. The text of the turn is not a substitute, which is
+          what this used to assume. }
+        W.Key('content');
+        W.BeginArray;
+        if Messages[I].Text <> '' then
+        begin
+          W.BeginObject;
+          W.Field('type', 'text');
+          W.Field('text', Messages[I].Text);
+          W.EndObject;
+        end;
+        for J := 0 to High(Messages[I].ToolCalls) do
+        begin
+          W.BeginObject;
+          W.Field('type', 'tool_use');
+          W.Field('id', Messages[I].ToolCalls[J].Id);
+          W.Field('name', Messages[I].ToolCalls[J].Name);
+          W.FieldRaw('input', Str(Messages[I].ToolCalls[J].InputJson));
+          W.EndObject;
+        end;
         W.EndArray;
       end
       else
@@ -968,9 +1041,9 @@ end;
 function TAiClient.RunTools(const Prompt: string): TAiResponse;
 var
   Msgs: array of TAiMessage;
+  Results: array of TAiToolResult;
   Reply: TAiResponse;
   I, Round_, N: Integer;
-  Outcome: string;
 begin
   SetLength(Msgs, 1);
   Msgs[0] := UserMsg(Prompt);
@@ -984,22 +1057,32 @@ begin
     { The model's own turn has to be in the history, or it does not know
       what it asked for itself. The text is enough: the tool calls are not
       repeated, and the tool_result blocks point back with an id. }
+    { The assistant turn goes back with the tool_use blocks it asked
+      with, and every result goes back in one user message after it. Both
+      halves are required: a tool_result is refused unless the message
+      immediately before it holds a tool_use with the same id. }
     N := Length(Msgs);
-    SetLength(Msgs, N + 1 + Length(Reply.ToolCalls));
-    Msgs[N] := AssistantMsg(Reply.Text);
+    SetLength(Msgs, N + 2);
+    Msgs[N] := AssistantToolMsg(Reply.Text, Reply.ToolCalls);
+
+    SetLength(Results, Length(Reply.ToolCalls));
     for I := 0 to High(Reply.ToolCalls) do
     begin
+      Results[I].ToolUseId := Reply.ToolCalls[I].Id;
+      Results[I].IsError := False;
       try
-        Outcome := RunTool(Reply.ToolCalls[I]);
-        Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id, Outcome);
+        Results[I].Content := RunTool(Reply.ToolCalls[I]);
       except
         on E: Exception do
+        begin
           { A tool that raises is not a reason to take down the loop. The
             model gets the error and can try something else. }
-          Msgs[N + 1 + I] := ToolResultMsg(Reply.ToolCalls[I].Id,
-            E.ClassName + ': ' + E.Message, True);
+          Results[I].Content := E.ClassName + ': ' + E.Message;
+          Results[I].IsError := True;
+        end;
       end;
     end;
+    Msgs[N + 1] := ToolResultsMsg(Results);
   end;
 
   raise EAiError.Create(0, 'max_turns',
