@@ -408,6 +408,7 @@ begin
     '  Askr.Http.Server, Askr.Http.Router, Askr.Http.Static,' + #10 +
     '  Askr.Http.Robots, Askr.Http.Sitemap,' + #10 +
     '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Auth.Token,' + #10 +
+    '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
     { This line is the marker `askr make auth` inserts in front of. If you
@@ -499,7 +500,16 @@ begin
     '  StaticFiles := TStaticFiles.Create(' + Q + 'public' + Q + ');' + #10 +
     '  Home := THomeController.Create;' + #10 +
     '  R := TRouter.Create;' + #10 +
-    '  { Static files first: they need neither session nor CSRF, and they' + #10 +
+    '  { CORS, before everything: a preflight is the browser asking' + #10 +
+    '    whether a page on another origin may call this, and it carries' + #10 +
+    '    no credentials by design — so anything that refuses a request' + #10 +
+    '    without one would refuse every preflight.' + #10 +
+    '' + #10 +
+    '    It allows nothing until you say otherwise. Name the origins:' + #10 +
+    '    Cors.AllowOrigin(''https://app.example''), and AllowCredentials' + #10 +
+    '    if the browser should send cookies with them. }' + #10 +
+    '  UseCors(R);' + #10 +
+    '  { Static files: they need neither session nor CSRF, and they' + #10 +
     '    short-circuit the request before any of it runs. }' + #10 +
     '  R.Use(StaticFiles.Serve);' + #10 +
     '  { askr down / askr up. It comes after the static files, so that a' + #10 +
@@ -548,6 +558,15 @@ begin
     '    not what CSRF defends against, and the exemption is only' + #10 +
     '    visible once the token has been read. }' + #10 +
     '  UseTokenAuth(R);' + #10 +
+    '  { How often one caller may ask. After UseTokenAuth, so the bucket' + #10 +
+    '    can be named after the token rather than the address — one' + #10 +
+    '    office behind one address is not one caller.' + #10 +
+    '' + #10 +
+    '    600 a minute is a number nobody types by hand and a script' + #10 +
+    '    reaches in seconds. It is a starting point, not a measurement:' + #10 +
+    '    change it to what this app can actually serve. }' + #10 +
+    '  RateLimit.PerMinute(600).KeyBy(@TokenRateKey);' + #10 +
+    '  UseRateLimit(R);' + #10 +
     '  UseCsrf(R);' + #10 +
     '  UseAuth(R);' + #10 + #10 +
     '  R.Get(' + Q + '/' + Q + ', Home.Index);' + #10 +

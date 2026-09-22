@@ -387,6 +387,149 @@ caller just made the request, so it has the origin already.
 grid was never given a request — there is no path to build one from, and
 guessing at one would be worse than saying so.
 
+## Who else may call this, from a browser
+
+CORS is not a lock. It is a browser telling a page on one origin what it
+may do with a reply from another, and nothing else honours it — curl
+ignores it, so does a server, so does anything that is not a browser. A
+route that must not be reached by some callers needs a guard, not a
+header.
+
+```pascal
+Cors.AllowOrigin('https://app.example')
+    .AllowMethods(['GET', 'POST', 'PATCH', 'DELETE'])
+    .AllowHeaders(['Content-Type', 'Authorization'])
+    .AllowCredentials;
+UseCors(R);
+```
+
+`askr new` writes `UseCors(R)` and nothing else, so a new project allows
+nothing until somebody names an origin. That is the same rule as
+[robots.txt](routing.md#robotstxt) and as a gate that does not exist: the
+state you land in without deciding anything has to be the narrow one,
+because the dangerous configuration is the one nobody thought about.
+
+### Origins match exactly
+
+`https://app.example.evil.example` starts with `https://app.example`, so
+a prefix test lets it in. `Askr.WebAuthn` was caught by a mutation test on
+exactly this shape — every wrong origin in its fixtures started with
+something else, so nothing measured the rule. There is no pattern
+matching and no wildcard subdomain here: an origin is a string, and it is
+either on the list or it is not.
+
+A trailing slash is refused rather than quietly kept, because a browser
+never sends one and an origin written that way would never match
+anything.
+
+### `*` and credentials cannot both be asked for
+
+A browser refuses `Access-Control-Allow-Origin: *` together with
+`Access-Control-Allow-Credentials: true`. A server that sends both has a
+configuration that reads as "anyone, with cookies" and behaves as
+"nobody" — the worst kind of wrong, because it looks generous and fails.
+`AllowCredentials` after `AllowAnyOrigin` raises, and so does the other
+order.
+
+With credentials the allowed origin is echoed back rather than `*`, since
+that is the only form a browser will take alongside them.
+
+### Vary: Origin, on everything
+
+The same URL answers differently depending on who asked, so every reply
+says so — including the ones from an origin that was not allowed and
+carry no CORS header at all. Without it a cache in front of the server
+hands a page from one origin the headers meant for another, or hands a
+browser a reply with no CORS headers and the page silently cannot read
+it. The same mistake as `Vary: X-Inertia`, and it shows up the same way:
+only behind a cache, and only sometimes.
+
+The headers go on error replies too. A page that cannot read the 401 is a
+page whose developer has no idea what went wrong.
+
+### The preflight
+
+`OPTIONS` carrying `Access-Control-Request-Method` is answered with 204
+before routing. An `OPTIONS` without that header is an ordinary request
+and belongs to the application.
+
+A preflight from an origin that is not allowed is still a 204, with no
+CORS headers — the browser stops there, which is the answer. Refusing
+with a 403 would say the same thing less clearly and would tell a script
+which origins are on the list.
+
+It is registered **first**, before the static files and before anything
+that authenticates: a preflight carries no credentials by design, so
+anything refusing a request without one would refuse every preflight and
+the real request would never be sent. It also does not spend anybody's
+rate limit, because it is the browser's request and not the caller's.
+
+## How often one caller may ask
+
+```pascal
+RateLimit.PerMinute(600).KeyBy(@TokenRateKey);
+UseRateLimit(R);
+```
+
+A token bucket, not a fixed window. A window of a minute lets somebody
+spend the whole allowance in its last second and the whole of the next in
+the first second of the next — twice the limit across two seconds, which
+is exactly the burst the limit was for. A bucket refills continuously and
+has no seam to sit on.
+
+`PerMinute(600)` is a bucket of 600 refilling at ten a second; `Burst(N)`
+sets the two apart when a different shape is wanted. Over the limit is
+`429` with `Retry-After`, which is never less than 1 — a `Retry-After` of
+0 says "now", and a client that obeys it spins.
+
+Every reply under the limit carries `X-RateLimit-Limit` and
+`X-RateLimit-Remaining`, so a client can slow down before it is refused
+rather than after.
+
+### What it is keyed on
+
+`TokenRateKey` is the token when the request came in with one, and the
+caller's address otherwise — a limit per credential rather than per
+office. It is keyed on the token's **id**: the id is a number in a table,
+the text is a credential, and a limiter has no business holding the
+second in a process-wide table for the life of the process.
+
+It has to be registered after `UseTokenAuth`, or there is no token to see
+yet.
+
+Static files that exist short-circuit before the limiter, so a page with
+thirty assets does not spend thirty tokens.
+
+### `X-Forwarded-For` is not read
+
+It is a header the client writes. Trusting it without knowing exactly how
+many proxies sit in front of you means anybody can put a new value in it
+on every request and have an unlimited quota — **a rate limiter you can
+opt out of is worse than none, because it is believed.** Behind a proxy,
+have the proxy set the address it saw, or key on something the caller
+cannot choose, such as a token.
+
+### Memory does not grow with traffic
+
+The table is a fixed number of slots. A new key lands in one of a few
+decided by its hash, and when they are all taken one of them is taken
+over — the least constrained, since whoever has the most left is least in
+need of it.
+
+**Taking a slot over never hands out a fresh allowance.** The new key
+inherits whatever was in the bucket. The first version reset it to full,
+and that is a way round the whole limiter: the hash is a pure function of
+the key, so anybody can work out eight keys that collide with their own,
+spend them, and have their own bucket dropped and refilled. Inheriting
+instead means the worst a collision can do is limit somebody early, which
+is the safe direction.
+
+The counters live in the process. Two Askr processes behind a load
+balancer each enforce the limit separately, so the effective limit is the
+number times the processes. A shared counter needs somewhere shared to
+put it, and that is a different piece with a different failure mode —
+what happens to every request when the store is down.
+
 ## What the framework answers for you
 
 | | |
@@ -447,10 +590,11 @@ who is already trusted -- at a console, or by a handler you wrote -- and
 lives until it expires or is revoked. Three-legged OAuth is a product, not
 a feature, and half of one is worse than none.
 
-**There is no CORS handling and no rate limiting.** Both are real and both
-are absent. A browser calling an Askr API from another origin will be
-stopped by the browser, not by Askr, and nothing in the framework counts
-requests per caller.
+**The rate limiter does not share its counters between processes.** Two
+Askr processes behind a load balancer each enforce the limit separately.
+A shared counter needs somewhere shared to put it, and that brings a
+question this does not have to answer: what happens to every request when
+that store is down.
 
 **There is no OpenAPI document.** Askr knows its routes but not which of
 them are public, what they accept, or what they return, and generating a

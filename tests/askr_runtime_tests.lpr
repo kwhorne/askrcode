@@ -16,6 +16,7 @@ uses
   Askr.Core.Env, Askr.Core.Config, Askr.Core.Log, Askr.Core.Url,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Http.Welcome, Askr.Http.Server, Askr.Http.Client,
+  Askr.Http.Cors, Askr.Http.RateLimit,
   Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Sqlite,
   Askr.Urd.Bind,
   Askr.Core.Crypto,
@@ -620,6 +621,9 @@ var
   A: TArena;
   Res: TResponse;
   Full, ReadOnly_, Star, Doomed, Stale, NoScope, Raw, Tweaked: string;
+  One_, Two_: string;
+  RateR: TRouter;
+  RateK: TTestClient;
   T: TApiToken;
   Tokens: TApiTokens;
   I, Forbidden_: Integer;
@@ -888,6 +892,57 @@ begin
     AssertFalse(FindToken(C, Star, T), 'and the rest stop working');
     AssertTrue(FindToken(C, NoScope, T),
       'while another user''s token is untouched');
+
+    { --- a limit per credential, not per office ------------------- }
+
+    { Two tokens for the same user, from the same address. Keyed on the
+      address they would share one bucket, which is a limit on a company
+      rather than on a caller; keyed on the token they do not.
+
+      A second router, because the one above has already spent a few
+      hundred requests. UseRateLimit goes after UseTokenAuth: before it
+      there is no token to key on yet, and every caller would fall back
+      to their address. }
+    One_ := IssueToken(C, '7', 'first', ['*']);
+    Two_ := IssueToken(C, '7', 'second', ['*']);
+
+    RateR := TRouter.Create;
+    RateR.Get('/me', Ctl.Me);
+    UseTokenAuth(RateR);
+    UseRateLimit(RateR);
+    RateLimit.Off;
+    RateLimit.PerMinute(60).Burst(2).KeyBy(@TokenRateKey);
+    RateLimit.Clear;
+    RateK := TTestClient.Create(RateR);
+    try
+      AssertEqual(RateK.WithHeader('Authorization', 'Bearer ' + One_)
+        .Get('/me').StatusCode, 200, 'the first token asks once');
+      AssertEqual(RateK.WithHeader('Authorization', 'Bearer ' + One_)
+        .Get('/me').StatusCode, 200, 'and twice');
+      AssertEqual(RateK.WithHeader('Authorization', 'Bearer ' + One_)
+        .Get('/me').StatusCode, 429, 'and is over its limit');
+
+      AssertEqual(RateK.WithHeader('Authorization', 'Bearer ' + Two_)
+        .Get('/me').StatusCode, 200,
+        'the other token has its own allowance');
+      AssertEqual(RateK.WithHeader('Authorization', 'Bearer ' + Two_)
+        .Get('/me').StatusCode, 200, 'to spend');
+      AssertEqual(RateK.WithHeader('Authorization', 'Bearer ' + Two_)
+        .Get('/me').StatusCode, 429, 'and then it too is over');
+
+      { With no token at all the fallback is the address, which in this
+        client is one shared key -- so the anonymous caller is limited
+        as well, rather than being the one way round the limit. }
+      AssertEqual(RateK.Get('/me').StatusCode, 200,
+        'an anonymous caller has an allowance too');
+      AssertEqual(RateK.Get('/me').StatusCode, 200, 'of the same size');
+      AssertEqual(RateK.Get('/me').StatusCode, 429, 'and no more');
+    finally
+      RateLimit.Off;
+      RateK.Free;
+      RateR.Free;
+    end;
+
   finally
     K.Free;
     R.Free;
@@ -895,6 +950,435 @@ begin
     UseDb(nil);
     if C <> nil then
       C.Free;
+  end;
+end;
+
+{ ------------------------------------------------------------- cors -- }
+
+type
+  TCorsCtl = class
+  public
+    function Ping(Req: TRequest): TResponse;
+    function Guarded(Req: TRequest): TResponse;
+    function Varying(Req: TRequest): TResponse;
+  end;
+
+function TCorsCtl.Ping(Req: TRequest): TResponse;
+begin
+  Result := RespondText('pong');
+end;
+
+{ A route that refuses. CORS headers have to be on this too, or the page
+  that called it is told nothing except that something went wrong. }
+function TCorsCtl.Guarded(Req: TRequest): TResponse;
+begin
+  Result := ErrorResponse(401);
+end;
+
+{ A reply that already varies on something else. }
+function TCorsCtl.Varying(Req: TRequest): TResponse;
+begin
+  Result := RespondText('vary').WithHeader('Vary', 'X-Inertia');
+end;
+
+procedure TestCors;
+var
+  R: TRouter;
+  Ctl: TCorsCtl;
+  K: TTestClient;
+  Res: TResponse;
+  Raised_: Boolean;
+begin
+  Cors.Reset;
+  Ctl := TCorsCtl.Create;
+  R := TRouter.Create;
+  R.Get('/ping', Ctl.Ping);
+  R.Get('/guarded', Ctl.Guarded);
+  R.Get('/varying', Ctl.Varying);
+  UseCors(R);
+  K := TTestClient.Create(R);
+  try
+    { Closed until somebody says otherwise. Not one header, not even
+      Vary: with no policy there is nothing this reply depends on the
+      origin for. }
+    Res := K.WithHeader('Origin', 'https://app.example').Get('/ping');
+    AssertEqual(Res.Body.ToString, 'pong', 'the route still answers');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '',
+      'with no policy, nothing is allowed');
+    AssertEqual(Res.HeaderValue('Vary'), '', 'and nothing varies');
+
+    Cors.AllowOrigin('https://app.example');
+
+    Res := K.WithHeader('Origin', 'https://app.example').Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'),
+      'https://app.example', 'an origin on the list is allowed');
+    AssertContains(Res.HeaderValue('Vary'), 'Origin',
+      'and the reply says it depends on who asked');
+
+    { **Exactly, never by prefix.** This one starts with the allowed
+      origin and is a different site. Askr.WebAuthn was caught by a
+      mutation test on the same shape, with the same vectors missing
+      it. }
+    Res := K.WithHeader('Origin', 'https://app.example.evil.example')
+      .Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '',
+      'an origin that merely starts with it is not it');
+    AssertContains(Res.HeaderValue('Vary'), 'Origin',
+      'and the reply still says it varies, or a cache serves this to ' +
+      'the allowed origin');
+
+    Res := K.WithHeader('Origin', 'https://evil.example').Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '',
+      'nor is one that has nothing to do with it');
+    Res := K.WithHeader('Origin', 'http://app.example').Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '',
+      'and the scheme is part of an origin');
+    Res := K.Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '',
+      'a request with no origin gets no header');
+
+    { A reply that already varies keeps what it had. }
+    Res := K.WithHeader('Origin', 'https://app.example').Get('/varying');
+    AssertContains(Res.HeaderValue('Vary'), 'X-Inertia', 'the old Vary stays');
+    AssertContains(Res.HeaderValue('Vary'), 'Origin', 'and Origin is added');
+
+    { On an error too. A page that cannot read the 401 is a page whose
+      developer has no idea what went wrong. }
+    Res := K.WithHeader('Origin', 'https://app.example').Get('/guarded');
+    AssertStatus(Res, 401, 'the guard still refuses');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'),
+      'https://app.example', 'and the headers are on the refusal');
+
+    { The preflight. }
+    Res := K.WithHeader('Origin', 'https://app.example')
+      .WithHeader('Access-Control-Request-Method', 'DELETE')
+      .Send('OPTIONS', '/ping');
+    AssertStatus(Res, 204, 'a preflight is answered without a body');
+    AssertEqual(Res.Body.ToString, '', 'and with no body');
+    AssertContains(Res.HeaderValue('Access-Control-Allow-Methods'), 'GET',
+      'saying which methods');
+    AssertContains(Res.HeaderValue('Access-Control-Allow-Headers'),
+      'Content-Type', 'and which headers');
+    AssertTrue(Res.HeaderValue('Access-Control-Max-Age') <> '',
+      'and how long it may be cached');
+    AssertContains(Res.HeaderValue('Vary'), 'Origin',
+      'and a preflight varies on the origin like everything else');
+
+    { From an origin that is not allowed: still 204, and no headers. The
+      browser stops there, and a 403 would tell a script which origins
+      are on the list. }
+    Res := K.WithHeader('Origin', 'https://evil.example')
+      .WithHeader('Access-Control-Request-Method', 'DELETE')
+      .Send('OPTIONS', '/ping');
+    AssertStatus(Res, 204, 'a preflight from elsewhere is answered too');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '',
+      'but allows nothing');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Methods'), '',
+      'and names no methods');
+    AssertContains(Res.HeaderValue('Vary'), 'Origin',
+      'and still varies, or a cache hands this answer to the allowed one');
+
+    { An OPTIONS that is not a preflight belongs to the application. }
+    Res := K.WithHeader('Origin', 'https://app.example').Send('OPTIONS', '/ping');
+    AssertStatus(Res, 405,
+      'an OPTIONS without a requested method is an ordinary request');
+
+    { Credentials: the origin is echoed, never '*', because that pair is
+      the only one a browser accepts. }
+    Cors.Reset;
+    Cors.AllowOrigin('https://app.example').AllowCredentials;
+    Res := K.WithHeader('Origin', 'https://app.example').Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'),
+      'https://app.example', 'with credentials the origin is echoed back');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Credentials'), 'true',
+      'and credentials are allowed');
+
+    { **The pair that cannot be asked for.** A browser refuses it, so a
+      server that sends both reads as "anyone, with cookies" and behaves
+      as "nobody". }
+    Raised_ := False;
+    try
+      Cors.AllowAnyOrigin;
+    except
+      on E: ECorsError do
+        Raised_ := True;
+    end;
+    AssertTrue(Raised_, 'any origin after credentials is refused');
+
+    Cors.Reset;
+    Cors.AllowAnyOrigin;
+    Raised_ := False;
+    try
+      Cors.AllowCredentials;
+    except
+      on E: ECorsError do
+        Raised_ := True;
+    end;
+    AssertTrue(Raised_, 'and credentials after any origin, the other way');
+
+    Res := K.WithHeader('Origin', 'https://anywhere.example').Get('/ping');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Origin'), '*',
+      'without credentials, any origin is a star');
+    AssertEqual(Res.HeaderValue('Access-Control-Allow-Credentials'), '',
+      'and no credentials are offered');
+
+    { Two ways of writing an origin that would never match anything. }
+    Cors.Reset;
+    Raised_ := False;
+    try
+      Cors.AllowOrigin('https://app.example/');
+    except
+      on E: ECorsError do
+        Raised_ := True;
+    end;
+    AssertTrue(Raised_, 'a trailing slash is refused, not quietly kept');
+    Raised_ := False;
+    try
+      Cors.AllowOrigin('*');
+    except
+      on E: ECorsError do
+        Raised_ := True;
+    end;
+    AssertTrue(Raised_, 'and a star belongs in AllowAnyOrigin');
+  finally
+    Cors.Reset;
+    K.Free;
+    R.Free;
+    Ctl.Free;
+  end;
+end;
+
+{ ------------------------------------------------------- rate limiting -- }
+
+{ A key the test can steer. In an application this would be the caller's
+  address or their token -- never a header they write, which is the whole
+  argument against X-Forwarded-For. }
+function TestRateKey(Req: TRequest): string;
+begin
+  Result := Req.Header('x-test-key').ToString;
+  if Result = '' then
+    Result := '-';
+end;
+
+{ N keys that all land in the same slot. The hash is a pure function of
+  the key, so this is exactly what somebody trying to get round the
+  limiter would compute -- which is why it is the case worth testing. }
+function SameSlotKeys(N: Integer): TStringArray;
+var
+  Counts: array of Integer;
+  I, Want: Integer;
+  K: string;
+begin
+  Result := nil;
+  SetLength(Counts, RateSlots);
+  Want := -1;
+  { One pass to find a slot that enough keys hash to. }
+  for I := 1 to 200000 do
+  begin
+    K := 'c' + IntToStr(I);
+    Inc(Counts[RateHash(K) mod RateSlots]);
+    if Counts[RateHash(K) mod RateSlots] >= N then
+    begin
+      Want := Integer(RateHash(K) mod RateSlots);
+      Break;
+    end;
+  end;
+  if Want < 0 then
+    Exit;
+  for I := 1 to 200000 do
+  begin
+    K := 'c' + IntToStr(I);
+    if Integer(RateHash(K) mod RateSlots) = Want then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := K;
+      if Length(Result) = N then
+        Exit;
+    end;
+  end;
+end;
+
+procedure TestRateLimiting;
+var
+  R: TRouter;
+  Ctl: TCorsCtl;
+  K: TTestClient;
+  Res: TResponse;
+  I, Allowed_: Integer;
+  Used: Integer;
+  Colliding: TStringArray;
+begin
+  RateLimit.Off;
+  Ctl := TCorsCtl.Create;
+  R := TRouter.Create;
+  R.Get('/ping', Ctl.Ping);
+  UseRateLimit(R);
+  K := TTestClient.Create(R);
+  try
+    { Off until somebody sets a number. }
+    for I := 1 to 20 do
+      Res := K.Get('/ping');
+    AssertEqual(Res.Body.ToString, 'pong', 'unconfigured, nothing is limited');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Limit'), '',
+      'and nothing is claimed about a limit');
+
+    RateLimit.PerMinute(60).Burst(3).KeyBy(@TestRateKey);
+    RateLimit.Clear;
+
+    Res := K.WithHeader('X-Test-Key', 'a').Get('/ping');
+    AssertEqual(Res.Body.ToString, 'pong', 'the first goes through');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Limit'), '3', 'the limit is said');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Remaining'), '2',
+      'and what is left');
+    K.WithHeader('X-Test-Key', 'a').Get('/ping');
+    Res := K.WithHeader('X-Test-Key', 'a').Get('/ping');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Remaining'), '0',
+      'the bucket empties');
+
+    Res := K.WithHeader('X-Test-Key', 'a').Get('/ping');
+    AssertStatus(Res, 429, 'the fourth is refused');
+    AssertTrue(StrToIntDef(Res.HeaderValue('Retry-After'), 0) >= 1,
+      'with a Retry-After of at least a second');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Remaining'), '0',
+      'and nothing left');
+
+    { A machine client gets the refusal in the shape it can read. }
+    Res := K.WithHeader('X-Test-Key', 'a')
+      .WithHeader('Accept', 'application/json').Get('/ping');
+    AssertStatus(Res, 429, 'still refused');
+    AssertContains(Res.HeaderValue('Content-Type'), 'application/problem+json',
+      'as a problem document');
+    AssertContains(Res.Body.ToString, '"status":429', 'with the status in it');
+
+    { **A different key is a different bucket.** Without this the limit
+      is on the server, not on the caller, and one busy client stops
+      everybody. }
+    Res := K.WithHeader('X-Test-Key', 'b').Get('/ping');
+    AssertEqual(Res.Body.ToString, 'pong', 'somebody else is unaffected');
+
+    { **X-Forwarded-For is not read.** The default key is the address the
+      connection came from. A header the client writes would let anybody
+      pick a new key on every request and never be limited at all -- a
+      limiter you can opt out of is worse than none, because it is
+      believed. Here the key function is the default one and the header
+      changes on every call. }
+    RateLimit.Off;
+    RateLimit.PerMinute(60).Burst(2).KeyBy(@RemoteAddrKey);
+    RateLimit.Clear;
+    Allowed_ := 0;
+    for I := 1 to 6 do
+    begin
+      Res := K.WithHeader('X-Forwarded-For', '10.0.0.' + IntToStr(I)).Get('/ping');
+      if Res.StatusCode = 200 then
+        Inc(Allowed_);
+    end;
+    AssertEqual(Allowed_, 2,
+      'a new X-Forwarded-For on every request buys nothing');
+
+    { Refill. A hundred a second, a bucket of one: after fifty
+      milliseconds there is a token again, with a wide margin either
+      side. }
+    RateLimit.Off;
+    RateLimit.PerMinute(6000).Burst(1).KeyBy(@TestRateKey);
+    RateLimit.Clear;
+    Res := K.WithHeader('X-Test-Key', 'r').Get('/ping');
+    AssertEqual(Res.Body.ToString, 'pong', 'the one token is spent');
+    Res := K.WithHeader('X-Test-Key', 'r').Get('/ping');
+    AssertStatus(Res, 429, 'and the next is refused');
+    { A hundred a second means a token is back in ten milliseconds, so
+      the honest number of seconds to wait is a fraction of one. It is
+      rounded up to a whole second rather than down to zero: a
+      Retry-After of 0 says "now", and a client that obeys it spins. }
+    AssertTrue(StrToIntDef(Res.HeaderValue('Retry-After'), 0) >= 1,
+      'and told to wait at least a second, never zero');
+    Sleep(50);
+    Res := K.WithHeader('X-Test-Key', 'r').Get('/ping');
+    AssertEqual(Res.Body.ToString, 'pong', 'the bucket refills with time');
+
+    { **Memory does not grow with traffic.** Ten thousand distinct keys
+      through a table of four thousand slots: the table is the size it
+      was, and the caller who keeps asking keeps their slot, because
+      they are the reason the limiter exists. }
+    RateLimit.Off;
+    RateLimit.PerMinute(60).Burst(2).KeyBy(@TestRateKey);
+    RateLimit.Clear;
+    K.WithHeader('X-Test-Key', 'hot').Get('/ping');
+    K.WithHeader('X-Test-Key', 'hot').Get('/ping');
+    for I := 1 to 10000 do
+    begin
+      K.WithHeader('X-Test-Key', 'flood-' + IntToStr(I)).Get('/ping');
+      if (I mod 100) = 0 then
+        { The hot key is asked for throughout, so it is never the least
+          recently used of its slots. }
+        K.WithHeader('X-Test-Key', 'hot').Get('/ping');
+    end;
+    Used := RateLimit.SlotsUsed;
+    AssertTrue(Used <= RateSlots,
+      'the table has a ceiling and ten thousand keys did not raise it');
+    Res := K.WithHeader('X-Test-Key', 'hot').Get('/ping');
+    AssertStatus(Res, 429,
+      'and the caller who kept asking is still over their limit');
+
+    { **Taking a slot over must not hand out a fresh allowance.**
+
+      The hash is a pure function of the key, so anybody can work out
+      keys that land in the same few slots as their own. If a displaced
+      slot were refilled, spending eight of those would drop your own
+      bucket and give you a new one -- a way round the limiter that costs
+      eight requests.
+
+      So: nine keys that collide, a bucket of one each. The first eight
+      fill the probe window and empty their buckets. The ninth has
+      nowhere free to go and takes one of them over -- and has to inherit
+      an empty bucket, not be handed a full one. }
+    RateLimit.Off;
+    RateLimit.PerMinute(60).Burst(1).KeyBy(@TestRateKey);
+    RateLimit.Clear;
+    Colliding := SameSlotKeys(RateProbe + 1);
+    AssertEqual(Length(Colliding), RateProbe + 1,
+      'nine keys that hash to the same slot were found');
+    for I := 0 to RateProbe - 1 do
+      AssertEqual(K.WithHeader('X-Test-Key', Colliding[I]).Get('/ping')
+        .StatusCode, 200, 'each of the first eight spends its one token');
+    for I := 0 to RateProbe - 1 do
+      AssertEqual(K.WithHeader('X-Test-Key', Colliding[I]).Get('/ping')
+        .StatusCode, 429, 'and is then over');
+    Res := K.WithHeader('X-Test-Key', Colliding[RateProbe]).Get('/ping');
+    AssertStatus(Res, 429,
+      'the ninth inherits an empty bucket rather than a new one');
+
+    { And the other half: when the window is not all exhausted, the slot
+      taken over is the **least constrained** of them -- whoever has the
+      most left is least in need of it. Displacing the emptiest instead
+      would punish a newcomer for somebody else's flooding, and would
+      forget the one entry that is actually doing work.
+
+      A bucket of two. The first key spends both; the other seven spend
+      one each and keep one. The ninth then has to inherit one of the
+      ones with something left, not the empty one. }
+    RateLimit.Off;
+    RateLimit.PerMinute(60).Burst(2).KeyBy(@TestRateKey);
+    RateLimit.Clear;
+    K.WithHeader('X-Test-Key', Colliding[0]).Get('/ping');
+    K.WithHeader('X-Test-Key', Colliding[0]).Get('/ping');
+    AssertEqual(K.WithHeader('X-Test-Key', Colliding[0]).Get('/ping')
+      .StatusCode, 429, 'the first key is empty');
+    for I := 1 to RateProbe - 1 do
+      AssertEqual(K.WithHeader('X-Test-Key', Colliding[I]).Get('/ping')
+        .StatusCode, 200, 'the others keep one each');
+    Res := K.WithHeader('X-Test-Key', Colliding[RateProbe]).Get('/ping');
+    AssertStatus(Res, 200,
+      'a newcomer takes over a slot with something left, not the empty one');
+    Res := K.WithHeader('X-Test-Key', Colliding[RateProbe]).Get('/ping');
+    AssertStatus(Res, 429, 'and has only what it inherited');
+    Res := K.WithHeader('X-Test-Key', Colliding[0]).Get('/ping');
+    AssertStatus(Res, 429,
+      'while the caller who spent theirs is still remembered');
+  finally
+    RateLimit.Off;
+    K.Free;
+    R.Free;
+    Ctl.Free;
   end;
 end;
 
@@ -5281,6 +5765,14 @@ begin
   Group('API tokens');
   Test('hashed at rest, scoped, revocable, and never from a URL',
     @TestApiTokens);
+
+  Group('CORS');
+  Test('closed until somebody says otherwise, and matched exactly',
+    @TestCors);
+
+  Group('Rate limiting');
+  Test('a bucket per caller, refilled, with a ceiling on the table',
+    @TestRateLimiting);
 
   Group('What an error looks like');
   Test('a machine client is never given a page, and never a redirect',

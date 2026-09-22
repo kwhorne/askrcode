@@ -52,6 +52,11 @@ type
       shell. }
     function AsInertia: TTestClient;
 
+    { Any method at all, for the ones with no shorthand -- OPTIONS, and
+      whatever an application invents. }
+    function Send(const Method, Path: string; const Body: string = '';
+      const ContentType: string = 'application/json'): TResponse;
+
     function Get(const Path: string): TResponse;
     function Post(const Path, Body: string;
       const ContentType: string = 'application/json'): TResponse;
@@ -334,6 +339,12 @@ begin
 
   { Headerne gjelder ett kall. }
   FHeaders.Clear;
+end;
+
+function TTestClient.Send(const Method, Path, Body,
+  ContentType: string): TResponse;
+begin
+  Result := Run(Method, Path, Body, ContentType);
 end;
 
 function TTestClient.Get(const Path: string): TResponse;

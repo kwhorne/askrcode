@@ -37,6 +37,16 @@ other client gets the byte-for-byte body it got before.
 Nothing needs changing in your code. If you want the old behaviour on one
 route, branch on `Req.AcceptsJson` yourself.
 
+**A new project gets a rate limit.** `askr new` writes
+`RateLimit.PerMinute(600)` into `app.lpr`. Nothing changes for a project
+that already exists -- the limiter is off until it is configured -- but a
+new one refuses a caller past 600 requests a minute with a `429`. The
+number is a starting point, not a measurement; change it in `app.lpr`, or
+delete the two lines.
+
+CORS is closed in a new project and in an existing one: `UseCors(R)`
+allows nothing until an origin is named.
+
 **`Paginate` adds the primary key to the end of the `ORDER BY`.** Without
 it a page is not reproducible: two rows the sort cannot tell apart may
 come back either way round on each query, so a row appears on two pages

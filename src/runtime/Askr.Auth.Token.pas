@@ -64,6 +64,7 @@ uses
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Crypto,
   Askr.Core.Log,
   Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
+  Askr.Http.RateLimit,
   Askr.Urd.Driver, Askr.Norn.Schema, Askr.Norn.Introspect,
   Askr.Auth;
 
@@ -196,6 +197,20 @@ procedure AuthorizeScope(const Scope: string);
 { The bearer token on this request, or an empty string. Exposed because a
   handler may want to see whether one was offered at all. }
 function BearerToken(Req: TRequest): string;
+
+{ A rate-limit key: the token when the request came in with one, and the
+  caller's address otherwise.
+
+      RateLimit.PerMinute(600).KeyBy(@TokenRateKey);
+
+  Keyed on the token's **id**, not its text. The id is a number in a
+  table and the text is a credential; a limiter has no business holding
+  the second in a process-wide table for as long as the process runs.
+
+  It has to be registered after UseTokenAuth, or there is no token to
+  see yet and every caller falls back to their address -- which is one
+  bucket for a whole office. }
+function TokenRateKey(Req: TRequest): string;
 
 implementation
 
@@ -555,6 +570,13 @@ end;
 function CurrentToken: TApiToken;
 begin
   Result := GToken;
+end;
+
+function TokenRateKey(Req: TRequest): string;
+begin
+  if GToken.State = tsActive then
+    Exit('token:' + IntToStr(GToken.Id));
+  Result := RemoteAddrKey(Req);
 end;
 
 function HasToken: Boolean;

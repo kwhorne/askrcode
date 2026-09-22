@@ -232,12 +232,15 @@ from a guard would lose its session cookie.
 A project from `askr new` wires this, in this order:
 
 ```pascal
+UseCors(R);             { first: a preflight carries no credentials }
 R.Use(Statisk.Serve);   { static files: no session, no CSRF, short-circuits }
 UseMaintenance(R);      { askr down / askr up }
 
 SetSessions(TSessionStore.Create);
 UseSessions(R);         { Start before, Commit after }
 UseTokenAuth(R);        { Authorization: Bearer — before UseCsrf }
+RateLimit.PerMinute(600).KeyBy(@TokenRateKey);
+UseRateLimit(R);        { after the token, so the bucket can be named }
 UseCsrf(R);             { rejects unsafe methods without a token }
 UseAuth(R);             { restores login from the "remember me" cookie }
 ```
@@ -252,6 +255,14 @@ and that is only visible once the token has been read — see
 The database lease, when there is one, is registered before all of these:
 a middleware that reads the database needs the connection already
 leased.
+
+`UseCors` is first because a preflight carries no credentials — the
+browser strips them — so anything that refuses a request without one
+would refuse every preflight, and the real request would never be sent.
+It is also not a request the caller made, so it does not spend their rate
+limit. `UseRateLimit` is after `UseTokenAuth` for the opposite reason: it
+needs the token to have been read to key the bucket on it. See
+[APIs](api.md).
 
 `UseSessions`, `UseCsrf` and `UseAuth` are plain procedures, not class
 helpers — Pascal allows only one active class helper per type in scope, and

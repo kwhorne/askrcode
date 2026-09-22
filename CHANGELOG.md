@@ -52,6 +52,49 @@ with the zero-major caveat that minor releases may break things until
   passes trivially today, which is the point: it fails the day somebody
   adds the convenience.
 
+- **CORS**, closed until somebody names an origin. `Cors.AllowOrigin`,
+  `AllowMethods`, `AllowHeaders`, `ExposeHeaders`, `AllowCredentials`,
+  `MaxAge`, and `UseCors(R)` registered first.
+
+  Origins match **exactly**: `https://app.example.evil.example` starts
+  with `https://app.example`, and Askr.WebAuthn was caught by a mutation
+  test on that same shape. A trailing slash is refused rather than
+  quietly kept, because a browser never sends one.
+
+  **`*` and credentials refuse each other at configuration time.** A
+  browser rejects that pair, so a server sending both reads as "anyone,
+  with cookies" and behaves as "nobody" -- generous-looking and broken.
+
+  `Vary: Origin` goes on every reply, including the ones from an origin
+  that was not allowed, or a cache hands one origin the headers meant
+  for another. Same mistake as `Vary: X-Inertia`, and it shows up the
+  same way: only behind a cache, and only sometimes.
+
+- **Rate limiting**: a token bucket per caller, `429` with `Retry-After`
+  and `X-RateLimit-*` headers. `RateLimit.PerMinute(600)`, optionally
+  `Burst(N)`, and `KeyBy` to say what a caller is.
+
+  `Askr.Auth.Token.TokenRateKey` keys on the token when there is one and
+  the address otherwise -- a limit per credential rather than per office
+  -- and on the token's **id**, because a limiter has no business holding
+  a credential in a process-wide table for the life of the process.
+
+  A bucket rather than a fixed window: a window lets somebody spend the
+  whole allowance in its last second and the whole of the next in the
+  first second of the next.
+
+  **`X-Forwarded-For` is not read.** It is a header the client writes,
+  and trusting it means anybody can pick a new key on every request and
+  never be limited -- a limiter you can opt out of is worse than none,
+  because it is believed.
+
+  The table has a fixed number of slots, so memory does not grow with
+  traffic. **Taking a slot over never hands out a fresh allowance**: the
+  hash is a pure function of the key, so anybody can work out eight keys
+  that collide with their own, and a refilled slot would be a way round
+  the limiter that costs eight requests. The new key inherits the bucket
+  instead.
+
 - **A list envelope for an API.** `TGrid<M>.ListResponse(Rows)` writes
   `data`, `meta` and `links`:
 
