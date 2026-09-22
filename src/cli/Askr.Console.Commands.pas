@@ -27,7 +27,7 @@ type
   end;
 
 const
-  ConsoleCommands: array[0..24] of TConsoleCommand = (
+  ConsoleCommands: array[0..25] of TConsoleCommand = (
     (Name_: 'about';            Help: 'what this app is configured with'),
     (Name_: 'routes';           Help: 'the routing table'),
     (Name_: 'migrate';          Help: 'run pending migrations'),
@@ -49,6 +49,7 @@ const
     (Name_: 'token:issue';      Help: 'mint an API token (--scopes=a,b [--days=N])'),
     (Name_: 'token:list';       Help: 'the API tokens one user has'),
     (Name_: 'token:revoke';     Help: 'revoke one token, or --user=<id> for all'),
+    (Name_: 'openapi';          Help: 'the OpenAPI document (--check for drift)'),
     (Name_: 'down';             Help: 'maintenance mode on'),
     (Name_: 'up';               Help: 'maintenance mode off'),
     (Name_: 'env';              Help: 'the current environment'),

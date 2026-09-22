@@ -37,6 +37,13 @@ other client gets the byte-for-byte body it got before.
 Nothing needs changing in your code. If you want the old behaviour on one
 route, branch on `Req.AcceptsJson` yourself.
 
+**`Authorize` raises `EUnauthenticated` rather than `EForbidden` when
+nobody is signed in**, and the server answers 401 instead of 403. Both
+still descend from `EAuthError`, so `on E: EAuthError` catches either. It
+can break you only if something was catching `EForbidden` specifically
+and relying on it to cover the anonymous case, or was asserting on a 403
+that should have been a 401.
+
 **A new project gets a rate limit.** `askr new` writes
 `RateLimit.PerMinute(600)` into `app.lpr`. Nothing changes for a project
 that already exists -- the limiter is off until it is configured -- but a

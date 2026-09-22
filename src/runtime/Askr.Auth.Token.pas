@@ -191,7 +191,10 @@ function HasToken: Boolean;
       decision belongs.
     * Signed in by token -- the token's scopes decide. }
 function TokenAllows(const Scope: string): Boolean;
-{ The same, but raises EForbidden. }
+{ The same, but raises: EUnauthenticated when nobody is signed in at all,
+  which the server answers 401, and EForbidden when somebody is and the
+  scope is not theirs, which is a 403. A caller told 403 when it should
+  have been told 401 does not know to send a token. }
 procedure AuthorizeScope(const Scope: string);
 
 { The bearer token on this request, or an empty string. Exposed because a
@@ -630,10 +633,14 @@ end;
 
 procedure AuthorizeScope(const Scope: string);
 begin
-  if not TokenAllows(Scope) then
-    { The scope is named, nothing else. The message ends up in a log and
-      in nobody's reply. }
-    raise EForbidden.CreateFmt('Not authorized: scope %s', [Scope]);
+  if TokenAllows(Scope) then
+    Exit;
+  if not Check then
+    raise EUnauthenticated.CreateFmt(
+      'No credential, and scope %s needs one.', [Scope]);
+  { The scope is named, nothing else. The message ends up in a log and
+    in nobody's reply. }
+  raise EForbidden.CreateFmt('Not authorized: scope %s', [Scope]);
 end;
 
 function ReasonText(S: TTokenState): string;
@@ -649,6 +656,7 @@ end;
 type
   TTokenHook = class
     class function Authenticate(Req: TRequest): TResponse;
+    class function AddChallenge(Req: TRequest; Res: TResponse): TResponse;
   end;
 
 { RFC 6750 says how a bearer scheme refuses, and it costs one header. A
@@ -659,6 +667,24 @@ begin
   Result := ErrorResponse(401, 'The API token is not valid.')
     .WithHeader('WWW-Authenticate',
       'Bearer error="invalid_token", error_description="The API token is not valid."');
+end;
+
+{ RFC 9110 says a 401 carries WWW-Authenticate, and it is the only way a
+  client learns which scheme to use. Stamped here rather than at every
+  place that can produce a 401 -- a handler raising EUnauthenticated does
+  not know a bearer scheme is wired up, and should not have to.
+
+  Only when there is none already: the refusal of a token that was
+  offered says error="invalid_token", which is more than this can. }
+class function TTokenHook.AddChallenge(Req: TRequest;
+  Res: TResponse): TResponse;
+begin
+  Result := Res;
+  if (Res = nil) or (Res.StatusCode <> 401) then
+    Exit;
+  if Res.HeaderValue('WWW-Authenticate') <> '' then
+    Exit;
+  Res.WithHeader('WWW-Authenticate', 'Bearer');
 end;
 
 class function TTokenHook.Authenticate(Req: TRequest): TResponse;
@@ -707,6 +733,7 @@ end;
 procedure UseTokenAuth(R: TRouter);
 begin
   R.Use(TTokenHook.Authenticate);
+  R.After(TTokenHook.AddChallenge);
 end;
 
 end.

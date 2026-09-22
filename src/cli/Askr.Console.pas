@@ -43,7 +43,7 @@ uses
   Askr.Urd.Driver, Askr.Norn.Schema, Askr.Norn.Migration,
   Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
-  Askr.Queue, Askr.Scheduler, Askr.Cache, Askr.Auth.Token,
+  Askr.Queue, Askr.Scheduler, Askr.Cache, Askr.Auth.Token, Askr.OpenApi,
   Askr.Console.Commands;
 
 type
@@ -1071,6 +1071,58 @@ begin
   end;
 end;
 
+{ ----------------------------------------------------------- openapi -- }
+
+procedure CmdOpenApi(CheckOnly: Boolean);
+var
+  D: TOpenApi;
+  Problems_: TStringArray;
+  I: Integer;
+begin
+  if not Assigned(ApiDocSource) then
+  begin
+    Err('Nothing has described this API.');
+    Err('');
+    Err('Write a TApiDocSource and pass it to UseOpenApi in app.lpr. An');
+    Err('empty document would read as "this API has nothing in it",');
+    Err('which is a different claim.');
+    Halt(1);
+  end;
+
+  D := BuildApiDoc;
+  try
+    if not CheckOnly then
+    begin
+      Si(D.ToJson);
+      Exit;
+    end;
+
+    { The drift check needs the routes, which the app knows and the tool
+      does not -- which is why this command lives in the binary. }
+    if GRouter = nil then
+    begin
+      Err('There is no router to compare the document against. Call');
+      Err('SetConsoleRouter in app.lpr before RunConsole.');
+      Halt(1);
+    end;
+
+    Problems_ := D.Problems(GRouter);
+    if Length(Problems_) = 0 then
+    begin
+      Si(Format('The document and the routes agree: %d operation(s).',
+        [D.OpCount]));
+      Exit;
+    end;
+    Err(Format('%d thing(s) do not line up:', [Length(Problems_)]));
+    Err('');
+    for I := 0 to High(Problems_) do
+      Err('  ' + Problems_[I]);
+    Halt(1);
+  finally
+    D.Free;
+  end;
+end;
+
 { ------------------------------------------------------------- tabell -- }
 
 function ConsoleCommands: TStringArray;
@@ -1130,6 +1182,7 @@ begin
   else if K = 'schedule:list' then CmdScheduleList
   else if K = 'schedule:run' then CmdScheduleRun
   else if K = 'cache:clear' then CmdCacheClear
+  else if K = 'openapi' then CmdOpenApi(HasFlag('check'))
   else if K = 'token:issue' then CmdTokenIssue(Arg(1), Arg(2))
   else if K = 'token:list' then CmdTokenList(Arg(1))
   else if K = 'token:revoke' then

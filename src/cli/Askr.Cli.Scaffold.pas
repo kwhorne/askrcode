@@ -258,6 +258,7 @@ begin
     A('| `build` | Compile. Diagnostics come back as `file:line:column`. |');
     A('| `test` | Run the suite. It stops one that hangs. |');
     A('| `routes` | The routing table, in the order requests match. |');
+    A('| `openapi` | The API document, or `check` for drift against the routes. |');
     A('| `schema` | What the database actually contains. |');
     A('| `config` | Every key and the layer it came from. |');
     A('| `docs_search` | Find an API name. The search is exact, never fuzzy. |');

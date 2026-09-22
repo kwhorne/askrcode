@@ -160,6 +160,10 @@ type
     { To_ `askr routes`. Én linje per rute. }
     procedure Describe(Lines: TStrings);
     function Count: Integer;
+    { The routes as data rather than as lines, for something that has to
+      compare against them -- the OpenAPI document and its drift check.
+      Sorted the same way Describe sorts them. }
+    function RouteAt(Index: Integer): TRoute;
   end;
 
 implementation
@@ -498,6 +502,14 @@ end;
 function TRouter.Count: Integer;
 begin
   Result := FRoutes.Count;
+end;
+
+function TRouter.RouteAt(Index: Integer): TRoute;
+begin
+  SortRoutes;
+  if (Index < 0) or (Index >= FRoutes.Count) then
+    Exit(nil);
+  Result := TRoute(FRoutes[Index]);
 end;
 
 end.

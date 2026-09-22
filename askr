@@ -495,6 +495,297 @@ cmd_run_demo() {
 #
 # Skips itself without node or Chrome, like the desktop suite without GTK.
 # A skip that does not say why is worse than a failure.
+# The gate for the API layer: the document is really OpenAPI, and the
+# pieces it describes really behave that way.
+#
+# Written in English like cmd_mcp_check; the rest of this script is
+# Norwegian from before and stays that way.
+cmd_api_check() {
+  prepare
+
+  fail=0
+  ok()   { echo "  ok    $1"; }
+  bad()  { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+  has()  { case "$2" in *"$1"*) return 0;; *) return 1;; esac; }
+
+  echo "Bygger apidemo ..."
+  fpc_run examples/api/apidemo.lpr >/dev/null
+
+  work="$BUILD/apicheck"
+  rm -rf "$work"
+  mkdir -p "$work"
+
+  # Every console call goes to the same database file the server uses,
+  # so a token issued here is a token the server can see.
+  api_console() {
+    if have_local_fpc; then
+      APIDEMO_DB="$work/apidemo.sqlite" "$BIN/apidemo" "$@"
+    else
+      ensure_image
+      docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work \
+        -e APIDEMO_DB="/work/${work#$ROOT/}/apidemo.sqlite" "$IMAGE" \
+        "${BIN#$ROOT/}/apidemo" "$@"
+    fi
+  }
+
+  echo
+  echo "- the document"
+
+  doc="$work/openapi.json"
+  if ! api_console --openapi > "$doc" 2>"$work/err.txt"; then
+    bad "the document is generated" "$(head -3 "$work/err.txt")"
+    return 1
+  fi
+  ok "the document is generated"
+
+  # A real validator, not a shape we believe in. The suite checks that
+  # the fields we meant to write are where we meant to put them, which
+  # is a check against our own understanding of OpenAPI. This one is a
+  # check against OpenAPI.
+  if ! command -v node >/dev/null 2>&1; then
+    echo "  (skipped: node is not here, so nothing validated the document)"
+  else
+    if [ ! -d "$ROOT/tools/openapi/node_modules" ]; then
+      echo "  installing the validator ..."
+      ( cd "$ROOT/tools/openapi" &&
+        npm install --silent --no-fund --no-audit ) >/dev/null 2>&1 || true
+    fi
+    out=$(cd "$ROOT" && node tools/openapi/validate.mjs "$doc" 2>&1)
+    if [ $? -eq 0 ]; then
+      ok "a real validator accepts it: ${out#ok: }"
+    else
+      bad "a real validator accepts it" "$out"
+    fi
+
+    # And the validator is not a rubber stamp. A document with its
+    # version taken out has to be refused, or "valid" above means
+    # nothing.
+    node -e '
+      const fs=require("fs");
+      const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+      delete d.openapi;
+      fs.writeFileSync(process.argv[2], JSON.stringify(d));
+    ' "$doc" "$work/broken.json"
+    if (cd "$ROOT" && node tools/openapi/validate.mjs "$work/broken.json") >/dev/null 2>&1; then
+      bad "and refuses one that is not valid" \
+          "a document with no openapi version passed"
+    else
+      ok "and refuses one that is not valid"
+    fi
+  fi
+
+  echo
+  echo "- what the document says, and what the routes say"
+
+  if api_console --openapi --check >"$work/drift.txt" 2>&1; then
+    ok "the document and the routes agree"
+  else
+    bad "the document and the routes agree" "$(cat "$work/drift.txt")"
+  fi
+
+  echo
+  echo "- and the API behaves the way it is described"
+
+  port=8352
+  db=/work/${work#$ROOT/}/apidemo.sqlite
+  # Natively when there is a local fpc, otherwise in the container with
+  # the port mapped out -- fpc_run builds for whichever one it used, and
+  # a Linux binary does not run on this host.
+  # A name, and removed before it is started. A run that died earlier
+  # leaves a container holding the port, and without this the next run
+  # quietly talks to *that* one -- a server with another database behind
+  # it, which shows up as every token being invalid and nothing saying
+  # why. It happened, and the log said "port is already allocated" in a
+  # file nobody was reading.
+  cname=askr-apicheck
+  if have_local_fpc; then
+    APIDEMO_DB="$work/apidemo.sqlite" "$BIN/apidemo" "$port" \
+      >"$work/server.log" 2>&1 &
+  else
+    ensure_image
+    docker rm -f "$cname" >/dev/null 2>&1 || true
+    docker run --rm --name "$cname" -p "$port:$port" $DOCKER_PLATFORM \
+      -v "$ROOT":/work -w /work -e APIDEMO_DB="$db" "$IMAGE" \
+      "/work/${BIN#$ROOT/}/apidemo" "$port" 0.0.0.0 \
+      >"$work/server.log" 2>&1 &
+  fi
+  demo_pid=$!
+  trap 'kill $demo_pid 2>/dev/null; docker rm -f askr-apicheck >/dev/null 2>&1 || true' EXIT INT TERM
+
+  i=0
+  while [ $i -lt 80 ]; do
+    curl -s -o /dev/null "http://127.0.0.1:$port/openapi.json" 2>/dev/null && break
+    i=$((i + 1))
+    sleep 0.2
+  done
+  if [ $i -ge 80 ]; then
+    bad "the server came up" "$(tail -3 "$work/server.log" 2>/dev/null)"
+    return 1
+  fi
+  ok "the server came up" 
+
+  body=$(curl -s "http://127.0.0.1:$port/openapi.json")
+  if has '"openapi"' "$body"; then
+    ok "it serves its own document"
+  else
+    bad "it serves its own document" "$(echo "$body" | head -2)"
+  fi
+
+  # A token with one scope, and one with the other.
+  read_tok=$(api_console --token:issue 1 reader --scopes=widgets:read |
+    sed -n 's/^  \(askr_.*\)$/\1/p')
+  write_tok=$(api_console --token:issue 1 writer --scopes=widgets:write |
+    sed -n 's/^  \(askr_.*\)$/\1/p')
+  if [ -n "$read_tok" ] && [ -n "$write_tok" ]; then
+    ok "two tokens were issued"
+  else
+    bad "two tokens were issued"
+  fi
+
+  code=$(curl -s -o "$work/anon.txt" -w '%{http_code}' \
+    "http://127.0.0.1:$port/api/widgets")
+  if [ "$code" = "401" ]; then
+    ok "no token is a 401"
+  else
+    bad "no token is a 401" "got $code"
+  fi
+
+  code=$(curl -s -o "$work/list.json" -w '%{http_code}' \
+    -H "Authorization: Bearer $read_tok" \
+    "http://127.0.0.1:$port/api/widgets?sort=name&tier=gold")
+  list=$(cat "$work/list.json")
+  if [ "$code" = "200" ]; then
+    ok "a token with the scope gets the list"
+  else
+    bad "a token with the scope gets the list" "got $code" "$list"
+  fi
+  if has '"data":[{' "$list"; then
+    ok "and it is the envelope, with rows in it"
+  else
+    bad "and it is the envelope, with rows in it" "$list"
+  fi
+  if has '"total":5' "$list"; then
+    ok "counted before the page was cut"
+  else
+    bad "counted before the page was cut" "$list"
+  fi
+  # The next link has to carry the caller's own parameter forward.
+  if has 'tier=gold' "$list" && has 'page=2' "$list"; then
+    ok "and the next link keeps what the caller sent"
+  else
+    bad "and the next link keeps what the caller sent" "$list"
+  fi
+  # The hidden column is hidden here too, not only in the document.
+  if has 'supplier_code' "$list"; then
+    bad "a column hidden from JSON stays out of the payload" "$list"
+  else
+    ok "a column hidden from JSON stays out of the payload"
+  fi
+
+  code=$(curl -s -o "$work/forbidden.json" -w '%{http_code}' \
+    -X POST -H "Authorization: Bearer $read_tok" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    -d '{"name":"x"}' "http://127.0.0.1:$port/api/widgets")
+  if [ "$code" = "403" ]; then
+    ok "the read token is refused the write"
+  else
+    bad "the read token is refused the write" "got $code"
+  fi
+
+  code=$(curl -s -o "$work/created.json" -w '%{http_code}' \
+    -X POST -H "Authorization: Bearer $write_tok" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    -d '{"name":"From the gate","tier":"gold","price":9.5}' \
+    "http://127.0.0.1:$port/api/widgets")
+  if [ "$code" = "201" ]; then
+    ok "and the write token creates one, with the status the document promised"
+  else
+    bad "and the write token creates one" "got $code" "$(cat "$work/created.json")"
+  fi
+
+  code=$(curl -s -o "$work/invalid.json" -w '%{http_code}' \
+    -X POST -H "Authorization: Bearer $write_tok" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    -d '{"tier":"platinum"}' "http://127.0.0.1:$port/api/widgets")
+  inv=$(cat "$work/invalid.json")
+  if [ "$code" = "422" ]; then
+    ok "a body that does not validate is a 422"
+  else
+    bad "a body that does not validate is a 422" "got $code" "$inv"
+  fi
+  if has '"errors"' "$inv" && has 'name' "$inv"; then
+    ok "with the errors keyed on the column name"
+  else
+    bad "with the errors keyed on the column name" "$inv"
+  fi
+  if has 'application/problem+json' "$(curl -s -D - -o /dev/null \
+      -X POST -H "Authorization: Bearer $write_tok" \
+      -H 'Content-Type: application/json' -H 'Accept: application/json' \
+      -d '{"tier":"platinum"}' "http://127.0.0.1:$port/api/widgets")"; then
+    ok "as a problem document"
+  else
+    bad "as a problem document"
+  fi
+
+  # CORS: the preflight the document's caller would send.
+  head=$(curl -s -D - -o /dev/null -X OPTIONS \
+    -H 'Origin: https://app.example' \
+    -H 'Access-Control-Request-Method: POST' \
+    "http://127.0.0.1:$port/api/widgets")
+  if has '204' "$head" && has 'Access-Control-Allow-Origin: https://app.example' "$head"; then
+    ok "a preflight is answered, and allows the origin"
+  else
+    bad "a preflight is answered, and allows the origin" "$head"
+  fi
+  head=$(curl -s -D - -o /dev/null -X OPTIONS \
+    -H 'Origin: https://app.example.evil.example' \
+    -H 'Access-Control-Request-Method: POST' \
+    "http://127.0.0.1:$port/api/widgets")
+  if has 'Access-Control-Allow-Origin' "$head"; then
+    bad "and a near miss is not the origin" "$head"
+  else
+    ok "and a near miss is not the origin"
+  fi
+
+  # The rate limit. Burst 20, and the requests above have already spent
+  # some, so this is generous about how many it takes.
+  i=0
+  limited=0
+  while [ $i -lt 60 ]; do
+    c=$(curl -s -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer $read_tok" \
+      "http://127.0.0.1:$port/api/widgets")
+    if [ "$c" = "429" ]; then
+      limited=1
+      break
+    fi
+    i=$((i + 1))
+  done
+  if [ $limited -eq 1 ]; then
+    ok "the rate limit bites"
+  else
+    bad "the rate limit bites" "sixty requests and never a 429"
+  fi
+  head=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $read_tok" \
+    "http://127.0.0.1:$port/api/widgets")
+  if has 'Retry-After:' "$head"; then
+    ok "and says how long to wait"
+  else
+    bad "and says how long to wait" "$head"
+  fi
+
+  kill $demo_pid 2>/dev/null || true
+  docker rm -f "$cname" >/dev/null 2>&1 || true
+  trap - EXIT INT TERM
+
+  echo
+  if [ $fail -ne 0 ]; then
+    echo "api:check failed."
+    return 1
+  fi
+  echo "api:check holds: the document is OpenAPI, and the API answers as it says."
+}
+
 cmd_seo_check() {
   prepare
 
@@ -1254,6 +1545,7 @@ case "${1:-}" in
   test)  shift; cmd_test "$@" ;;
   test:amd64) shift; ASKR_ARCH=amd64 exec "$0" test "$@" ;;
   mcp:check) shift; cmd_mcp_check "$@" ;;
+  api:check) shift; cmd_api_check "$@" ;;
   seo:check) shift; cmd_seo_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
@@ -1275,6 +1567,11 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   MCP-serveren mot et prosjekt som ikke kompilerer,
                   og mot ingen prosjekt. Den porten kan ikke stå i
                   Pascal-suiten — den krever en ekte prosess
+  ./askr api:check
+                  API-laget ende-til-ende mot en ekte app: dokumentet
+                  validert av en ekte OpenAPI-validator, drift mot
+                  rutetabellen begge veier, og tokens, scopes,
+                  konvolutt, CORS og rate limit over socket
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,

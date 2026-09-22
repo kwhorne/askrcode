@@ -206,6 +206,17 @@ way to print it again, and `token:list` shows nothing secret. The
 `api_tokens` table is created by the first `token:issue`. See
 [APIs](api.md).
 
+## The API document
+
+| Command | What it does
+|---|---|
+| `askr openapi` | The OpenAPI 3.1 document for this app |
+| `askr openapi --check` | What the document and the routes disagree about |
+
+`--check` runs both ways: a path described that is not a route, and a
+route under the API that nothing describes. It exits non-zero on either,
+so it belongs in CI. See [APIs](api.md).
+
 ## Inspection
 
 | Command | What it does
@@ -263,6 +274,7 @@ would start lying the first time Askr is upgraded.
 |---|---|
 | `build` | Compiles the project and returns `file:line:column` with a severity |
 | `routes` | The routing table, in the order requests match |
+| `openapi` | The API document, or with `check`, its drift against the routes |
 | `schema` | The tables in the database; with a table, its columns |
 | `config` | Every key and the layer it resolved from |
 | `docs_search` | Exact substring across the documentation |

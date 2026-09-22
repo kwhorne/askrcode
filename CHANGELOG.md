@@ -52,6 +52,45 @@ with the zero-major caveat that minor releases may break things until
   passes trivially today, which is the point: it fails the day somebody
   adds the convenience.
 
+- **An OpenAPI 3.1 document**, generated from what is already true.
+  `UseOpenApi(R, @AppApiDoc)` serves it at `/openapi.json`, `askr
+  openapi` prints it, and the `openapi` MCP tool hands it to an agent.
+
+      D.Get('/api/customers').Summary('Every customer')
+       .ReturnsList(TCustomer).Secured('customers:read');
+
+  The application declares what the framework cannot know -- which paths
+  are the API, what an operation is for, what it takes and returns --
+  and the framework fills in the rest from the route table and the
+  models' own metadata. The schemas come from the same `TModelMeta` that
+  `WriteModel` serialises from, so a column hidden with `HideFromJson`
+  is not in the document either, and a renamed column is renamed in
+  both.
+
+  It describes what is actually sent: a `TDateTime` goes out as
+  `2026-09-22 13:00:00`, which is not RFC 3339, so it is **not**
+  declared `format: date-time` -- a generated client told otherwise
+  would build a parser that fails on every row.
+
+  **`askr openapi --check` is the drift gate, and it runs both ways**: a
+  path described that is not a route, and a route under the API that
+  nothing describes. One direction alone lets the other half rot, which
+  is the same argument the AGENTS.md check needed. It exits non-zero, so
+  it belongs in CI.
+
+- **`./askr api:check`**, the gate for the whole layer. It builds
+  `examples/api/apidemo.lpr`, runs the document through a **real**
+  OpenAPI validator against the published meta-schema -- and confirms
+  that validator refuses a document with its version removed, so "valid"
+  means something -- then drives the running app over a socket: a token
+  per scope, the list envelope, a hidden column staying hidden, 403 for
+  the wrong scope, 422 with the errors keyed on the column, a preflight
+  and a near-miss origin, and the rate limit biting with `Retry-After`.
+
+- **`RespondModel(M, Status)`** in `Askr.Urd.Json`: one model as a whole
+  reply, with the same serialisation as everywhere else.
+  `TGrid.ListResponse` was already the same thing for a page of them.
+
 - **CORS**, closed until somebody names an origin. `Cors.AllowOrigin`,
   `AllowMethods`, `AllowHeaders`, `ExposeHeaders`, `AllowCredentials`,
   `MaxAge`, and `UseCors(R)` registered first.
@@ -162,6 +201,22 @@ with the zero-major caveat that minor releases may break things until
   with a login form — the failure disguised as success.
 
 ### Fixed
+
+- **An anonymous caller was told 403 where it should have been 401.**
+  `Authorize` and `AuthorizeScope` refused with `EForbidden` whether or
+  not anybody was signed in -- and 401 and 403 are not two words for the
+  same refusal. 401 says the request carried no credential and the
+  caller should send one; 403 says they did and it is not enough. A
+  client told the second does not know to authenticate, and stops there.
+
+  There is an `EUnauthenticated` now, and the 401 carries
+  `WWW-Authenticate: Bearer` where a bearer scheme is wired up, which
+  RFC 9110 asks for and is the only way a client learns which scheme to
+  use.
+
+  Found by `./askr api:check` driving a real app -- and the test written
+  alongside the bug asserted the wrong status, so nothing else could
+  have found it.
 
 - **A page could show the same row twice and never show another.**
   `Paginate` cuts a slice out of an order, and where the order does not

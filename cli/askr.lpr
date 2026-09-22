@@ -1021,6 +1021,36 @@ begin
   end;
 end;
 
+function McpToolOpenApi(A: TArena; Args: PJsonValue;
+  out IsError: Boolean): string;
+var
+  P: TProject;
+  Out_, Msg: string;
+  Check: Boolean;
+begin
+  P := McpProject(IsError, Msg);
+  if P = nil then
+    Exit(Msg);
+  try
+    Check := JsonAsBool(JsonMember(Args, 'check'), False);
+    if Check then
+    begin
+      { Drift found is a **successful** call: the tool ran and has an
+        answer, and the answer is a list of things to fix. Reporting it
+        as a tool error would send an agent looking for a broken tool
+        instead of a broken description -- the same distinction the
+        build and test tools already make. }
+      RunAppCapturing(P, '--openapi', '--check', Out_);
+      Exit(Out_);
+    end;
+    if RunAppCapturing(P, '--openapi', '', Out_) <> 0 then
+      IsError := True;
+    Result := Out_;
+  finally
+    P.Free;
+  end;
+end;
+
 function McpToolSchema(A: TArena; Args: PJsonValue;
   out IsError: Boolean): string;
 var
@@ -1327,6 +1357,22 @@ const
     'where the routes are; no file in the project lists them in this ' +
     'order. Build first if you have changed a route.';
 
+  OpenApiSchema = '{"type":"object","properties":{' +
+    '"check":{"type":"boolean","description":' +
+    '"Instead of the document, report what the document and the routes ' +
+    'disagree about, in both directions."}},' +
+    '"additionalProperties":false}';
+
+  OpenApiDescription =
+    'The OpenAPI 3.1 document for this project''s API: paths, parameters, ' +
+    'request and response schemas, and which operations need a token. ' +
+    'The schemas come from the models'' own metadata, so a column that ' +
+    'never leaves the process is not in the document either. With ' +
+    'check=true it reports drift instead — a path described that is not ' +
+    'a route, or a route under the API that nothing describes — and that ' +
+    'is a tool error rather than a document. Build first if you have ' +
+    'changed a route.';
+
   SchemaSchema =
     '{"type":"object","properties":{' +
     '"table":{"type":"string","description":' +
@@ -1599,6 +1645,8 @@ begin
       @McpToolDocsRead);
     RegisterMcpTool('routes', RoutesDescription, RoutesSchema,
       @McpToolRoutes);
+    RegisterMcpTool('openapi', OpenApiDescription, OpenApiSchema,
+      @McpToolOpenApi);
     RegisterMcpTool('schema', SchemaDescription, SchemaSchema,
       @McpToolSchema);
     RegisterMcpTool('config', ConfigDescription, ConfigSchema,

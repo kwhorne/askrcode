@@ -17,12 +17,26 @@ interface
 
 uses
   SysUtils, TypInfo, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
+  Askr.Http.Response,
   Askr.Urd.Driver, Askr.Urd.Model;
 
 { Writes the model as a JSON object at the current position in W. }
 procedure WriteModel(var W: TJsonWriter; M: TModel);
 { Writes the list as a JSON array. }
 procedure WriteModelList(var W: TJsonWriter; L: TModelListBase);
+
+{ One model as a whole reply.
+
+      Result := RespondModel(Customer, 201);
+
+  The same serialisation as everywhere else, because it is the same
+  code: a hidden column stays hidden, a relation that was not loaded
+  stays out. It exists because the alternative at every call site is
+  four lines of TJsonWriter, and four lines repeated per endpoint is
+  where one of them ends up different from the others.
+
+  TGrid.ListResponse is the same thing for a page of them. }
+function RespondModel(M: TModel; AStatus: Integer = 200): TResponse;
 
 implementation
 
@@ -98,6 +112,17 @@ begin
       W.Null;
   end;
   W.EndObject;
+end;
+
+function RespondModel(M: TModel; AStatus: Integer): TResponse;
+var
+  W: TJsonWriter;
+begin
+  W.Init(CurrentArena, 1024);
+  WriteModel(W, M);
+  Result := Respond(AStatus)
+    .WithContentType('application/json; charset=utf-8')
+    .WithBody(W.ToStr);
 end;
 
 procedure WriteModelList(var W: TJsonWriter; L: TModelListBase);

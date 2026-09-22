@@ -16,7 +16,7 @@ uses
   Askr.Core.Env, Askr.Core.Config, Askr.Core.Log, Askr.Core.Url,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Http.Welcome, Askr.Http.Server, Askr.Http.Client,
-  Askr.Http.Cors, Askr.Http.RateLimit,
+  Askr.Http.Cors, Askr.Http.RateLimit, Askr.OpenApi,
   Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Sqlite,
   Askr.Urd.Bind,
   Askr.Core.Crypto,
@@ -561,6 +561,7 @@ type
     function ReadOrders(Req: TRequest): TResponse;
     function WriteOrders(Req: TRequest): TResponse;
     function Which(Req: TRequest): TResponse;
+    function Strict(Req: TRequest): TResponse;
   end;
 
 function TTokCtl.Me(Req: TRequest): TResponse;
@@ -592,6 +593,20 @@ end;
 function TTokCtl.Which(Req: TRequest): TResponse;
 begin
   Result := RespondText(CurrentToken.Name_);
+end;
+
+{ The raising form, and both of the statuses it can raise. The handler
+  catches and answers, because the test client has no server to do the
+  mapping -- that mapping is measured over a socket in askr_tests. }
+function TTokCtl.Strict(Req: TRequest): TResponse;
+begin
+  try
+    AuthorizeScope('orders:write');
+  except
+    on E: EAuthError do
+      Exit(ErrorResponse(E.HttpStatus));
+  end;
+  Result := RespondText('wrote');
 end;
 
 function FileBytes(const Path_: string): string;
@@ -738,6 +753,7 @@ begin
     R.Get('/orders', Ctl.ReadOrders);
     R.Post('/orders', Ctl.WriteOrders);
     R.Get('/which', Ctl.Which);
+    R.Get('/strict', Ctl.Strict);
     UseTokenAuth(R);
     { CSRF on the same router, and after the token, because every POST
       below has to get past it.
@@ -847,20 +863,49 @@ begin
     AssertFalse(TokenAllows('orders:read'),
       'and then no scope is allowed either');
 
-    { And the raising form says 403, which is what the server answers
-      with. The mapping itself is measured over a socket in askr_tests. }
+    { **401 and 403 are not two words for the same refusal.**
+
+      401 says the request carried no credential and the caller should
+      send one; 403 says they did and it is not enough. A client told 403
+      when it should have been told 401 does not know to authenticate,
+      and stops there.
+
+      AuthorizeScope refused an anonymous caller with 403 until a gate
+      driving a real API caught it -- and the test written with it
+      asserted the wrong one, so nothing else could have. }
+    Res := K.Get('/strict');
+    AssertStatus(Res, 401, 'nobody signed in is a 401, not a 403');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + ReadOnly_).Get('/strict');
+    AssertStatus(Res, 403,
+      'a credential that does not carry the scope is a 403');
+
+    Res := K.WithHeader('Authorization', 'Bearer ' + Star).Get('/strict');
+    AssertEqual(Res.Body.ToString, 'wrote', 'and one that does gets through');
+
+    { The 401 says which scheme to answer with. RFC 9110 asks for it,
+      and it is the only way a client learns there is a bearer scheme
+      here at all. }
+    Res := K.Get('/strict');
+    AssertEqual(Res.HeaderValue('WWW-Authenticate'), 'Bearer',
+      'a bare 401 carries the challenge');
+    Res := K.WithHeader('Authorization', 'Bearer ' + Doomed).Get('/strict');
+    AssertContains(Res.HeaderValue('WWW-Authenticate'), 'invalid_token',
+      'and a refused token keeps the more specific one');
+
     Forbidden_ := 0;
     try
       AuthorizeScope('orders:write');
     except
-      on E: EForbidden do
+      on E: EUnauthenticated do
       begin
         Forbidden_ := E.HttpStatus;
         AssertEqual(E.PublicDetail, '',
           'and says nothing to the caller about what they nearly got');
       end;
     end;
-    AssertEqual(Forbidden_, 403, 'AuthorizeScope raises a 403');
+    AssertEqual(Forbidden_, 401,
+      'and outside a request, with nobody signed in, it is 401');
 
     { --- last used, and revoking ----------------------------------- }
 
@@ -1382,6 +1427,386 @@ begin
   end;
 end;
 
+function ProblemMember(const Body_, Path_: string): string; overload;
+var
+  A: TArena;
+  Root, V: PJsonValue;
+  ErrAt: SizeInt;
+  Rest, Key: string;
+  P: Integer;
+begin
+  A := TArena.Create(64 * 1024);
+  try
+    if not JsonParse(A, StrDup(A, Body_), Root, ErrAt) then
+      Exit('<not json>');
+    V := Root;
+    Rest := Path_;
+    while Rest <> '' do
+    begin
+      P := Pos('.', Rest);
+      if P = 0 then
+      begin
+        Key := Rest;
+        Rest := '';
+      end
+      else
+      begin
+        Key := Copy(Rest, 1, P - 1);
+        Rest := Copy(Rest, P + 1, MaxInt);
+      end;
+      V := JsonMember(V, Key);
+    end;
+    Result := JsonAsString(V);
+  finally
+    A.Free;
+  end;
+end;
+
+function ProblemMember(R: TResponse; const Path_: string): string; overload;
+begin
+  Result := ProblemMember(R.Body.ToString, Path_);
+end;
+
+{ True when the document parses at all. A payload nobody can parse is the
+  one failure a substring check never notices. }
+function IsJson(const Body_: string): Boolean;
+var
+  A: TArena;
+  Root: PJsonValue;
+  ErrAt: SizeInt;
+begin
+  A := TArena.Create(64 * 1024);
+  try
+    Result := JsonParse(A, StrDup(A, Body_), Root, ErrAt);
+  finally
+    A.Free;
+  end;
+end;
+
+{ ----------------------------------------------------------- openapi -- }
+
+{ A model with something in it that never leaves the process. The
+  document has to leave it out for the same reason the serialiser does,
+  and from the same place -- otherwise the document is a list of column
+  names to go looking for. }
+type
+  TApiPage = class(TModel)
+  private
+    FId: Int64;
+    FSlug: string;
+    FWords: Int64;
+    FPrice: Currency;
+    FPublishedAt: TDateTime;
+    FDraft: Boolean;
+    FEditKey: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Slug: string read FSlug write FSlug;
+    property Words: Int64 read FWords write FWords;
+    property Price: Currency read FPrice write FPrice;
+    property PublishedAt: TDateTime read FPublishedAt write FPublishedAt;
+    property Draft: Boolean read FDraft write FDraft;
+    property EditKey: string read FEditKey write FEditKey;
+  public
+    class procedure Describe(S: TSchema); override;
+    class procedure HideFromJson(H: TJsonHidden); override;
+  end;
+
+  TOaCtl = class
+  public
+    function Index(Req: TRequest): TResponse;
+    function Show(Req: TRequest): TResponse;
+    function Store(Req: TRequest): TResponse;
+    function Secret(Req: TRequest): TResponse;
+  end;
+
+const
+  { What `askr schema` would generate. Written out here because the test
+    has no database; the point is that the names are typed constants. }
+  ApiPages: record
+    Id: TColInt64;
+    Slug: TColStr;
+    EditKey: TColStr;
+  end = (
+    Id: (Name: 'id'; Table: 'api_pages');
+    Slug: (Name: 'slug'; Table: 'api_pages');
+    EditKey: (Name: 'edit_key'; Table: 'api_pages'));
+
+class procedure TApiPage.Describe(S: TSchema);
+begin
+  S.Table('api_pages');
+end;
+
+class procedure TApiPage.HideFromJson(H: TJsonHidden);
+begin
+  H.Add(ApiPages.EditKey);
+end;
+
+function TOaCtl.Index(Req: TRequest): TResponse;
+begin
+  Result := RespondText('index');
+end;
+
+function TOaCtl.Show(Req: TRequest): TResponse;
+begin
+  Result := RespondText('show');
+end;
+
+function TOaCtl.Store(Req: TRequest): TResponse;
+begin
+  Result := RespondText('store');
+end;
+
+function TOaCtl.Secret(Req: TRequest): TResponse;
+begin
+  Result := RespondText('secret');
+end;
+
+procedure OaDoc(D: TOpenApi);
+begin
+  D.Title('Docs API').Version('2.1').Covers('/api');
+  D.Get('/api/pages').Summary('Every page')
+   .ReturnsList(TApiPage).Secured('pages:read');
+  D.Get('/api/pages/:id').Summary('One page')
+   .Returns(TApiPage).Secured('pages:read');
+  D.Post('/api/pages').Summary('Write one')
+   .Body(TApiPage).Returns(TApiPage, 201).Secured('pages:write');
+end;
+
+{ The same, with a path nobody registered. }
+procedure OaDocGhost(D: TOpenApi);
+begin
+  D.Title('Docs API').Covers('/api');
+  D.Get('/api/pages').ReturnsList(TApiPage);
+  D.Get('/api/pages/:id').Returns(TApiPage);
+  D.Post('/api/pages').Body(TApiPage);
+  D.Delete('/api/pages/:id').Summary('There is no such route');
+end;
+
+{ And one that says nothing about which paths are the API. }
+procedure OaDocUncovered(D: TOpenApi);
+begin
+  D.Title('Docs API');
+  D.Get('/api/pages').ReturnsList(TApiPage);
+end;
+
+procedure TestOpenApi;
+var
+  R: TRouter;
+  Ctl: TOaCtl;
+  D: TOpenApi;
+  Json_: string;
+  Problems_: TStringArray;
+  I: Integer;
+  Found: Boolean;
+begin
+  Ctl := TOaCtl.Create;
+  R := TRouter.Create;
+  R.Get('/api/pages', Ctl.Index);
+  R.Get('/api/pages/:id', Ctl.Show);
+  R.Post('/api/pages', Ctl.Store);
+  { Outside the covered paths, so nothing has to describe it. }
+  R.Get('/dashboard', Ctl.Secret);
+  try
+    RateLimit.Off;
+
+    D := TOpenApi.Create;
+    try
+      OaDoc(D);
+      Json_ := D.ToJson;
+
+      AssertTrue(IsJson(Json_), 'the document is JSON');
+      AssertEqual(ProblemMember(Json_, 'openapi'), '3.1.0', 'and says which');
+      AssertEqual(ProblemMember(Json_, 'info.title'), 'Docs API', 'with a title');
+      AssertEqual(ProblemMember(Json_, 'info.version'), '2.1', 'and a version');
+
+      { The path is written OpenAPI's way, not the router's. }
+      AssertContains(Json_, '"/api/pages/{id}"',
+        'a route parameter becomes a path template');
+      AssertEqual(Pos('/api/pages/:id', Json_), 0,
+        'and the router''s own spelling does not leak in');
+
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages.get.summary'), 'Every page', 'the summary is there');
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages.post.responses.201.description'), 'Created',
+        'and the status the operation said it answers with');
+
+      { **The schema comes from the model''s own metadata.** }
+      AssertContains(Json_, '"slug"', 'a column is a property');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPage.properties.words.type'), 'integer',
+        'an integer column is an integer');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPage.properties.draft.type'), 'boolean',
+        'a boolean is a boolean');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPage.properties.price.type'), 'number',
+        'and money is a number');
+
+      { **And it leaves out what the serialiser leaves out.** A document
+        that listed a hidden column would be a list of things to go
+        looking for. }
+      AssertEqual(Pos('edit_key', Json_), 0,
+        'a column hidden from JSON is not in the document either');
+
+      { **A date is not declared as one.** DateTimeToSql writes
+        `2026-09-22 13:00:00` -- a space, and no zone -- which is not
+        RFC 3339. A generated client told otherwise would build a parser
+        that fails on every row. }
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPage.properties.published_at.type'), 'string',
+        'a datetime goes out as a string');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPage.properties.published_at.format'), '',
+        'and is not claimed to be RFC 3339');
+
+      { The input shape is not the output shape: a request never fills a
+        generated primary key. }
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPageInput.properties.slug.type'), 'string',
+        'the input schema has the ordinary columns');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPageInput.properties.id.type'), '',
+        'and not the primary key');
+
+      { The list envelope, described as it is written. }
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPageList.properties.data.type'), 'array',
+        'a list answers with an array');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPageList.properties.data.items.$ref'),
+        '#/components/schemas/ApiPage', 'of the model');
+      AssertEqual(ProblemMember(Json_,
+        'components.schemas.ApiPageList.properties.meta.properties.total.type'),
+        'integer', 'with a total');
+
+      { A list gets exactly the query parameters TGrid.Read reads. }
+      AssertContains(Json_, '"name":"page"', 'page is a query parameter');
+      AssertContains(Json_, '"name":"per"', 'and per');
+      AssertContains(Json_, '"name":"sort"', 'and sort');
+      AssertContains(Json_, '"name":"q"', 'and the search');
+
+      { The errors the framework answers by itself, and only those. }
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages.get.responses.401.content.' +
+        'application/problem+json.schema.$ref'),
+        '#/components/schemas/Problem',
+        'a secured operation answers 401 with a problem document');
+      AssertTrue(ProblemMember(Json_,
+        'paths./api/pages.get.responses.403.description') <> '',
+        'and 403 when it names a scope');
+      AssertTrue(ProblemMember(Json_,
+        'paths./api/pages.post.responses.422.description') <> '',
+        'an operation with a body answers 422');
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages.get.responses.422.description'), '',
+        'and one without a body does not');
+      AssertTrue(ProblemMember(Json_,
+        'paths./api/pages/{id}.get.responses.404.description') <> '',
+        'a path with a parameter answers 404');
+      AssertEqual(ProblemMember(Json_,
+        'paths./api/pages.get.responses.429.description'), '',
+        'and there is no 429 while the limiter is off');
+
+      AssertEqual(ProblemMember(Json_,
+        'components.securitySchemes.bearerAuth.scheme'), 'bearer',
+        'the security scheme is a bearer token');
+
+      { **Both directions agree.** }
+      Problems_ := D.Problems(R);
+      if Length(Problems_) > 0 then
+        for I := 0 to High(Problems_) do
+          Fail('unexpected drift: ' + Problems_[I]);
+      AssertEqual(Length(Problems_), 0, 'the document and the routes agree');
+    finally
+      D.Free;
+    end;
+
+    { The document follows what is actually wired up. }
+    RateLimit.PerMinute(60);
+    D := TOpenApi.Create;
+    try
+      OaDoc(D);
+      Json_ := D.ToJson;
+      AssertTrue(ProblemMember(Json_,
+        'paths./api/pages.get.responses.429.description') <> '',
+        'with the limiter running, 429 is in the document');
+    finally
+      D.Free;
+      RateLimit.Off;
+    end;
+
+    { --- drift, both ways ------------------------------------------ }
+
+    { A path described that is not a route. }
+    D := TOpenApi.Create;
+    try
+      OaDocGhost(D);
+      Problems_ := D.Problems(R);
+      Found := False;
+      for I := 0 to High(Problems_) do
+        if Pos('DELETE /api/pages/:id', Problems_[I]) > 0 then
+          Found := True;
+      AssertTrue(Found, 'a described path that is not a route is reported');
+    finally
+      D.Free;
+    end;
+
+    { And the other way: a route under a covered path that nothing
+      describes. One direction alone lets the other half rot. }
+    R.Delete('/api/pages/:id', Ctl.Secret);
+    D := TOpenApi.Create;
+    try
+      OaDoc(D);
+      Problems_ := D.Problems(R);
+      Found := False;
+      for I := 0 to High(Problems_) do
+        if (Pos('DELETE /api/pages/:id', Problems_[I]) > 0) and
+           (Pos('nothing describes it', Problems_[I]) > 0) then
+          Found := True;
+      AssertTrue(Found, 'a route nobody described is reported too');
+    finally
+      D.Free;
+    end;
+
+    { A route outside the covered paths is nobody''s business. }
+    D := TOpenApi.Create;
+    try
+      OaDoc(D);
+      D.Delete('/api/pages/:id').Summary('now described');
+      Problems_ := D.Problems(R);
+      Found := False;
+      for I := 0 to High(Problems_) do
+        if Pos('/dashboard', Problems_[I]) > 0 then
+          Found := True;
+      AssertFalse(Found, 'a route outside the API is not asked about');
+      AssertEqual(Length(Problems_), 0, 'and then nothing is left over');
+    finally
+      D.Free;
+    end;
+
+    { Saying nothing about which paths are the API is itself a problem:
+      half a check that looks like a whole one. }
+    D := TOpenApi.Create;
+    try
+      OaDocUncovered(D);
+      Problems_ := D.Problems(R);
+      Found := False;
+      for I := 0 to High(Problems_) do
+        if Pos('which paths are the API', Problems_[I]) > 0 then
+          Found := True;
+      AssertTrue(Found, 'a document that covers nothing says so');
+    finally
+      D.Free;
+    end;
+  finally
+    RateLimit.Off;
+    R.Free;
+    Ctl.Free;
+  end;
+end;
+
 { ------------------------------------------------- what an error looks like -- }
 
 { The same routes, asked by a browser and by a program.
@@ -1453,41 +1878,6 @@ var
 { One member of a problem document, read through the real parser. A
   substring check would pass on a body that is not JSON at all, and that
   is exactly what is being ruled out. }
-function ProblemMember(R: TResponse; const Path_: string): string;
-var
-  A: TArena;
-  Root, V: PJsonValue;
-  ErrAt: SizeInt;
-  Rest, Key: string;
-  P: Integer;
-begin
-  A := TArena.Create(8 * 1024);
-  try
-    if not JsonParse(A, StrDup(A, R.Body.ToString), Root, ErrAt) then
-      Exit('<not json>');
-    V := Root;
-    Rest := Path_;
-    while Rest <> '' do
-    begin
-      P := Pos('.', Rest);
-      if P = 0 then
-      begin
-        Key := Rest;
-        Rest := '';
-      end
-      else
-      begin
-        Key := Copy(Rest, 1, P - 1);
-        Rest := Copy(Rest, P + 1, MaxInt);
-      end;
-      V := JsonMember(V, Key);
-    end;
-    Result := JsonAsString(V);
-  finally
-    A.Free;
-  end;
-end;
-
 procedure NegSetup;
 begin
   SetAppKey('Zm9vYmFyYmF6cXV1eGZvb2JhcmJhenF1dXhhYmM9');
@@ -3231,6 +3621,7 @@ procedure TestAuthGates;
 var
   Res: TResponse;
   Cookie_: string;
+  Status_: Integer;
 begin
   AuthSetup(False);
   try
@@ -3261,6 +3652,22 @@ begin
     Res := AuthK.WithHeader('Cookie', 'askr_session=' + Cookie_).Get('/gate');
     AssertEqual(Res.Body.ToString, 'user:Grace',
       'another user gets no on both');
+
+    { **Authorize tells the two refusals apart.** Signed in and not
+      allowed is a 403; nobody signed in at all is a 401, because the
+      caller can do something about that one and a 403 does not tell
+      them to. The gate says no either way, so the difference has to be
+      looked at separately -- which is why it was wrong here until an
+      API gate drove it. }
+    Status_ := 0;
+    try
+      Authorize('admin');
+    except
+      on E: EAuthError do
+        Status_ := E.HttpStatus;
+    end;
+    AssertEqual(Status_, 401,
+      'outside a request, with nobody signed in, it is a 401');
   finally
     AuthRydd;
   end;
@@ -5765,6 +6172,10 @@ begin
   Group('API tokens');
   Test('hashed at rest, scoped, revocable, and never from a URL',
     @TestApiTokens);
+
+  Group('OpenAPI');
+  Test('generated from the models and the routes, and checked against both',
+    @TestOpenApi);
 
   Group('CORS');
   Test('closed until somebody says otherwise, and matched exactly',

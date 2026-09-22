@@ -3344,6 +3344,8 @@ var
   ForApne: Integer;
   Sql: string;
   G: TGrid<TSqCustomer>;
+  Cust_: TSqCustomer;
+  Reply2: TResponse;
   Q_: TQuery<TSqCustomer>;
   Raised_: Boolean;
   GW: TJsonWriter;
@@ -3638,6 +3640,18 @@ begin
         'and there is still one page, not zero');
       CheckEqS(ProblemMember(GJson, 'links.next'), '', 'with no next');
       CheckEqS(ProblemMember(GJson, 'links.prev'), '', 'and no prev');
+
+      { **One model as a whole reply.** The same serialisation as
+        everywhere else, because it is the same code -- including that a
+        hidden column stays hidden. }
+      Cust_ := TQuery<TSqCustomer>.New.OrderBy(SqCustomers.Id).First;
+      Reply2 := RespondModel(Cust_, 201);
+      CheckEqI(Reply2.StatusCode, 201, 'RespondModel answers with the status');
+      CheckEqS(Reply2.HeaderValue('Content-Type'),
+        'application/json; charset=utf-8', 'and says it is JSON');
+      GJson := Reply2.Body.ToString;
+      Check(Pos('"name":', GJson) > 0, 'with the model in it');
+      Check(Copy(GJson, 1, 1) = '{', 'as an object, not as null');
 
       { A list nobody built at all is still an array. }
       GW.Init(A, 64);

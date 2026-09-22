@@ -1,0 +1,9 @@
+{
+  "name": "askr-openapi-gate",
+  "private": true,
+  "type": "module",
+  "description": "The validator behind ./askr api:check. Not published.",
+  "dependencies": {
+    "@seriousme/openapi-schema-validator": "^2.4.0"
+  }
+}

@@ -40,7 +40,25 @@ type
     auth was set up, and there is nothing a caller can do about one. }
   EAuthError = class(EHttpError);
 
-  { Raised by `Authorize` and `AuthorizeScope`. The server answers 403.
+  { Nobody is signed in. The server answers 401.
+
+    401 and 403 are not two words for the same refusal. 401 says the
+    request carried no credential, or none that worked, and the caller
+    should send one; 403 says they did and it is not enough. A client
+    told 403 when it should have been told 401 does not know to
+    authenticate, and stops there.
+
+    It is easy to get wrong because the code that refuses is the same:
+    Authorize asks a gate, the gate says no, and whether anybody was
+    asking has to be looked at separately. This was wrong here until a
+    gate driving a real API found it -- an anonymous caller hitting a
+    scoped route was told 403. }
+  EUnauthenticated = class(EAuthError)
+  public
+    function HttpStatus: Integer; override;
+  end;
+
+  { Somebody is signed in and may not. The server answers 403.
 
     The message names the gate and nothing else, and it does **not** reach
     the client -- PublicDetail stays empty. A 403 that explains itself
@@ -142,6 +160,11 @@ procedure UseAuth(R: TRouter);
 procedure RequireAuth(R: TRouter; const LoginPath: string = '/login');
 
 implementation
+
+function EUnauthenticated.HttpStatus: Integer;
+begin
+  Result := 401;
+end;
 
 function EForbidden.HttpStatus: Integer;
 begin
@@ -403,11 +426,16 @@ end;
 
 procedure Authorize(const Name: string; Resource: TObject);
 begin
-  if not Allows(Name, Resource) then
-    { The message names the gate, not the user or the resource. It ends up
-      in a log, and a 403 should not tell anybody what they nearly
-      got. }
-    raise EForbidden.CreateFmt('Not authorized: %s', [Name]);
+  if Allows(Name, Resource) then
+    Exit;
+  { Nobody signed in is a different answer from signed in and not
+    allowed, and the caller can do something about the first. }
+  if Id = '' then
+    raise EUnauthenticated.CreateFmt(
+      'Not signed in, and %s needs somebody to be.', [Name]);
+  { The message names the gate, not the user or the resource. It ends up
+    in a log, and a 403 should not tell anybody what they nearly got. }
+  raise EForbidden.CreateFmt('Not authorized: %s', [Name]);
 end;
 
 { ---------------------------------------------------------- middleware -- }
