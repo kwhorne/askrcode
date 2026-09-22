@@ -42,6 +42,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Routing](routing.md) | Routes, parameters, middleware, response filters |
 | [Requests](requests.md) | Query, form, JSON, headers, route parameters |
 | [Responses](responses.md) | Status, headers, cookies, redirects, JSON |
+| [APIs](api.md) | Content negotiation, and what an error looks like to a program |
 | [File uploads](uploads.md) | `multipart/form-data`, and why the client's filename is not to be trusted |
 | [Images](images.md) | What a file really is, and resizing it |
 | [Inertia and Svelte](inertia.md) | Server-driven pages without an API |

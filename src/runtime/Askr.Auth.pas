@@ -391,9 +391,19 @@ begin
     Exit(nil);
   { An Inertia or JSON client has no use for a 302 to an HTML page: it
     would follow it and get the sign-in page as JSON. A 401 is what the
-    client can do something with. }
-  if (Req.Header('X-Inertia').Len > 0) or
-     (Pos('application/json', Req.Header('Accept').ToString) > 0) then
+    client can do something with.
+
+    The two are answered differently on purpose. Inertia gets plain text,
+    because its client reads the status and not the body. An API client
+    gets a problem document, like every other error it can be handed.
+
+    AcceptsJson is False for an Inertia request, so the order of these
+    two does not decide anything -- but the Accept test used to be a bare
+    Pos for 'application/json', which said yes to a browser that listed
+    it anywhere in its Accept header. }
+  if Req.AcceptsJson then
+    Exit(Problem(401, 'Unauthenticated.'));
+  if Req.Header('X-Inertia').Len > 0 then
     Exit(RespondText('Unauthenticated.', 401));
   Result := Redirect(GLoginPath, 302);
 end;

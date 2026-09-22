@@ -48,7 +48,7 @@ interface
 uses
   SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response,
-  Askr.Urd.Model, Askr.Urd.Json, Askr.Session, Askr.Core.Url;
+  Askr.Urd.Model, Askr.Urd.Json, Askr.Urd.Bind, Askr.Session, Askr.Core.Url;
 
 type
   EInertiaError = class(Exception);
@@ -179,7 +179,16 @@ function Back(const Fallback: string = '/'): TResponse;
   The errors are put in the session's flash and are props.errors in the
   next request. Without a surrounding session it raises, because the
   alternative — losing the errors in silence — is worse than a clear error
-  message. }
+  message.
+
+  **A client that asked for JSON gets 422 instead**, as a problem
+  document with the same errors object. A redirect with a flash is a
+  browser mechanism: it needs somewhere to store the errors between two
+  requests and a client that follows the redirect and then reads the page
+  it lands on. An API client does neither, so the old behaviour handed it
+  a 302 to a page it never asked for and then lost the errors in the flash
+  it never read. It is the same call either way — a handler should not
+  have to branch on who is asking. }
 function BackWithErrors(E: TErrors;
   const Fallback: string = '/'): TResponse;
 
@@ -827,7 +836,15 @@ var
   S: TSession;
   W: TJsonWriter;
   A: TArena;
+  Req: TRequest;
 begin
+  { Before the session check, not after: an API client has no session and
+    needs none, and raising at it would be the framework insisting on a
+    browser mechanism. }
+  Req := CurrentRequest;
+  if (Req <> nil) and Req.AcceptsJson then
+    Exit(ValidationProblem(E));
+
   S := CurrentSession;
   if S = nil then
     raise EInertiaError.Create(

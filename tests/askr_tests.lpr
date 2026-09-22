@@ -3736,6 +3736,34 @@ type
     function Handle(Req: TRequest): TResponse;
   end;
 
+const
+  { The message /boom raises. It is shaped like the exception messages
+    that really do carry secrets -- a path and a value -- because that is
+    what makes the rule worth a test. A framework that helpfully puts
+    E.Message in the reply body has published a reconnaissance endpoint on
+    every route that can throw, and the ones that throw are the ones
+    holding a connection string. }
+  BoomSecret = '/Users/askr/secret/db.pass: password=hunter2';
+
+{ Reads one member out of a problem document, through the real parser
+  rather than by matching text. A substring check passes on a body that is
+  not JSON at all, which is the failure being guarded against. }
+function ProblemMember(const Body_, Key: string): string;
+var
+  A: TArena;
+  Root: PJsonValue;
+  ErrAt: SizeInt;
+begin
+  A := TArena.Create(8 * 1024);
+  try
+    if not JsonParse(A, StrDup(A, Body_), Root, ErrAt) then
+      Exit('<not json>');
+    Result := JsonAsString(JsonMember(Root, Key));
+  finally
+    A.Free;
+  end;
+end;
+
 { The size is the whole point. The file has to fit inside the arena
   block that is already in use by the request — larger, and it gets a new
   block, and that path works. The suite runs with 16 kB blocks, so 6000
@@ -3787,7 +3815,11 @@ begin
        Req.Upload('file').Content.ToString])));
   end;
   if Req.Path.EqualsStr('/boom') then
-    raise Exception.Create('on purpose');
+    raise Exception.Create('on purpose: ' + BoomSecret);
+  { Answers with nothing, so the server's own 404 runs. The fall-through
+    below is the application's 404 and a different path entirely. }
+  if Req.Path.EqualsStr('/nowhere') then
+    Exit(nil);
   Result := RespondText('gone', 404);
 end;
 
@@ -4061,6 +4093,89 @@ begin
     CheckEqS(Body, 'rot', 'a new connection works');
     C.Close;
 
+    { The errors the framework answers for you, for a client that is not a
+      browser.
+
+      A 404 as an HTML page is not an answer to a program: it has to read
+      the status out of something, and the body it was handed is the wrong
+      kind of document. RFC 9457 says what the right one looks like, and
+      the content type -- application/problem+json, not application/json --
+      is what tells a client the body is the error rather than the thing
+      it asked for. }
+    Check(C.Connect(Port), 'connects for the error shapes');
+
+    C.SendRaw('GET /nowhere HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: application/json'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('HTTP/1.1 404', Head) = 1, 'a JSON client gets the 404');
+    Check(Pos('application/problem+json', Head) > 0,
+      'as a problem document, not as a page');
+    CheckEqS(ProblemMember(Body, 'title'), 'Not Found', 'with the title');
+    CheckEqS(ProblemMember(Body, 'status'), '404', 'and the status in it');
+    CheckEqS(ProblemMember(Body, 'type'), 'about:blank',
+      'and about:blank until an app has a page to point at');
+    Check(Pos('<', Body) = 0, 'and no markup anywhere in it');
+
+    { And the browser is left exactly as it was. The body it used to get
+      is the body it still gets -- this is negotiation, not a new default
+      for everybody. }
+    C.SendRaw('GET /nowhere HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    CheckEqS(Body, 'Not Found', 'a client that said nothing gets the text');
+    Check(Pos('text/plain', Head) > 0, 'as text/plain');
+
+    { The Accept header a browser really sends. It lists several types and
+      none of them is application/json, so a bare substring test would have
+      been enough here -- the one below is the case that needs the
+      ordering. }
+    C.SendRaw('GET /nowhere HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: text/html,application/xhtml+xml,application/xml;' +
+              'q=0.9,*/*;q=0.8'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    CheckEqS(Body, 'Not Found', 'a browser is given the page answer');
+    Check(Pos('problem+json', Head) = 0, 'and never a problem document');
+
+    { The header axios sends by default, which is what most of the
+      machine clients out there are. JSON is named first. }
+    C.SendRaw('GET /nowhere HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: application/json, text/plain, */*'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('problem+json', Head) > 0, 'axios'' own Accept gets JSON');
+
+    { Both named, page first. This is the case the ordering rule exists
+      for, and the only one that tells the two readings apart: a bare
+      search for 'application/json' in the header answers yes here and is
+      wrong. Quality values would be the thorough way; order is what
+      clients actually express. }
+    C.SendRaw('GET /nowhere HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: text/html, application/json'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    CheckEqS(Body, 'Not Found', 'asked for a page first, given a page');
+    Check(Pos('problem+json', Head) = 0, 'and not a problem document');
+
+    { The 500 after an unhandled exception. The status and the shape are
+      the easy half; the body is the half that matters. }
+    C.SendRaw('GET /boom HTTP/1.1'#13#10'Host: test'#13#10 +
+              'Accept: application/json'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    Check(Pos('HTTP/1.1 500', Head) = 1, 'a JSON client gets the 500');
+    Check(Pos('application/problem+json', Head) > 0, 'as a problem document');
+    CheckEqS(ProblemMember(Body, 'title'), 'Internal Server Error',
+      'titled by the status and nothing else');
+    Check(Pos(BoomSecret, Body) = 0, 'the exception message is not in it');
+    Check(Pos('hunter2', Body) = 0, 'not the value it carried');
+    Check(Pos('/Users/askr', Body) = 0, 'nor the path');
+    Check(Pos('detail', Body) = 0, 'there is no detail to give');
+    C.Close;
+
+    Check(C.Connect(Port), 'connects again after the 500');
+    C.SendRaw('GET /boom HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    C.ReadResponse(Head, Body);
+    CheckEqS(Body, 'Internal Server Error', 'and the text client likewise');
+    Check(Pos(BoomSecret, Body) = 0,
+      'the leak is closed on both sides, not just the new one');
+    C.Close;
+
     { Ugyldig request. }
     Check(C.Connect(Port), 'connects for the invalid request');
     C.SendRaw('GET / HTTP/1.1'#13#10#13#10);
@@ -4094,12 +4209,12 @@ begin
     CheckEqI(Reserved2, Reserved1, 'the arena does not grow under sustained load');
     Check(Server.TotalArenaHighWater < 64 * 1024,
       'toppforbruket per request holder seg lite');
-    { 24 valid requests above, then 50 + 1 + 500 here. The two rejected
+    { 31 valid requests above, then 50 + 1 + 500 here. The two rejected
       ones (400 and 501) are not counted, because they never reached a
       handler. The number is written out rather than computed: the point
       of it is that the server's own count agrees with what the suite
       actually sent, and a computed one would agree with itself. }
-    CheckEqI(Server.TotalRequests, 576, 'every valid request was counted');
+    CheckEqI(Server.TotalRequests, 583, 'every valid request was counted');
     C.Close;
   finally
     Server.Free;

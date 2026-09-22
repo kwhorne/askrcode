@@ -409,13 +409,20 @@ begin
       try
         Res := FServer.CallHandler(Req);
         if Res = nil then
-          Res := RespondText('Not Found', 404);
+          Res := ErrorResponse(404);
       except
         on E: Exception do
         begin
           { The handler is user code. An unhandled exception should cost this
-            request, not the worker. }
-          Res := RespondText('Internal Server Error', 500);
+            request, not the worker.
+
+            The body says 'Internal Server Error' and nothing else -- no
+            class name, no message, no stack. E.Message is where the SQL
+            is, or the path, or the value; it goes to the log on the next
+            line, which is the one place that can be read by somebody
+            entitled to read it. A framework that helpfully returns it
+            has published a reconnaissance endpoint on every route. }
+          Res := ErrorResponse(500);
           Close_ := True;
           { An exception from user code is always logged, whatever LogRequests
             says. It is not a request line, it is an error — and a 500
@@ -577,7 +584,7 @@ begin
   else if Assigned(FHandlerFunc) then
     Result := FHandlerFunc(Req)
   else
-    Result := RespondText('No handler registered', 500);
+    Result := ErrorResponse(500, 'No handler registered');
 end;
 
 function TAskrServer.UsesTls: Boolean;

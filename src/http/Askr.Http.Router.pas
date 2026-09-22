@@ -438,11 +438,11 @@ begin
   end;
 
   if MethodMatched then
-    Exit(RespondText('Method Not Allowed', 405));
+    Exit(ErrorResponse(405));
 
   if Assigned(FNotFound) then
     Exit(FNotFound(Req));
-  Result := RespondText('Not Found', 404);
+  Result := ErrorResponse(404);
 end;
 
 procedure TRouter.Describe(Lines: TStrings);

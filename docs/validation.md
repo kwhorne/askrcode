@@ -98,6 +98,34 @@ disappears or one that cannot be read. See [Sessions](sessions.md).
 > different workers, and without sessions there is no shared storage. Render
 > the page directly instead of redirecting to it.
 
+## To a client that is not a browser
+
+A redirect with a flash is a browser mechanism end to end: it needs
+somewhere to keep the errors between two requests, and a client that
+follows the redirect and then reads the page it lands on. A program does
+neither.
+
+So the same call answers differently when the caller asked for JSON:
+
+```pascal
+Result := BackWithErrors(C.Errors);   { 302 + flash, or 422 + problem+json }
+```
+
+```json
+{
+  "type": "about:blank",
+  "title": "Unprocessable Content",
+  "status": 422,
+  "detail": "The request body did not validate.",
+  "errors": { "display_name": "display_name is required" }
+}
+```
+
+The `errors` member is the same object Inertia gets as `props.errors`,
+keyed the same way — on the **column** name. `ValidationProblem(C.Errors)`
+in `Askr.Urd.Bind` builds it directly, for a handler that has no session
+to flash into. See [APIs](api.md).
+
 ## Why it lives in the model unit
 
 `TValidator` is declared in `Askr.Urd.Model`, not in a unit of its own.

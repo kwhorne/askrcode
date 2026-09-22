@@ -18,13 +18,19 @@ Result := Respond(201)
 | `RespondJson(S, Status)` | `application/json` |
 | `Redirect(Location, Status)` | 302 by default |
 | `NoContent` | 204 |
+| `Problem(Status, Detail)` | `application/problem+json`, RFC 9457 |
 
 ```pascal
 Result := RespondText('hello');
 Result := RespondJson('{"ok":true}');
 Result := Redirect('/customers', 303);
 Result := NoContent;
+Result := Problem(409, 'That order has already shipped.');
 ```
+
+`Problem` is the shape errors take for a client that is not a browser, and
+the framework's own 404, 405, 419, 401 and 500 use it when the caller
+asked for JSON. See [APIs](api.md).
 
 ## Headers
 

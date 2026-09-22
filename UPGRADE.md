@@ -8,6 +8,35 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## Unreleased
+
+**Worth reading if anything but a browser calls your app.** The framework
+now answers a client that asked for JSON differently from one that asked
+for a page, on the routes it answers for you and in `BackWithErrors`.
+
+`BackWithErrors` returns **422** with an `application/problem+json` body
+when the caller's `Accept` names `application/json` before `text/html`,
+instead of a 302 with the errors in a session flash:
+
+```json
+{ "type": "about:blank", "title": "Unprocessable Content", "status": 422,
+  "detail": "The request body did not validate.",
+  "errors": { "email": "email is not a valid email address" } }
+```
+
+Browsers and Inertia clients are unchanged — an Inertia request is never
+treated as a JSON one, whatever its `Accept` header says. The break is for
+a client of your own that posted with `Accept: application/json` and was
+relying on the redirect. It was almost certainly relying on it badly: the
+errors went into a flash it never read.
+
+The same negotiation applies to 404, 405, 419 and 401, and to the 500
+after an unhandled exception. A JSON client gets a problem document; every
+other client gets the byte-for-byte body it got before.
+
+Nothing needs changing in your code. If you want the old behaviour on one
+route, branch on `Req.AcceptsJson` yourself.
+
 ## 0.11.2
 
 Nothing can break. Documentation, and one example.

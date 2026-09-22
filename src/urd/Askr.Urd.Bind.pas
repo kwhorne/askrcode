@@ -24,7 +24,7 @@ interface
 
 uses
   SysUtils, TypInfo, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
-  Askr.Http.Types, Askr.Http.Request,
+  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response,
   Askr.Urd.Driver, Askr.Urd.Model;
 
 type
@@ -39,7 +39,44 @@ type
     function InputBool(const AName: string; Default: Boolean = False): Boolean;
   end;
 
+{ A failed validation, for a client that is not a browser.
+
+      if not C.Validate(Errs) then
+        if Req.AcceptsJson then
+          Exit(ValidationProblem(Errs))
+        else
+          Exit(BackWithErrors(Errs));
+
+  422 and a problem document with an `errors` member: field to message,
+  the same object BackWithErrors flashes for Inertia. Two shapes for the
+  same failure would mean two things to write, and one of them would go
+  stale.
+
+  **The fields are keyed on the column name**, because TErrors is -- rules
+  are written with the property name, errors come back keyed on the
+  column. That is the existing rule and this does not change it: a client
+  posting `released_on` should be told which field it got wrong in the
+  name it used.
+
+  It lives here rather than in Askr.Http.Response for the same reason
+  FillInto does: the HTTP layer must not know about Urd. TErrors is a Urd
+  type, so the function that turns one into a response belongs on this
+  side of the line. }
+function ValidationProblem(E: TErrors;
+  const Detail: string = 'The request body did not validate.'): TResponse;
+
 implementation
+
+function ValidationProblem(E: TErrors; const Detail: string): TResponse;
+var
+  W: TJsonWriter;
+begin
+  W.Init(CurrentArena, 512);
+  BeginProblem(W, 422, Detail);
+  W.Key('errors');
+  E.WriteJson(W);
+  Result := ProblemFrom(W, 422);
+end;
 
 type
   TJsonCache = record

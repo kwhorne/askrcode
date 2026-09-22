@@ -71,6 +71,17 @@ type
 
     function Header(const AName: string): TStr;
     function HasHeader(const AName: string): Boolean;
+    { True when the client asked for JSON rather than a page.
+
+      `Accept: application/json` says so. So does a request with no
+      Accept at all from something that is plainly not a browser -- but
+      Askr does not guess at that: no Accept means no preference, and a
+      page is the safer thing to hand somebody who did not say.
+
+      An Inertia request is **not** this. It carries its own header and
+      gets its own payload; answering it with an API error would give the
+      client something it has no idea what to do with. }
+    function AcceptsJson: Boolean;
     function HeaderAt(Index: Integer): PHttpHeader;
 
     { Route parameters. Set by the router when a pattern matches. }
@@ -375,6 +386,33 @@ begin
       Exit(H^.Value);
   end;
   Result := StrEmpty;
+end;
+
+function TRequest.AcceptsJson: Boolean;
+var
+  A: TStr;
+  Html, Json_: Integer;
+begin
+  Result := False;
+  { Inertia answers for itself. }
+  if HasHeader('x-inertia') then
+    Exit;
+
+  A := Header('accept');
+  if A.Len = 0 then
+    Exit;
+  Json_ := Pos('application/json', LowerCase(A.ToString));
+  Html := Pos('text/html', LowerCase(A.ToString));
+  if Json_ = 0 then
+    Exit;
+  { Both named: whichever comes first wins. A browser sends text/html
+    first and application/json far down the list, and answering it with
+    JSON would put a payload in somebody's address bar. Quality values
+    would be the thorough way; the order is what browsers actually
+    express, and the thorough way has more places to be wrong. }
+  if (Html > 0) and (Html < Json_) then
+    Exit;
+  Result := True;
 end;
 
 function TRequest.HasHeader(const AName: string): Boolean;

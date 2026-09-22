@@ -14,7 +14,55 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **An error has a shape a program can read.** Errors are now RFC 9457
+  problem documents — `application/problem+json` with `type`, `title`,
+  `status` and an optional `detail` — whenever the caller asked for JSON.
+  `Problem(Status, Detail)` builds one; `BeginProblem`/`ProblemFrom` open
+  and close one so an application can add extension members of its own.
+
+- **`TRequest.AcceptsJson`** decides who asked. `Accept` naming
+  `application/json` before `text/html` is a program; a browser's header
+  names the page type first; no `Accept` at all means no preference, and
+  a page is the safer thing to hand somebody who did not say. An Inertia
+  request is never one of these — it carries its own header and gets its
+  own payload.
+
+- **`ValidationProblem(E: TErrors)`** in `Askr.Urd.Bind`: a 422 with the
+  errors keyed on the column name, the same object Inertia gets as
+  `props.errors`. `BackWithErrors` calls it for you.
+
+- **`docs/api.md`** — content negotiation, the error shape, and the four
+  things that are not there yet: token auth, a list envelope, CORS and
+  rate limiting, and an OpenAPI document.
+
+### Changed
+
+- **`BackWithErrors` answers 422 to a client that asked for JSON**,
+  instead of a 302 with the errors in a flash. A redirect with a flash is
+  a browser mechanism end to end: it needs somewhere to keep the errors
+  between two requests and a client that follows the redirect and then
+  reads the page it lands on. An API client did neither, so a failed
+  validation arrived as a 200 with a sign-up form in it. Browsers and
+  Inertia clients are unchanged.
+
+- **404, 405, 419, 401 and the 500 after an unhandled exception** are
+  problem documents for a JSON client and the same plain text body as
+  before for everybody else. The 401 matters most: a `302` to an HTML
+  sign-in page is useless to a program, which follows it and gets a `200`
+  with a login form — the failure disguised as success.
+
 ### Fixed
+
+- **The body of a 500 never carries the exception message.** It never
+  did in Askr, and now there is a test that says so: `/boom` raises with
+  a path and a password in its message, and the reply is checked for
+  both, for a JSON client and a plain one. A database error carries the
+  SQL, a configuration error the value, a file error the path — a
+  framework that returns `E.Message` has published a reconnaissance
+  endpoint on every route that can throw. The exception goes to the log
+  in full, as before.
 
 - **A model's every column went into JSON, including the ones that must
   not.** `WriteModel` writes each mapped column — right for a query,

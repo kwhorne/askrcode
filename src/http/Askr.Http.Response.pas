@@ -13,7 +13,8 @@ unit Askr.Http.Response;
 interface
 
 uses
-  SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Http.Types;
+  SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Json,
+  Askr.Http.Types;
 
 type
   TResponse = class(TArenaObject)
@@ -104,10 +105,63 @@ function Respond(AStatus: Integer = 200): TResponse;
 function RespondText(const S: string; AStatus: Integer = 200): TResponse;
 function RespondHtml(const S: string; AStatus: Integer = 200): TResponse;
 function RespondJson(const S: string; AStatus: Integer = 200): TResponse;
+{ An error, in the shape RFC 9457 gives errors: a problem document.
+
+  There is a standard for this and it costs nothing to follow. `title` is
+  the status text, `status` the code, and `type` stays `about:blank` until
+  an application has a page to point at -- which is exactly what the RFC
+  says that value means.
+
+  **`detail` never carries an exception message.** A database error has
+  the SQL in it, a configuration error has the value, a file error has the
+  path. Handing any of that to a caller is reconnaissance served free; the
+  log is where it belongs, and the log already has it. Detail is for text
+  the application wrote on purpose, for this reply.
+
+  The content type is `application/problem+json`, which is what tells a
+  client the body is an error and not the thing it asked for. A 422 with
+  `application/json` looks exactly like a successful payload to anything
+  that only switches on the content type. }
+function Problem(AStatus: Integer; const Detail: string = ''): TResponse;
+
+{ The same document with room for more.
+
+  RFC 9457 allows extension members, and a validation failure needs one --
+  the list of fields. So the two halves are exposed separately: this one
+  opens the object and writes the standard members, the caller adds what
+  it has, and ProblemFrom closes it and makes the response. Askr.Urd.Bind
+  is the caller that matters; the shape stays in one place either way. }
+procedure BeginProblem(var W: TJsonWriter; AStatus: Integer;
+  const Detail: string = '');
+function ProblemFrom(var W: TJsonWriter; AStatus: Integer): TResponse;
+
+{ The error the client of the request being served right now should get:
+  a problem document when it asked for JSON, the plain text body Askr has
+  always sent otherwise.
+
+  Used for the errors the framework itself produces -- 404, 405, and the
+  500 after an unhandled exception. A handler that wants one calls
+  Problem directly; this exists so that the three places the framework
+  answers for you do not each have to ask the question.
+
+  It reads the ambient request rather than taking one, which keeps
+  TResponse from needing TRequest in its interface. With no ambient
+  request -- a test calling it directly -- the answer is the text body,
+  which is the safer of the two to give somebody who did not say.
+
+  **Detail is never an exception message.** The one caller that passes
+  anything passes a constant. }
+function ErrorResponse(AStatus: Integer; const Detail: string = ''): TResponse;
 function Redirect(const Location: string; AStatus: Integer = 302): TResponse;
 function NoContent: TResponse;
 
 implementation
+
+uses
+  { Only in the implementation: ErrorResponse asks the ambient request
+    what it wants. Putting TRequest in this unit's interface would make
+    every user of TResponse link the request parser. }
+  Askr.Http.Request;
 
 const
   { Sent with every response. Can be turned off on the server. }
@@ -423,6 +477,52 @@ begin
   Result := TResponse.Create(AStatus)
     .WithContentType('text/html; charset=utf-8')
     .WithBody(S);
+end;
+
+procedure BeginProblem(var W: TJsonWriter; AStatus: Integer;
+  const Detail: string);
+var
+  Title: string;
+begin
+  W.BeginObject;
+  W.Field('type', 'about:blank');
+  { StatusText answers '' for a code it does not know. An empty title is
+    worse than none: it reads as an error nobody could name. }
+  Title := StatusText(AStatus);
+  if Title <> '' then
+    W.Field('title', Title);
+  W.Field('status', Int64(AStatus));
+  if Detail <> '' then
+    W.Field('detail', Detail);
+end;
+
+function ProblemFrom(var W: TJsonWriter; AStatus: Integer): TResponse;
+begin
+  W.EndObject;
+  Result := Respond(AStatus)
+    .WithContentType('application/problem+json; charset=utf-8')
+    .WithBody(W.ToStr);
+end;
+
+function Problem(AStatus: Integer; const Detail: string): TResponse;
+var
+  W: TJsonWriter;
+begin
+  W.Init(CurrentArena, 256);
+  BeginProblem(W, AStatus, Detail);
+  Result := ProblemFrom(W, AStatus);
+end;
+
+function ErrorResponse(AStatus: Integer; const Detail: string): TResponse;
+var
+  Req: TRequest;
+begin
+  Req := CurrentRequest;
+  if (Req <> nil) and Req.AcceptsJson then
+    Exit(Problem(AStatus, Detail));
+  if Detail <> '' then
+    Exit(RespondText(Detail, AStatus));
+  Result := RespondText(StatusText(AStatus), AStatus);
 end;
 
 function RespondJson(const S: string; AStatus: Integer): TResponse;

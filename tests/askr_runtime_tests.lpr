@@ -17,6 +17,7 @@ uses
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Http.Welcome, Askr.Http.Server, Askr.Http.Client,
   Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Sqlite,
+  Askr.Urd.Bind,
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
@@ -538,6 +539,203 @@ begin
     UseArena(Prev);
     A.Free;
     Store.Free;
+  end;
+end;
+
+{ ------------------------------------------------- what an error looks like -- }
+
+{ The same routes, asked by a browser and by a program.
+
+  A redirect with the errors in a flash is a browser mechanism from end to
+  end: it needs somewhere to keep them between two requests, and a client
+  that follows the redirect and then reads the page it lands on. An API
+  client does neither. Before this it got a 302 to a page it never asked
+  for, followed it, and the errors it needed went into a flash it never
+  read -- so the failure arrived as a 200 with a sign-up form in it.
+
+  The handler is the same either way. A controller that had to ask who is
+  calling before it could report a validation failure would end up asking
+  in every action, and one of them would forget. }
+type
+  TApiSignup = class(TModel)
+  private
+    FEmail: string;
+    FDisplayName: string;
+  published
+    property Email: string read FEmail write FEmail;
+    { Two words on purpose. Rules are written with the property name,
+      errors come back keyed on the column -- and a one-word field cannot
+      tell the two apart. }
+    property DisplayName: string read FDisplayName write FDisplayName;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
+  TNegCtl = class
+  public
+    function Signup(Req: TRequest): TResponse;
+    function OnlyGet(Req: TRequest): TResponse;
+  end;
+
+class procedure TApiSignup.Describe(S: TSchema);
+begin
+  S.Table('api_signups');
+end;
+
+procedure TApiSignup.Rules(V: TValidator);
+begin
+  V.Field('Email').Required.Email;
+  V.Field('DisplayName').Required;
+end;
+
+function TNegCtl.Signup(Req: TRequest): TResponse;
+var
+  M: TApiSignup;
+begin
+  M := Req.Arena.New<TApiSignup>;
+  Req.FillInto(M);
+  if not M.Validate then
+    Exit(BackWithErrors(M.Errors, '/signup'));
+  Result := RespondText('saved');
+end;
+
+function TNegCtl.OnlyGet(Req: TRequest): TResponse;
+begin
+  Result := RespondText('yes');
+end;
+
+var
+  NegR: TRouter;
+  NegC: TNegCtl;
+  NegK: TTestClient;
+
+{ One member of a problem document, read through the real parser. A
+  substring check would pass on a body that is not JSON at all, and that
+  is exactly what is being ruled out. }
+function ProblemMember(R: TResponse; const Path_: string): string;
+var
+  A: TArena;
+  Root, V: PJsonValue;
+  ErrAt: SizeInt;
+  Rest, Key: string;
+  P: Integer;
+begin
+  A := TArena.Create(8 * 1024);
+  try
+    if not JsonParse(A, StrDup(A, R.Body.ToString), Root, ErrAt) then
+      Exit('<not json>');
+    V := Root;
+    Rest := Path_;
+    while Rest <> '' do
+    begin
+      P := Pos('.', Rest);
+      if P = 0 then
+      begin
+        Key := Rest;
+        Rest := '';
+      end
+      else
+      begin
+        Key := Copy(Rest, 1, P - 1);
+        Rest := Copy(Rest, P + 1, MaxInt);
+      end;
+      V := JsonMember(V, Key);
+    end;
+    Result := JsonAsString(V);
+  finally
+    A.Free;
+  end;
+end;
+
+procedure NegSetup;
+begin
+  SetAppKey('Zm9vYmFyYmF6cXV1eGZvb2JhcmJhenF1dXhhYmM9');
+  SetSessions(TSessionStore.Create(3600));
+  NegC := TNegCtl.Create;
+  NegR := TRouter.Create;
+  NegR.Post('/signup', NegC.Signup);
+  NegR.Get('/only-get', NegC.OnlyGet);
+  UseSessions(NegR);
+  NegK := TTestClient.Create(NegR);
+end;
+
+procedure NegRydd;
+var
+  Store_: TSessionStore;
+begin
+  NegK.Free;
+  NegR.Free;
+  NegC.Free;
+  Store_ := Sessions;
+  SetSessions(nil);
+  Store_.Free;
+  SetAppKey('');
+end;
+
+procedure TestApiErrorNegotiation;
+var
+  R: TResponse;
+begin
+  NegSetup;
+  try
+    { A browser posting a form. Unchanged: a redirect, and the errors go
+      in the flash for the page it lands on. }
+    R := NegK.WithHeader('Accept', 'text/html')
+      .Post('/signup', 'email=&display_name=',
+            'application/x-www-form-urlencoded');
+    AssertEqual(R.StatusCode div 100, 3, 'a browser is still redirected');
+    AssertEqual(R.HeaderValue('Location'), '/signup', 'back where it came from');
+
+    { The same handler, asked by a program. }
+    R := NegK.WithHeader('Accept', 'application/json')
+      .Post('/signup', '{"email":"not-an-email"}');
+    AssertStatus(R, 422, 'a JSON client gets 422, not a redirect');
+    AssertEqual(R.HeaderValue('Location'), '',
+      'and is not sent anywhere else');
+    AssertContains(R.HeaderValue('Content-Type'), 'application/problem+json',
+      'as a problem document');
+    AssertEqual(ProblemMember(R, 'status'), '422', 'with the status in it');
+    AssertEqual(ProblemMember(R, 'title'), 'Unprocessable Content',
+      'and the title');
+
+    { Keyed on the column name. Rules are written with the property name
+      -- DisplayName -- and this is the one field where the two differ, so
+      a mapping that quietly used the property name would show up here and
+      nowhere else. }
+    AssertEqual(ProblemMember(R, 'errors.display_name'),
+      'display_name is required', 'the errors are keyed on the column');
+    AssertEqual(ProblemMember(R, 'errors.email'),
+      'email is not a valid email address', 'and every failing field is in');
+    AssertEqual(ProblemMember(R, 'errors.DisplayName'), '',
+      'not on the property name');
+    AssertNotContains(R.Body.ToString, '<', 'no markup anywhere in it');
+
+    { An Inertia client is neither of the two. It follows the redirect and
+      reads props.errors off the page it lands on, which is the flash
+      working as designed -- and it sends Accept: application/json while
+      doing it. Answering that with 422 would break every Inertia form. }
+    R := NegK.WithHeader('Accept', 'application/json')
+      .WithHeader('X-Inertia', 'true')
+      .Post('/signup', '{"email":""}');
+    AssertEqual(R.StatusCode div 100, 3, 'an Inertia post is still a redirect');
+
+    { The router answers 405 and 404 itself, and those negotiate too. }
+    R := NegK.WithHeader('Accept', 'application/json').Post('/only-get', '{}');
+    AssertStatus(R, 405, 'the wrong method is 405');
+    AssertContains(R.HeaderValue('Content-Type'), 'application/problem+json',
+      'as a problem document');
+    AssertEqual(ProblemMember(R, 'title'), 'Method Not Allowed', 'titled');
+
+    R := NegK.Post('/only-get', '{}', 'application/x-www-form-urlencoded');
+    AssertEqual(R.Body.ToString, 'Method Not Allowed',
+      'and a browser gets the text it always got');
+
+    R := NegK.WithHeader('Accept', 'application/json').Get('/nowhere');
+    AssertStatus(R, 404, 'a route that does not exist is 404');
+    AssertEqual(ProblemMember(R, 'title'), 'Not Found', 'titled');
+  finally
+    NegRydd;
   end;
 end;
 
@@ -1806,6 +2004,20 @@ begin
     Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
       .WithHeader('X-CSRF-Token', 'helt feil').Post('/form', '{}');
     AssertEqual(Res.StatusCode, 419, 'POST with a wrong token is rejected');
+    AssertEqual(Res.Body.ToString, 'CSRF token missing or invalid.',
+      'and told in the words it has always used');
+
+    { The same rejection, asked for by a program. 419 is not in any RFC --
+      it is what the Inertia client recognises and reloads on -- but the
+      body still has to be something a program can read, and the rule
+      about not saying what was expected is unchanged. }
+    Res := CsrfK.WithHeader('Cookie', 'askr_session=' + Cookie_)
+      .WithHeader('Accept', 'application/json').Post('/form', '{}');
+    AssertEqual(Res.StatusCode, 419, 'a JSON client is rejected too');
+    AssertContains(Res.HeaderValue('Content-Type'), 'application/problem+json',
+      'as a problem document');
+    AssertNotContains(Res.Body.ToString, Token,
+      'and the expected token is still not in it');
 
     { Without a session there is nothing to compare against. Then the
       answer is no — not "yes, because there is no expectation". }
@@ -2231,8 +2443,16 @@ begin
     Res := AuthK.WithHeader('X-Inertia', 'true').Get('/skjult');
     AssertEqual(Res.StatusCode, 401, 'an Inertia request gets 401');
 
+    Res := AuthK.WithHeader('X-Inertia', 'true').Get('/skjult');
+    AssertContains(Res.HeaderValue('Content-Type'), 'text/plain',
+      'as text, because its client reads the status and not the body');
+
     Res := AuthK.WithHeader('Accept', 'application/json').Get('/skjult');
     AssertEqual(Res.StatusCode, 401, 'and a JSON request too');
+    AssertContains(Res.HeaderValue('Content-Type'), 'application/problem+json',
+      'as a problem document, like every other error it can be handed');
+    AssertEqual(Res.HeaderValue('Location'), '',
+      'and never a redirect to a sign-in page');
 
     { Signed in, it passes. The sign-in route is itself behind the
       requirement here, so the session has to be made through a request
@@ -4701,6 +4921,10 @@ begin
   Test('Inertia carries flash whatever the key', @TestInertiaFlashUansettNokkel);
   Test('the session does not leak out of the request',
     @TestSesjonenLekkerIkkeUtAvRequesten);
+
+  Group('What an error looks like');
+  Test('a machine client is never given a page, and never a redirect',
+    @TestApiErrorNegotiation);
 
   Group('CSRF');
   Test('rejects without a token', @TestCsrfAvviserUtenToken);

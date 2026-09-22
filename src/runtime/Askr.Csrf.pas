@@ -245,7 +245,7 @@ begin
   { The message says what is wrong without revealing what was expected.
     "Token mismatch" with the correct token in the text has been a real
     vulnerability in other frameworks. }
-  Result := RespondText('CSRF token missing or invalid.', CsrfFailStatus);
+  Result := ErrorResponse(CsrfFailStatus, 'CSRF token missing or invalid.');
 end;
 
 class function TCsrfGuard.SetCookie(Req: TRequest; Res: TResponse): TResponse;
