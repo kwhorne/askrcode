@@ -8,7 +8,13 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
-## Unreleased
+## 0.13.0
+
+**Worth reading if you have after-filters of your own, a frontend that
+reads dates, a SQLite schema with booleans, or a session store you size by
+signed-in users.** Most of what follows is something that was wrong being
+right, and each of them changes something an app could have been built
+around.
 
 **`askr make` no longer writes over a file that is there.** A script that
 ran `askr make model X` to refresh a stub now stops and names the file.

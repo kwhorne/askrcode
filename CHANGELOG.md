@@ -12,7 +12,20 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.13.0 — 2026-09-23
+
+Askr writes applications as well as serving them. This release is the
+generators: `askr make model` turns a spec into a model and its
+migration, and `askr make resource` turns a table that exists into the
+pages over it, a JSON API with its OpenAPI description, and tests for
+both -- on the typed columns, so a column that goes away later is a
+compile error rather than a 500.
+
+`./askr make:check` is the gate: three databases, a socket and Chrome.
+Driving what the generators wrote as a user would found bugs that were
+never in the generators -- in the router, in CSRF for Inertia, in the data
+grid -- and every app using those parts had them. They are under Fixed,
+and three of them change behaviour you may rely on; see UPGRADE.md.
 
 ### Added
 

@@ -38,6 +38,7 @@ exactly that over 500 requests.
 | **Norn** | Migrations, and typed columns generated from the *database*, not from the migrations |
 | **Lauf** | The frontend layer: 38 Svelte 5 components, forms that know your validation, a data grid that sorts in the database |
 | **Rún** | An optional query language transpiled to typed Pascal at build time |
+| **Generators** | `askr make model` from a spec, `askr make resource` from a table: typed controllers, Lauf pages, a JSON API with its OpenAPI description, and tests |
 | **APIs** | Bearer tokens with scopes, a list envelope, problem documents, CORS, rate limiting, and an OpenAPI document generated from your models |
 | Images | What an upload really is, and resizing it with libvips |
 | Runtime | Queue (in-process or durable), scheduler, cache, mail, logging, configuration |
@@ -150,7 +151,7 @@ A project names the release it builds against, and `askr` fetches it:
 ```toml
 # askr.toml
 [askr]
-version = "0.12.0"
+version = "0.13.0"
 ```
 
 ```sh

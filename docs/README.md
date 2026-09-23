@@ -137,6 +137,6 @@ part that makes this documentation something other than marketing.
 
 ## Version
 
-This documentation describes Askr 0.12.0. The framework builds and passes
+This documentation describes Askr 0.13.0. The framework builds and passes
 its full test suite on Free Pascal 3.2.2 and 3.3.1 trunk, on aarch64 and
 x86_64, on macOS and Linux.
