@@ -82,7 +82,7 @@ askr make resource Gadget [--table=gadgets] [--force]
 The table is read from the database the project is configured with — the
 one that **exists**, not a spec — and becomes the seven actions over it:
 
-| Written | |
+| File | What is in it |
 |---|---|
 | `app/Http/App.Http.GadgetsController.pas` | `Index`, `Show`, `Add`, `Store`, `Edit`, `Update`, `Remove`, and `GadgetsRoutes(R)` |
 | `frontend/src/pages/Gadgets/` | `Index`, `Show`, `Add` and `Edit`, in Lauf, and `Fields` shared by the two forms |
@@ -158,7 +158,7 @@ askr make resource Gadget --api          # JSON only
 askr make resource Gadget --web --api    # both
 ```
 
-| Written | |
+| File | What is in it |
 |---|---|
 | `app/Http/App.Http.GadgetsApiController.pas` | `GET`, `POST`, `PATCH` and `DELETE` under `/api/gadgets`, `GadgetsApiRoutes(R)`, and `GadgetsApiDoc(D)` |
 | `app/Http/App.Http.ApiDoc.pas` | `AppApiDoc`, the first time; each resource after that is two lines in it |
