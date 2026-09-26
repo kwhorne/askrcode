@@ -2129,6 +2129,169 @@ cmd_auth_check() {
     bad "the reset mail comes from its template"
   fi
 
+  # ---- two-factor sign-in ----
+  echo
+  echo "- two-factor sign-in"
+  # The code as an authenticator app computes it, in Python's standard
+  # library -- not in the Pascal that is being checked. $2 is steps from
+  # now.
+  totp() {
+    python3 -c "import hmac,base64,struct,time,sys
+k=base64.b32decode(sys.argv[1]+'='*(-len(sys.argv[1])%8))
+c=int(time.time())//30+int(sys.argv[2])
+h=hmac.new(k,struct.pack('>Q',c),'sha1').digest();o=h[-1]&15
+print(str((struct.unpack('>I',h[o:o+4])[0]&0x7fffffff)%1000000).zfill(6))" "$1" "$2"
+  }
+  post_form() {  # path, then name=value pairs; the token from the page first
+    page=$1; shift
+    status "$base$page" >/dev/null
+    tok=$(token_in "$work/body")
+    set -- --data-urlencode "_token=$tok" "$@"
+    status "$@" "$target"
+  }
+  sign_in() {
+    rm -f "$jar"
+    status "$base/login" >/dev/null
+    tok=$(token_in "$work/body")
+    location --data-urlencode "_token=$tok" --data-urlencode "email=new-$email" \
+      --data-urlencode "password=$1" "$base/login"
+  }
+
+  target="$base/settings/two-factor"
+  post_form /settings/security >/dev/null
+  c=$(status "$base/settings/two-factor")
+  secret=$(grep -o '<code class="secret">[^<]*' "$work/body" | sed 's/.*">//; s/ //g')
+  if [ "$c" = "200" ] && grep -q '<svg' "$work/body" && [ ${#secret} -eq 32 ]; then
+    ok "set up from the security page: a QR code and the key"
+  else
+    bad "set up from the security page" "got $c, key '${secret}'"
+  fi
+  target="$base/settings/two-factor/confirm"
+  post_form /settings/two-factor --data-urlencode "code=000000" >/dev/null
+  if grep -q "did not match" "$work/body"; then
+    ok "a wrong code does not turn it on"
+  else
+    bad "a wrong code does not turn it on"
+  fi
+  post_form /settings/two-factor --data-urlencode "code=$(totp "$secret" 0)" >/dev/null
+  codes=$(grep -oE '<code>[a-z2-7]{5}-[a-z2-7]{5}</code>' "$work/body" | sed 's/<[^>]*>//g')
+  if [ "$(echo "$codes" | grep -c .)" = "8" ]; then
+    ok "the code from the app turns it on, and eight recovery codes are shown once"
+  else
+    bad "the code from the app turns it on" "$(head -c 300 "$work/body")"
+  fi
+  stored=$(in_box "python3 -c \"import sqlite3; print(sqlite3.connect('storage/auth.sqlite').execute('select two_factor_secret, two_factor_recovery from users').fetchone())\"" site 2>&1 || true)
+  first_code=$(echo "$codes" | head -1)
+  if echo "$stored" | grep -q "'v1\." && ! echo "$stored" | grep -q "$secret" &&
+     ! echo "$stored" | grep -q "$first_code"; then
+    ok "the database holds the key sealed and the recovery codes hashed"
+  else
+    bad "the database holds the key sealed and the recovery codes hashed" "$stored"
+  fi
+
+  r=$(sign_in correct-horse-battery)
+  case $r in
+    */two-factor-challenge) ok "the password alone leads to the code, not in" ;;
+    *) bad "the password alone leads to the code" "went to: $r" ;;
+  esac
+  r=$(location "$base/dashboard")
+  case $r in
+    */login) ok "and is not signed in until then" ;;
+    *) bad "and is not signed in until then" "dashboard went to: $r" ;;
+  esac
+  target="$base/two-factor-challenge"
+  post_form /two-factor-challenge --data-urlencode "code=000000" >/dev/null
+  r=$(location "$base/dashboard")
+  case $r in
+    */login) ok "a wrong code does not let it in" ;;
+    *) bad "a wrong code does not let it in" "dashboard went to: $r" ;;
+  esac
+  # The next step's code: the one that turned it on is spent, and the
+  # window takes one step either side.
+  next=$(totp "$secret" 1)
+  post_form /two-factor-challenge --data-urlencode "code=$next" >/dev/null
+  c=$(status "$base/dashboard")
+  [ "$c" = "200" ] && ok "the code from the app does" || bad "the code from the app does" "dashboard got $c"
+
+  r=$(sign_in correct-horse-battery)
+  post_form /two-factor-challenge --data-urlencode "code=$next" >/dev/null
+  c=$(status "$base/dashboard")
+  [ "$c" != "200" ] && ok "the same code a second time does not -- it is spent" ||
+    bad "the same code a second time does not" "dashboard got $c"
+
+  post_form /two-factor-challenge --data-urlencode "recovery=$(echo "$first_code" | tr 'a-z' 'A-Z' | tr '-' ' ')" >/dev/null
+  c=$(status "$base/dashboard")
+  [ "$c" = "200" ] && ok "a recovery code does, however it is typed" || bad "a recovery code does" "dashboard got $c"
+  r=$(sign_in correct-horse-battery)
+  post_form /two-factor-challenge --data-urlencode "recovery=$first_code" >/dev/null
+  c=$(status "$base/dashboard")
+  [ "$c" != "200" ] && ok "but only once" || bad "a recovery code works only once" "dashboard got $c"
+
+  # A reset link is a way in too, and has to ask for the code as well.
+  rm -f "$jar"
+  target="$base/forgot-password"
+  post_form /forgot-password --data-urlencode "email=new-$email" >/dev/null
+  reset=$(tr -d '\r' < "$work/site/storage/mail.log" | grep -o "$base/reset-password/[A-Za-z0-9_-]*" | tail -1)
+  target="$base/reset-password"
+  status "$reset" >/dev/null
+  tok=$(token_in "$work/body")
+  rtok=${reset##*/}
+  r=$(location --data-urlencode "_token=$tok" --data-urlencode "token=$rtok" \
+        --data-urlencode "password=new-horse-battery" \
+        --data-urlencode "password_confirmation=new-horse-battery" "$base/reset-password")
+  case $r in
+    */two-factor-challenge) ok "a password reset asks for the code too, rather than signing in" ;;
+    *) bad "a password reset asks for the code too" "went to: $r" ;;
+  esac
+
+  # A recovery code from here on: the step after now is spent, and no code
+  # is later than it until the clock moves on. That is the property.
+  second_code=$(echo "$codes" | sed -n 2p)
+  target="$base/two-factor-challenge"
+  post_form /two-factor-challenge --data-urlencode "recovery=$second_code" >/dev/null
+  c=$(status "$base/dashboard")
+  [ "$c" = "200" ] || bad "signed in with the second recovery code" "dashboard got $c"
+  target="$base/settings/two-factor/disable"
+  post_form /settings/security --data-urlencode "password=wrong-password" >/dev/null
+  status "$base/settings/security" >/dev/null
+  if grep -q "On since" "$work/body" && grep -q "6 recovery codes left" "$work/body"; then
+    ok "turning it off needs the password; and two codes used, six are left"
+  else
+    bad "turning it off needs the password" "$(grep -o 'On since[^<]*' "$work/body")"
+  fi
+  target="$base/settings/two-factor/disable"
+  post_form /settings/security --data-urlencode "password=new-horse-battery" >/dev/null
+  r=$(sign_in new-horse-battery)
+  case $r in
+    */dashboard) ok "and with it, the password is enough again" ;;
+    *) bad "and with it, the password is enough again" "went to: $r" ;;
+  esac
+
+  # Six digits are a million guesses and no more, so wrong codes are
+  # counted like wrong passwords: after five, even the right one waits.
+  target="$base/settings/two-factor"
+  post_form /settings/security >/dev/null
+  status "$base/settings/two-factor" >/dev/null
+  secret2=$(grep -o '<code class="secret">[^<]*' "$work/body" | sed 's/.*">//; s/ //g')
+  target="$base/settings/two-factor/confirm"
+  post_form /settings/two-factor --data-urlencode "code=$(totp "$secret2" 0)" >/dev/null
+  sign_in new-horse-battery >/dev/null
+  target="$base/two-factor-challenge"
+  for i in 1 2 3 4 5; do
+    post_form /two-factor-challenge --data-urlencode "code=00000$i" >/dev/null
+  done
+  post_form /two-factor-challenge --data-urlencode "code=$(totp "$secret2" 1)" >/dev/null
+  # The page first: a flash lasts one request, and the dashboard would
+  # take it.
+  status "$base/two-factor-challenge" >/dev/null
+  cp "$work/body" "$work/challenge-body"
+  c=$(status "$base/dashboard")
+  if [ "$c" != "200" ] && grep -q "Too many attempts" "$work/challenge-body"; then
+    ok "after five wrong codes, the right one waits too"
+  else
+    bad "after five wrong codes, the right one waits too" "dashboard got $c"
+  fi
+
   docker rm -f $cname >/dev/null 2>&1
 
   echo
@@ -2136,7 +2299,7 @@ cmd_auth_check() {
     echo "auth:check failed."
     return 1
   fi
-  echo "auth:check holds: an address is confirmed by the mail it was sent, and by nothing else."
+  echo "auth:check holds: an address is confirmed by the mail it was sent, and a password is not a way in on its own once two-factor is on."
 }
 
 # The gate behind Askr.Qr: codes at every level, from a few bytes to what

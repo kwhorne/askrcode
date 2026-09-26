@@ -40,6 +40,14 @@ with the zero-major caveat that minor releases may break things until
   `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
   browser, an Inertia visit and a JSON client each its own way and says no
   when no check is registered. `./askr auth:check` drives it over a socket.
+- **Two-factor sign-in in the scaffold.** `/settings/security` sets it up
+  with a QR code and the key, turns it on when a code from the app has been
+  typed, and shows eight recovery codes once. A correct password then leads
+  to `/two-factor-challenge`, not into a session — and so does a password
+  reset, which used to sign in straight away. A code works once, wrong codes
+  are counted like wrong passwords, the secret is sealed under `APP_KEY` and
+  the recovery codes are hashed; new codes and turning it off need the
+  password. `./askr auth:check` drives all of it over a socket.
 - **Encrypting a column.** `SealText` and `OpenText` in `Askr.Core.Aead`
   keep a secret the app reads back — a TOTP secret — under `APP_KEY`, with
   ChaCha20-Poly1305 from RFC 8439 in Pascal and the purpose bound in, so a

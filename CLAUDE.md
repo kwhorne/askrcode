@@ -1230,6 +1230,23 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Tofaktor i stillaset
+
+* **`BeginSignIn` er den ene veien inn etter et passord.** Både innlogging
+  og tilbakestilling går dit. Tilbakestillingen logget inn direkte, og med
+  tofaktor på ville en lenke i noen andres innboks gått rundt koden. En
+  passkey går ikke dit — den er to faktorer i seg selv.
+* **Porten regner koden i Python**, ikke i Pascal-en den sjekker.
+* **En kode er brukt når den er brukt.** Etter at steget etter nå er tatt,
+  godtas ingen kode før klokka har gått videre — derfor bruker porten
+  gjenopprettingskoder for resten. Første utgave brukte en TOTP-kode der og
+  var grønn på «trenger passordet for å slå av» uten at noen var logget inn.
+  Samme familie: en `post_form` som postet til forrige `$target`.
+* **En flash lever én request.** Porten leste dashbordet før
+  utfordringssiden, og dashbordet tok meldingen.
+* **Ti-minuttersgrensen for en halvferdig innlogging er ikke testet.** En
+  port som venter ti minutter er ikke en noen kjører.
+
 ## Kommandolinja
 
 * **`Askr.Console` ligger i rammeverket, ikke i den genererte app.lpr.**

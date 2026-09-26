@@ -43,7 +43,7 @@ const
   { Every route auth adds, in one list: InstallRoutes writes them into
     app.lpr and WriteHelp prints them when it cannot. Two lists of the
     same routes would be two lists. }
-  AuthRoutes: array[0..21] of string = (
+  AuthRoutes: array[0..28] of string = (
     'R.Get(''/login'', Auth_.ShowLogin);',
     'R.Post(''/login'', Auth_.DoLogin);',
     'R.Get(''/register'', Auth_.ShowRegister);',
@@ -56,6 +56,13 @@ const
     'R.Get(''/verify-email'', Auth_.ShowVerifyNotice);',
     'R.Post(''/verify-email'', Auth_.ResendVerification);',
     'R.Get(''/verify-email/:id/:hash'', Auth_.VerifyEmail);',
+    'R.Get(''/two-factor-challenge'', Auth_.ShowChallenge);',
+    'R.Post(''/two-factor-challenge'', Auth_.DoChallenge);',
+    'R.Post(''/settings/two-factor'', Auth_.StartTwoFactor);',
+    'R.Get(''/settings/two-factor'', Auth_.ShowTwoFactor);',
+    'R.Post(''/settings/two-factor/confirm'', Auth_.ConfirmTwoFactor);',
+    'R.Post(''/settings/two-factor/recovery'', Auth_.RegenerateRecovery);',
+    'R.Post(''/settings/two-factor/disable'', Auth_.DisableTwoFactor);',
     'R.Get(''/dashboard'', Auth_.Dashboard);',
     'R.Get(''/settings/profile'', Auth_.ShowProfile);',
     'R.Post(''/settings/profile'', Auth_.SaveProfile);',
@@ -86,6 +93,10 @@ begin
     '    FEmail: string;' + #10 +
     '    FPasswordHash: string;' + #10 +
     '    FEmailVerifiedAt: TDateTime;' + #10 +
+    '    FTwoFactorSecret: string;' + #10 +
+    '    FTwoFactorConfirmedAt: TDateTime;' + #10 +
+    '    FTwoFactorLastStep: Int64;' + #10 +
+    '    FTwoFactorRecovery: string;' + #10 +
     '    FCreatedAt: TDateTime;' + #10 +
     '    FUpdatedAt: TDateTime;' + #10 +
     '  published' + #10 +
@@ -100,6 +111,13 @@ begin
     '    { 0 until the address is confirmed. A TDateTime of 0 is' + #10 +
     '      written as NULL, so the column says not yet, not 1899. }' + #10 +
     '    property EmailVerifiedAt: TDateTime read FEmailVerifiedAt write FEmailVerifiedAt;' + #10 +
+    '    { Two-factor sign-in. The secret is sealed with SealText under' + #10 +
+    '      APP_KEY, the recovery codes are SHA-256 hashes, and the last' + #10 +
+    '      step used is kept so a code works once. On once confirmed. }' + #10 +
+    '    property TwoFactorSecret: string read FTwoFactorSecret write FTwoFactorSecret;' + #10 +
+    '    property TwoFactorConfirmedAt: TDateTime read FTwoFactorConfirmedAt write FTwoFactorConfirmedAt;' + #10 +
+    '    property TwoFactorLastStep: Int64 read FTwoFactorLastStep write FTwoFactorLastStep;' + #10 +
+    '    property TwoFactorRecovery: string read FTwoFactorRecovery write FTwoFactorRecovery;' + #10 +
     '    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;' + #10 +
     '    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;' + #10 +
     '  public' + #10 +
@@ -123,6 +141,8 @@ begin
     'class procedure TUser.HideFromJson(H: TJsonHidden);' + #10 +
     'begin' + #10 +
     '  H.AddColumn(' + Q + 'password_hash' + Q + ');' + #10 +
+    '  H.AddColumn(' + Q + 'two_factor_secret' + Q + ');' + #10 +
+    '  H.AddColumn(' + Q + 'two_factor_recovery' + Q + ');' + #10 +
     'end;' + #10 + #10 +
     'class procedure TUser.Describe(S: TSchema);' + #10 +
     'begin' + #10 +
@@ -181,7 +201,8 @@ begin
     A('  Askr.Http.Request, Askr.Http.Response,');
     A('  Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query,');
     A('  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Mail, Askr.Cache,');
-    A('  Askr.Core.Json, Askr.WebAuthn, Askr.Signed,');
+    A('  Askr.Core.Json, Askr.WebAuthn, Askr.Signed, Askr.Core.Aead,');
+    A('  Askr.Totp, Askr.Qr,');
     A('  App.Models.Credential,');
     A('  App.Models.User;');
     A('');
@@ -203,6 +224,16 @@ begin
     A('    function ShowVerifyNotice(Req: TRequest): TResponse;');
     A('    function ResendVerification(Req: TRequest): TResponse;');
     A('    function VerifyEmail(Req: TRequest): TResponse;');
+    A('');
+    A('    { Two-factor sign-in: set up from the security page, asked for');
+    A('      between the password and the session. }');
+    A('    function StartTwoFactor(Req: TRequest): TResponse;');
+    A('    function ShowTwoFactor(Req: TRequest): TResponse;');
+    A('    function ConfirmTwoFactor(Req: TRequest): TResponse;');
+    A('    function RegenerateRecovery(Req: TRequest): TResponse;');
+    A('    function DisableTwoFactor(Req: TRequest): TResponse;');
+    A('    function ShowChallenge(Req: TRequest): TResponse;');
+    A('    function DoChallenge(Req: TRequest): TResponse;');
     A('');
     A('    { After signing in. Plain HTML pages, like the rest of auth: a');
     A('      new project has to be able to sign in AND get somewhere');
@@ -302,6 +333,8 @@ begin
     A('{ Registration and a changed address send it; it is further down,');
     A('  with the rest of email verification. }');
     A('procedure SendVerification(U: TUser); forward;');
+    A('{ Where a correct password goes: straight in, or to the code. }');
+    A('function BeginSignIn(U: TUser; Remember: Boolean): TResponse; forward;');
     A('');
     A('{ ---------------------------------------- shell for app pages -- }');
     A('');
@@ -375,6 +408,16 @@ begin
     A('    ''button.go{padding:.55rem 1.1rem;font:inherit;font-weight:600;'' +');
     A('    ''color:#031;background:var(--accent);border:0;'' +');
     A('    ''border-radius:.35rem;cursor:pointer}'' +');
+    A('    ''a.button{display:inline-block;padding:.55rem 1.1rem;font-weight:600;'' +');
+    A('    ''color:#031;background:var(--accent);border-radius:.35rem;'' +');
+    A('    ''text-decoration:none}'' +');
+    A('    ''button.plain{padding:.55rem 1.1rem;font:inherit;background:none;'' +');
+    A('    ''color:var(--fg);border:1px solid var(--line);border-radius:.35rem;'' +');
+    A('    ''cursor:pointer}'' +');
+    A('    ''.codes{list-style:none;padding:0;margin:0 0 1rem;columns:2;'' +');
+    A('    ''font:1rem ui-monospace,Menlo,monospace}'' +');
+    A('    ''code.secret{font:.95rem ui-monospace,Menlo,monospace;'' +');
+    A('    ''word-break:break-all}'' +');
     A('    ''.right{text-align:right}'' +');
     A('    ''.err{color:var(--bad);font-size:.9rem;margin:0 0 1rem}'' +');
     A('    ''.ok{color:var(--accent);font-size:.9rem;margin:0 0 1rem}'' +');
@@ -564,10 +607,9 @@ begin
     A('');
     A('  ClearAttempts(Email);');
     A('  { Login changes the session id. Without it session fixation is');
-    A('    wide open. }');
-    A('  Askr.Auth.Login(IntToStr(U.Id), Req.Form(''remember'').Len > 0);');
-    A('  LogInfo(''login'', [''user'', U.Id]);');
-    A('  Result := Redirect(''/dashboard'', 303);');
+    A('    wide open. With two-factor on, it waits for the code. }');
+    A('  LogInfo(''password accepted'', [''user'', U.Id]);');
+    A('  Result := BeginSignIn(U, Req.Form(''remember'').Len > 0);');
     A('end;');
     A('');
     A('function TAuthController.DoLogout(Req: TRequest): TResponse;');
@@ -786,9 +828,10 @@ begin
     A('  { The session is swapped. If somebody else was signed in as this');
     A('    user, they must not stay that way after a password change. }');
     A('  ClearAttempts(Email);');
-    A('  Askr.Auth.Login(IntToStr(U.Id));');
     A('  LogInfo(''password reset'', [''user'', U.Id]);');
-    A('  Result := Redirect(''/dashboard'', 303);');
+    A('  { The same way in as a password: a reset link in somebody else''s');
+    A('    mailbox does not get round the code. }');
+    A('  Result := BeginSignIn(U, False);');
     A('end;');
     A('');
     A('{ --------------------------------------------- after sign-in -- }');
@@ -939,6 +982,361 @@ begin
     A('    Result := Redirect(''/login'', 303);');
     A('end;');
 
+    A('{ -------------------------------------------- two-factor sign-in -- }');
+    A('');
+    A('const');
+    A('  { Who got the password right and still owes a code, and for how long');
+    A('    the session remembers it. Ten minutes: long enough to find the phone,');
+    A('    short enough that a machine left at this step is not half signed in');
+    A('    all day. }');
+    A('  PendingKey = ''_2fa_user'';');
+    A('  PendingRememberKey = ''_2fa_remember'';');
+    A('  PendingAtKey = ''_2fa_at'';');
+    A('  ChallengeLifetimeSec = 10 * 60;');
+    A('');
+    A('function TwoFactorOn(U: TUser): Boolean;');
+    A('begin');
+    A('  Result := (U.TwoFactorSecret <> '''') and (U.TwoFactorConfirmedAt <> 0);');
+    A('end;');
+    A('');
+    A('{ The one way into a session after a password: DoLogin and a password');
+    A('  reset both come here, so a reset link in somebody else''s mailbox does');
+    A('  not get round the code. A passkey does not come here -- it is two');
+    A('  factors in itself. }');
+    A('function BeginSignIn(U: TUser; Remember: Boolean): TResponse;');
+    A('begin');
+    A('  if TwoFactorOn(U) then');
+    A('  begin');
+    A('    { Not signed in yet: the password is half of it. }');
+    A('    CurrentSession.Put(PendingKey, IntToStr(U.Id));');
+    A('    CurrentSession.Put(PendingRememberKey, BoolToStr(Remember, ''1'', ''''));');
+    A('    CurrentSession.Put(PendingAtKey, IntToStr(UnixNow));');
+    A('    Exit(Redirect(''/two-factor-challenge'', 303));');
+    A('  end;');
+    A('  Askr.Auth.Login(IntToStr(U.Id), Remember);');
+    A('  Result := Redirect(''/dashboard'', 303);');
+    A('end;');
+    A('');
+    A('procedure ForgetPending;');
+    A('begin');
+    A('  CurrentSession.Forget(PendingKey);');
+    A('  CurrentSession.Forget(PendingRememberKey);');
+    A('  CurrentSession.Forget(PendingAtKey);');
+    A('end;');
+    A('');
+    A('{ The user halfway through, or nil when there is none or it has gone');
+    A('  stale. }');
+    A('function PendingUser: TUser;');
+    A('begin');
+    A('  Result := nil;');
+    A('  if CurrentSession.Get(PendingKey) = '''' then');
+    A('    Exit;');
+    A('  if UnixNow - StrToInt64Def(CurrentSession.Get(PendingAtKey), 0) > ChallengeLifetimeSec then');
+    A('  begin');
+    A('    ForgetPending;');
+    A('    Exit;');
+    A('  end;');
+    A('  Result := TQuery<TUser>.New.Find(StrToInt64Def(CurrentSession.Get(PendingKey), 0));');
+    A('end;');
+    A('');
+    A('{ Four letters at a time, for a person copying it into an app. }');
+    A('function Grouped(const Secret: string): string;');
+    A('var');
+    A('  I: Integer;');
+    A('begin');
+    A('  Result := '''';');
+    A('  for I := 1 to Length(Secret) do');
+    A('  begin');
+    A('    if (I > 1) and ((I - 1) mod 4 = 0) then');
+    A('      Result := Result + '' '';');
+    A('    Result := Result + Secret[I];');
+    A('  end;');
+    A('end;');
+    A('');
+    A('function RecoveryHashes(U: TUser): TStringArray;');
+    A('begin');
+    A('  if U.TwoFactorRecovery = '''' then');
+    A('    Result := nil');
+    A('  else');
+    A('    Result := U.TwoFactorRecovery.Split(['','']);');
+    A('end;');
+    A('');
+    A('{ New codes, stored as their hashes, and the codes themselves for the');
+    A('  one page that shows them. }');
+    A('function IssueRecoveryCodes(U: TUser): TStringArray;');
+    A('var');
+    A('  I: Integer;');
+    A('  Hashes: string;');
+    A('begin');
+    A('  Result := NewRecoveryCodes(8);');
+    A('  Hashes := '''';');
+    A('  for I := 0 to High(Result) do');
+    A('  begin');
+    A('    if I > 0 then');
+    A('      Hashes := Hashes + '','';');
+    A('    Hashes := Hashes + RecoveryCodeHash(Result[I]);');
+    A('  end;');
+    A('  U.TwoFactorRecovery := Hashes;');
+    A('end;');
+    A('');
+    A('function RecoveryPage(U: TUser; const Codes: TStringArray; const Intro: string): TResponse;');
+    A('var');
+    A('  I: Integer;');
+    A('  L: string;');
+    A('begin');
+    A('  L := '''';');
+    A('  for I := 0 to High(Codes) do');
+    A('    L := L + ''<li><code>'' + Esc(Codes[I]) + ''</code></li>'';');
+    A('  Result := RespondHtml(AppShell(''Recovery codes'', ''/settings/security'', U.Name,');
+    A('    ''<h1>Recovery codes</h1>'' +');
+    A('    ''<p class="lead">'' + Esc(Intro) + ''</p>'' +');
+    A('    ''<section><div><h2>Keep these somewhere safe</h2>'' +');
+    A('    ''<p>Each one signs you in once without the app, if the phone is lost. '' +');
+    A('    ''They are shown this once; only their hashes are kept.</p></div><div>'' +');
+    A('    ''<ul class="codes">'' + L + ''</ul>'' +');
+    A('    ''<p class="right"><a class="button" href="/settings/security">I have saved them</a></p>'' +');
+    A('    ''</div></section>''));');
+    A('end;');
+    A('');
+    A('function TwoFactorCard(U: TUser): string;');
+    A('begin');
+    A('  if TwoFactorOn(U) then');
+    A('    Result :=');
+    A('      ''<section><div><h2>Two-factor sign-in</h2>'' +');
+    A('      ''<p>On since '' + Esc(FormatDateTime(''d mmm yyyy'', U.TwoFactorConfirmedAt)) + ''. '' +');
+    A('      IntToStr(Length(RecoveryHashes(U))) + '' recovery codes left.</p></div><div>'' +');
+    A('      ''<form method="post" action="/settings/two-factor/recovery">'' + CsrfField +');
+    A('      ''<label><span>Password</span><input name="password" type="password" required></label>'' +');
+    A('      ''<p class="right"><button class="go" type="submit">New recovery codes</button></p></form>'' +');
+    A('      ''<form method="post" action="/settings/two-factor/disable">'' + CsrfField +');
+    A('      ''<label><span>Password</span><input name="password" type="password" required></label>'' +');
+    A('      ''<p class="right"><button class="plain" type="submit">Turn off two-factor sign-in</button></p></form>'' +');
+    A('      ''</div></section>''');
+    A('  else');
+    A('    Result :=');
+    A('      ''<section><div><h2>Two-factor sign-in</h2>'' +');
+    A('      ''<p>A code from an app on your phone as well as the password, '' +');
+    A('      ''so a password that leaks is not enough.</p></div><div>'' +');
+    A('      ''<form method="post" action="/settings/two-factor">'' + CsrfField +');
+    A('      ''<p><button class="go" type="submit">Set up two-factor sign-in</button></p></form>'' +');
+    A('      ''</div></section>'';');
+    A('end;');
+    A('');
+    A('function SetupPage(U: TUser; const Secret, Err: string): TResponse;');
+    A('var');
+    A('  Uri: string;');
+    A('begin');
+    A('  Uri := TotpUri(AppName, U.Email, Secret);');
+    A('  Result := RespondHtml(AppShell(''Two-factor sign-in'', ''/settings/security'', U.Name,');
+    A('    ''<h1>Set up two-factor sign-in</h1>'' +');
+    A('    ''<p class="lead">Scan the code with an authenticator app, then type the six digits it shows.</p>'' +');
+    A('    ''<section><div><h2>1. Scan</h2>'' +');
+    A('    ''<p>Google Authenticator, 1Password, Authy -- any that does TOTP. On a phone, '' +');
+    A('    ''<a href="'' + Esc(Uri) + ''">open it in the app</a> instead.</p></div><div>'' +');
+    A('    ''<div style="width:200px;max-width:100%">'' +');
+    A('    QrSvg(QrEncode(Uri), ''QR code for your authenticator app'') + ''</div>'' +');
+    A('    ''<p>Or type the key: <code class="secret">'' + Esc(Grouped(Secret)) + ''</code></p>'' +');
+    A('    ''</div></section>'' +');
+    A('    ''<section><div><h2>2. Confirm</h2><p>So we know the app has it.</p></div><div>'' +');
+    A('    Message_(Err, ''err'') +');
+    A('    ''<form method="post" action="/settings/two-factor/confirm">'' + CsrfField +');
+    A('    ''<label><span>Six-digit code</span><input name="code" inputmode="numeric" '' +');
+    A('    ''autocomplete="one-time-code" pattern="[0-9 ]*" required autofocus></label>'' +');
+    A('    ''<p class="right"><button class="go" type="submit">Turn it on</button></p></form>'' +');
+    A('    ''</div></section>''));');
+    A('end;');
+    A('');
+    A('function TAuthController.StartTwoFactor(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if TwoFactorOn(U) then');
+    A('    Exit(Redirect(''/settings/security'', 303));');
+    A('  { Sealed under APP_KEY, not stored as it is: a table that leaks does');
+    A('    not hand out the codes. Not on until a code has been typed. }');
+    A('  U.TwoFactorSecret := SealText(NewTotpSecret, ''totp'');');
+    A('  U.TwoFactorConfirmedAt := 0;');
+    A('  U.TwoFactorLastStep := 0;');
+    A('  U.Save;');
+    A('  Result := Redirect(''/settings/two-factor'', 303);');
+    A('end;');
+    A('');
+    A('function TAuthController.ShowTwoFactor(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('  Secret: string;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if TwoFactorOn(U) or not OpenText(U.TwoFactorSecret, ''totp'', Secret) then');
+    A('    Exit(Redirect(''/settings/security'', 303));');
+    A('  Result := SetupPage(U, Secret, '''');');
+    A('end;');
+    A('');
+    A('function TAuthController.ConfirmTwoFactor(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('  Secret: string;');
+    A('  Last: Int64;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if TwoFactorOn(U) or not OpenText(U.TwoFactorSecret, ''totp'', Secret) then');
+    A('    Exit(Redirect(''/settings/security'', 303));');
+    A('  Last := U.TwoFactorLastStep;');
+    A('  if not VerifyTotp(Secret, Req.Form(''code'').ToString, Last) then');
+    A('    Exit(SetupPage(U, Secret, ''That code did not match. Check the time on the phone, and try the next one.''));');
+    A('  U.TwoFactorLastStep := Last;');
+    A('  U.TwoFactorConfirmedAt := Now;');
+    A('  Result := RecoveryPage(U, IssueRecoveryCodes(U), ''Two-factor sign-in is on.'');');
+    A('  U.Save;');
+    A('  LogInfo(''two-factor on'', [''user'', U.Id]);');
+    A('end;');
+    A('');
+    A('function TAuthController.RegenerateRecovery(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if not TwoFactorOn(U) then');
+    A('    Exit(Redirect(''/settings/security'', 303));');
+    A('  { The password again, as for changing it: a machine left signed in is');
+    A('    not a way to a new set of codes. }');
+    A('  if not VerifyPassword(Req.Form(''password'').ToString, U.PasswordHash) then');
+    A('  begin');
+    A('    CurrentSession.Flash(''security_ok'', ''That is not your password. Nothing changed.'');');
+    A('    Exit(Redirect(''/settings/security'', 303));');
+    A('  end;');
+    A('  Result := RecoveryPage(U, IssueRecoveryCodes(U), ''The old codes no longer work.'');');
+    A('  U.Save;');
+    A('  LogInfo(''recovery codes replaced'', [''user'', U.Id]);');
+    A('end;');
+    A('');
+    A('function TAuthController.DisableTwoFactor(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if not VerifyPassword(Req.Form(''password'').ToString, U.PasswordHash) then');
+    A('  begin');
+    A('    CurrentSession.Flash(''security_ok'', ''That is not your password. Nothing changed.'');');
+    A('    Exit(Redirect(''/settings/security'', 303));');
+    A('  end;');
+    A('  U.TwoFactorSecret := '''';');
+    A('  U.TwoFactorConfirmedAt := 0;');
+    A('  U.TwoFactorLastStep := 0;');
+    A('  U.TwoFactorRecovery := '''';');
+    A('  U.Save;');
+    A('  LogInfo(''two-factor off'', [''user'', U.Id]);');
+    A('  CurrentSession.Flash(''security_ok'', ''Two-factor sign-in is off.'');');
+    A('  Result := Redirect(''/settings/security'', 303);');
+    A('end;');
+    A('');
+    A('function TAuthController.ShowChallenge(Req: TRequest): TResponse;');
+    A('begin');
+    A('  if PendingUser = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  Result := RespondHtml(Page(''Two-factor sign-in'',');
+    A('    ''<h1>Two-factor sign-in</h1>'' +');
+    A('    Message_(CurrentSession.GetFlash(''error''), ''err'') +');
+    A('    ''<form method="post" action="/two-factor-challenge">'' + CsrfField +');
+    A('    ''<label><span>The six digits from your app</span>'' +');
+    A('    ''<input name="code" inputmode="numeric" autocomplete="one-time-code" '' +');
+    A('    ''pattern="[0-9 ]*" autofocus></label>'' +');
+    A('    ''<label><span>Or a recovery code</span>'' +');
+    A('    ''<input name="recovery" autocomplete="off"></label>'' +');
+    A('    ''<button type="submit">Sign in</button></form>'' +');
+    A('    ''<p class="alt"><a href="/login">Start again</a></p>''));');
+    A('end;');
+    A('');
+    A('function TAuthController.DoChallenge(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('  Code, Recovery, Secret, Hash_, Kept: string;');
+    A('  Hashes: TStringArray;');
+    A('  Last: Int64;');
+    A('  I: Integer;');
+    A('  Ok_: Boolean;');
+    A('begin');
+    A('  U := PendingUser;');
+    A('  if U = nil then');
+    A('  begin');
+    A('    CurrentSession.Flash(''error'', ''That took too long. Sign in again.'');');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  end;');
+    A('  { Six digits is a million guesses, not more: the same throttle as the');
+    A('    password, per user. }');
+    A('  if TooManyAttempts(''totp:'' + IntToStr(U.Id)) then');
+    A('  begin');
+    A('    CurrentSession.Flash(''error'', ''Too many attempts. Try again in a few minutes.'');');
+    A('    Exit(Redirect(''/two-factor-challenge'', 303));');
+    A('  end;');
+    A('  Code := Trim(Req.Form(''code'').ToString);');
+    A('  Recovery := Trim(Req.Form(''recovery'').ToString);');
+    A('  Ok_ := False;');
+    A('  if Code <> '''' then');
+    A('  begin');
+    A('    if not OpenText(U.TwoFactorSecret, ''totp'', Secret) then');
+    A('    begin');
+    A('      { APP_KEY has changed since the secret was sealed. A code cannot be');
+    A('        checked any more; a recovery code still can. }');
+    A('      LogWarn(''two-factor secret does not open'', [''user'', U.Id]);');
+    A('      CurrentSession.Flash(''error'', ''Codes cannot be checked right now. Use a recovery code.'');');
+    A('      Exit(Redirect(''/two-factor-challenge'', 303));');
+    A('    end;');
+    A('    Last := U.TwoFactorLastStep;');
+    A('    if VerifyTotp(Secret, Code, Last) then');
+    A('    begin');
+    A('      { A code works once: the step is kept, and one at or before it is');
+    A('        refused. }');
+    A('      U.TwoFactorLastStep := Last;');
+    A('      U.Save;');
+    A('      Ok_ := True;');
+    A('    end;');
+    A('  end');
+    A('  else if Recovery <> '''' then');
+    A('  begin');
+    A('    Hash_ := RecoveryCodeHash(Recovery);');
+    A('    Hashes := RecoveryHashes(U);');
+    A('    Kept := '''';');
+    A('    for I := 0 to High(Hashes) do');
+    A('      if (not Ok_) and ConstantTimeEquals(Hashes[I], Hash_) then');
+    A('        Ok_ := True');
+    A('      else');
+    A('      begin');
+    A('        if Kept <> '''' then');
+    A('          Kept := Kept + '','';');
+    A('        Kept := Kept + Hashes[I];');
+    A('      end;');
+    A('    if Ok_ then');
+    A('    begin');
+    A('      { Once each: the one used is gone. }');
+    A('      U.TwoFactorRecovery := Kept;');
+    A('      U.Save;');
+    A('      LogInfo(''recovery code used'', [''user'', U.Id]);');
+    A('    end;');
+    A('  end;');
+    A('  if not Ok_ then');
+    A('  begin');
+    A('    CountAttempt(''totp:'' + IntToStr(U.Id));');
+    A('    CurrentSession.Flash(''error'', ''That code did not match.'');');
+    A('    Exit(Redirect(''/two-factor-challenge'', 303));');
+    A('  end;');
+    A('  ClearAttempts(''totp:'' + IntToStr(U.Id));');
+    A('  Askr.Auth.Login(IntToStr(U.Id), CurrentSession.Get(PendingRememberKey) = ''1'');');
+    A('  ForgetPending;');
+    A('  LogInfo(''login'', [''user'', U.Id, ''two_factor'', True]);');
+    A('  Result := Redirect(''/dashboard'', 303);');
+    A('end;');
     A('function TAuthController.Dashboard(Req: TRequest): TResponse;');
     A('var');
     A('  U: TUser;');
@@ -1085,7 +1483,7 @@ begin
     A('      ''</p></div>'';');
     A('end;');
     A('');
-    A('function SecurityPage(const Err, Ok, Noklene: string): string;');
+    A('function SecurityPage(const Err, Ok, Noklene, TwoFactor: string): string;');
     A('begin');
     A('  Result :=');
     A('    ''<h1>Security</h1>'' +');
@@ -1104,6 +1502,7 @@ begin
     A('    ''</label>'' +');
     A('    ''<p class="right"><button class="go" type="submit">'' +');
     A('    ''Change password</button></p></form></div></section>'' +');
+    A('    TwoFactor +');
     A('');
     A('    { It is here because this is where people look for it. That it');
     A('      does not exist yet is said outright — a button that does');
@@ -1127,7 +1526,7 @@ begin
     A('    Exit(Redirect(''/login'', 303));');
     A('  Result := RespondHtml(AppShell(''Security'', ''/settings/security'', U.Name,');
     A('    SecurityPage('''', CurrentSession.GetFlash(''security_ok''),');
-    A('      PasskeyList(U))));');
+    A('      PasskeyList(U), TwoFactorCard(U))));');
     A('end;');
     A('');
     A('function TAuthController.ChangePassword(Req: TRequest): TResponse;');
@@ -1138,7 +1537,7 @@ begin
     A('  function Reject(const M: string): TResponse;');
     A('  begin');
     A('    Result := RespondHtml(AppShell(''Security'', ''/settings/security'', U.Name,');
-    A('      SecurityPage(M, '''', PasskeyList(U))));');
+    A('      SecurityPage(M, '''', PasskeyList(U), TwoFactorCard(U))));');
     A('  end;');
     A('');
     A('begin');
@@ -1610,6 +2009,10 @@ begin
     '    { 255 characters covers the PHC string with room to spare. }' + #10 +
     '    Text(' + Q + 'password_hash' + Q + ', 255);' + #10 +
     '    Timestamp(' + Q + 'email_verified_at' + Q + ').Nullable;' + #10 +
+    '    Text(' + Q + 'two_factor_secret' + Q + ', 255).Nullable;' + #10 +
+    '    Timestamp(' + Q + 'two_factor_confirmed_at' + Q + ').Nullable;' + #10 +
+    '    BigInt(' + Q + 'two_factor_last_step' + Q + ');' + #10 +
+    '    Text(' + Q + 'two_factor_recovery' + Q + ', 1000).Nullable;' + #10 +
     '    Timestamps;' + #10 +
     '  end;' + #10 +
     'end;' + #10 + #10 +

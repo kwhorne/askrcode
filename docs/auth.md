@@ -17,6 +17,7 @@ routes:
 | `/login`, `/register`, `/logout` | Signing in and out |
 | `/forgot-password`, `/reset-password/:token` | Resetting a forgotten one |
 | `/verify-email`, `/verify-email/:id/:hash` | Confirming the address |
+| `/two-factor-challenge`, `/settings/two-factor` | Two-factor sign-in |
 | `/dashboard` | Where signing in lands you, once the address is confirmed |
 | `/settings/profile` | Name and email |
 | `/settings/security` | Change password, manage passkeys |
@@ -310,6 +311,48 @@ worse than no mail.
 A signed link works as often as it is valid. Where once matters — a
 password reset — a token in the database is the tool, because only a table
 can forget a token when it has been used.
+
+## Two-factor sign-in
+
+`/settings/security` has a card for it. **Set up** makes a secret, seals it,
+and shows a QR code and the key for an authenticator app — Google
+Authenticator, 1Password, Authy, any that does TOTP — with a link that opens
+it straight in the app on a phone. It is not on until a code from the app has
+been typed; then eight recovery codes are shown, once.
+
+With it on, a correct password is half of it: the session remembers who, for
+ten minutes, and `/two-factor-challenge` asks for the six digits or a
+recovery code before anyone is signed in.
+
+- **Every way in with a password asks.** A password reset used to sign you
+  straight in; now it goes to the same question, so a reset link in somebody
+  else's mailbox does not get round the code. A passkey does not ask — it is
+  two factors in itself.
+- **A code works once.** The step it belongs to is kept, and a code at or
+  before it is refused, so a code read over a shoulder or typed into a
+  phishing page is spent the moment you use it. One step either side of now
+  is taken, for a phone whose clock is a little off.
+- **Wrong codes are counted** like wrong passwords, per user: after five,
+  even the right one waits.
+- **The secret is sealed** with `SealText` under `APP_KEY` — see
+  [Cryptography](crypto.md#encrypting-a-column) — and the recovery codes are
+  kept as SHA-256 hashes. A table that leaks gives neither. A new `APP_KEY`
+  means codes cannot be checked any more; the challenge says so and a
+  recovery code still works.
+- **New codes and turning it off need the password**, as changing it does:
+  a machine left signed in is not a way to either.
+
+The pieces are in the framework, for an app of your own: `Askr.Totp`
+(`NewTotpSecret`, `VerifyTotp` with the last step, `TotpUri`,
+`NewRecoveryCodes`, `RecoveryCodeHash`), `SealText`, and `Askr.Qr` below.
+
+`./askr auth:check` sets it up with the code computed in Python rather than
+in the Pascal it is checking, and sees the password alone refused, a wrong
+code refused, the same code refused a second time, a recovery code taken
+however it is typed and then only once, a password reset asking for the
+code, the password needed to turn it off, and a correct code waiting after
+five wrong ones. **The ten minutes are not tested**: a gate that waits ten
+minutes is not one anybody runs.
 
 ## QR codes
 
