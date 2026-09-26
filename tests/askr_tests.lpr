@@ -13,7 +13,7 @@ uses
 {$ENDIF}
   SysUtils, StrUtils, Classes, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
-  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Server,
+  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Server, Askr.Http.Stream,
   Askr.Http.Multipart, Askr.Http.Static, Askr.Core.Log,
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
@@ -4891,6 +4891,142 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------- event streams -- }
+
+type
+  TStreamHandler = class
+    function Handle(Req: TRequest): TResponse;
+  end;
+
+function TStreamHandler.Handle(Req: TRequest): TResponse;
+begin
+  if Req.Path.EqualsStr('/events') then
+    Result := StreamEvents(['news'])
+  else
+    Result := RespondText('pong');
+end;
+
+{ Reads until Needle is in what has come, or the time is up. }
+function ReadUntil(var C: TClient; const Needle: string; Ms: Integer): Boolean;
+var
+  Deadline: Int64;
+begin
+  Deadline := MonotonicMs + Ms;
+  while Pos(Needle, C.Buf) = 0 do
+  begin
+    if MonotonicMs > Deadline then
+      Exit(False);
+    if not C.FillOnce then
+      Exit(Pos(Needle, C.Buf) > 0);
+  end;
+  Result := True;
+end;
+
+function WaitForStreams(N, Ms: Integer): Boolean;
+var
+  Deadline: Int64;
+begin
+  Deadline := MonotonicMs + Ms;
+  while OpenStreams <> N do
+  begin
+    if MonotonicMs > Deadline then
+      Exit(False);
+    Sleep(10);
+  end;
+  Result := True;
+end;
+
+procedure TestEventStreams;
+var
+  Opts: TServerOptions;
+  Server: TAskrServer;
+  H: TStreamHandler;
+  A, B, C, D, E: TClient;
+  Head, Body, Id: string;
+  Raised: Boolean;
+begin
+  WriteLn;
+  WriteLn('event streams');
+  Raised := False;
+  try
+    StreamEvents(['has space']);
+  except
+    on EStreamError do Raised := True;
+  end;
+  Check(Raised, 'a channel name with a space in it is refused');
+
+  SetStreamHeartbeat(300);
+  SetMaxStreams(2);
+  SetStreamReplay(100);
+  Opts := DefaultServerOptions;
+  Opts.Port := 0;
+  { One worker: with a stream open, the next request still has to be
+    answered, which it would not be if the stream held the worker. }
+  Opts.Workers := 1;
+  H := TStreamHandler.Create;
+  Server := TAskrServer.Create(Opts);
+  try
+    Server.SetHandler(H.Handle);
+    Server.Start;
+
+    Check(A.Connect(Server.BoundPort), 'a client connects');
+    A.SendRaw('GET /events HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(ReadUntil(A, 'retry: 3000', 2000), 'the stream opens, and says how long to wait before reconnecting');
+    Head := Copy(A.Buf, 1, Pos(#13#10#13#10, A.Buf));
+    Check(Pos('HTTP/1.1 200', Head) = 1, 'with a 200');
+    Check(Pos('Content-Type: text/event-stream', Head) > 0, 'as text/event-stream');
+    Check(Pos('Content-Length', Head) = 0, 'with no length: the body is whatever comes');
+    Check(Pos('X-Accel-Buffering: no', Head) > 0, 'and a word to nginx not to hold it back');
+
+    Check(B.Connect(Server.BoundPort), 'another client connects');
+    B.SendRaw('GET /ping HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(B.ReadResponse(Head, Body) and (Body = 'pong'),
+      'and is answered by the one worker, with the stream still open');
+    B.Close;
+    Check(WaitForStreams(1, 2000), 'one stream is open');
+
+    Broadcast('other', 'x', 'not for this stream');
+    Broadcast('news', 'hello', 'line one' + #10 + 'line two');
+    Check(ReadUntil(A, 'data: line two' + #10#10, 2000), 'a broadcast on its channel reaches it');
+    Check(Pos('event: hello' + #10 + 'data: line one' + #10 + 'data: line two', A.Buf) > 0,
+      'with the event name and a data line for each line');
+    Check(Pos('not for this stream', A.Buf) = 0, 'and one on another channel does not');
+    Id := Copy(A.Buf, Pos('id: ', A.Buf) + 4, MaxInt);
+    Id := Copy(Id, 1, Pos(#10, Id) - 1);
+    Check(StrToInt64Def(Id, 0) > 0, 'each event has an id');
+    Check(ReadUntil(A, ': ping', 2000), 'a quiet stream gets its comment line');
+
+    Broadcast('news', 'second', 'missed');
+    Check(C.Connect(Server.BoundPort), 'a stream reconnects');
+    C.SendRaw('GET /events HTTP/1.1'#13#10'Host: test'#13#10'Last-Event-ID: ' + Id + #13#10#13#10);
+    Check(ReadUntil(C, 'event: second', 2000), 'and gets what it missed after the id it saw last');
+    Check(Pos('event: hello', C.Buf) = 0, 'but not what it saw');
+
+    Check(D.Connect(Server.BoundPort), 'a third stream connects');
+    D.SendRaw('GET /events HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(ReadUntil(D, #13#10#13#10, 2000) and (Pos('HTTP/1.1 503', D.Buf) = 1),
+      'past the most streams allowed, a 503');
+    D.Close;
+
+    A.Close;
+    C.Close;
+    Check(WaitForStreams(0, 3000), 'a stream whose client went away is closed');
+
+    { One left open for the server to close. }
+    Check(E.Connect(Server.BoundPort), 'a last stream connects');
+    E.SendRaw('GET /events HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(ReadUntil(E, 'retry: 3000', 2000) and WaitForStreams(1, 2000), 'and is open');
+  finally
+    Server.Stop;
+    Server.Free;
+    H.Free;
+    SetStreamHeartbeat(15000);
+    SetMaxStreams(1000);
+  end;
+  Check(OpenStreams = 0, 'stopping the server closes the streams it had');
+  E.Close;
+end;
+
 begin
   { This suite does not test the log, and the end-to-end part raises in
     /boom on purpose. Without this an ERROR line lands in the middle of the
@@ -4924,6 +5060,7 @@ begin
   TestSqlite;
   TestSchemaDrift;
   TestEndToEnd;
+  TestEventStreams;
 
   WriteLn;
   WriteLn(Format('%d ok, %d failed', [Passed, Failed]));

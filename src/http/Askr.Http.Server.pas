@@ -26,7 +26,7 @@ interface
 uses
   SysUtils, Classes, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Log,
-  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Tls;
+  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Stream, Askr.Tls;
 
 type
   EServerError = class(Exception);
@@ -74,6 +74,9 @@ type
     { Non-nil when the connection is encrypted. Lives exactly as long as one
       connection, and does not own the socket. }
     FTls: TTlsConn;
+    { Set when a stream has taken the connection: Execute then closes
+      nothing, because the stream thread owns the socket now. }
+    FHandedOff: Boolean;
     procedure EnsureCapacity(Need: SizeInt);
     procedure Compact;
     { Reads at least one more byte. False = the peer closed, or a
@@ -466,6 +469,33 @@ begin
         Only GET and HEAD: If-None-Match on other methods is a
         precondition, answered with 412, which Askr does not do -- and
         turning a POST into a 304 would drop the write. }
+      { An event stream: the head, and then the connection goes to a
+        thread of the stream's own, so this worker can serve the next
+        request instead of holding one connection for as long as a tab is
+        open. Full is a 503 like any other. }
+      if Res.IsEventStream then
+      begin
+        if StreamSlotFree then
+        begin
+          Out_.Init(FArena, 512);
+          Res.WriteStreamHead(Out_);
+          if not SendAll(Sock, Out_.ToStr) then
+            Exit;
+          if FServer.Options.LogRequests then
+            LogInfo('stream', ['path', Req.Path.ToString, 'channels',
+              Res.StreamChannels.ToString]);
+          { Copied to the heap before the arena resets: the stream lives
+            far longer than this request. }
+          StartStream(Sock, FTls, Res.StreamChannels.ToString,
+            Req.Header('last-event-id').ToString);
+          FTls := nil;
+          FHandedOff := True;
+          Exit;
+        end;
+        Res := ErrorResponse(503).WithHeader('Retry-After', '5');
+        Close_ := True;
+      end;
+
       if (Req.Method = hmGet) or (Req.Method = hmHead) then
         Res.NotModifiedIfMatches(Req.Header('if-none-match').ToString);
 
@@ -552,6 +582,7 @@ begin
         end;
       end;
 
+    FHandedOff := False;
     try
       try
         ServeConnection(Sock, Peer);
@@ -560,12 +591,16 @@ begin
           LogException(E, 'worker failed', ['worker', FIndex]);
       end;
     finally
-      if FTls <> nil then
+      if not FHandedOff then
       begin
-        FTls.Free;
-        FTls := nil;
+        if FTls <> nil then
+        begin
+          FTls.Free;
+          FTls := nil;
+        end;
+        CloseSocket(Sock);
       end;
-      CloseSocket(Sock);
+      FHandedOff := False;
     end;
   end;
 end;
@@ -729,6 +764,10 @@ begin
       FWorkers[I] := nil;
     end;
   SetLength(FWorkers, 0);
+  { The streams go too. They are the process's, not this server's: a
+    process runs one server, and a test that runs several stops them in
+    turn. }
+  StopStreams;
 end;
 
 function TAskrServer.TotalRequests: QWord;

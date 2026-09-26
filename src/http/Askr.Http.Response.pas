@@ -24,6 +24,7 @@ type
     FHeaderCount: Integer;
     FHeaderCap: Integer;
     FBody: TStr;
+    FStreamChannels: TStr;
     procedure GrowHeaders;
     function IndexOfHeader(const AName: string): Integer;
   public
@@ -94,6 +95,17 @@ type
 
     { True when the status code by definition has no body. }
     function BodyForbidden: Boolean;
+
+    { Makes this the start of an event stream on these channels, comma
+      separated. Askr.Http.Stream's StreamEvents is the way in; the server
+      sees it and hands the connection over instead of writing a body. }
+    procedure MarkEventStream(const Channels: TStr);
+    function IsEventStream: Boolean;
+    { The status line and headers of a stream: no Content-Length, because
+      the body is whatever comes until the connection closes, and
+      Connection: close, which says so. }
+    procedure WriteStreamHead(var B: TStrBuilder);
+    property StreamChannels: TStr read FStreamChannels;
 
     property StatusCode: Integer read FStatus;
     property Body: TStr read FBody;
@@ -458,6 +470,42 @@ begin
 
   if not (HeadOnly or NoBody) then
     B.Append(FBody);
+end;
+
+procedure TResponse.MarkEventStream(const Channels: TStr);
+begin
+  FStreamChannels := Channels;
+end;
+
+function TResponse.IsEventStream: Boolean;
+begin
+  Result := FStreamChannels.Len > 0;
+end;
+
+procedure TResponse.WriteStreamHead(var B: TStrBuilder);
+var
+  I: Integer;
+begin
+  B.Append('HTTP/1.1 ');
+  B.AppendInt(FStatus);
+  B.AppendByte(Ord(' '));
+  B.Append(StatusText(FStatus));
+  B.AppendCRLF;
+  for I := 0 to FHeaderCount - 1 do
+  begin
+    B.Append(FHeaders[I].Name);
+    B.Append(': ');
+    B.Append(FHeaders[I].Value);
+    B.AppendCRLF;
+  end;
+  B.Append('Date: ');
+  AppendHttpDateNow(B);
+  B.AppendCRLF;
+  B.Append('Server: ' + ServerToken);
+  B.AppendCRLF;
+  B.Append('Connection: close');
+  B.AppendCRLF;
+  B.AppendCRLF;
 end;
 
 function Respond(AStatus: Integer): TResponse;

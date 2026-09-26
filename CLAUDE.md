@@ -1230,6 +1230,24 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Server-sent events
+
+* **En strøm holder ikke en worker.** Workeren skriver hodet og gir
+  socketen — og TLS-forbindelsen — til en tråd for strømmen, og setter
+  `FHandedOff` så `Execute` ikke lukker noe. Testen kjører én worker og
+  krever at en request besvares mens en strøm er åpen; mutasjonen som lar
+  workeren vente på strømmen, henger.
+* **Replay og innmelding skjer under samme lås**, så en broadcast ikke kan
+  falle mellom dem.
+* **Strømmene er prosessens, ikke serverens.** `Stop` lukker dem alle. Testen
+  lar én stå åpen når serveren stoppes — ellers var alle lukket fra før, og
+  sjekken beviste ingenting.
+* **Hodet har ingen `Content-Length` og `Connection: close`**, pluss
+  `X-Accel-Buffering: no` for nginx, som ellers holder hendelsene tilbake.
+* **`MSG_NOSIGNAL` finnes ikke på Darwin.** SIGPIPE er ignorert av serveren
+  uansett; strømmen sender med 0 og prøver igjen på `EINTR`, som workerens
+  egen `SendAll`.
+
 ## Fabrikker og falske tjenester
 
 * **En fabrikk uten arena rundt seg lager sin egen.** Første utgave la

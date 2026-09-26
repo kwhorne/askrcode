@@ -40,6 +40,14 @@ with the zero-major caveat that minor releases may break things until
   `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
   browser, an Inertia visit and a JSON client each its own way and says no
   when no check is registered. `./askr auth:check` drives it over a socket.
+- **Server-sent events.** A route returns `StreamEvents(['orders'])` and
+  `Broadcast('orders', 'placed', Json)` from anywhere reaches every open
+  stream on that channel. The worker hands the connection to a thread of
+  the stream's own, so a stream does not hold a worker: the test runs one
+  worker and has a request answered with a stream open. Events have ids
+  and a reconnecting `EventSource` gets what it missed; a comment line
+  every fifteen seconds keeps proxies from closing a quiet stream and
+  closes one whose browser has gone. `SetMaxStreams` caps them with a 503.
 - **Factories and fakes for tests.** `TFactory<TOrder>` in `Askr.Factory`
   fills every column a row needs from the model's mapping, different for
   every model so a unique column holds, makes the parents a `BelongsTo`
