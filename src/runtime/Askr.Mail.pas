@@ -23,7 +23,7 @@ unit Askr.Mail;
 interface
 
 uses
-  SysUtils, Classes, Sockets, BaseUnix,
+  SysUtils, Classes, StrUtils, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Config,
   Askr.Core.Crypto, netdb, Askr.Tls;
 
@@ -40,6 +40,16 @@ type
     not only as finished rendered text. }
   TMailAddressArray = array of TMailAddress;
 
+  { A file that goes with a message. The bytes are held, not the path:
+    what was attached is what is sent, even if the file changes or goes
+    before a queue gets to it. }
+  TMailAttachment = record
+    FileName: string;
+    ContentType: string;
+    Data: TBytes;
+  end;
+  TMailAttachmentArray = array of TMailAttachment;
+
   TMailMessage = class
   private
     FFrom: TMailAddress;
@@ -52,7 +62,9 @@ type
     FHeaders: TStringList;
     FMessageId: string;
     FIdempotency: string;
+    FAttachments: TMailAttachmentArray;
     function Recipients: TStringArray;
+    function RenderWith(AttachmentBodies: Boolean): string;
   public
     constructor Create;
     destructor Destroy; override;
@@ -69,6 +81,33 @@ type
     function Text(const S: string): TMailMessage;
     function Html(const S: string): TMailMessage;
     function Header(const Name_, Value: string): TMailMessage;
+
+    { A file from disk, read now: a path that is not there is an error here,
+      where the message is built, not when a queue gets to it. The name the
+      recipient sees is the file's own unless one is given, and the type
+      follows the name unless one is given. }
+    function Attach(const Path: string; const AName: string = '';
+      const AContentType: string = ''): TMailMessage;
+    { Bytes made in memory -- an invoice rendered to PDF, a CSV export. }
+    function AttachData(const AName: string; const Data: TBytes;
+      const AContentType: string = ''): TMailMessage;
+
+    (* The bodies from mail/<Name>.html and mail/<Name>.txt next to
+       askr.toml -- at least one of them -- with each {{name}} filled from
+       Args, pairs as Trans takes them. A value is escaped in the html and
+       written as it is in the text.
+
+       mail/<Name>.<locale>.html is taken first, for the request's locale
+       and then its language, so a welcome can be written per language
+       while the subject comes from Trans. When mail/layout.html or
+       mail/layout.txt is there, the body goes into it at {{content}}.
+
+       A placeholder Args does not fill raises, and so does a template
+       that is not there: a mail with {{name}} in it is a mail a customer
+       reads. Star form, because a brace in a brace comment opens a nested
+       one. *)
+    function Template(const Name: string;
+      const Args: array of const): TMailMessage;
 
     { A key that makes it safe to send the message again. Providers that
       support it refuse the second send rather than delivering two emails;
@@ -88,6 +127,10 @@ type
     { The whole message as RFC 5322 text. Bcc is left out of the head but is
       in the recipient list — that is the whole point of Bcc. }
     function Render: string;
+    { The same, with each attachment's bytes left out and a line saying
+      what they were. For the log transport: a log with a PDF in base64 in
+      it is not something anyone reads. }
+    function RenderSummary: string;
     property AllRecipients: TStringArray read Recipients;
     property Sender: TMailAddress read FFrom;
 
@@ -102,6 +145,7 @@ type
     property HtmlBody: string read FHtml;
     property ExtraHeaders: TStringList read FHeaders;
     property IdempotencyKey: string read FIdempotency;
+    property Attachments: TMailAttachmentArray read FAttachments;
   end;
 
   TMailTransport = class
@@ -226,6 +270,10 @@ procedure SetMail(AMailer: TMailer);
   in two, and then the wrong person gets the mail. }
 function FormatMailAddress(const A: TMailAddress): string;
 
+(* Where Template looks: mail/ next to askr.toml unless set. For a test,
+   and for an app that keeps them elsewhere. '' puts it back. *)
+procedure SetMailTemplateDir(const Dir: string);
+
 type
   { One transport built out of the configuration. The name it registers
     under is what mail.transport is set to. }
@@ -251,8 +299,12 @@ function MailFromConfig: TMailTransport;
 
 implementation
 
+uses
+  Askr.Core.Lang, Askr.Core.Mime;
+
 var
   GMailer: TMailer = nil;
+  GTemplateDir: string = '';
 
 function Mail: TMailer;
 begin
@@ -277,9 +329,77 @@ begin
       '" <' + A.Address + '>';
 end;
 
-function Fold(const A: TMailAddress): string;
+{ A header value on one line. CR or LF would end the header and start
+  another of the sender's choosing -- a subject from a contact form is
+  text a visitor wrote. }
+function OneLine(const S: string): string;
 begin
-  Result := FormatMailAddress(A);
+  Result := StringReplace(StringReplace(S, #13, ' ', [rfReplaceAll]),
+    #10, ' ', [rfReplaceAll]);
+end;
+
+function IsPlainAscii(const S: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 1 to Length(S) do
+    if (Ord(S[I]) < 32) or (Ord(S[I]) > 126) then
+      Exit(False);
+  Result := True;
+end;
+
+function BytesOfText(const S: string; Start, Len: Integer): TBytes;
+begin
+  Result := nil;
+  SetLength(Result, Len);
+  if Len > 0 then
+    Move(S[Start], Result[0], Len);
+end;
+
+{ RFC 2047. A header is ASCII, so text with anything else in it goes as
+  encoded words, =?UTF-8?B?...?=. Each word holds at most 39 bytes -- 64
+  characters, so the first still fits a 78-character line after
+  "Subject: " -- and never ends in the middle of a UTF-8 sequence: a reader
+  decodes each word on its own, and half a character is a question
+  mark. }
+function EncodeHeaderText(const S: string): string;
+var
+  I, Start: Integer;
+begin
+  if IsPlainAscii(S) then
+    Exit(S);
+  Result := '';
+  I := 1;
+  while I <= Length(S) do
+  begin
+    Start := I;
+    I := Start + 39;
+    if I > Length(S) + 1 then
+      I := Length(S) + 1;
+    while (I <= Length(S)) and (I > Start + 1) and ((Ord(S[I]) and $C0) = $80) do
+      Dec(I);
+    if Result <> '' then
+      Result := Result + #13#10' ';
+    Result := Result + '=?UTF-8?B?' +
+      Base64Encode(BytesOfText(S, Start, I - Start)) + '?=';
+  end;
+end;
+
+{ An address in a header. A plain name is quoted -- a comma in an unquoted
+  one splits the field in two -- and any other is encoded words, which
+  cannot be quoted. }
+function Fold(const A: TMailAddress): string;
+var
+  Name_: string;
+begin
+  Name_ := OneLine(A.Name_);
+  if Name_ = '' then
+    Result := OneLine(A.Address)
+  else if IsPlainAscii(Name_) then
+    Result := '"' + StringReplace(Name_, '"', '''', [rfReplaceAll]) +
+      '" <' + OneLine(A.Address) + '>'
+  else
+    Result := EncodeHeaderText(Name_) + ' <' + OneLine(A.Address) + '>';
 end;
 
 function FoldList(const L: array of TMailAddress): string;
@@ -382,6 +502,243 @@ begin
   Result := Self;
 end;
 
+{ The last part of a path, without what could break the header it goes
+  in. The name is shown to the recipient and nothing else: it never
+  becomes a path on this side. }
+function CleanFileName(const S: string): string;
+var
+  I: Integer;
+  N: string;
+begin
+  N := S;
+  for I := Length(N) downto 1 do
+    if (N[I] = '/') or (N[I] = '\') then
+    begin
+      N := Copy(N, I + 1, MaxInt);
+      Break;
+    end;
+  Result := '';
+  for I := 1 to Length(N) do
+    if (Ord(N[I]) >= 32) and (N[I] <> '"') then
+      Result := Result + N[I];
+  Result := Trim(Result);
+end;
+
+function TMailMessage.AttachData(const AName: string; const Data: TBytes;
+  const AContentType: string): TMailMessage;
+var
+  I: Integer;
+  N: string;
+begin
+  N := CleanFileName(AName);
+  if N = '' then
+    raise EMailError.Create('An attachment needs a file name the recipient ' +
+      'can see, and "' + AName + '" has none left once the path is taken off');
+  I := Length(FAttachments);
+  SetLength(FAttachments, I + 1);
+  FAttachments[I].FileName := N;
+  if AContentType <> '' then
+    FAttachments[I].ContentType := OneLine(AContentType)
+  else
+    FAttachments[I].ContentType := ContentTypeForExt(ExtractFileExt(N));
+  FAttachments[I].Data := Copy(Data);
+  Result := Self;
+end;
+
+function TMailMessage.Attach(const Path, AName, AContentType: string): TMailMessage;
+var
+  F: TFileStream;
+  Data: TBytes;
+begin
+  if not FileExists(Path) then
+    raise EMailError.Create('Cannot attach ' + Path + ': there is no such file');
+  Data := nil;
+  F := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+  try
+    SetLength(Data, F.Size);
+    if F.Size > 0 then
+      F.ReadBuffer(Data[0], F.Size);
+  finally
+    F.Free;
+  end;
+  if AName <> '' then
+    Result := AttachData(AName, Data, AContentType)
+  else
+    Result := AttachData(ExtractFileName(Path), Data, AContentType);
+end;
+
+procedure SetMailTemplateDir(const Dir: string);
+begin
+  GTemplateDir := Dir;
+end;
+
+function TemplateDir: string;
+begin
+  if GTemplateDir <> '' then
+    Result := GTemplateDir
+  else if ConfigFile <> '' then
+    Result := ExtractFilePath(ConfigFile) + 'mail'
+  else
+    Result := 'mail';
+  Result := IncludeTrailingPathDelimiter(Result);
+end;
+
+{ The file as it is, less one line break at the end: an editor ends a
+  file with one, and inside a layout it would be a blank line before the
+  footer. }
+function ReadWhole(const Path: string): string;
+var
+  F: TFileStream;
+begin
+  F := TFileStream.Create(Path, fmOpenRead or fmShareDenyWrite);
+  try
+    Result := '';
+    SetLength(Result, F.Size);
+    if F.Size > 0 then
+      F.ReadBuffer(Result[1], F.Size);
+  finally
+    F.Free;
+  end;
+  if (Result <> '') and (Result[Length(Result)] = #10) then
+    SetLength(Result, Length(Result) - 1);
+  if (Result <> '') and (Result[Length(Result)] = #13) then
+    SetLength(Result, Length(Result) - 1);
+end;
+
+(* The file for Name with extension Ext: the locale's own, then its
+   language's, then the plain one. '' when there is none. *)
+function FindTemplate(const Name, Ext: string): string;
+var
+  Loc, Lang_: string;
+begin
+  Loc := StringReplace(CurrentLocale, '_', '-', [rfReplaceAll]);
+  if Loc <> '' then
+  begin
+    Result := TemplateDir + Name + '.' + Loc + Ext;
+    if FileExists(Result) then
+      Exit;
+    if Pos('-', Loc) > 0 then
+    begin
+      Lang_ := Copy(Loc, 1, Pos('-', Loc) - 1);
+      Result := TemplateDir + Name + '.' + Lang_ + Ext;
+      if FileExists(Result) then
+        Exit;
+    end;
+  end;
+  Result := TemplateDir + Name + Ext;
+  if not FileExists(Result) then
+    Result := '';
+end;
+
+(* Text with each {{name}} filled in, in one pass, so a value that itself
+   holds {{something}} is written as it is and never read again.
+   {{{name}}} is the value as it is, unescaped, for html built in Pascal --
+   rows of an order, say. Content is what {{content}} becomes in a layout,
+   as it is. A placeholder nothing fills raises, naming it and the file. *)
+function FillTemplate(const Text_, Path: string; const Args: array of const;
+  Escape: Boolean; const Content: string; HasContent: Boolean): string;
+var
+  I, J, K, Open_: Integer;
+  Name_, Value, Close_: string;
+  Found, Raw: Boolean;
+begin
+  Result := '';
+  I := 1;
+  while I <= Length(Text_) do
+  begin
+    if (I < Length(Text_)) and (Text_[I] = '{') and (Text_[I + 1] = '{') then
+    begin
+      Raw := (I + 2 <= Length(Text_)) and (Text_[I + 2] = '{');
+      if Raw then
+      begin
+        Open_ := 3;
+        Close_ := '}}}';
+      end
+      else
+      begin
+        Open_ := 2;
+        Close_ := '}}';
+      end;
+      J := PosEx(Close_, Text_, I + Open_);
+      if J > 0 then
+      begin
+        Name_ := Trim(Copy(Text_, I + Open_, J - I - Open_));
+        Found := False;
+        Value := '';
+        if HasContent and (Name_ = 'content') then
+        begin
+          Value := Content;
+          Found := True;
+        end
+        else
+          for K := 0 to Length(Args) div 2 - 1 do
+            if ArgText(Args[K * 2]) = Name_ then
+            begin
+              Value := ArgText(Args[K * 2 + 1]);
+              if Escape and not Raw then
+                Value := HtmlEscape(Value);
+              Found := True;
+              Break;
+            end;
+        if not Found then
+          raise EMailError.Create(Path + ' has ' + Copy(Text_, I, J - I + Length(Close_)) +
+            ', and nothing fills it. Pass ' + Name_ + ' to Template, or take it out of the file.');
+        Result := Result + Value;
+        I := J + Length(Close_);
+        Continue;
+      end;
+    end;
+    Result := Result + Text_[I];
+    Inc(I);
+  end;
+end;
+
+(* One body: the template for Ext, in the layout for Ext when there is
+   one. '' when the template has no file with that extension. *)
+function RenderTemplate(const Name, Ext: string; const Args: array of const;
+  Escape: Boolean): string;
+var
+  Path, Layout: string;
+begin
+  Result := '';
+  Path := FindTemplate(Name, Ext);
+  if Path = '' then
+    Exit;
+  Result := FillTemplate(ReadWhole(Path), Path, Args, Escape, '', False);
+  Layout := FindTemplate('layout', Ext);
+  if Layout <> '' then
+    Result := FillTemplate(ReadWhole(Layout), Layout, Args, Escape, Result, True);
+end;
+
+function TMailMessage.Template(const Name: string;
+  const Args: array of const): TMailMessage;
+var
+  I: Integer;
+  Html_, Text_: string;
+begin
+  { A name is a file under mail/, chosen by code; it still never reaches
+    above it. }
+  if (Name = '') or (Pos('..', Name) > 0) or (Name[1] = '/') then
+    raise EMailError.Create('"' + Name + '" is not a template name: a name ' +
+      'is a path under mail/, like welcome or auth/verify');
+  for I := 1 to Length(Name) do
+    if not (Name[I] in ['a'..'z', 'A'..'Z', '0'..'9', '_', '-', '/', '.']) then
+      raise EMailError.Create('"' + Name + '" is not a template name: use ' +
+        'letters, digits, _, - and /');
+  if Odd(Length(Args)) then
+    raise EMailError.Create('Template takes its values in pairs, name and value');
+  Html_ := RenderTemplate(Name, '.html', Args, True);
+  Text_ := RenderTemplate(Name, '.txt', Args, False);
+  if (Html_ = '') and (Text_ = '') then
+    raise EMailError.Create('There is no mail template ' + Name + ': looked for ' +
+      TemplateDir + Name + '.html and ' + TemplateDir + Name + '.txt');
+  if Html_ <> '' then
+    FHtml := Html_;
+  if Text_ <> '' then
+    FText := Text_;
+  Result := Self;
+end;
+
 function TMailMessage.Idempotency(const Key: string): TMailMessage;
 begin
   FIdempotency := Key;
@@ -408,41 +765,85 @@ begin
   for I := 0 to High(FBcc) do begin Result[N] := FBcc[I].Address; Inc(N); end;
 end;
 
+function Base64Lines(const Data: TBytes): string;
+var
+  S: string;
+  I: Integer;
+begin
+  S := Base64Encode(Data);
+  Result := '';
+  I := 1;
+  while I <= Length(S) do
+  begin
+    Result := Result + Copy(S, I, 76) + #13#10;
+    Inc(I, 76);
+  end;
+end;
+
+{ RFC 2231: a parameter value in UTF-8, with every byte that is not a
+  plain letter, digit or one of a few marks as %XX. }
+function Rfc2231(const S: string): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+    if S[I] in ['A'..'Z', 'a'..'z', '0'..'9', '!', '#', '$', '&', '+', '-',
+        '.', '^', '_', '`', '|', '~'] then
+      Result := Result + S[I]
+    else
+      Result := Result + '%' + IntToHex(Ord(S[I]), 2);
+end;
+
+{ Name*=UTF-8''value, or split into Name*0*=, Name*1*= ... when it would
+  not fit a line: RFC 2231's continuations, which a reader joins before
+  it decodes. A piece never ends inside a %XX. }
+function Rfc2231Param(const Name_, Value: string): string;
+var
+  Enc, Piece: string;
+  I, N, Cut: Integer;
+begin
+  Enc := Rfc2231(Value);
+  if Length(Name_) + Length(Enc) + 10 <= 76 then
+    Exit(Name_ + '*=UTF-8''''' + Enc);
+  Result := '';
+  N := 0;
+  I := 1;
+  while I <= Length(Enc) do
+  begin
+    Cut := I + 56;
+    if Cut > Length(Enc) + 1 then
+      Cut := Length(Enc) + 1;
+    { Back off a %XX cut in two. }
+    if (Cut <= Length(Enc)) and (Cut - 1 >= I) and (Enc[Cut - 1] = '%') then
+      Dec(Cut)
+    else if (Cut <= Length(Enc)) and (Cut - 2 >= I) and (Enc[Cut - 2] = '%') then
+      Dec(Cut, 2);
+    Piece := Copy(Enc, I, Cut - I);
+    if N > 0 then
+      Result := Result + ';'#13#10' ';
+    if N = 0 then
+      Result := Result + Name_ + '*0*=UTF-8''''' + Piece
+    else
+      Result := Result + Name_ + '*' + IntToStr(N) + '*=' + Piece;
+    Inc(N);
+    I := Cut;
+  end;
+end;
+
 { Encoding as quoted-printable would be more correct, but 8bit with
   UTF-8 is accepted by everything in use, and it keeps the text readable
-  in the log. }
-function TMailMessage.Render: string;
+  in the log. An attachment is base64, because a file is bytes. }
+function TMailMessage.RenderWith(AttachmentBodies: Boolean): string;
 var
   A: TArena;
   B: TStrBuilder;
-  Boundary: string;
+  Boundary, Mixed: string;
   I: Integer;
-begin
-  if FFrom.Address = '' then
-    raise EMailError.Create('The message has no sender');
-  if Length(FTo) + Length(FCc) + Length(FBcc) = 0 then
-    raise EMailError.Create('The message has no recipients');
 
-  EnsureMessageId;
-
-  A := TArena.Create(16 * 1024);
-  try
-    B.Init(A, 4096);
-    B.Append('From: ' + Fold(FFrom) + #13#10);
-    if Length(FTo) > 0 then
-      B.Append('To: ' + FoldList(FTo) + #13#10);
-    if Length(FCc) > 0 then
-      B.Append('Cc: ' + FoldList(FCc) + #13#10);
-    B.Append('Subject: ' + FSubject + #13#10);
-    B.Append('Date: ');
-    AppendHttpDateNow(B);
-    B.Append(#13#10);
-    B.Append('Message-ID: ' + FMessageId + #13#10);
-    B.Append('MIME-Version: 1.0'#13#10);
-    for I := 0 to FHeaders.Count - 1 do
-      B.Append(FHeaders.Names[I] + ': ' +
-        FHeaders.ValueFromIndex[I] + #13#10);
-
+  { The text and html parts, as one part of their own. }
+  procedure AppendBody;
+  begin
     if (FHtml <> '') and (FText <> '') then
     begin
       Boundary := Format('askr-%d-%d', [UnixNow, Random(1000000)]);
@@ -470,10 +871,93 @@ begin
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
       B.Append(FText);
     end;
+  end;
+
+  { A plain name as it is. Any other goes as RFC 2231 in the disposition,
+    which is the one modern readers use, and as encoded words in the
+    type's name, which is what older Outlook reads. Not both forms in the
+    disposition: readers disagree on which of two wins, and Python's own
+    parser takes the plain fallback -- underscores where the letters
+    were. Each parameter on a line of its own, so no line passes 78. }
+  procedure AppendAttachment(const Att: TMailAttachment);
+  begin
+    B.Append('--' + Mixed + #13#10);
+    if IsPlainAscii(Att.FileName) then
+    begin
+      B.Append('Content-Type: ' + Att.ContentType + ';'#13#10' name="' +
+        Att.FileName + '"'#13#10);
+      B.Append('Content-Disposition: attachment;'#13#10' filename="' +
+        Att.FileName + '"'#13#10);
+    end
+    else
+    begin
+      B.Append('Content-Type: ' + Att.ContentType + ';'#13#10' name="' +
+        EncodeHeaderText(Att.FileName) + '"'#13#10);
+      B.Append('Content-Disposition: attachment;'#13#10' ' +
+        Rfc2231Param('filename', Att.FileName) + #13#10);
+    end;
+    B.Append('Content-Transfer-Encoding: base64'#13#10#13#10);
+    if AttachmentBodies then
+      B.Append(Base64Lines(Att.Data))
+    else
+      B.Append(Format('[%d bytes of %s, left out of the log]'#13#10,
+        [Length(Att.Data), Att.ContentType]));
+  end;
+
+begin
+  if FFrom.Address = '' then
+    raise EMailError.Create('The message has no sender');
+  if Length(FTo) + Length(FCc) + Length(FBcc) = 0 then
+    raise EMailError.Create('The message has no recipients');
+
+  EnsureMessageId;
+
+  A := TArena.Create(16 * 1024);
+  try
+    B.Init(A, 4096);
+    B.Append('From: ' + Fold(FFrom) + #13#10);
+    if Length(FTo) > 0 then
+      B.Append('To: ' + FoldList(FTo) + #13#10);
+    if Length(FCc) > 0 then
+      B.Append('Cc: ' + FoldList(FCc) + #13#10);
+    B.Append('Subject: ' + EncodeHeaderText(OneLine(FSubject)) + #13#10);
+    B.Append('Date: ');
+    AppendHttpDateNow(B);
+    B.Append(#13#10);
+    B.Append('Message-ID: ' + FMessageId + #13#10);
+    B.Append('MIME-Version: 1.0'#13#10);
+    for I := 0 to FHeaders.Count - 1 do
+      B.Append(OneLine(FHeaders.Names[I]) + ': ' +
+        OneLine(FHeaders.ValueFromIndex[I]) + #13#10);
+
+    if Length(FAttachments) = 0 then
+      AppendBody
+    else
+    begin
+      Mixed := Format('askr-mixed-%d-%d', [UnixNow, Random(1000000)]);
+      B.Append('Content-Type: multipart/mixed; boundary="' + Mixed +
+        '"'#13#10#13#10);
+      B.Append('--' + Mixed + #13#10);
+      AppendBody;
+      B.Append(#13#10);
+      for I := 0 to High(FAttachments) do
+        AppendAttachment(FAttachments[I]);
+      B.Append('--' + Mixed + '--'#13#10);
+    end;
     Result := B.ToString;
   finally
     A.Free;
   end;
+end;
+
+function TMailMessage.Render: string;
+begin
+  Result := RenderWith(True);
+end;
+
+function TMailMessage.RenderSummary: string;
+begin
+  Result := RenderWith(False);
 end;
 
 { TLogTransport }
@@ -490,7 +974,7 @@ var
   Text_: string;
 begin
   Text_ := '=== ' + FormatDateTime('yyyy-mm-dd hh:nn:ss', Now) +
-    ' ===' + LineEnding + M.Render + LineEnding;
+    ' ===' + LineEnding + M.RenderSummary + LineEnding;
   Inc(FCount);
   if FPath = '' then
   begin

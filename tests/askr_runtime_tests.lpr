@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead;
+  DOM, XMLRead, Process;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -5409,6 +5409,433 @@ begin
   end;
 end;
 
+{ ------------------------------------------------ attachments, templates -- }
+
+{ Bytes from 0 to 255, three times: every byte a file can hold, CR, LF and
+  NUL among them. }
+function AllBytes: TBytes;
+var
+  I: Integer;
+begin
+  Result := nil;
+  SetLength(Result, 768);
+  for I := 0 to 767 do
+    Result[I] := I mod 256;
+end;
+
+function HexOfBytes(const B: TBytes): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(B) do
+    Result := Result + LowerCase(IntToHex(B[I], 2));
+end;
+
+{ The message read back by Python's own email package. A test that looked
+  for the parts with Pos would hold the message up to what I think MIME
+  looks like; this is what a reader makes of it. Lines of key=value. }
+function ParsedByPython(const Message_: string; out Output: string): Boolean;
+const
+  Script =
+    'import sys, email' + LineEnding +
+    'from email import policy' + LineEnding +
+    'm = email.message_from_bytes(open(sys.argv[1], "rb").read(), policy=policy.default)' + LineEnding +
+    'print("subject=" + m["subject"].encode("utf-8").hex())' + LineEnding +
+    'print("from=" + str(m["from"]).encode("utf-8").hex())' + LineEnding +
+    'print("defects=" + str(len(m.defects)))' + LineEnding +
+    'print("text=" + m.get_body(("plain",)).get_content().strip())' + LineEnding +
+    'print("html=" + m.get_body(("html",)).get_content().strip())' + LineEnding +
+    'for a in m.iter_attachments():' + LineEnding +
+    '    print("att=" + a.get_filename().encode("utf-8").hex() + "|" + a.get_content_type() + "|" + a.get_payload(decode=True).hex())' + LineEnding;
+var
+  Dir, Out_: string;
+  L: TStringList;
+begin
+  Output := '';
+  Dir := GetTempDir + 'askr-mime-' + IntToStr(GetProcessID);
+  ForceDirectories(Dir);
+  L := TStringList.Create;
+  try
+    L.Text := Script;
+    L.SaveToFile(Dir + '/parse.py');
+    L.Text := '';
+    with TFileStream.Create(Dir + '/message.eml', fmCreate) do
+    try
+      if Message_ <> '' then
+        WriteBuffer(Message_[1], Length(Message_));
+    finally
+      Free;
+    end;
+  finally
+    L.Free;
+  end;
+  Result := RunCommand('python3', [Dir + '/parse.py', Dir + '/message.eml'], Out_,
+    [poStderrToOutPut]);
+  Output := Out_;
+  DeleteFile(Dir + '/parse.py');
+  DeleteFile(Dir + '/message.eml');
+  RemoveDir(Dir);
+end;
+
+function HexOfText(const S: string): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+    Result := Result + LowerCase(IntToHex(Ord(S[I]), 2));
+end;
+
+{ Whether B is whole UTF-8: no sequence cut short at either end. }
+function WholeUtf8(const B: TBytes): Boolean;
+var
+  I, Need: Integer;
+begin
+  I := 0;
+  while I <= High(B) do
+  begin
+    if B[I] < $80 then Need := 0
+    else if (B[I] and $E0) = $C0 then Need := 1
+    else if (B[I] and $F0) = $E0 then Need := 2
+    else if (B[I] and $F8) = $F0 then Need := 3
+    else Exit(False);
+    Inc(I);
+    while Need > 0 do
+    begin
+      if (I > High(B)) or ((B[I] and $C0) <> $80) then
+        Exit(False);
+      Inc(I);
+      Dec(Need);
+    end;
+  end;
+  Result := True;
+end;
+
+{ Each encoded word in Text_ decoded on its own, as a reader that does not
+  join them first does: every one has to be whole UTF-8. Python joins
+  adjacent words before it decodes, so it forgives a character cut in two;
+  this does not. }
+function EveryWordWhole(const Text_: string; out Count: Integer): Boolean;
+var
+  P, E: Integer;
+  Rest: string;
+begin
+  Result := True;
+  Count := 0;
+  Rest := Text_;
+  P := Pos('=?UTF-8?B?', Rest);
+  while P > 0 do
+  begin
+    Rest := Copy(Rest, P + 10, MaxInt);
+    E := Pos('?=', Rest);
+    if E = 0 then
+      Exit(False);
+    Inc(Count);
+    if not WholeUtf8(Base64Decode(Copy(Rest, 1, E - 1))) then
+      Exit(False);
+    Rest := Copy(Rest, E + 2, MaxInt);
+    P := Pos('=?UTF-8?B?', Rest);
+  end;
+end;
+
+{ No RFC 2231 piece ends inside a %XX: a reader may decode each piece on
+  its own, as the RFC says, and Python joins them first. }
+function NoPercentCut(const Raw: string): Boolean;
+var
+  L: TStringList;
+  I, E: Integer;
+  V: string;
+begin
+  Result := True;
+  L := TStringList.Create;
+  try
+    L.Text := Raw;
+    for I := 0 to L.Count - 1 do
+      if Pos('filename*', L[I]) > 0 then
+      begin
+        V := Trim(L[I]);
+        E := Length(V);
+        if (E > 0) and (V[E] = ';') then
+          Dec(E);
+        if ((E >= 1) and (V[E] = '%')) or ((E >= 2) and (V[E - 1] = '%')) then
+          Exit(False);
+      end;
+  finally
+    L.Free;
+  end;
+end;
+
+procedure TestMailAttachments;
+const
+  Csv = 'a,b' + #10 + '1,2' + #10;
+  LongName = 'Faktura for september 2026 — blåbærsyltetøy fra Ås og Ålesund AS.pdf';
+var
+  M: TMailMessage;
+  Raw, Head, Out_, Path_, Subject_: string;
+  I, Words: Integer;
+  Raised: Boolean;
+begin
+  Path_ := GetTempDir + 'rapport æøå.csv';
+  with TStringList.Create do
+  try
+    Text := Csv;
+    SaveToFile(Path_);
+  finally
+    Free;
+  end;
+  Subject_ := 'Faktura 42 — blåbærsyltetøy fra Ås, levert til døra i Tromsø og Ålesund';
+  M := TMailMessage.Create;
+  try
+    M.From('ops@example.com', 'Blåbær AS').AddTo('ada@example.com')
+     .Subject(Subject_)
+     .Text('See the attachment.').Html('<p>See the attachment.</p>')
+     .AttachData('../../etc/faktura-42.pdf', AllBytes)
+     .Attach(Path_)
+     .AttachData(LongName, AllBytes);
+    Raw := M.Render;
+    Head := Copy(Raw, 1, Pos(#13#10#13#10, Raw));
+
+    AssertContains(Raw, 'Content-Type: multipart/mixed; boundary=', 'a message with a file is multipart/mixed');
+    AssertContains(Raw, 'Content-Type: application/pdf;'#13#10' name="faktura-42.pdf"',
+      'the type follows the name, and the path is gone from it');
+    AssertContains(Raw, 'filename*=UTF-8''''rapport%20%C3%A6%C3%B8%C3%A5.csv' + #13#10,
+      'a name outside ASCII goes as RFC 2231, and only so');
+    { SMTP refuses a line longer than 998, and a file in one line of
+      base64 is that from a few hundred bytes on. }
+    with TStringList.Create do
+    try
+      Text := Raw;
+      for I := 0 to Count - 1 do
+        if Length(Strings[I]) > 78 then
+        begin
+          Fail('a line is longer than 78: ' + Copy(Strings[I], 1, 60) + '...');
+          Break;
+        end;
+    finally
+      Free;
+    end;
+    for I := 1 to Length(Head) do
+      if Ord(Head[I]) > 126 then
+      begin
+        Fail('the head has a byte outside ASCII at ' + IntToStr(I) + ': ' + Head);
+        Break;
+      end;
+
+    AssertTrue(EveryWordWhole(Head, Words), 'each encoded word in the head is whole UTF-8 on its own');
+    AssertTrue(Words >= 3, 'across several of them');
+    AssertTrue(NoPercentCut(Raw), 'and no piece of a long file name ends inside a %XX');
+    if not ParsedByPython(Raw, Out_) then
+    begin
+      WriteLn('        skipped the read-back: python3 is not on this machine');
+      Exit;
+    end;
+    AssertContains(Out_, 'defects=0', 'Python finds nothing wrong with it');
+    AssertContains(Out_, 'subject=' + HexOfText(Subject_),
+      'the subject reads back as written, across several encoded words');
+    AssertContains(Out_, 'from=' + HexOfText('Blåbær AS <ops@example.com>'),
+      'and the sender''s name');
+    AssertContains(Out_, 'text=See the attachment.', 'the text part is there');
+    AssertContains(Out_, 'html=<p>See the attachment.</p>', 'and the html part');
+    AssertContains(Out_, 'att=' + HexOfText('faktura-42.pdf') + '|application/pdf|' +
+      HexOfBytes(AllBytes), 'every byte of the file comes back, CR, LF and NUL too');
+    AssertContains(Out_, 'att=' + HexOfText('rapport æøå.csv') + '|text/csv|' +
+      HexOfText(Csv), 'and the file from disk, under its own name');
+    AssertContains(Out_, 'att=' + HexOfText(LongName) + '|application/pdf|',
+      'and a long name, in RFC 2231 continuations');
+    AssertContains(Raw, 'filename*1*=', 'which it was split into');
+  finally
+    M.Free;
+    DeleteFile(Path_);
+  end;
+
+  { Two-byte letters only: 39 is odd, so a word that did not back off a
+    cut would end halfway through one every time -- and a name made of
+    them is %XX all the way, so a piece that did not back off would end
+    inside one. }
+  Subject_ := '';
+  for I := 1 to 50 do
+    Subject_ := Subject_ + 'ø';
+  Path_ := '';
+  for I := 1 to 30 do
+    Path_ := Path_ + 'æ';
+  Path_ := Path_ + '.pdf';
+  M := TMailMessage.Create;
+  try
+    M.From('ops@example.com').AddTo('ada@example.com').Subject(Subject_).Text('x')
+     .AttachData(Path_, AllBytes);
+    Raw := M.Render;
+    Head := Copy(Raw, 1, Pos(#13#10#13#10, Raw));
+    AssertTrue(EveryWordWhole(Head, Words), 'a subject of two-byte letters is whole in every word');
+    AssertTrue(NoPercentCut(Raw), 'and a name of them in every piece');
+    if ParsedByPython(Raw, Out_) then
+    begin
+      AssertContains(Out_, 'subject=' + HexOfText(Subject_), 'and both read back');
+      AssertContains(Out_, 'att=' + HexOfText(Path_) + '|', 'the name too');
+    end;
+  finally
+    M.Free;
+  end;
+
+  M := TMailMessage.Create;
+  try
+    M.From('ops@example.com').AddTo('ada@example.com')
+     .Subject('Hello' + #13#10 + 'Bcc: everyone@example.com').Text('x')
+     .Header('X-Note', 'a' + #10 + 'Bcc: more@example.com');
+    Raw := M.Render;
+    AssertNotContains(Raw, #10'Bcc:', 'a line break in a subject or a header starts no header of its own');
+    AssertContains(Raw, 'Subject: Hello  Bcc: everyone@example.com', 'it is a space instead');
+  finally
+    M.Free;
+  end;
+
+  M := TMailMessage.Create;
+  try
+    M.From('ops@example.com').AddTo('ada@example.com').Subject('x').Text('x')
+     .AttachData('big.pdf', AllBytes);
+    Raw := M.RenderSummary;
+    AssertContains(Raw, '[768 bytes of application/pdf, left out of the log]',
+      'the log says what the file was');
+    AssertNotContains(Raw, Base64Encode(AllBytes), 'and not the file');
+  finally
+    M.Free;
+  end;
+
+  M := TMailMessage.Create;
+  try
+    Raised := False;
+    try
+      M.Attach(GetTempDir + 'askr-not-there.pdf');
+    except
+      on E: EMailError do
+        Raised := Pos('askr-not-there.pdf', E.Message) > 0;
+    end;
+    AssertTrue(Raised, 'a file that is not there is an error where it is attached, naming it');
+    Raised := False;
+    try
+      M.AttachData('dir/', AllBytes);
+    except
+      on E: EMailError do
+        Raised := True;
+    end;
+    AssertTrue(Raised, 'and so is a name with nothing left once the path is gone');
+  finally
+    M.Free;
+  end;
+end;
+
+procedure TestResendAttachments;
+var
+  T: TResendTransport;
+  H: TFakeResendHttp;
+  J: string;
+begin
+  T := NewResend(H);
+  try
+    H.Queue('{"id":"a1"}', 200);
+    T.Send(TMailMessage.Create
+      .From('ops@example.com').AddTo('ada@example.com')
+      .Subject('Invoice').Text('Attached.')
+      .AttachData('invoice.pdf', AllBytes));
+    J := H.Sent[0];
+    AssertContains(J, '"attachments":[{"filename":"invoice.pdf","content":"' +
+      Base64Encode(AllBytes) +
+      '","content_type":"application/pdf"}]', 'a file goes to Resend as base64, with its type');
+  finally
+    T.Free;
+  end;
+end;
+
+procedure TestMailTemplates;
+var
+  Dir, Prev: string;
+  M: TMailMessage;
+  Raised: string;
+
+  procedure Put(const Name, Text_: string);
+  begin
+    with TStringList.Create do
+    try
+      Text := Text_;
+      SaveToFile(Dir + '/' + Name);
+    finally
+      Free;
+    end;
+  end;
+
+begin
+  Dir := GetTempDir + 'askr-mail-templates-' + IntToStr(GetProcessID);
+  ForceDirectories(Dir + '/auth');
+  Put('welcome.html', '<p>Hello {{ name }}, from {{app}}</p>');
+  Put('welcome.txt', 'Hello {{name}}');
+  Put('welcome.nb.txt', 'Hei {{name}}');
+  Put('layout.html', '<html><body>{{content}}<footer>{{app}}</footer></body></html>');
+  Put('auth/verify.txt', 'Open {{url}}');
+  Put('order.html', '<table>{{{rows}}}</table><p>{{note}}</p>');
+  Put('broken.txt', 'Hello {{nmae}}');
+  SetMailTemplateDir(Dir);
+  Prev := UseLocale('');
+  M := TMailMessage.Create;
+  try
+    M.Template('welcome', ['name', '<Ada & co> {{app}}', 'app', 'Shop']);
+    AssertEqual(Trim(M.HtmlBody),
+      '<html><body><p>Hello &lt;Ada &amp; co&gt; {{app}}, from Shop</p><footer>Shop</footer></body></html>',
+      'the html is filled in, escaped, and put in the layout -- and a value is never read again');
+    AssertEqual(Trim(M.TextBody), 'Hello <Ada & co> {{app}}',
+      'the text as it is, with no layout when there is no layout.txt');
+
+    UseLocale('nb-NO');
+    M.Template('welcome', ['name', 'Ada', 'app', 'Shop']);
+    AssertEqual(Trim(M.TextBody), 'Hei Ada', 'a region takes its language''s template');
+    AssertContains(M.HtmlBody, 'Hello Ada', 'and the plain one where the language has none');
+    UseLocale('');
+
+    M.Template('order', ['rows', '<tr><td>2 × jam</td></tr>', 'note', '<b>', 'app', 'Shop']);
+    AssertEqual(M.HtmlBody, '<html><body><table><tr><td>2 × jam</td></tr></table><p>&lt;b&gt;</p><footer>Shop</footer></body></html>',
+      'three braces write html built in Pascal as it is, two escape it');
+    M.Template('auth/verify', ['url', 'https://example.com/v?a=1&b=2']);
+    AssertEqual(Trim(M.TextBody), 'Open https://example.com/v?a=1&b=2', 'a template in a folder');
+
+    Raised := '';
+    try
+      M.Template('broken', ['name', 'Ada']);
+    except
+      on E: EMailError do Raised := E.Message;
+    end;
+    AssertContains(Raised, '{{nmae}}', 'a placeholder nothing fills stops the mail, naming it');
+    AssertContains(Raised, 'broken.txt', 'and the file');
+
+    Raised := '';
+    try
+      M.Template('nothing', []);
+    except
+      on E: EMailError do Raised := E.Message;
+    end;
+    AssertContains(Raised, 'nothing.html', 'a template that is not there says where it looked');
+
+    Raised := '';
+    try
+      M.Template('../welcome', ['name', 'x', 'app', 'y']);
+    except
+      on E: EMailError do Raised := E.Message;
+    end;
+    AssertContains(Raised, 'is not a template name', 'a name never reaches above mail/');
+  finally
+    M.Free;
+    UseLocale(Prev);
+    SetMailTemplateDir('');
+    DeleteFile(Dir + '/welcome.html');
+    DeleteFile(Dir + '/welcome.txt');
+    DeleteFile(Dir + '/welcome.nb.txt');
+    DeleteFile(Dir + '/layout.html');
+    DeleteFile(Dir + '/auth/verify.txt');
+    DeleteFile(Dir + '/broken.txt');
+    DeleteFile(Dir + '/order.html');
+    RemoveDir(Dir + '/auth');
+    RemoveDir(Dir);
+  end;
+end;
+
 procedure TestMailFraConfig;
 const
   Directory = 'askr-mailcfg-test.tmp';
@@ -9485,6 +9912,11 @@ begin
   Test('a message with no body is rejected before the network', @TestResendEmptyBody);
   Test('the key is not in Describe', @TestResendLekkerIkkeNoekkel);
   Test('the headers are in the bytes on the wire', @TestResendPaaLufta);
+  Test('a file goes as base64 with its type', @TestResendAttachments);
+
+  Group('Mail attachments and templates');
+  Test('files go as multipart/mixed, and read back byte for byte', @TestMailAttachments);
+  Test('a template fills, escapes, follows the locale and refuses a gap', @TestMailTemplates);
 
   Group('The test client');
   Test('routes, parameters and a body without a socket', @TestClientAgainstRouter);

@@ -12,6 +12,41 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **Mail attachments.** `Attach(path)` reads a file when it is called, so a
+  missing one is an error where the message is built; `AttachData(name,
+  bytes)` takes bytes made in memory. The type follows the name from the
+  same table the static file server uses. SMTP sends them as
+  `multipart/mixed`, Resend as base64 with their type, and the log
+  transport as a line saying what each was. A name outside ASCII goes as
+  RFC 2231, in continuations when it is long; the test reads the message
+  back with Python's own `email` package, byte for byte.
+- **Mail templates.** `Template('welcome', ['name', U.Name])` fills
+  `mail/welcome.html` and `mail/welcome.txt` next to `askr.toml`, escaping
+  in the html, with `{{{rows}}}` for html built in Pascal. A template per
+  language — `welcome.nb.html` — is taken first, and `mail/layout.html`
+  wraps every body at `{{content}}`. A placeholder nothing fills stops the
+  mail and names it.
+
+### Changed
+
+- The static file server sends `.pdf`, `.csv`, `.xml`, `.zip`, `.ics`,
+  `.md` and the Office formats with their own types, where they were
+  `application/octet-stream`. A PDF opens in the browser rather than
+  downloading.
+
+### Fixed
+
+- **A mail's subject and names outside ASCII went out raw.** A header is
+  ASCII; they are RFC 2047 encoded words now, cut so no word ends halfway
+  through a character.
+- **A line break in a subject or a header value started a new header.** A
+  subject from a contact form could add a `Bcc:` of the visitor's choosing.
+  It is a space now.
+
 ## 0.14.0 — 2026-09-26
 
 Languages, and what an app with more than one process needs. The

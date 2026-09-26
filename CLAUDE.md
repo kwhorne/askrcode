@@ -1130,6 +1130,31 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * En melding uten `text` og uten `html` avvises før nettverket. Resend gir
   422 på den, og den feilen er lettere å forstå her.
 
+## Vedlegg og maler i mail
+
+* **Python leser meldingen tilbake, ikke `Pos`.** Testen gir hele
+  meldingen til Pythons `email`-pakke og sammenligner hver byte i filene,
+  navnene og emnet. Det var den som fant at en `filename=`-reserve ved
+  siden av `filename*` blir lest i stedet — understreker der bokstavene
+  var. Derfor bare én form i disposisjonen.
+* **Python tilgir det en annen leser ikke gjør.** Den slår sammen
+  nabo-kodeord og RFC 2231-biter før den dekoder, så et tegn kuttet i to
+  går rett gjennom. To mutasjoner overlevde av den grunn, og testen sjekker
+  nå hver bit for seg — med et emne av bare tobytesbokstaver, for det
+  første emnet traff tilfeldigvis aldri et kutt.
+* **Kodeord på 39 byte, ikke 45.** 45 ga en første linje på 81 tegn etter
+  `Subject: `. Linjer over 998 avvises av SMTP; 78 er det testen holder.
+* **En linjeskift i emne eller header blir et mellomrom.** Et emne fra et
+  kontaktskjema er tekst en besøkende skrev, og et linjeskift der var en
+  `Bcc:` etter eget valg. Testen bruker bare LF — en mutasjon som bare
+  vasket CRLF overlevde første utgave av testen.
+* **Maler fylles i ett pass.** En verdi som selv inneholder `{{x}}` leses
+  aldri på nytt. `{{{rows}}}` skriver html bygget i Pascal urørt; et hull
+  uten verdi kaster, for en mail med `{{name}}` i er en mail en kunde leser.
+* **Innholdstypene er én tabell**, `Askr.Core.Mime`, for både statiske filer
+  og vedlegg. `Askr.Http.Static.ContentTypeForExt` delegerer dit.
+
+## Kommandolinja
 ## Kommandolinja
 
 * **`Askr.Console` ligger i rammeverket, ikke i den genererte app.lpr.**

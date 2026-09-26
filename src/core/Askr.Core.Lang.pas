@@ -78,6 +78,9 @@ function UseLocale(const Locale: string): string;
 
   Looked up in CurrentLocale, then FallbackLocale, then the framework's
   English, and shown as Key when it is nowhere. }
+{ The text one argument to Trans is written as. Exported for what fills
+  placeholders the same way -- a mail template. }
+function ArgText(const V: TVarRec): string;
 function Trans(const Key: string): string; overload;
 function Trans(const Key: string; const Args: array of const): string; overload;
 

@@ -100,6 +100,9 @@ function StrEmpty: TStr; inline;
 function StrDup(A: TArena; const S: TStr): TStr; overload;
 function StrDup(A: TArena; const S: string): TStr; overload;
 function StrCat(A: TArena; const L, R: TStr): TStr;
+{ Text safe to put between HTML tags or in a quoted attribute: & < > " '
+  escaped, nothing else touched. }
+function HtmlEscape(const S: string): string;
 
 implementation
 
@@ -147,6 +150,23 @@ end;
 function StrDup(A: TArena; const S: string): TStr;
 begin
   Result := StrDup(A, Str(S));
+end;
+
+function HtmlEscape(const S: string): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+    case S[I] of
+      '&': Result := Result + '&amp;';
+      '<': Result := Result + '&lt;';
+      '>': Result := Result + '&gt;';
+      '"': Result := Result + '&quot;';
+      '''': Result := Result + '&#39;';
+    else
+      Result := Result + S[I];
+    end;
 end;
 
 function StrCat(A: TArena; const L, R: TStr): TStr;

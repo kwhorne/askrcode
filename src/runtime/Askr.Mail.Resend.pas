@@ -27,7 +27,7 @@ interface
 uses
   SysUtils, Classes, StrUtils,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json, Askr.Core.Config,
-  Askr.Core.Log, Askr.Http.Client, Askr.Mail;
+  Askr.Core.Log, Askr.Core.Crypto, Askr.Http.Client, Askr.Mail;
 
 const
   DefaultResendBaseUrl = 'https://api.resend.com';
@@ -330,6 +330,23 @@ begin
     end;
     if HasHeaders then
       W.EndObject;
+
+    { Base64, which is what Resend takes a file's bytes as. The type goes
+      with it, rather than leaving Resend to guess from the name. }
+    if Length(M.Attachments) > 0 then
+    begin
+      W.Key('attachments');
+      W.BeginArray;
+      for I := 0 to High(M.Attachments) do
+      begin
+        W.BeginObject;
+        W.Field('filename', M.Attachments[I].FileName);
+        W.Field('content', Base64Encode(M.Attachments[I].Data));
+        W.Field('content_type', M.Attachments[I].ContentType);
+        W.EndObject;
+      end;
+      W.EndArray;
+    end;
 
     W.EndObject;
     Result := W.ToString;

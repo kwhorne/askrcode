@@ -150,6 +150,7 @@ Resend honours the key for 24 hours. `TSmtpTransport` ignores it.
 | `Subject`, `Text`, `Html` | `subject`, `text`, `html` |
 | `Header('Reply-To', …)` | `reply_to` — moved out of `headers` |
 | Any other `Header` | `headers` |
+| `Attach`, `AttachData` | `attachments`, base64 with `content_type` |
 | `Idempotency(key)` | `Idempotency-Key` |
 
 Reply-To is lifted out deliberately: Resend has a field for it and refuses
@@ -207,10 +208,20 @@ must install it yourself**. Resend needs it too, for the same reason —
 | `AddTo`, `Cc`, `Bcc` | Repeatable |
 | `Subject`, `Text`, `Html` | |
 | `Header(name, value)` | Anything else |
+| `Attach(path, name, type)` | A file from disk |
+| `AttachData(name, bytes, type)` | Bytes made in memory |
+| `Template(name, [pairs])` | The bodies from `mail/` — see below |
 | `Idempotency(key)` | For providers that support it |
 | `Render` | The RFC 5322 text, for tests |
 
-With both `Text` and `Html` the message becomes `multipart/alternative`.
+With both `Text` and `Html` the message becomes `multipart/alternative`,
+and with a file it is `multipart/mixed` around that.
+
+A subject or a name outside ASCII goes as RFC 2047 encoded words, which is
+the only way a mail header can carry it, and a line break in a subject or a
+header value becomes a space. A subject from a contact form is text a
+visitor wrote, and a line break there would otherwise start a header of the
+visitor's choosing — a `Bcc:` to everyone they like.
 
 **Bcc recipients receive the mail but do not appear in the head.** That is
 the whole point of Bcc, and getting it wrong reveals the list to everyone
@@ -218,6 +229,82 @@ on it.
 
 A name is always quoted. A comma in an unquoted name splits the address
 field in two, and then the wrong person gets the mail.
+
+## Attachments
+
+```pascal
+M.Attach('storage/reports/2026-09.pdf')
+ .Attach(Upload.Path, 'receipt.jpg')
+ .AttachData('orders.csv', CsvBytes);
+```
+
+`Attach` reads the file when it is called, not when the mail goes out: a
+path that is not there is an error where the message is built, naming the
+path, rather than in a queue later. The bytes are held, so what was
+attached is what is sent even if the file changes before a worker gets to
+it.
+
+The name the recipient sees is the file's own unless you give one, and the
+type follows the name — `application/pdf`, `text/csv`, the Office formats —
+from the same table the static file server uses, unless you give that too.
+A path in the name is taken off: the name is shown to the recipient and
+never becomes a path on this side.
+
+A name outside ASCII goes as RFC 2231 in the disposition, split into
+continuations when it is long, and as encoded words in the type's `name`
+for older Outlook. Only one form in the disposition: readers disagree on
+which of two wins, and Python's own parser takes the ASCII fallback, which
+is underscores where the letters were.
+
+The test reads the whole message back with Python's `email` package —
+every byte of the file, the names, the subject — rather than looking for
+the parts with `Pos`. A test that looks for what I think MIME looks like
+holds the message up to my own idea of it.
+
+The log transport writes each file as a line saying how many bytes of what
+it was, not as base64. A log with a PDF in it is not something anyone
+reads.
+
+## Templates
+
+```pascal
+Mail.Send(Mail.Message_
+  .AddTo(U.Email)
+  .Subject(Trans('mail.welcome.subject'))
+  .Template('welcome', ['name', U.Name, 'url', Link]));
+```
+
+```html
+<!-- mail/welcome.html -->
+<p>Welcome, {{name}}.</p>
+<p><a href="{{url}}">Sign in</a></p>
+```
+
+```text
+mail/welcome.txt
+Welcome, {{name}}. Sign in: {{url}}
+```
+
+The bodies come from `mail/<name>.html` and `mail/<name>.txt` next to
+`askr.toml` — at least one of them. A value is escaped in the html and
+written as it is in the text; `{{{rows}}}`, with three braces, writes html
+you built in Pascal as it is — the rows of an order — and the escaping is
+then yours. Names can have folders: `auth/verify`.
+
+- **Per language.** `mail/welcome.nb.html` is taken first when the request's
+  locale is `nb`, and for `nb-NO` too, then `mail/welcome.html`. The subject
+  is a `Trans` key like any other text.
+- **A layout.** When `mail/layout.html` is there, every html body goes into
+  it at `{{content}}`, and the same for `mail/layout.txt`. The layout gets
+  the same values as the template.
+- **A gap stops the mail.** A `{{placeholder}}` nothing fills raises,
+  naming it and the file — so does a template that is not there. A mail
+  with `{{name}}` in it is a mail a customer reads, and in a queue the
+  failure lands in the failed table where somebody sees it.
+- **One pass.** A value that itself holds `{{something}}` — a name a
+  visitor typed — is written as it is and never read again.
+
+`SetMailTemplateDir` points it elsewhere, for a test.
 
 ## Testing
 
@@ -282,13 +369,14 @@ idempotency key makes the retry safe.
 
 ## What is not here
 
-**No attachments.** `TMailMessage` has no attachment API, so neither
-transport can send one. Adding it means `multipart/mixed` in `Render` as
-well as the provider field, and it is not written yet.
+**No images inside the html.** An attachment is an attachment; there is no
+`cid:` for a logo in the body. Link to the image on your site instead —
+which is what most clients show anyway, after asking.
 
-**No templates.** Messages are built with string concatenation. A small
-template interpreter for mail is a real need and is on the list; a full
-templating engine is not, because Inertia covers pages.
+**No logic in a template.** `{{name}}` is filled in and that is all: no
+loops, no conditions, no filters. A list of order lines is built in Pascal
+and passed as one value with `{{{rows}}}`. A template language with loops
+is its own project, and Inertia already covers pages.
 
 **No Resend batch endpoint, tags, scheduling or audiences.** One message
 per call. The batch endpoint is a throughput optimisation for people

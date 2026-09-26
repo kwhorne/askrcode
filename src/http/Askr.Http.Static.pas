@@ -18,7 +18,7 @@ interface
 
 uses
   SysUtils, Classes, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
-  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response;
+  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Core.Mime;
 
 const
   { 16 MB. Larger files are not served from here. }
@@ -46,32 +46,15 @@ type
     property Root: string read FRoot;
   end;
 
+{ Askr.Core.Mime's table, which a mail attachment reads too. Kept here so
+  code that found it in this unit still does. }
 function ContentTypeForExt(const Ext: string): string;
 
 implementation
 
 function ContentTypeForExt(const Ext: string): string;
-var
-  E: string;
 begin
-  E := LowerCase(Ext);
-  if (E = '.html') or (E = '.htm') then Exit('text/html; charset=utf-8');
-  if E = '.js' then Exit('text/javascript; charset=utf-8');
-  if E = '.mjs' then Exit('text/javascript; charset=utf-8');
-  if E = '.css' then Exit('text/css; charset=utf-8');
-  if E = '.json' then Exit('application/json');
-  if E = '.svg' then Exit('image/svg+xml');
-  if E = '.png' then Exit('image/png');
-  if (E = '.jpg') or (E = '.jpeg') then Exit('image/jpeg');
-  if E = '.webp' then Exit('image/webp');
-  if E = '.gif' then Exit('image/gif');
-  if E = '.ico' then Exit('image/x-icon');
-  if E = '.woff2' then Exit('font/woff2');
-  if E = '.woff' then Exit('font/woff');
-  if E = '.map' then Exit('application/json');
-  if E = '.txt' then Exit('text/plain; charset=utf-8');
-  if E = '.wasm' then Exit('application/wasm');
-  Result := 'application/octet-stream';
+  Result := Askr.Core.Mime.ContentTypeForExt(Ext);
 end;
 
 constructor TStaticFiles.Create(const ARoot: string);
