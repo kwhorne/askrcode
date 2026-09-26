@@ -1377,8 +1377,14 @@ begin
     case PC.Field.Kind of
       ftString, ftText, ftJson:
         Exit('Copy(''S'' + IntToStr(Seq), 1, ' + IntToStr(Max(PC.Field.Length, 1)) + ')');
-      ftInt, ftBigInt:
+      { Assigned, not cast: Seq is an Int64 and a Currency takes it as the
+        number it is. }
+      ftInt, ftBigInt, ftMoney, ftFloat:
         Exit('Seq');
+      { A reference is unique already -- the test makes a new parent for
+        every row. A boolean can only be unique twice; there is nothing to
+        vary, and a table like that makes one row per value. }
+      ftReferences, ftBool: ;
       ftUuid:
         Exit('Format(''%.8d-0000-4000-8000-%.12d'', [Seq mod 100000000, Seq mod 1000000000000])');
       ftDateTime, ftDate:
@@ -1405,7 +1411,7 @@ begin
   if not PC.Field.Unique or (PC.Field.Kind = ftReferences) then
     Exit(PasStr(SampleJson(PC)));
   case PC.Field.Kind of
-    ftInt, ftBigInt: Result := 'IntToStr(' + SamplePascal(PC) + ')';
+    ftInt, ftBigInt, ftMoney, ftFloat: Result := 'IntToStr(' + SamplePascal(PC) + ')';
     ftDate: Result := '''"'' + FormatDateTime(''yyyy-mm-dd'', ' + SamplePascal(PC) + ') + ''"''';
     ftDateTime: Result := '''"'' + FormatDateTime(''yyyy-mm-dd"T"hh:nn'', ' +
       SamplePascal(PC) + ') + ''"''';
