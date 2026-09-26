@@ -284,6 +284,7 @@ so it belongs in CI. See [OpenAPI](openapi.md).
 | `askr env` | The current `APP_ENV` |
 | `askr list` | The commands this binary answers to |
 | `askr key:generate` | A new `APP_KEY` |
+| `askr lang:check` | What each lang file lacks, and has that nothing looks up — see [Languages](lang.md) |
 
 `askr config` shows **no values** without `--values` — the output is safe to
 paste into a bug report. With `--values`, keys that look like secrets are

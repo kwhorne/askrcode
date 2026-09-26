@@ -98,7 +98,7 @@ function ValidationProblem(E: TErrors;
 implementation
 
 uses
-  Askr.Http.Multipart;
+  Askr.Http.Multipart, Askr.Core.Lang;
 
 function ValidationProblem(E: TErrors; const Detail: string): TResponse;
 var
@@ -440,8 +440,8 @@ begin
   Ids := Out_;
 
   if Bad <> '' then
-    Errors.Add(AName, AName + ' must be a list of ids, and ' + Bad +
-      ' is not one');
+    Errors.Add(AName, Trans('validation.ids_list', ['attribute', AttributeName(AName),
+      'value', Bad]));
   Result := Found;
 end;
 

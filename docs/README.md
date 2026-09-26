@@ -68,6 +68,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Models](models.md) | Mapping, timestamps, soft deletes, lifecycle events |
 | [Queries](queries.md) | The typed query builder, eager loading, pagination |
 | [Validation](validation.md) | Rules on the model, errors keyed by column |
+| [Languages](lang.md) | Messages in the reader's language, and `askr lang:check` |
 | [Migrations](migrations.md) | The schema builder and the migrator |
 | [Typed columns](schema.md) | `askr schema`, generated from the live database |
 | [Rún](run.md) | The optional query language with comptime schema checking |

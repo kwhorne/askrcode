@@ -21,10 +21,10 @@ uses
   Askr.Urd.Bind, Askr.Urd.Json,
   Askr.Core.Crypto,
   Askr.Urd.Pool,
-  Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf,
+  Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Locale,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
@@ -3251,6 +3251,300 @@ begin
     C2.Free;
     C.Free;
     A.Free;
+    RemoveTree(Root);
+  end;
+end;
+
+{ --------------------------------------------------------------- lang -- }
+
+type
+  TLangCustomer = class(TModel)
+  private
+    FId: Int64;
+    FEmail: string;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Email: string read FEmail write FEmail;
+    property Name: string read FName write FName;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
+  TLangCtl = class
+  public
+    function Show(Req: TRequest): TResponse;
+    function Choose(Req: TRequest): TResponse;
+  end;
+
+class procedure TLangCustomer.Describe(S: TSchema);
+begin
+  S.Table('lang_customers');
+end;
+
+procedure TLangCustomer.Rules(V: TValidator);
+begin
+  V.Field('Email').Required;
+  V.Field('Name').MinLen(3);
+end;
+
+function TLangCtl.Show(Req: TRequest): TResponse;
+begin
+  Result := RespondText(CurrentLocale + '|' + Trans('validation.required', ['attribute', 'x']));
+end;
+
+function TLangCtl.Choose(Req: TRequest): TResponse;
+begin
+  if SetLocale(Req.Param('locale').ToString) then
+    Result := RespondText('chosen')
+  else
+    Result := RespondText('refused');
+end;
+
+procedure WriteText(const Path_, Text_: string);
+var
+  L: TStringList;
+begin
+  L := TStringList.Create;
+  try
+    L.Text := Text_;
+    L.SaveToFile(Path_);
+  finally
+    L.Free;
+  end;
+end;
+
+{ What a message says in the reader's language: the file, then the
+  fallback, then the English compiled in, then the key -- and with no
+  lang directory at all, exactly what it said before there were keys. }
+procedure TestLang;
+const
+  Dir = '.build/lang-test';
+var
+  A: TArena;
+  M: TLangCustomer;
+  Prev: string;
+  P: TLangProblems;
+  I: Integer;
+  Found: Boolean;
+begin
+  RemoveTree(Dir);
+  ForceDirectories(Dir);
+  A := TArena.Create(16 * 1024);
+  UseArena(A);
+  Prev := UseLocale('');
+  try
+    ClearLang;
+    M := TLangCustomer.Create;
+    M.Name := 'Al';
+    AssertFalse(M.Validate, 'a rule fails');
+    AssertEqual(M.Errors.First('email'), 'email is required',
+      'with no lang directory the message is what it always was');
+    AssertEqual(M.Errors.First('name'), 'name must be at least 3 characters',
+      'numbers too');
+
+    WriteText(Dir + '/nb.toml',
+      '# Norwegian' + LineEnding +
+      '[validation]' + LineEnding +
+      'required = ":attribute må fylles ut"' + LineEnding +
+      'quoted = "Han sa \"hei\"\nog gikk"' + LineEnding +
+      'minimum = ":minimum og :min"' + LineEnding +
+      '[validation.attributes]' + LineEnding +
+      'email = "e-postadresse"' + LineEnding +
+      'broken line' + LineEnding +
+      'bad = "no end' + LineEnding +
+      'note = "x" # a comment');
+    WriteText(Dir + '/en.toml',
+      '[validation]' + LineEnding +
+      'min_length = ":attribute needs :min characters or more"');
+    LoadLang(Dir);
+    AssertEqual(Length(Locales), 2, 'one locale per file');
+    AssertTrue(HasLocale('nb') and HasLocale('en'), 'named for the file');
+
+    UseLocale('nb');
+    M := TLangCustomer.Create;
+    M.Name := 'Al';
+    M.Validate;
+    AssertEqual(M.Errors.First('email'), 'e-postadresse må fylles ut',
+      'the message and the field''s name in the locale''s words');
+    AssertEqual(M.Errors.First('name'), 'name needs 3 characters or more',
+      'a key the locale lacks comes from the fallback''s file');
+    AssertEqual(Trans('validation.email', ['attribute', 'x']), 'x is not a valid email address',
+      'and one no file has is the English compiled in');
+    AssertEqual(Trans('nothing.here'), 'nothing.here', 'and one nowhere is shown as its key');
+    AssertEqual(Trans('validation.quoted'), 'Han sa "hei"' + #10 + 'og gikk',
+      'a quote and a newline are escaped');
+    AssertEqual(Trans('validation.minimum', ['min', 1, 'minimum', 5]), '5 og 1',
+      'the longest placeholder is replaced first');
+
+    P := LangProblems;
+    Found := False;
+    for I := 0 to High(P) do
+      if (P[I].Line = 8) and (Pos('neither a key', P[I].Message) > 0) then
+        Found := True;
+    AssertTrue(Found, 'a line that is nothing is a problem, on its line');
+    Found := False;
+    for I := 0 to High(P) do
+      if (P[I].Line = 10) and (Pos('comment goes on a line of its own', P[I].Message) > 0) then
+        Found := True;
+    AssertTrue(Found, 'and a comment after a value says where comments go');
+    AssertEqual(Length(P), 3, 'three problems, and no more');
+
+    UseLocale('');
+    AssertEqual(CurrentLocale, 'en', 'outside a request the locale is app.locale, or en');
+    M := TLangCustomer.Create;
+    M.Validate;
+    AssertEqual(M.Errors.First('email'), 'email is required',
+      'and the English file''s override does not touch what it leaves out');
+    AssertEqual(PlaceholdersOf(':attribute and :min, :min again')[0], 'attribute',
+      'placeholders are read out of a text');
+    AssertEqual(Length(PlaceholdersOf(':attribute and :min, :min again')), 2, 'each once');
+  finally
+    UseLocale(Prev);
+    ClearLang;
+    UseArena(nil);
+    A.Free;
+    RemoveTree(Dir);
+  end;
+end;
+
+{ Which locale a request gets: the visitor's choice, then the header,
+  then app.locale -- and the answer says which, and whether a cache has
+  to keep the header in mind. }
+procedure TestLocales;
+const
+  Dir = '.build/locale-test';
+var
+  R: TRouter;
+  Ctl: TLangCtl;
+  K: TTestClient;
+  Res: TResponse;
+  Cookie_: string;
+  A: TArena;
+begin
+  RemoveTree(Dir);
+  ForceDirectories(Dir);
+  WriteText(Dir + '/nb.toml', '[validation]' + LineEnding + 'required = ":attribute må fylles ut"');
+  WriteText(Dir + '/pt-BR.toml', '[validation]' + LineEnding + 'required = ":attribute é obrigatório"');
+  LoadLang(Dir);
+  AssertEqual(NegotiateLocale('nb-NO,nb;q=0.9,en;q=0.8'), 'nb', 'a region falls back to its language');
+  AssertEqual(NegotiateLocale('fr;q=1, en;q=0.5'), 'en', 'a language there is no file for is passed over');
+  AssertEqual(NegotiateLocale('en;q=0.4, nb;q=0.9'), 'nb', 'the highest q wins, wherever it is written');
+  AssertEqual(NegotiateLocale('pt_br'), 'pt-BR', 'a tag finds the file however it is spelled');
+  AssertEqual(NegotiateLocale('nb;q=0'), '', 'q=0 means not that one');
+  AssertEqual(NegotiateLocale('fr, de'), '', 'and none of them is none');
+
+  SetSessions(TSessionStore.Create(3600));
+  Ctl := TLangCtl.Create;
+  R := TRouter.Create;
+  UseSessions(R);
+  UseLocales(R);
+  R.Get('/show', Ctl.Show);
+  R.Get('/choose/:locale', Ctl.Choose);
+  K := TTestClient.Create(R);
+  try
+    Res := K.Get('/show');
+    AssertEqual(Res.Body.ToString, 'en|x is required', 'with nothing asked, app.locale');
+    Res := K.WithHeader('Accept-Language', 'nb-NO,nb;q=0.9').Get('/show');
+    AssertEqual(Res.Body.ToString, 'nb|x må fylles ut', 'the header chooses');
+    AssertEqual(Res.HeaderValue('Content-Language'), 'nb', 'and the answer says which');
+    AssertContains(Res.HeaderValue('Vary'), 'Accept-Language', 'and that it depended on the header');
+    { The test client runs the router on this thread, which is what code
+      after a request on a worker sees. }
+    AssertEqual(CurrentLocale, 'en', 'and after the request the thread is back at the default');
+    Res := K.Get('/show');
+    AssertEqual(Res.Body.ToString, 'en|x is required',
+      'the next request on the worker starts from the default again');
+
+    AssertEqual(K.Get('/choose/xx').Body.ToString, 'refused',
+      'a locale there is no file for cannot be chosen');
+    Res := K.Get('/choose/pt-BR');
+    AssertEqual(Res.Body.ToString, 'chosen', 'one there is can');
+    A := TArena.Create(8 * 1024);
+    try
+      Cookie_ := CookieFrom(Res, A);
+    finally
+      A.Free;
+    end;
+    Res := K.WithHeader('Cookie', 'askr_session=' + Cookie_)
+      .WithHeader('Accept-Language', 'nb').Get('/show');
+    AssertEqual(Res.Body.ToString, 'pt-BR|x é obrigatório',
+      'and it is kept, over what the header asks for');
+  finally
+    K.Free;
+    R.Free;
+    Ctl.Free;
+    { The store stays: other tests expect one to be set. }
+    ClearLang;
+    RemoveTree(Dir);
+  end;
+end;
+
+{ askr lang:check: a locale held against the base both ways -- what it
+  lacks, what it has that nothing looks up, and a placeholder nothing
+  passes. One direction alone passes a file full of typos. }
+procedure TestLangCheck;
+const
+  Root = '.build/langcheck-test';
+var
+  Rep: TStringArray;
+  All: string;
+  I: Integer;
+  Ok: Boolean;
+
+  function Report: string;
+  var
+    J: Integer;
+  begin
+    Result := '';
+    for J := 0 to High(Rep) do
+      Result := Result + Rep[J] + LineEnding;
+  end;
+
+begin
+  RemoveTree(Root);
+  ForceDirectories(Root);
+  try
+    AssertTrue(LangCheck(Root, Rep), 'no lang directory is nothing to fix');
+    AssertContains(Rep[0], 'every message is the framework''s English', 'and it says so');
+
+    ForceDirectories(Root + '/lang');
+    WriteText(Root + '/lang/en.toml',
+      '[app]' + LineEnding +
+      'hello = "Hello, :name"' + LineEnding +
+      '[validation]' + LineEnding +
+      'required = ":attribute is needed by :who"');
+    WriteText(Root + '/lang/nb.toml',
+      '[app]' + LineEnding +
+      'hello = "Hei, :navn"' + LineEnding +
+      '[validation]' + LineEnding +
+      'requird = ":attribute må fylles ut"');
+    Ok := LangCheck(Root, Rep);
+    All := Report;
+    AssertFalse(Ok, 'a locale that disagrees with the base has something to fix');
+    AssertContains(All, 'lang/en.toml: validation.required uses :who, which the framework does not pass',
+      'the base''s own placeholder nothing passes');
+    AssertContains(All, 'lang/nb.toml lacks validation.email -- in en: :attribute is not a valid email address',
+      'a key the locale lacks, with the English it would show instead');
+    AssertContains(All, 'lang/nb.toml has validation.requird, which neither lang/en.toml nor the framework has',
+      'a key nothing looks up');
+    AssertContains(All, 'lang/nb.toml: app.hello uses :navn, which en does not',
+      'a placeholder the translation invented');
+    AssertContains(Rep[High(Rep)], 'thing(s) to fix', 'and it ends by saying how many');
+
+    { Complete, and it holds. }
+    { The framework's keys first: a [section] applies to what follows it. }
+    All := '';
+    for I := 0 to High(BuiltInTexts) do
+      All := All + Copy(BuiltInTexts[I], 1, Pos('=', BuiltInTexts[I]) - 1) + ' = "x"' + LineEnding;
+    All := All + '[app]' + LineEnding + 'hello = "Hei, :name"' + LineEnding;
+    WriteText(Root + '/lang/nb.toml', All);
+    WriteText(Root + '/lang/en.toml', '[app]' + LineEnding + 'hello = "Hello, :name"');
+    Ok := LangCheck(Root, Rep);
+    AssertTrue(Ok, 'a locale with every key and no stranger holds: ' + Report);
+    AssertContains(Rep[High(Rep)], 'lang:check holds: 2 locale(s) against en', 'and says so');
+  finally
     RemoveTree(Root);
   end;
 end;
@@ -8305,6 +8599,12 @@ begin
   Group('Many to many in the generators');
   Test('a pivot is boxes on both sides, and says why when it cannot be',
     @TestResourceManyToMany);
+
+  Group('Languages');
+  Test('a message in the reader''s words, and exactly as before without any',
+    @TestLang);
+  Test('the visitor''s choice, then the header, then app.locale', @TestLocales);
+  Test('askr lang:check, both ways', @TestLangCheck);
 
   Group('make pivot');
   Test('the table between two models, named as BelongsToMany expects',

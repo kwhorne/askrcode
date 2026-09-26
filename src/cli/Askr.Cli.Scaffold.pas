@@ -464,6 +464,9 @@ begin
     '[app]' + #10 +
     'port = 8080' + #10 +
     'backend_port = 8081' + #10 +
+    '# The language a request is answered in when neither the visitor nor' + #10 +
+    '# the browser chose one there is a lang file for. See lang/en.toml.' + #10 +
+    'locale = "en"' + #10 +
     '' + #10 +
     '# Which Askr release this project builds against.' + #10 +
     '#' + #10 +
@@ -504,6 +507,7 @@ begin
     '  Askr.Http.Server, Askr.Http.Router, Askr.Http.Static,' + #10 +
     '  Askr.Http.Robots, Askr.Http.Sitemap,' + #10 +
     '  Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Auth, Askr.Auth.Token,' + #10 +
+    '  Askr.Core.Lang, Askr.Locale,' + #10 +
     '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
@@ -565,6 +569,10 @@ begin
     '  { Reads .env and askr.toml. Real environment variables win over' + #10 +
     '    both. See what actually applies with: askr config }' + #10 +
     '  LoadConfig;' + #10 +
+    '  { lang/*.toml, next to askr.toml. Without it every message is the' + #10 +
+    '    framework''s English; the directory deploys with the binary, like' + #10 +
+    '    public/. }' + #10 +
+    '  LoadLang;' + #10 +
     '  { Level and format from LOG_LEVEL and LOG_FORMAT. Text locally,' + #10 +
     '    JSON when APP_ENV=production. }' + #10 +
     '  ConfigureLogFromEnv;' + #10 +
@@ -642,6 +650,10 @@ begin
     '    same logins. SESSION_LIFETIME is in seconds. }' + #10 +
     '  SetSessions(SessionsFromConfig(DbPool));' + #10 +
     '  UseSessions(R);' + #10 +
+    '  { The language: the visitor''s choice, kept in the session, then' + #10 +
+    '    Accept-Language, then app.locale. After UseSessions, which keeps' + #10 +
+    '    the choice. }' + #10 +
+    '  UseLocales(R);' + #10 +
     '  { API tokens, for callers that are not browsers:' + #10 +
     '' + #10 +
     '      Authorization: Bearer askr_...' + #10 +
@@ -959,6 +971,25 @@ begin
   { storage/ exists from the start, so that a log transport or a file
     upload does not fail on a missing directory. }
   Emit(Root + '/storage/.gitkeep', '');
+
+  { Only what the app says differently. The framework's English is
+    compiled in; a copy here would be frozen the day the project was made
+    and disagree with the first upgrade that changed a message. }
+  Emit(Root + '/lang/en.toml',
+    '# What this app says, in English: its own words, and any of the' + #10 +
+    '# framework''s it wants said differently. The framework''s own English' + #10 +
+    '# is compiled in, so this file starts empty and a key left out is not' + #10 +
+    '# missing.' + #10 +
+    '#' + #10 +
+    '#   [validation]' + #10 +
+    '#   required = ":attribute cannot be empty"' + #10 +
+    '#' + #10 +
+    '#   [validation.attributes]' + #10 +
+    '#   email = "email address"' + #10 +
+    '#' + #10 +
+    '# Another language is another file: lang/nb.toml, lang/de.toml. A key' + #10 +
+    '# is looked up in the request''s locale, then app.fallback_locale, then' + #10 +
+    '# the framework''s English. askr lang:check says what a locale lacks.' + #10);
 
   WriteAgentsFile(Root, Name);
 

@@ -17,7 +17,7 @@ uses
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
   Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
-  Askr.Console.Commands, Askr.Cli.Fields, Askr.Cli.Resource,
+  Askr.Console.Commands, Askr.Cli.Fields, Askr.Cli.Resource, Askr.Cli.Lang,
   Askr.Urd.Driver, Askr.Norn.Introspect,
   Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
 
@@ -213,6 +213,7 @@ begin
   Si('  askr update [version]    move to a newer release');
   Si('  askr outdated            what is published, what you have');
   Si('  askr key:generate        print a new APP_KEY');
+  Si('  askr lang:check          what each lang file lacks, and has that it should not');
   Si('  askr config [--values]   show the effective configuration');
   Si('  askr test                build and run the app test suite');
   Si('  askr mcp                 MCP server for AI agents, over stdio');
@@ -1672,6 +1673,9 @@ var
   P: TProject;
   Delegert: Integer;
   RunErr: string;
+  LangReport: TStringArray;
+  LangOk: Boolean;
+  I: Integer;
 begin
  try
   Kommando := LowerCase(ParamStr(1));
@@ -1797,6 +1801,17 @@ begin
       SetCurrentDir(P.Root);
       LoadConfig(P.Root);
       Write(ConfigReport(HasFlag('values')));
+    end
+    else if Kommando = 'lang:check' then
+    begin
+      { The files, not the app: it answers whether or not the app builds. }
+      SetCurrentDir(P.Root);
+      LoadConfig(P.Root);
+      LangOk := LangCheck(P.Root, LangReport);
+      for I := 0 to High(LangReport) do
+        Si(LangReport[I]);
+      if not LangOk then
+        Halt(1);
     end
     else if Kommando = 'run' then
     begin

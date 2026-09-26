@@ -954,6 +954,33 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   sin verdi holder de avkryssede som en liste i `<Form>`. Det er en
   oppførselsendring for en enkelt boks med `value` — den står i UPGRADE.md.
 
+## Språk
+
+* **Rammeverkets engelsk er kompilert inn, ikke kopiert inn i appen.**
+  `lang/en.toml` fra stillaset er tom. En kopi av alle meldingene ville
+  vært frosset den dagen prosjektet ble laget — samme grunn som at
+  `AGENTS.md` er kort. Oppslaget går lokalet, fallback, innebygd engelsk,
+  nøkkelen selv.
+* **Uten lang-katalog er hver melding nøyaktig som før.** Det er testet
+  ord for ord; den innebygde teksten er den gamle, og `:attribute` er
+  kolonnen når ingen fil sier noe annet.
+* **Plassholdere erstattes lengste navn først**, så `:min` ikke tar
+  starten av `:minimum`. Mutasjonssjekket.
+* **Lokalet er per tråd, og `Start` setter det på hver request.** At neste
+  request begynner på standarden, skyldes `Start`, ikke oppryddingen i
+  `Finish` — mutasjonen som fjernet oppryddingen overlevde først, og det
+  var testen som tok feil. Det `Finish` beskytter, er kode på samme tråd
+  etter requesten; den har nå sin egen assert.
+* **`Vary` legges til, den settes ikke.** `WithHeader` lar siste verdi
+  vinne, og Inertias `Vary: X-Inertia` står der allerede.
+* **Lang-filene har egen leser, ikke `ParseTomlInto`.** Den dekoder `\"`,
+  `\\`, `\n` og `\t`, og en linje som ikke er noe er et problem med
+  linjenummer. Å endre hvordan `askr.toml` leses for å få det, ville vært
+  å flytte en risiko inn i konfigurasjonen.
+* **`askr lang:check` sjekker begge veier**, som porten for MCP-verktøyene:
+  nøkler et lokale mangler, og nøkler det har som ingenting slår opp —
+  én retning alene slipper en fil full av skrivefeil gjennom.
+
 ## Mail og providere
 
 * **`TMailTransport` er hele grensesnittet: `Send` og `Describe`.** En

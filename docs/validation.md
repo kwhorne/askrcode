@@ -38,6 +38,11 @@ C.Save;
 | `Exists(table[, column])` | The value is a row in `table` — a reference that points at something; `column` is `id` unless you say |
 | `Says(message)` | Overrides the message of the rule immediately before it |
 
+The messages are keys — `validation.required` and the rest — so they can be
+said in the reader's language, and a field can have a name there other than
+its column: see [Languages](lang.md). With no lang files they are the
+English in this table's rules, word for word.
+
 Each returns the chain, so they compose:
 
 ```pascal

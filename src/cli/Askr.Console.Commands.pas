@@ -68,10 +68,10 @@ const
     without being listed here goes to the app and does not work -- which
     is noticed the first time it is run -- rather than an app's command
     of the same name being shadowed by the tool in silence. }
-  ToolCommands: array[0..16] of string = (
-    'build', 'config', 'help', 'install', 'key:generate', 'make', 'mcp',
-    'mcp:install', 'new', 'outdated', 'repl', 'run', 'serve', 'test',
-    'update', 'version', 'routes');
+  ToolCommands: array[0..17] of string = (
+    'build', 'config', 'help', 'install', 'key:generate', 'lang:check',
+    'make', 'mcp', 'mcp:install', 'new', 'outdated', 'repl', 'run', 'serve',
+    'test', 'update', 'version', 'routes');
 
 function IsToolCommand(const K: string): Boolean;
 

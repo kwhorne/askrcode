@@ -942,6 +942,19 @@ make_check_socket() {
   in_box "python3 -c \"import sqlite3; c=sqlite3.connect('storage/api.sqlite'); c.execute(\\\"insert into makers(name, created_at, updated_at) values('Acme', datetime('now'), datetime('now'))\\\"); c.execute(\\\"insert into tags(name, created_at, updated_at) values('Red', datetime('now'), datetime('now')), ('Blue', datetime('now'), datetime('now'))\\\"); c.commit()\"" \
     shop >/dev/null 2>&1 || true
 
+  # A second language, read at start-up: the refusals below are asked for
+  # in it, and lang:check has to say what it lacks.
+  mkdir -p "$work/shop/lang"
+  printf '[validation]\nrequired = ":attribute m\303\245 fylles ut"\n\n[validation.attributes]\nname = "navn"\n' \
+    > "$work/shop/lang/nb.toml"
+  code_lc=0
+  in_box "$askr_bin lang:check" shop >"$work/sock-langcheck.log" 2>&1 || code_lc=$?
+  if [ "$code_lc" = "1" ] && grep -q "lang/nb.toml lacks validation.min_length" "$work/sock-langcheck.log"; then
+    ok "askr lang:check says what nb lacks, and exits 1"
+  else
+    bad "askr lang:check says what nb lacks" "exit $code_lc: $(head -4 "$work/sock-langcheck.log")"
+  fi
+
   docker rm -f askr-makecheck-api >/dev/null 2>&1
   docker run -d --name askr-makecheck-api -p "$api_port:$api_port" $DOCKER_PLATFORM \
     -v "$ROOT":/work -w "/work/${work#$ROOT/}/shop" "$IMAGE" \
@@ -998,6 +1011,15 @@ make_check_socket() {
   else
     bad "a writer creates one" "got $c: $(head -c 300 "$work/sock-body")"
   fi
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -H 'Accept-Language: nb-NO,nb;q=0.9' -d '{"born":"2026-01-02","maker_id":1}' "$base/api/gadgets")
+  if [ "$c" = "422" ] && grep -q 'navn må fylles ut' "$work/sock-body" &&
+     grep -qi '^content-language: nb' "$work/sock-head"; then
+    ok "asked in Norwegian, the refusal is in Norwegian, with the field's Norwegian name"
+  else
+    bad "the refusal is in the language asked for" "got $c: $(head -c 300 "$work/sock-body")"
+  fi
+
   # Refused on the form, not by the database: before Exists and Unique a
   # key to nothing and a duplicate name were both a 500.
   c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \

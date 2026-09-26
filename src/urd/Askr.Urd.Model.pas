@@ -30,7 +30,7 @@ interface
 uses
   SysUtils, TypInfo, SyncObjs,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Json,
-  Askr.Urd.Driver;
+  Askr.Core.Lang, Askr.Urd.Driver;
 
 type
   TModel = class;
@@ -1215,7 +1215,7 @@ begin
   if not FFound then
     Exit;
   if IsBlank then
-    Fail(FColumn + ' is required');
+    Fail(Trans('validation.required', ['attribute', AttributeName(FColumn)]));
 end;
 
 function TFieldRules.MinLen(N: Integer): TFieldRules;
@@ -1224,7 +1224,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if Length(AsStr) < N then
-    Fail(Format('%s must be at least %d characters', [FColumn, N]));
+    Fail(Trans('validation.min_length', ['attribute', AttributeName(FColumn), 'min', N]));
 end;
 
 function TFieldRules.MaxLen(N: Integer): TFieldRules;
@@ -1233,7 +1233,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if Length(AsStr) > N then
-    Fail(Format('%s can be at most %d characters', [FColumn, N]));
+    Fail(Trans('validation.max_length', ['attribute', AttributeName(FColumn), 'max', N]));
 end;
 
 { Deliberately loose. A strict email validation refuses valid
@@ -1272,7 +1272,7 @@ begin
   if AsStr = '' then
     Exit;
   if not LooksLikeEmail(AsStr) then
-    Fail(FColumn + ' is not a valid email address');
+    Fail(Trans('validation.email', ['attribute', AttributeName(FColumn)]));
 end;
 
 { CurrencyToSql gives 0.0000. In a message to a user that is 0. }
@@ -1294,8 +1294,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if AsNum < V then
-    Fail(Format('%s cannot be less than %s',
-      [FColumn, Readable(V)]));
+    Fail(Trans('validation.min', ['attribute', AttributeName(FColumn), 'min', Readable(V)]));
 end;
 
 function TFieldRules.Max(V: Currency): TFieldRules;
@@ -1304,8 +1303,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if AsNum > V then
-    Fail(Format('%s cannot be greater than %s',
-      [FColumn, Readable(V)]));
+    Fail(Trans('validation.max', ['attribute', AttributeName(FColumn), 'max', Readable(V)]));
 end;
 
 function TFieldRules.Between(Lo, Hi: Currency): TFieldRules;
@@ -1314,8 +1312,8 @@ begin
   if FFailed or not FFound then
     Exit;
   if (AsNum < Lo) or (AsNum > Hi) then
-    Fail(Format('%s must be between %s and %s',
-      [FColumn, Readable(Lo), Readable(Hi)]));
+    Fail(Trans('validation.between', ['attribute', AttributeName(FColumn),
+      'min', Readable(Lo), 'max', Readable(Hi)]));
 end;
 
 function TFieldRules.OneOf(const Values: array of string): TFieldRules;
@@ -1330,7 +1328,7 @@ begin
   for I := 0 to High(Values) do
     if Values[I] = V then
       Exit;
-  Fail(FColumn + ' has a value that is not allowed');
+  Fail(Trans('validation.one_of', ['attribute', AttributeName(FColumn)]));
 end;
 
 function TFieldRules.SameAs(const OtherProp: string): TFieldRules;
@@ -1346,8 +1344,8 @@ begin
       '%s has no published property "%s"',
       [FValidator.FMeta.ModelClass.ClassName, OtherProp]);
   if GetStrProp(FValidator.Model, FValidator.FMeta.Columns[Idx].Prop) <> AsStr then
-    Fail(FColumn + ' does not match ' +
-      FValidator.FMeta.Columns[Idx].ColumnName);
+    Fail(Trans('validation.same_as', ['attribute', AttributeName(FColumn),
+      'other', AttributeName(FValidator.FMeta.Columns[Idx].ColumnName)]));
 end;
 
 function TFieldRules.UniqueIn(const ATable: string;
@@ -1408,7 +1406,7 @@ begin
     R := C.ExecParams(A, Sql, [DbParam(A, AsStr)]);
 
   if not R.IsEmpty then
-    Fail(FColumn + ' is already taken');
+    Fail(Trans('validation.unique', ['attribute', AttributeName(FColumn)]));
 end;
 
 function TFieldRules.Unique: TFieldRules;
@@ -1460,7 +1458,7 @@ begin
     P := DbParam(A, AsStr);
   R := C.ExecParams(A, Sql, [P]);
   if R.IsEmpty then
-    Fail(FColumn + ' does not match a row in ' + ATable);
+    Fail(Trans('validation.exists', ['attribute', AttributeName(FColumn), 'table', ATable]));
 end;
 
 function TFieldRules.Says(const AMessage: string): TFieldRules;
@@ -1767,8 +1765,8 @@ begin
   end;
   if Missing = '' then
     Exit;
-  Errors.Add(AField, AField + ' contains ' + Missing +
-    ', which does not match a row in ' + ATable);
+  Errors.Add(AField, Trans('validation.ids_exist', ['attribute', AttributeName(AField),
+    'ids', Missing, 'table', ATable]));
   Result := False;
 end;
 

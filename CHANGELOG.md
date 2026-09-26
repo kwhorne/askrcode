@@ -90,6 +90,22 @@ with the zero-major caveat that minor releases may break things until
   `<Form>` then hold the ticked values as a list, as an HTML form with the
   same name on several boxes means.
 
+- **Languages.** The framework's messages are keys -- `validation.required`
+  and the rest -- read from `lang/<locale>.toml` next to `askr.toml`, with
+  `validation.attributes.<column>` for a field's name in them. A key is
+  looked up in the request's locale, then `app.fallback_locale`, then the
+  English the framework is compiled with, so an app with no lang
+  directory says exactly what it said before. `UseLocales(R)` chooses the
+  locale from the visitor's choice in the session, then `Accept-Language`,
+  then `app.locale`, and says which in `Content-Language`; `SetLocale`
+  keeps a choice. `Trans('app.welcome', ['name', N])` is the app's own
+  words. `askr new` writes `LoadLang`, `UseLocales` and an empty
+  `lang/en.toml`.
+
+  `askr lang:check` holds every locale against the base both ways: the
+  keys it lacks, the keys it has that nothing looks up, and placeholders
+  nothing passes. It exits 1 when there is something to fix.
+
 ### Changed
 
 - A database error from SQLite or Postgres ends in `— in: <the SQL>`, not

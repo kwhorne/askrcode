@@ -9,6 +9,7 @@ One binary. Copy it, and the files it reads at runtime, to the server.
 ```
 app                   the binary
 askr.toml             settings the app reads
+lang/                 the app's words, one file per language
 public/               static files, including the Vite build
 storage/              whatever you write at runtime
 ```
@@ -89,7 +90,7 @@ WantedBy=multi-user.target
 ```
 
 `WorkingDirectory` is not optional: the app reads `.env`, `askr.toml`,
-`public/` and `storage/` relative to it.
+`lang/`, `public/` and `storage/` relative to it.
 
 **`ReadWritePaths` is what makes `ProtectSystem=strict` survivable.**
 Strict makes the whole filesystem read-only, and `storage/` is the one
