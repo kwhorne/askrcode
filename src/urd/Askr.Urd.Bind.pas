@@ -37,7 +37,7 @@ type
         Req.FillInto(C, [Customers.Name.Name, Customers.Email.Name]);
 
       The one-argument form fills every column the model maps, so a
-      client that adds `created_at` or `is_admin` to the body sets it.
+      client that adds `is_admin` to the body sets it.
       This is the form for a handler that knows which fields its form
       has -- which `askr make resource` always does. A name the model
       does not map raises: skipping it would look like a field that
@@ -211,16 +211,27 @@ begin
   PkIdx := Meta.PrimaryKeyIndex;
 
   for J := 0 to High(Only) do
+  begin
     if Meta.IndexOfColumn(Only[J]) < 0 then
       raise EModelError.CreateFmt(
         'FillInto was told to fill %s, and %s maps no column of that name.',
         [Only[J], M.ClassName]);
+    if Meta.IsManaged(Only[J]) then
+      raise EModelError.CreateFmt(
+        'FillInto was told to fill %s, which %s sets itself. A request ' +
+        'never does, so it is not filled from one.', [Only[J], M.ClassName]);
+  end;
 
   for I := 0 to Meta.ColumnCount - 1 do
   begin
     if I = PkIdx then
       Continue;
     Col := Meta.Columns[I];
+    { created_at, updated_at and deleted_at are the model's, like the
+      key: a client that added created_at to the body used to set it,
+      and the one-argument form is what most handlers call. }
+    if Meta.IsManaged(Col.ColumnName) then
+      Continue;
     if UseOnly then
     begin
       Found := False;

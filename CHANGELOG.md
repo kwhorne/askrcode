@@ -12,6 +12,21 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Changed
+
+- **`FillInto` never fills the columns a model sets itself.** The key it
+  never did; now also `created_at` and `updated_at` on a model with
+  `S.Timestamps`, and `deleted_at` on one with `S.SoftDeletes`. A client
+  that added `created_at` to a body set it, through the one-argument form
+  most handlers call. Naming one in `FillInto(M, [...])` raises.
+
+- **The OpenAPI document says the same.** A request body leaves those
+  columns out, and a response marks them `readOnly`. One rule,
+  `TModelMeta.IsManaged`, is asked in both places, so the document cannot
+  say a request sets something `FillInto` does not.
+
 ## 0.13.0 — 2026-09-23
 
 Askr writes applications as well as serving them. This release is the

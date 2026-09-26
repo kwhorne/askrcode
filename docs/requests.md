@@ -117,6 +117,9 @@ same keys a model goes out with, so `released_on` in and `released_on`
 out — and converts to the property's type.
 
 > **The primary key is never filled from a request.** Do not "improve" that.
+> Neither are `created_at` and `updated_at` on a model with `S.Timestamps`,
+> or `deleted_at` on one with `S.SoftDeletes`: the model sets those
+> itself, and a client that added `created_at` to the body used to set it.
 
 ### Only the fields the form has
 
@@ -126,7 +129,7 @@ Req.FillInto(C, [Customers.Name.Name, Customers.Email.Name]);
 
 `FillInto(C)` fills **every** column the model maps that the request
 carries. A form with two fields does not stop a client from adding a third
-to the body — `created_at`, `is_admin`, a column you hide from JSON — and
+to the body — `is_admin`, a column you hide from JSON — and
 the one-argument form sets it. The two-argument form fills the columns it
 is given and ignores the rest of the body. Name them with the typed columns
 from `askr schema`, as above, so a column that goes away is a compile

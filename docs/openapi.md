@@ -39,8 +39,11 @@ serialises from, so:
 - a column hidden with [`HideFromJson`](models.md) is not in the document
   either — otherwise the document would be a list of column names to go
   looking for;
-- the request schema leaves out a generated primary key, because a
-  request never fills one.
+- the request schema leaves out what the model sets itself — the key,
+  `created_at` and `updated_at` with `S.Timestamps`, `deleted_at` with
+  `S.SoftDeletes` — and the response schema marks the same columns
+  `readOnly`. It is the rule `FillInto` follows, asked in the same place,
+  so the document cannot say a request sets something it does not.
 
 There is no `required` list on a request body. Which fields an
 application insists on lives in `TModel.Rules`, and that is code that

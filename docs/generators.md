@@ -108,9 +108,10 @@ constructor and destructor, and a method with either name hides it.
 
 **A request fills only the fields the form has.**
 `Req.FillInto(M, [Gadgets.Name.Name, ...])`, not `Req.FillInto(M)` — the
-one-argument form fills every column the model maps, so a client that added
-`created_at` to the body would have set it. The generated test sends a
-forged `created_at` and checks it did not land.
+one-argument form fills every column the model maps and does not set
+itself, so a client that added a column the form does not have — a hidden
+one, say — would have set it. The generated test sends a forged secret
+where the table has one, and checks it did not land.
 
 What the table says, the resource does:
 
@@ -180,9 +181,10 @@ runs it straight after generating, and runs the document through a real
 OpenAPI validator — a generated API that drifted on its first run would be
 the generator being wrong about itself.
 
-The request body in the document is the model's, `created_at` included,
-though the controller fills only the form's fields. OpenAPI has a place
-for that (`readOnly`); Askr does not write it yet.
+The request body in the document is what a request can set: the model's
+columns without the key, the timestamps and `deleted_at`, which the model
+sets itself and `FillInto` never fills. Going out, those are there and
+marked `readOnly`.
 
 ## The tests it writes
 
@@ -196,7 +198,7 @@ puts it in `tests/app_tests.lpr` — writing that file if there is none.
 | No token, and a token without the scope | | 401, then 403 |
 | A new row | 302 to its page, then its page and its form | 201 with a `Location`, read back without its secrets |
 | What the rules refuse | back to the form, nothing saved | 422 naming the field, nothing saved |
-| An edit with a forged `created_at` and `id` | 303, only the form's fields changed | 200, the same |
+| An edit with a forged `id`, `created_at` and secret | 303, only the form's fields changed | 200, the same |
 | A delete | 303, gone | 204 with nothing, then 404 |
 
 **The database is `TEST_DATABASE_URL`, and `sqlite::memory:` without one**,

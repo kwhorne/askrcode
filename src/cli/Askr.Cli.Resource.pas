@@ -311,7 +311,7 @@ begin
   Ed := EditableOf(P);
   { The columns a request may set. Everything else a client adds to the
     body is ignored: the one-argument FillInto fills whatever the model
-    maps, created_at and hidden columns included. }
+    maps and does not set itself -- a hidden column included. }
   Only := '';
   for I := 0 to High(Ed) do
   begin
@@ -321,8 +321,8 @@ begin
   end;
   Result :=
     '{ The columns the form has, and the only ones a request may set. The' + #10 +
-    '  one-argument FillInto fills anything the model maps, so a client that' + #10 +
-    '  added created_at to the body would have set it. }' + #10 +
+    '  one-argument FillInto fills any column the model maps and does not' + #10 +
+    '  set itself, so a client could set one the form does not have. }' + #10 +
     'procedure Fill(Req: TRequest; M: T' + N.Model + ');' + #10 +
     'begin' + #10;
   if Only = '' then
@@ -1325,7 +1325,7 @@ var
   I, K: Integer;
   PC: TPlanColumn;
   Body, Args, First, Firstmember, RequiredCol, Uses_: string;
-  CtlUnit, Url, RoutesProc, TestUnit, TestsProc, RD, WR: string;
+  CtlUnit, Url, RoutesProc, TestUnit, TestsProc, RD, WR, Forged: string;
   CanWrite: Boolean;
   Par: TParentInfo;
   ParentIdx: array of Integer;
@@ -1740,17 +1740,28 @@ begin
       A('var');
       A('  Id: Int64;');
       A('  Res: TResponse;');
-      if Firstmember <> '' then
+      if (Firstmember <> '') or (Hidden <> nil) then
         A('  M: T' + N.Model + ';');
       A('begin');
       A('  Ready;');
       A('  Id := Made;');
+      { A forged id and created_at, which the model owns, and a forged
+        secret, which it maps but the form does not have: the last is what
+        only the named-columns FillInto keeps out. }
+      Forged := '';
+      for I := 0 to High(Hidden) do
+        if (Forged = '') and
+           (P.Columns[PlanColumnIndex(P, Hidden[I])].Field.Kind in [ftString, ftText]) then
+          Forged := Hidden[I];
       if First <> '' then
         Body := '{"' + First + '":"' +
           Copy('Changed', 1, P.Columns[PlanColumnIndex(P, First)].Field.Length) +
-          '","id":999999,"created_at":"2001-01-01 00:00:00"}'
+          '","id":999999,"created_at":"2001-01-01 00:00:00"'
       else
-        Body := '{"id":999999}';
+        Body := '{"id":999999';
+      if Forged <> '' then
+        Body := Body + ',"' + Forged + '":"forged"';
+      Body := Body + '}';
       if Api then
       begin
         A('  Res := Writer.Send(''PATCH'', ''' + Url + '/'' + IntToStr(Id), ' + PasStr(Body) +
@@ -1770,7 +1781,15 @@ begin
           ', ''the change is saved'');');
         if P.HasTimestamps then
           A('  AssertTrue(M.CreatedAt > EncodeDate(2002, 1, 1),' + #10 +
-            '    ''and created_at, which the form does not have, is not set from the body'');');
+            '    ''and created_at, which the model sets, is not set from the body'');');
+      end;
+      if Forged <> '' then
+      begin
+        if Firstmember = '' then
+          A('  M := TQuery<T' + N.Model + '>.New.Find(Id);');
+        A('  AssertTrue(M.' + P.Columns[PlanColumnIndex(P, Forged)].Field.Prop +
+          ' <> ''forged'',' + #10 + '    ''and ' + Forged +
+          ', which the form does not have, is not set from the body either'');');
       end;
       A('end;');
       A('');

@@ -527,9 +527,12 @@ end;
   `format: date-time`. A generated client that believed that would build
   a date parser that fails on every row. The form is described in words
   instead, which is true. }
-procedure WriteKindSchema(var W: TJsonWriter; Kind: TColumnKind);
+procedure WriteKindSchema(var W: TJsonWriter; Kind: TColumnKind;
+  ReadOnly_: Boolean = False);
 begin
   W.BeginObject;
+  if ReadOnly_ then
+    W.Field('readOnly', True);
   case Kind of
     ckInteger:
       begin
@@ -604,10 +607,17 @@ begin
       that never leaves the process is not in the document either. }
     if Meta.IsHidden(Col.ColumnName) then
       Continue;
-    if not Outgoing and not Col.Insertable then
+    { A request carries only what FillInto fills, which is not the
+      columns the model sets itself -- the key, the timestamps, deleted_at.
+      Going out they are there, marked readOnly. Before this the request
+      body listed created_at, and a client that believed it set nothing. }
+    if not Outgoing and (not Col.Insertable or Meta.IsManaged(Col.ColumnName)) then
       Continue;
     W.Key(Col.ColumnName);
-    WriteKindSchema(W, Col.Kind);
+    if Outgoing and Meta.IsManaged(Col.ColumnName) then
+      WriteKindSchema(W, Col.Kind, True)
+    else
+      WriteKindSchema(W, Col.Kind);
   end;
   W.EndObject;
 

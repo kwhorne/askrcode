@@ -2554,6 +2554,114 @@ begin
   D.Get('/api/pages').ReturnsList(TApiPage);
 end;
 
+{ ------------------------------------------------- columns the model owns -- }
+
+type
+  { The key, the timestamps and deleted_at are the model's. }
+  TOwnedNote = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+    FCreatedAt: TDateTime;
+    FUpdatedAt: TDateTime;
+    FDeletedAt: TDateTime;
+  published
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;
+    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;
+    property DeletedAt: TDateTime read FDeletedAt write FDeletedAt;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+class procedure TOwnedNote.Describe(S: TSchema);
+begin
+  S.Table('owned_notes');
+  S.Timestamps;
+  S.SoftDeletes;
+end;
+
+procedure OwnedDoc(D: TOpenApi);
+begin
+  D.Title('Owned').Version('1').Covers('/api');
+  D.Post('/api/notes').Body(TOwnedNote).Returns(TOwnedNote, 201);
+end;
+
+{ **What a request may set, and what the document says it may.** One
+  rule, TModelMeta.IsManaged, asked by FillInto and by the OpenAPI
+  document. Before, the one-argument FillInto set created_at from a body
+  that carried it, and the document listed created_at in the request. }
+procedure TestOwnedColumns;
+var
+  A, PrevA: TArena;
+  Req: TRequest;
+  N: TOwnedNote;
+  D: TOpenApi;
+  Json_, Msg: string;
+begin
+  A := TArena.Create(32 * 1024);
+  PrevA := UseArena(A);
+  try
+    Req := TRequest.Create;
+    Req.ParseHead(StrDup(A, 'POST /api/notes HTTP/1.1'#13#10'Host: t'#13#10 +
+      'Content-Type: application/json'#13#10'Content-Length: 120'), DefaultMaxBodyBytes);
+    Req.SetBody(StrDup(A, '{"id":9,"title":"Kept","created_at":"2001-01-01 00:00:00",' +
+      '"updated_at":"2001-01-01 00:00:00","deleted_at":"2001-01-01 00:00:00"}'));
+    N := TOwnedNote.Create;
+    Req.FillInto(N);
+    AssertEqual(N.Title, 'Kept', 'a column of the request''s is filled');
+    AssertTrue((N.CreatedAt = 0) and (N.UpdatedAt = 0),
+      'the timestamps are the model''s, whatever the body says');
+    AssertTrue(N.DeletedAt = 0, 'and so is deleted_at');
+    AssertEqual(N.Id, 0, 'as the key always was');
+
+    Msg := '';
+    try
+      Req.FillInto(N, ['title', 'created_at']);
+    except
+      on E: EModelError do
+        Msg := E.Message;
+    end;
+    AssertContains(Msg, 'created_at', 'naming one to fill is refused, and says which');
+  finally
+    UseArena(PrevA);
+    A.Free;
+  end;
+
+  D := TOpenApi.Create;
+  try
+    OwnedDoc(D);
+    Json_ := D.ToJson;
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNoteInput.properties.title.type'), 'string',
+      'the request body has the column a request sets');
+    { .example and not .type: a date's type is a list, and ProblemMember
+      reads a list as '' -- so an assertion on .type was true either way.
+      The mutation that put created_at back in the request found it. }
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNote.properties.created_at.example'),
+      '2026-09-22 13:00:00', 'the date''s example is what these read');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNoteInput.properties.created_at.example'), '',
+      'and not created_at');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNoteInput.properties.deleted_at.example'), '',
+      'nor deleted_at');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNote.properties.created_at.readOnly'), 'true',
+      'going out, created_at is there and marked readOnly');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNote.properties.id.readOnly'), 'true',
+      'and so is the key');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OwnedNote.properties.title.readOnly'), '',
+      'and a column a request sets is not');
+  finally
+    D.Free;
+  end;
+end;
+
 procedure TestOpenApi;
 var
   R: TRouter;
@@ -7295,6 +7403,9 @@ begin
   Group('Unset dates');
   Test('an unset date is blank to a form, to JSON and to the rules',
     @TestUnsetDates);
+
+  Group('Columns the model owns');
+  Test('a request does not set them, and the document says so', @TestOwnedColumns);
 
   Group('Zero is null');
   Test('a reference to no row is NULL, null and blank', @TestZeroIsNull);

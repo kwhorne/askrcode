@@ -139,6 +139,13 @@ type
     { True when this column never goes in JSON. Asked by the
       serialisers; a caller building its own payload should ask too. }
     function IsHidden(const ColumnName: string): Boolean;
+    { True for a column the model sets itself and a request never does:
+      the primary key, created_at and updated_at with Timestamps, and
+      deleted_at with SoftDeletes. FillInto skips them and the OpenAPI
+      document marks them readOnly -- one rule, asked in both places, so
+      what a request may set and what the document says it may set
+      cannot disagree. }
+    function IsManaged(const ColumnName: string): Boolean;
     function ColumnCount: Integer;
     function RelationCount: Integer;
     function IndexOfColumn(const AColumnName: string): Integer;
@@ -877,6 +884,14 @@ end;
 function TModelMeta.IsHidden(const ColumnName: string): Boolean;
 begin
   Result := (FHidden <> nil) and FHidden.Has(ColumnName);
+end;
+
+function TModelMeta.IsManaged(const ColumnName: string): Boolean;
+begin
+  Result := (ColumnName = FPrimaryKey) or
+    (FHasTimestamps and ((ColumnName = FCreatedAtColumn) or
+                         (ColumnName = FUpdatedAtColumn))) or
+    (FSoftDeletes and (ColumnName = FDeletedAtColumn));
 end;
 
 class function TModel.Meta: TModelMeta;

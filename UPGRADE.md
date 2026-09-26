@@ -8,6 +8,14 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## Unreleased
+
+**`FillInto` no longer fills `created_at`, `updated_at` or `deleted_at`**
+on a model that has `S.Timestamps` or `S.SoftDeletes`. If a handler
+relied on a request to set one of them -- restoring a soft-deleted row by
+sending `deleted_at: null`, say -- set it in code instead, or call
+`Restore`. `FillInto(M, ['deleted_at'])` now raises rather than filling it.
+
 ## 0.13.0
 
 **Worth reading if you have after-filters of your own, a frontend that
