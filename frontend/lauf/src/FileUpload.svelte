@@ -22,8 +22,10 @@
   import Button from './Button.svelte'
   import { ArrowUpTray, XMark, Document } from './icons/micro/index.js'
 
-  import { strings } from './strings.js'
+  import { strings, numbers } from './strings.js'
   const word = strings()
+  const num = numbers()
+  const oneDecimal = { minimumFractionDigits: 1, maximumFractionDigits: 1 }
 
   let {
     /** File eller File[] — settes i <Form> når komponenten står i et Field. */
@@ -73,9 +75,9 @@
   }
 
   function bytes(n) {
-    if (n < 1024) return `${n} B`
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} kB`
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`
+    if (n < 1024) return `${num(n)} B`
+    if (n < 1024 * 1024) return `${num(n / 1024, oneDecimal)} kB`
+    return `${num(n / (1024 * 1024), oneDecimal)} MB`
   }
 </script>
 

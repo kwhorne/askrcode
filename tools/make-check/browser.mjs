@@ -147,8 +147,12 @@ const gid = (await js('location.pathname')).split('/').pop()
 let t = await text()
 check(t.includes('Sprocket'), 'the gadget is saved and shown')
 check(t.includes('9000000000'), 'a bigint larger than 32 bits survives', t)
-check(t.includes('2026-01-02 03:04:00'), 'a datetime sent without seconds is saved', t)
-check(t.includes('2026-02-03'), 'and the date', t)
+// The page writes them as the reader does; English here, and the same
+// Intl the page used says what that is.
+const seenAt = await js(`new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(2026, 0, 2, 3, 4))`)
+check(t.includes(seenAt), 'a datetime sent without seconds is saved, and shown as the reader writes it', { seenAt, t })
+check(t.includes('Feb 3, 2026'), 'and the date', t)
+check(t.includes('12.50'), 'and money, with its two decimals', t)
 check(t.includes('Acme Works'), 'the maker is shown by its name, not its id', t)
 check(/Active\s*Yes/.test(t), 'the checkbox saved', t)
 check(t.includes('{"k":1}') || t.includes('{"k": 1}'), 'the JSON', t)
@@ -187,7 +191,7 @@ await submit()
 await until(`location.pathname === '/gadgets/${gid}'`, 'back on the gadget page')
 t = await text()
 check(t.includes('Sprocket II'), 'the edit is saved')
-check(t.includes('2026-01-02 03:04:00'), 'and the datetime nobody touched is still there', t)
+check(t.includes(seenAt), 'and the datetime nobody touched is still there', t)
 check(t.includes('Acme Works'), 'and the maker', t)
 check(/Tags\s*Blue/.test(t) && !t.includes('Red'), 'the untick and the tick are both saved', t)
 await go(`/gadgets/${gid}/edit`)
@@ -275,7 +279,23 @@ await send('Network.setExtraHTTPHeaders', { headers: { 'Accept-Language': 'nb-NO
 await go('/gadgets')
 check((await js(`document.querySelector('input[type=search]')?.placeholder`)) === 'Søk',
   'asked for in Norwegian, the grid searches in Norwegian', await js(`document.querySelector('input[type=search]')?.placeholder`))
+check((await js('document.documentElement.lang')) === 'nb',
+  'and the page says it is Norwegian', await js('document.documentElement.lang'))
+const bornNb = await js(`new Intl.DateTimeFormat('nb', { dateStyle: 'medium' }).format(new Date(2026, 2, 4))`)
+const listNb = await text()
+check(listNb.includes(bornNb), 'and writes a date in the list as Norwegian does', { bornNb, row: listNb.slice(listNb.indexOf('Kept'), listNb.indexOf('Kept') + 200) })
+
+// A visit that does not load the page answers in another language: the
+// layout has to carry <html lang> along, or a screen reader goes on in
+// the voice of the page before.
+await js('window.__notReloaded = true')
 await send('Network.setExtraHTTPHeaders', { headers: {} })
+await js(`[...document.querySelectorAll('th button')].find((b) => b.textContent.includes('Qty'))?.click()`)
+await until(`location.search.includes('sort=qty')`, 'the sorted list, in English')
+await until(`document.documentElement.lang === 'en'`, 'lang back to English', 3000).catch(() => false)
+check((await js('window.__notReloaded')) === true, 'without a reload')
+check((await js('document.documentElement.lang')) === 'en',
+  'and a visit in English says so', await js('document.documentElement.lang'))
 await go('/gadgets')
 check((await js(`document.querySelector('input[type=search]')?.placeholder`)) === 'Search',
   'and in English again when nothing asks for it')

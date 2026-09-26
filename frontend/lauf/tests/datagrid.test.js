@@ -113,7 +113,7 @@ describe('DataGrid — tjenermodus', () => {
       grid: { sort: '', dir: 'asc', page: 2, per: 25, q: '', total: 9000, pages: 360 },
     })
     expect(grid(container).getAttribute('aria-rowcount')).toBe('9001')
-    expect(container.textContent).toContain('of 9000')
+    expect(container.textContent).toContain('of 9,000')
   })
 
   it('nummererer radene fra sidens plass i hele settet', () => {

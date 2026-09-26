@@ -21,7 +21,7 @@ uses
   Askr.Urd.Bind, Askr.Urd.Json,
   Askr.Core.Crypto,
   Askr.Urd.Pool,
-  Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Locale,
+  Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
@@ -3272,6 +3272,21 @@ type
     procedure Rules(V: TValidator); override;
   end;
 
+  { A limit big enough to be grouped, for the reader's number format. }
+  TLangPrice = class(TModel)
+  private
+    FId: Int64;
+    FPrice: Currency;
+    FCode: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Price: Currency read FPrice write FPrice;
+    property Code: string read FCode write FCode;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
   TLangCtl = class
   public
     function Show(Req: TRequest): TResponse;
@@ -3287,6 +3302,17 @@ procedure TLangCustomer.Rules(V: TValidator);
 begin
   V.Field('Email').Required;
   V.Field('Name').MinLen(3);
+end;
+
+class procedure TLangPrice.Describe(S: TSchema);
+begin
+  S.Table('lang_prices');
+end;
+
+procedure TLangPrice.Rules(V: TValidator);
+begin
+  V.Field('Price').Min(1234.5);
+  V.Field('Code').MinLen(1500);
 end;
 
 function TLangCtl.Show(Req: TRequest): TResponse;
@@ -3564,6 +3590,7 @@ var
   Body: string;
   A: TArena;
   Prev: string;
+  Req: TRequest;
 begin
   L := TStringList.Create;
   try
@@ -3612,10 +3639,29 @@ begin
     TInertia.SetVersion('t');
     Body := Inertia('X', []).Body.ToString;
     AssertNotContains(Body, '"lauf"', 'a page in English carries none of it');
+    AssertContains(Body, '<html lang="en">', 'and says it is English');
+    AssertContains(Body, '"locale":"en"', 'to Lauf too');
     UseLocale('nb');
     Body := Inertia('X', []).Body.ToString;
     AssertContains(Body, '"lauf":{"close":"Lukk","select_row":"Velg rad :n"}',
       'a page in Norwegian carries the words that differ, and only those');
+    AssertContains(Body, '<html lang="nb">', 'and says it is Norwegian, for a screen reader');
+    AssertContains(Body, '"locale":"nb"', 'and for the numbers Lauf writes');
+    { A partial reload asks for what it wants, and the client keeps the
+      rest -- the words and the locale among it. }
+    Req := TRequest.Create;
+    Req.ParseHead(StrDup(A, 'GET / HTTP/1.1'#13#10'Host: t'#13#10'X-Inertia: true'#13#10 +
+      'X-Inertia-Partial-Component: X'#13#10'X-Inertia-Partial-Data: rows'), DefaultMaxBodyBytes);
+    UseRequest(Req);
+    try
+      Body := Inertia('X', ['rows', 1]).Body.ToString;
+    finally
+      UseRequest(nil);
+    end;
+    AssertContains(Body, '"props":{"rows":1}', 'a partial reload gets neither');
+    UseLocale('x"><b>');
+    Body := Inertia('X', []).Body.ToString;
+    AssertNotContains(Body, '"><b>', 'a locale is escaped where it lands in the markup');
   finally
     UseLocale(Prev);
     ClearLang;
@@ -4041,8 +4087,186 @@ begin
       'and wrong for one with two');
     AssertNotContains(All, 'nothing looks it up', 'no form is taken for a typo');
     AssertNotContains(All, 'lacks validation.min_length --', 'the framework''s plurals are checked as forms, not as keys');
+
+    WriteText(Root + '/lang/en.toml', '[app.items]' + LineEnding + 'one = ":count item"' + LineEnding +
+      'other = ":count items"' + LineEnding + '[format]' + LineEnding + 'date_short = "{d}/{M}"');
+    WriteText(Root + '/lang/nb.toml', '[format]' + LineEnding + 'decimal = ","' + LineEnding +
+      'dat_short = "x"');
+    LangCheck(Root, Rep);
+    All := '';
+    for I := 0 to High(Rep) do
+      All := All + Rep[I] + LineEnding;
+    AssertContains(All, 'lang/nb.toml has format.dat_short, which is not a format Askr reads',
+      'a misspelled format is text nothing reads');
+    AssertContains(All, 'reads -- decimal, group, minus, date_short', 'and says which there are');
+    AssertContains(All, 'months_long, am and pm are', 'all of them');
+    AssertNotContains(All, 'format.decimal', 'a format a locale gives is its own');
+    AssertNotContains(All, 'lacks format.', 'and one the base gives is not missing from the others');
   finally
     RemoveTree(Root);
+  end;
+end;
+
+{ ------------------------------------------------------------ formats -- }
+
+function HexOf(const S: string): string;
+var
+  I: Integer;
+begin
+  Result := ' [';
+  for I := 1 to Length(S) do
+    Result := Result + IntToHex(Ord(S[I]), 2);
+  Result := Result + ']';
+end;
+
+function IsoToDateTime(const S: string): TDateTime;
+begin
+  Result := EncodeDate(StrToInt(Copy(S, 1, 4)), StrToInt(Copy(S, 6, 2)), StrToInt(Copy(S, 9, 2))) +
+    EncodeTime(StrToInt(Copy(S, 12, 2)), StrToInt(Copy(S, 15, 2)), StrToInt(Copy(S, 18, 2)), 0);
+end;
+
+{ Every locale's numbers and dates against what ICU itself writes: the
+  vectors in tests/vectors/formats.txt, generated by the same script as
+  the data, from the other side. A month name typed by hand is how a
+  Polish date ends up in the nominative. }
+procedure TestFormatVectors;
+var
+  L: TStringList;
+  I, Checked, Wrong: Integer;
+  Parts: TStringArray;
+  Tag, Kind, Input, Want, Got, Prev: string;
+  Fmt: TFormatSettings;
+  Shown: string;
+begin
+  Fmt := DefaultFormatSettings;
+  Fmt.DecimalSeparator := '.';
+  L := TStringList.Create;
+  Prev := UseLocale('');
+  ClearLang;
+  try
+    L.LoadFromFile('tests/vectors/formats.txt');
+    Checked := 0;
+    Wrong := 0;
+    Shown := '';
+    for I := 0 to L.Count - 1 do
+    begin
+      if (L[I] = '') or (L[I][1] = '#') then
+        Continue;
+      Parts := L[I].Split(['|']);
+      if Length(Parts) < 4 then
+        Continue;
+      Tag := Parts[0];
+      Kind := Parts[1];
+      Input := Parts[2];
+      Want := Parts[3];
+      UseLocale(Tag);
+      if Kind = 'int' then Got := LocaleNumber(StrToInt64(Input))
+      else if Copy(Kind, 1, 3) = 'dec' then
+        Got := LocaleDecimal(StrToFloat(Input, Fmt), StrToInt(Copy(Kind, 4, 2)))
+      else if Kind = 'date_short' then Got := LocaleDate(IsoToDateTime(Input), dsShort)
+      else if Kind = 'date_medium' then Got := LocaleDate(IsoToDateTime(Input), dsMedium)
+      else if Kind = 'date_long' then Got := LocaleDate(IsoToDateTime(Input), dsLong)
+      else if Kind = 'datetime_short' then Got := LocaleDateTime(IsoToDateTime(Input), dsShort)
+      else if Kind = 'datetime_medium' then Got := LocaleDateTime(IsoToDateTime(Input), dsMedium)
+      else if Kind = 'datetime_long' then Got := LocaleDateTime(IsoToDateTime(Input), dsLong)
+      else if Kind = 'time_short' then Got := LocaleTime(IsoToDateTime(Input), False)
+      else if Kind = 'time_medium' then Got := LocaleTime(IsoToDateTime(Input), True)
+      else Continue;
+      Inc(Checked);
+      if Got <> Want then
+      begin
+        Inc(Wrong);
+        if Wrong <= 5 then
+          Shown := Shown + LineEnding + '  ' + Tag + ' ' + Kind + ' ' + Input +
+            ': want "' + Want + '", got "' + Got + '"' + HexOf(Want) + ' / ' + HexOf(Got);
+      end;
+    end;
+    AssertTrue(Checked > 2000, 'every vector was read: ' + IntToStr(Checked));
+    AssertTrue(Wrong = 0, IntToStr(Wrong) + ' of ' + IntToStr(Checked) +
+      ' differ from ICU' + Shown);
+  finally
+    UseLocale(Prev);
+    L.Free;
+  end;
+end;
+
+{ What is not ICU's: a locale falls back to its language and then to
+  English, a lang file can say otherwise under [format], and a limit in a
+  validation message is written as the reader writes numbers. }
+procedure TestFormatLocales;
+const
+  Dir = '.build/format-test';
+var
+  Prev: string;
+  A: TArena;
+  M: TLangPrice;
+begin
+  RemoveTree(Dir);
+  ForceDirectories(Dir);
+  Prev := UseLocale('');
+  A := TArena.Create(8 * 1024);
+  UseArena(A);
+  try
+    ClearLang;
+    UseLocale('nb-NO');
+    AssertEqual(LocaleNumber(1234567), '1' + #$C2#$A0 + '234' + #$C2#$A0 + '567',
+      'a region with no data of its own uses its language''s');
+    UseLocale('xx');
+    AssertEqual(LocaleNumber(1234567), '1,234,567', 'and a language with none, English''s');
+    UseLocale('en');
+    AssertEqual(LocaleCurrency(1000), '1,000', 'money, exact and without trailing zeros');
+    AssertEqual(LocaleCurrency(12.5), '12.5', 'and with its decimals');
+    AssertEqual(LocaleCurrency(12.5, 2), '12.50', 'or with as many as asked for');
+    AssertEqual(LocaleDecimal(-0.001, 2), '0.00', 'a zero is not negative, as FloatToStrF writes it');
+    AssertEqual(LocaleDecimal(-2.5, 1), '-2.5', 'and a negative is');
+
+    WriteText(Dir + '/nb.toml', '[format]' + LineEnding + 'date_medium = "{d}/{M} {yyyy}"' +
+      LineEnding + 'group = "."' + LineEnding + 'decimal = "' + #$C2#$B7 + '"');
+    LoadLang(Dir);
+    UseLocale('nb');
+    AssertEqual(LocaleDate(EncodeDate(2026, 1, 5), dsMedium), '5/1 2026',
+      'a lang file can say a pattern differently');
+    AssertEqual(LocaleNumber(12345), '12.345', 'and a separator');
+    AssertEqual(LocaleDecimal(1.5, 1), '1' + #$C2#$B7 + '5', 'and the decimal mark');
+    AssertEqual(LocaleDate(EncodeDate(2026, 1, 5), dsLong), '5. januar 2026',
+      'and leaves what it does not say as ICU has it');
+    WriteText(Dir + '/en.toml', '[format]' + LineEnding + 'am = "a.m."');
+    LoadLang(Dir);
+    UseLocale('en');
+    AssertEqual(LocaleTime(EncodeTime(9, 7, 0, 0)), '9:07 a.m.', 'am and pm fill the hours they cover');
+    AssertEqual(LocaleTime(EncodeTime(14, 7, 0, 0)), '2:07 PM', 'and the other half stays as it was');
+
+    { The tokens no locale ICU has uses, which only a lang file can reach. }
+    WriteText(Dir + '/en.toml', '[format]' + LineEnding +
+      'date_short = "{d} {MMMM} {yy}"' + LineEnding + 'months_short = "I|II|III"' + LineEnding +
+      'time_short = "{hh}.{mm}"' + LineEnding + 'time_medium = "{KK}:{mm} {K} {q}"');
+    LoadLang(Dir);
+    AssertEqual(LocaleDate(EncodeDate(2026, 3, 5), dsShort), '5 III 26',
+      'a short date takes the short month names');
+    AssertEqual(LocaleDate(EncodeDate(2026, 3, 5), dsMedium), 'Mar 5, 2026',
+      'and the medium one its own');
+    AssertEqual(LocaleTime(EncodeTime(0, 7, 0, 0)), '12.07', 'h is 12 at midnight');
+    AssertEqual(LocaleTime(EncodeTime(9, 7, 0, 0)), '09.07', 'and hh pads it');
+    AssertEqual(LocaleTime(EncodeTime(12, 7, 0, 0), True), '00:07 0 {q}',
+      'K is 0 at noon, and a token nothing knows is left where it is seen');
+    AssertEqual(LocaleTime(EncodeTime(21, 7, 0, 0), True), '09:07 9 {q}', 'and K counts from there');
+
+    ClearLang;
+    UseLocale('nb');
+    M := TLangPrice.Create;
+    M.Price := 1;
+    M.Code := 'x';
+    M.Validate;
+    AssertEqual(M.Errors.First('price'), 'price cannot be less than 1' + #$C2#$A0 + '234,5',
+      'a limit in a message is written as the reader writes numbers');
+    AssertEqual(M.Errors.First('code'), 'code must be at least 1' + #$C2#$A0 + '500 characters',
+      'a length too');
+  finally
+    UseLocale(Prev);
+    ClearLang;
+    UseArena(nil);
+    A.Free;
+    RemoveTree(Dir);
   end;
 end;
 
@@ -9107,6 +9331,8 @@ begin
   Test('plural rules against CLDR''s own numbers', @TestPluralRules);
   Test('the form for a number, and where it comes from', @TestTransCount);
   Test('askr lang:check holds plurals to each language''s forms', @TestLangCheckPlurals);
+  Test('numbers and dates in every locale, against ICU''s own', @TestFormatVectors);
+  Test('a locale''s formats: its language, a lang file, a message', @TestFormatLocales);
   Test('Lauf''s words: one list in two places, and sent only when they differ', @TestLaufStrings);
 
   Group('Relations and soft deletes');

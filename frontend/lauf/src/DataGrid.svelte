@@ -43,8 +43,9 @@
     ChevronUp, ChevronDown, MagnifyingGlass, ViewColumns,
   } from './icons/micro/index.js'
 
-  import { strings } from './strings.js'
+  import { strings, numbers } from './strings.js'
   const word = strings()
+  const num = numbers()
 
   let {
     /** Radene som skal vises. I tjenermodus er dette allerede én side. */
@@ -426,7 +427,7 @@
                   <span id={cellId(r, 0)} tabindex={tabIndex(r, 0)} class="inline-flex">
                     <Checkbox
                       label=""
-                      aria-label={word('select_row', { n: forsteIndeks + r + 1 })}
+                      aria-label={word('select_row', { n: num(forsteIndeks + r + 1) })}
                       checked={selected.has(key)}
                       onchange={() => velg(key)}
                     />
@@ -465,7 +466,7 @@
   <div class="flex items-center justify-between gap-4 flex-wrap">
     {#if selectable && selected.size > 0}
       <p class="text-xs text-muted tabular-nums" role="status">
-        {selected.size} selected
+        {word('selected_count', { count: num(selected.size) })}
       </p>
     {:else}
       <span></span>
@@ -474,7 +475,7 @@
       page={clampPage(page, total, perSide)}
       perPage={perSide}
       {total}
-      label="{caption} pages"
+      label={word('pages_of', { caption })}
       onnavigate={(n) => send({ page: n })}
     />
   </div>

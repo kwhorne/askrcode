@@ -1534,7 +1534,7 @@ begin
     Check(Pos('X-Inertia: true', Raw) > 0, 'X-Inertia is set on the reply');
     Check(Pos('application/json', Raw) > 0, 'Content-Type er JSON');
     CheckEqS(Body,
-      '{"component":"Customers/Index","props":{"count":3},' +
+      '{"component":"Customers/Index","props":{"locale":"en","count":3},' +
       '"url":"/customers?page=2","version":"abc123",' +
       '"clearHistory":false,"encryptHistory":false}',
       'payloaden er standard Inertia 3');

@@ -27,7 +27,7 @@ unit Askr.Cli.Lang;
 interface
 
 uses
-  SysUtils, Classes, Askr.Core.Lang;
+  SysUtils, Classes, Askr.Core.Lang, Askr.Core.Format;
 
 { The report, line by line, and False when there is anything to fix.
   Reads the configuration that is loaded -- app.fallback_locale -- and
@@ -71,6 +71,21 @@ begin
         Result := Result + ', ';
       Result := Result + ':' + Mine[I];
     end;
+end;
+
+{ A [format] key: each locale's own, from ICU, so it is never missing from
+  another -- but a misspelled one is text nothing reads. True when Key is
+  under format., having said so when the name is not one Askr reads. }
+function FormatKey(const Key, Path_: string; var Report: TStringArray;
+  var Bad: Integer): Boolean;
+begin
+  Result := Copy(Key, 1, 7) = 'format.';
+  if Result and not IsFormatKey(Copy(Key, 8, MaxInt)) then
+  begin
+    Say(Report, Format('%s has %s, which is not a format Askr reads -- %s are',
+      [Path_, Key, FormatKeyNames]));
+    Inc(Bad);
+  end;
 end;
 
 { app.items.few -> app.items and few, when the last part is a category. }
@@ -284,6 +299,8 @@ begin
       begin
         Key := T.Names[J];
         Text_ := T.ValueFromIndex[J];
+        if FormatKey(Key, BasePath, Report, Bad) then
+          Continue;
         K := Known.IndexOfName(Key);
         if K >= 0 then
         begin
@@ -320,7 +337,7 @@ begin
       for J := 0 to T.Count - 1 do
       begin
         Key := T.Names[J];
-        if InGroup(Groups, Key) then
+        if InGroup(Groups, Key) or FormatKey(Key, Path_, Report, Bad) then
           Continue;
         K := Known.IndexOfName(Key);
         if K < 0 then

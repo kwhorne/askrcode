@@ -723,6 +723,53 @@ halvdelene er mutasjonssjekket.
 med «adaptive thinking is not supported on this model» — som er feilstien
 som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 
+## Tall og datoer i leserens format
+
+* **Dataene er generert fra ICU, ikke skrevet for hånd.**
+  `tools/lang/formats.mjs` leser node sin ICU (78.3, CLDR 48) og skriver
+  `Askr.Core.LangData` og `tests/vectors/formats.txt` — 59 locales og
+  2065 vektorer. Mønstrene trekkes ut med `formatToParts`, så ingenting
+  gjettes fra en ferdig streng. Rører du `Askr.Core.Format`, er det
+  vektorene som avgjør.
+* **V8s `format()` bytter U+202F mot et vanlig mellomrom, `formatToParts`
+  gjør det ikke.** Første kjøring ga 194 avvik av det alene. Literalene
+  normaliseres i generatoren.
+* **Minus er hele prefikset foran første siffer**, ikke ett tegn. Arabisk
+  har et LRM-merke foran minustegnet, og norsk bruker U+2212.
+* **Dagsperiodene er én per time, 24 stykker.** zh-TW har flere enn to
+  (凌晨, 上午, 中午 …), så am/pm er for smalt. `am`/`pm` i en lang-fil
+  fyller tabellen for de to halvdelene.
+* **En måned er tall bare hvis den bare er sifre.** Koreansk «1월» og
+  vietnamesisk «thg 1» begynner med et siffer, men er navn.
+* **Ingen locale her skriver andre sifre enn 0–9, og generatoren nekter
+  en som gjør det.** Det fantes en sifferavbildning i Pascal, men ingen
+  locale nådde den — altså utestet. Den er tatt ut; kommer persisk, må
+  den inn igjen med en test.
+* **`-0,00` finnes ikke i FPC.** `FloatToStrF(-0.001, ffFixed, 18, 2)`
+  gir `0.00` på begge arkitekturer. En vakt mot det overlevde
+  mutasjonssjekken og er borte; testen holder premisset.
+* **`Trans` formaterer ikke tall selv, og skal ikke.** Et årstall er også
+  et tall, og nb grupperer fra fire sifre: «2 026». Kalleren formaterer
+  det som skal formateres — valideringsgrensene gjør det, med
+  `LocaleNumber` og `LocaleCurrency`. Samme regel i Lauf: `numbers()` er
+  eksplisitt, ikke noe `strings()` gjør med plassholderne.
+* **`<html lang>` må oppdateres i klienten.** Serveren setter den ved
+  første last, men et Inertia-besøk bytter ikke dokumentet. Layouten fra
+  stillaset har en `$effect` for det, og `make:check` sjekker at den
+  følger med uten omlasting.
+* **`dates()` bygger datoen av delene, den parser ikke teksten.**
+  `new Date('2026-02-03')` er midnatt UTC, altså 2. februar vest for
+  Greenwich. Testen setter `process.env.TZ` til Los Angeles selv, for
+  porten kjører i Oslo, der mutasjonen som parser teksten ellers går rett
+  gjennom.
+* **Genererte sider formaterer penger, desimaltall og datoer, ikke
+  heltall.** Et årstall er et heltall, og «2,026» er ikke et år. Skjemaene
+  beholder rå form, for det er den en input tar.
+* **DataGrid skrev «selected» og «pages» rett i markupen.** Sveipen etter
+  engelske literaler i `strings.test.js` så bare etter strenger i
+  anførselstegn og mellom tagger, ikke etter et ord bak en interpolasjon.
+  Den ser etter det også nå.
+
 ## Changelog
 
 * **CHANGELOG.md og UPGRADE.md er ikke det samme.** Changeloggen er hele
@@ -994,11 +1041,17 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   grep som versjonstesten. Plassholderne er `:navn` også i Lauf, så en
   oversettelse går fra lang-fila til knappen uendret.
 * **`lauf`-propen sendes bare når lokalet sier noe annet enn engelsk.** En
-  side på engelsk bærer ingenting av det. `provideStrings` tar en funksjon,
+  side på engelsk bærer ingenting av det. `laufContext` tar funksjoner,
   så et språkbytte vises på neste side uten omlasting.
+* **Konteksten gis ved `mount`, ikke i layouten.** En Inertia-side pakker
+  seg selv i `<Layout>`, så siden er layoutens forelder, og det layouten
+  gir med `provideLocale` finnes ikke for sidens eget skript. `make:check`
+  fant det: den genererte lista skrev datoene på engelsk mens søkefeltet i
+  samme grid — opprettet inne i layouten — sa «Søk». `laufContext` i
+  `main.js` legger begge ved roten.
 * **Porten beviser hele kjeden, ikke endene**: `[lauf] search = "Søk"` i
   nb.toml, Accept-Language nb i Chrome, og søkefeltet i det genererte
-  gridet skal si «Søk». Hvert ledd — lang-fil, Inertia-prop, layouten
+  gridet skal si «Søk». Hvert ledd — lang-fil, Inertia-prop, `main.js`
   stillaset skrev, DataGrid — må holde for at det skal skje.
 * **Inertia 3s `page` er et `$state`-objekt, ikke en store.** Første
   utkast av layouten skrev `$page.props.lauf`, og Svelte kastet

@@ -15,8 +15,9 @@
   import Button from './Button.svelte'
   import { ChevronLeft, ChevronRight } from './icons/micro/index.js'
 
-  import { strings } from './strings.js'
+  import { strings, numbers } from './strings.js'
   const word = strings()
+  const n = numbers()
 
   let {
     page = 1,
@@ -54,7 +55,7 @@
     {#if total === 0}
       {word('no_results')}
     {:else}
-      {word('range_of', { from, to, total })}
+      {word('range_of', { from: n(from), to: n(to), total: n(total) })}
     {/if}
   </p>
 
@@ -71,7 +72,7 @@
          femti sider er femti tabulatorstopp for å komme forbi den, og
          ingen leter etter side 37. -->
     <span class="text-xs text-muted tabular-nums" aria-current="page">
-      {current} / {pages}
+      {n(current)} / {n(pages)}
     </span>
     <Button
       size="sm"

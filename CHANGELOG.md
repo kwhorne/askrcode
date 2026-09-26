@@ -105,7 +105,7 @@ with the zero-major caveat that minor releases may break things until
   Lauf's own words -- a close button, an empty list, the editor's buttons
   -- are keys too, under `[lauf]`. Askr sends them in a `lauf` prop when
   the request's locale says something other than English, and
-  `provideStrings` in the layout `askr new` writes hands them to Lauf. The
+  `laufContext` in the `main.js` `askr new` writes hands them to Lauf. The
   keys and the English are one list in two places, held equal by a test.
 
   Plurals are a form per CLDR category -- `[app.items] one = ...`,
@@ -117,6 +117,29 @@ with the zero-major caveat that minor releases may break things until
   `askr lang:check` holds every locale against the base both ways: the
   keys it lacks, the keys it has that nothing looks up, and placeholders
   nothing passes. It exits 1 when there is something to fix.
+- **Numbers and dates in the reader's format.** `LocaleNumber`,
+  `LocaleDecimal`, `LocaleCurrency`, `LocaleDate`, `LocaleTime` and
+  `LocaleDateTime` in `Askr.Core.Format` write a value as the request's
+  locale does: `1,234.5` in English, `1 234,5` in Norwegian, `1.234,5` in
+  German; `Jan 5, 2026` and `5. jan. 2026`; `2:07 PM` and `14:07`. The
+  data for 59 locales is generated from ICU by `tools/lang/formats.mjs`,
+  and 2065 vectors from the same ICU hold the Pascal side to it. A locale
+  without data uses its language's, then English's, and a lang file can
+  say any of it differently under `[format]` -- separators, patterns,
+  month names, am and pm. `askr lang:check` knows those keys and reports
+  one it does not.
+
+  A limit in a validation message is written the same way, so `Min(1234.5)`
+  says "1 234,5" to a Norwegian reader. Inertia sends the locale in a
+  `locale` prop and puts it in `<html lang>`, and Lauf writes its own
+  numbers -- the pagination's range and page, the grid's row numbers, a
+  file's size -- and gives the date picker its month names by it.
+  `laufContext` gives Lauf both at the root, in the `main.js` `askr new`
+  writes, so a page's own script sees them too; the layout keeps
+  `<html lang>` right after a visit that did not load the page. `numbers()` and `dates()` are the same for an app's
+  own; `dates()` reads the text Askr sends a date as and keeps its
+  wall-clock time. The pages `make resource` writes use them for money,
+  decimals and dates.
 
 ### Changed
 
@@ -127,9 +150,17 @@ with the zero-major caveat that minor releases may break things until
   `BelongsTo` still loads a trashed parent: the key points at it.
 - `Sessions.Count` counts the sessions that have not expired, rather than
   every entry the last sweep left.
+- An Inertia page's `<html lang>` is the request's locale rather than a
+  fixed `en`, and the page carries a `locale` prop.
+- Lauf's pagination writes its numbers as the locale does: `26–50 of
+  9,000` in English, where it said `9000`.
 
 ### Fixed
 
+- **The data grid said "selected" and "pages" in English whatever the
+  language.** Both were written into the markup rather than taken from the
+  words Lauf translates; they are `selected_count` and `pages_of` under
+  `[lauf]` now.
 - **The tests `make resource` writes could collide with each other.** Each
   test unit counted its unique samples from the millisecond it started,
   and one unit's parent rows are another unit's rows: the gadgets' test

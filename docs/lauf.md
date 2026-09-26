@@ -238,21 +238,61 @@ never notices the change.
 
 The few words Lauf writes itself — a close button, an empty list, the
 editor's buttons, "11–20 of 35" — are English until the app says otherwise,
-once, in its layout:
+and the numbers and dates it writes follow the locale it is given. Both are
+given once, where the app is mounted:
+
+```js
+import { createInertiaApp, page } from '@inertiajs/svelte'
+import { mount } from 'svelte'
+import { laufContext } from '@askrcode/lauf'
+
+createInertiaApp({
+  // ...
+  setup({ el, App, props }) {
+    mount(App, {
+      target: el,
+      props,
+      context: laufContext({
+        strings: () => page.props.lauf,
+        locale: () => page.props.locale,
+      }),
+    })
+  },
+})
+```
+
+`askr new` writes that. The words come from the `[lauf]` section of
+`lang/<locale>.toml`, and Askr sends them only when the request's locale says
+something other than English — see [Languages](lang.md#laufs-own-words). The
+locale is sent on every page. Functions rather than values, so a change of
+language on the next page is seen without a reload. A key the app leaves out
+stays English.
+
+**At the root, not in a layout.** An Inertia page wraps itself in its
+layout, so the page is the layout's parent, and what a layout provides is not
+there for the page's own script. `provideStrings` and `provideLocale` exist
+for a component that holds everything that should see them.
+
+The numbers Lauf writes — a pagination's range and page, a grid's row
+numbers, a file's size — and the date picker's month names follow the
+locale. A page does the same with its own:
 
 ```svelte
 <script>
-  import { page } from '@inertiajs/svelte'
-  import { provideStrings } from '@askrcode/lauf'
-  provideStrings(() => page.props.lauf)
+  import { numbers, dates } from '@askrcode/lauf'
+  const n = numbers()   // n(1234) is "1,234", or "1 234" in nb
+  const d = dates()     // d('2026-01-05 14:07:00') is "Jan 5, 2026"
 </script>
 ```
 
-`askr new` writes that line. The words come from the `[lauf]` section of
-`lang/<locale>.toml`, and Askr sends them only when the request's locale says
-something other than English — see [Languages](lang.md#laufs-own-words). A
-function rather than an object, so a change of language on the next page is
-seen without a reload. A key the app leaves out stays English.
+`numbers()` takes `Intl.NumberFormat`'s options and `dates()`
+`Intl.DateTimeFormat`'s — `{ dateStyle: 'medium' }` unless given — and both
+are called during setup like `strings()`. `dates()` reads the text Askr sends
+a date as, `YYYY-MM-DD HH:MM:SS`, and keeps its wall-clock time whatever zone
+the browser is in; parsed by `new Date`, a date alone would be the day before
+west of Greenwich. No value is `''` from both, not `0` or "Invalid Date". A
+number in a translation is formatted where it is passed, not by the lookup:
+a year is a number too, and "2,026" is not a year.
 
 ## What is missing
 

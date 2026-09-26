@@ -150,9 +150,82 @@ select_row = "Velg rad :n"
 
 Askr puts them in a `lauf` prop on every Inertia page whose locale says
 something other than English, and leaves the prop out when it does not. The
-layout `askr new` writes hands it to Lauf with `provideStrings`. The keys and
+`main.js` `askr new` writes hands it to Lauf with `laufContext`. The keys and
 the English are the same in Lauf and in the framework — a test holds the two
 lists equal — so `askr lang:check` checks a `[lauf]` section like the rest.
+
+## Numbers and dates
+
+A number or a date the reader sees is written as the reader's locale writes
+it — the request's, as for words:
+
+```pascal
+LocaleNumber(1234567)          { 1,234,567      1 234 567 in nb }
+LocaleDecimal(3.14159, 2)      { 3.14           3,14 }
+LocaleCurrency(1234.5)         { 1,234.5        1 234,5 }
+LocaleDate(D)                  { Jan 5, 2026    5. jan. 2026 }
+LocaleDate(D, dsLong)          { January 5, 2026 }
+LocaleTime(D)                  { 2:07 PM        14:07 }
+LocaleDateTime(D, dsShort)     { 1/5/26, 2:07 PM }
+```
+
+They are in `Askr.Core.Format`. `LocaleCurrency` is exact — a `Currency`
+never goes through a float — and writes as many decimals as the value has
+unless it is told how many; it writes the number, not a symbol, because
+which currency an amount is in is the app's to know. A number passed to
+`Trans` is written as it is given: format it where it is passed, because a
+year is a number too, and "2,026" is not a year.
+
+The data is ICU's, for 59 locales: English (and en-GB, en-AU, en-CA),
+Norwegian (nb and nn), Danish, Swedish, German (and de-AT, de-CH), Dutch,
+Finnish, Estonian, Greek, Hungarian, Turkish, Bulgarian, Afrikaans,
+Albanian, Basque, Galician, Georgian, Azerbaijani, Kazakh, Urdu, Swahili,
+French (and fr-CA, fr-CH), Portuguese (and pt-PT), Spanish (and es-MX),
+Italian, Catalan, Polish, Russian, Ukrainian, Belarusian, Czech, Slovak,
+Croatian, Serbian, Bosnian, Romanian, Lithuanian, Latvian, Arabic, Hebrew,
+Icelandic, Japanese, Chinese (and zh-TW), Korean, Thai, Vietnamese,
+Indonesian and Malay. `tools/lang/formats.mjs` generates it from the ICU in
+node, together with two thousand vectors from the same ICU that the Pascal
+side is held to. A region without data of its own uses its language's —
+`nb-NO` is `nb` — and a language without any uses English's.
+
+A lang file can say any of it differently, under `[format]`:
+
+```toml
+# lang/nb.toml
+[format]
+group = "."
+date_medium = "{d}. {MMMM} {yyyy}"
+months_medium = "jan|feb|mar|apr|mai|jun|jul|aug|sep|okt|nov|des"
+```
+
+| Key | What it is |
+|---|---|
+| `decimal`, `group`, `minus` | the decimal mark, the thousands separator, and what comes before a negative number |
+| `date_short`, `date_medium`, `date_long` | the patterns `LocaleDate` uses |
+| `datetime_short`, `datetime_medium`, `datetime_long` | the patterns `LocaleDateTime` uses |
+| `time_short`, `time_medium` | `LocaleTime` without and with seconds |
+| `months_short`, `months_medium`, `months_long` | twelve names joined with `\|`, for `{MMMM}` in the pattern of that style |
+| `am`, `pm` | the two halves of a twelve-hour day |
+
+A pattern's tokens are `{yyyy}` `{yy}` `{M}` `{MM}` `{MMMM}` `{d}` `{dd}`
+`{H}` `{HH}` `{h}` `{hh}` `{K}` `{KK}` `{mm}` `{ss}` `{a}`: the year; the
+month as a number or its name; the day; the hour from 0 to 23, from 1 to
+12, and from 0 to 11; minutes; seconds; and the day period. One it does not
+know is left as written, where it is seen. `askr lang:check` reports a
+`[format]` key that is not one of these, and never counts one as missing
+from another locale: each locale's are its own.
+
+A limit in a validation message is written this way, so `Min(1234.5)` says
+"1 234,5" to a Norwegian reader and `MinLen(1500)` "1,500 characters" to an
+English one.
+
+On the page, Askr puts the locale in `<html lang>` — so a screen reader
+speaks the page in the right voice — and sends it to the client in a
+`locale` prop. The `main.js` `askr new` writes gives it to Lauf with
+`laufContext`, which writes its own numbers and the date picker's month
+names by it, and the layout keeps `<html lang>` right after a visit that did
+not load the page. See [Lauf](lauf.md).
 
 ## The file
 
@@ -219,5 +292,15 @@ a form of its own in some languages, and a count in a message is a count.
 connection, a relation that does not exist — stay English. They go to a log
 and to the person who can fix them, not to the reader of a form.
 
-**Dates and numbers in the reader's format.** A value in a message is written
-as the framework writes it everywhere else.
+**Time zones.** A `TDateTime` has none, and `LocaleDate` writes the one it is
+given. Which zone a reader is in is not something a request says.
+
+**Calendars other than the Gregorian.** Thai is written with Gregorian years,
+not the Buddhist era ICU uses for it by default.
+
+**Digits other than 0–9.** Every locale here writes Latin digits. Persian or
+Arabic as Egypt writes it would need the digits mapped, and the generator
+refuses such a locale rather than have Askr print it wrong.
+
+**Relative time and currency symbols.** "3 days ago" and "kr 12,50" are not
+here; a symbol belongs to an amount the app knows the currency of.

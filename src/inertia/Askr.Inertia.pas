@@ -75,8 +75,10 @@ type
     class procedure SetHistory(AEncrypt, AClear: Boolean); static;
 
     (* The HTML shell. It has to contain the placeholder {{page}} where the
-       payload goes. This comment uses the star form because the braces
-       would otherwise close an ordinary Pascal comment too early. *)
+       payload goes; {{root}}, {{title}}, {{head}}, {{lang}} and
+       {{fallback}} are filled in where they appear. This comment uses the
+       star form because the braces would otherwise close an ordinary
+       Pascal comment too early. *)
     class procedure SetRootTemplate(const AHtml: string); static;
     class function RootTemplate: string; static;
 
@@ -219,10 +221,10 @@ implementation
 const
   (* Inertia 3-formen: payloaden i et script-element, og en tom
      monteringsdiv. Plassholderen {{root}} byttes ut med rot-id-en. *)
-  { lang is `en`, not `no`. Askr is an international framework, and a
-    hard-coded Norwegian language makes a screen reader pronounce English
-    text with Norwegian phonemes. The app sets its own language with
-    SetRootTemplate.
+  { lang is the request's locale -- CurrentLocale, `en` for an app that
+    has none. It was once hard-coded `no`, which made a screen reader
+    pronounce English text with Norwegian phonemes; a fixed `en` would do
+    the same to a Norwegian page.
 
     <title> has to be here. Without it every single Inertia page is
     missing a title until the client has had time to set one — and if it
@@ -231,7 +233,7 @@ const
     Askr. }
   DefaultRootTemplate =
     '<!DOCTYPE html>' + #10 +
-    '<html lang="en">' + #10 +
+    '<html lang="{{lang}}">' + #10 +
     '<head>' + #10 +
     '  <meta charset="utf-8">' + #10 +
     '  <meta name="viewport" content="width=device-width, initial-scale=1">' + #10 +
@@ -550,10 +552,18 @@ begin
     GShare(W);
   { Lauf's own words in the request's language, when it says something
     other than English: the [lauf] section of the lang files, for
-    provideStrings in the app's layout. Left out otherwise, so a page in
+    laufContext in the app's main.js. Left out otherwise, so a page in
     English carries none of it. }
+  { The locale, for the numbers and dates Lauf writes and for <html lang>
+    after a visit that did not load the page. On every page: it is one
+    short string, and a page without it would write numbers in English
+    in the middle of a Norwegian page. An app prop of the same name is
+    written after it, and wins. A partial reload that did not ask for
+    either gets neither: the client keeps what it has. }
+  if WantsProp(Req, Component, 'locale') then
+    W.Field('locale', CurrentLocale);
   Lauf := ChangedTextsUnder('lauf');
-  if Length(Lauf) > 0 then
+  if (Length(Lauf) > 0) and WantsProp(Req, Component, 'lauf') then
   begin
     W.Key('lauf');
     W.BeginObject;
@@ -731,6 +741,12 @@ begin
     Title_ := TInertia.Title;
   Tpl := StringReplace(Tpl, '{{title}}',
     HtmlAttrEscape(A, Askr.Core.Text.Str(Title_)).ToString,
+    [rfReplaceAll]);
+  { The language the request was answered in, so a screen reader speaks
+    it with the right voice. A locale comes from a header a client writes,
+    and is escaped like the title. }
+  Tpl := StringReplace(Tpl, '{{lang}}',
+    HtmlAttrEscape(A, Askr.Core.Text.Str(CurrentLocale)).ToString,
     [rfReplaceAll]);
 
   { Not escaped: it is markup by intent, like the head tags SetHead takes.

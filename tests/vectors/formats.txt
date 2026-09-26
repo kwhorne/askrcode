@@ -1,0 +1,2066 @@
+# locale|kind|input|expected -- written by tools/lang/formats.mjs from ICU 78.3. Do not edit.
+en|int|0|0
+en|int|7|7
+en|int|1000|1,000
+en|int|12345|12,345
+en|int|-1234567|-1,234,567
+en|int|1000000|1,000,000
+en|dec2|1234.5678|1,234.57
+en|dec2|-0.25|-0.25
+en|dec3|3.14159|3.142
+en|dec1|1000000.1|1,000,000.1
+en|dec0|42|42
+en|date_short|2026-01-05 09:07:03|1/5/26
+en|datetime_short|2026-01-05 09:07:03|1/5/26, 9:07 AM
+en|date_medium|2026-01-05 09:07:03|Jan 5, 2026
+en|datetime_medium|2026-01-05 09:07:03|Jan 5, 2026, 9:07 AM
+en|date_long|2026-01-05 09:07:03|January 5, 2026
+en|datetime_long|2026-01-05 09:07:03|January 5, 2026 at 9:07 AM
+en|time_short|2026-01-05 09:07:03|9:07 AM
+en|time_medium|2026-01-05 09:07:03|9:07:03 AM
+en|date_short|2026-11-23 14:45:59|11/23/26
+en|datetime_short|2026-11-23 14:45:59|11/23/26, 2:45 PM
+en|date_medium|2026-11-23 14:45:59|Nov 23, 2026
+en|datetime_medium|2026-11-23 14:45:59|Nov 23, 2026, 2:45 PM
+en|date_long|2026-11-23 14:45:59|November 23, 2026
+en|datetime_long|2026-11-23 14:45:59|November 23, 2026 at 2:45 PM
+en|time_short|2026-11-23 14:45:59|2:45 PM
+en|time_medium|2026-11-23 14:45:59|2:45:59 PM
+en|date_short|1999-12-31 00:30:00|12/31/99
+en|datetime_short|1999-12-31 00:30:00|12/31/99, 12:30 AM
+en|date_medium|1999-12-31 00:30:00|Dec 31, 1999
+en|datetime_medium|1999-12-31 00:30:00|Dec 31, 1999, 12:30 AM
+en|date_long|1999-12-31 00:30:00|December 31, 1999
+en|datetime_long|1999-12-31 00:30:00|December 31, 1999 at 12:30 AM
+en|time_short|1999-12-31 00:30:00|12:30 AM
+en|time_medium|1999-12-31 00:30:00|12:30:00 AM
+en-GB|int|0|0
+en-GB|int|7|7
+en-GB|int|1000|1,000
+en-GB|int|12345|12,345
+en-GB|int|-1234567|-1,234,567
+en-GB|int|1000000|1,000,000
+en-GB|dec2|1234.5678|1,234.57
+en-GB|dec2|-0.25|-0.25
+en-GB|dec3|3.14159|3.142
+en-GB|dec1|1000000.1|1,000,000.1
+en-GB|dec0|42|42
+en-GB|date_short|2026-01-05 09:07:03|05/01/2026
+en-GB|datetime_short|2026-01-05 09:07:03|05/01/2026, 09:07
+en-GB|date_medium|2026-01-05 09:07:03|5 Jan 2026
+en-GB|datetime_medium|2026-01-05 09:07:03|5 Jan 2026, 09:07
+en-GB|date_long|2026-01-05 09:07:03|5 January 2026
+en-GB|datetime_long|2026-01-05 09:07:03|5 January 2026 at 09:07
+en-GB|time_short|2026-01-05 09:07:03|09:07
+en-GB|time_medium|2026-01-05 09:07:03|09:07:03
+en-GB|date_short|2026-11-23 14:45:59|23/11/2026
+en-GB|datetime_short|2026-11-23 14:45:59|23/11/2026, 14:45
+en-GB|date_medium|2026-11-23 14:45:59|23 Nov 2026
+en-GB|datetime_medium|2026-11-23 14:45:59|23 Nov 2026, 14:45
+en-GB|date_long|2026-11-23 14:45:59|23 November 2026
+en-GB|datetime_long|2026-11-23 14:45:59|23 November 2026 at 14:45
+en-GB|time_short|2026-11-23 14:45:59|14:45
+en-GB|time_medium|2026-11-23 14:45:59|14:45:59
+en-GB|date_short|1999-12-31 00:30:00|31/12/1999
+en-GB|datetime_short|1999-12-31 00:30:00|31/12/1999, 00:30
+en-GB|date_medium|1999-12-31 00:30:00|31 Dec 1999
+en-GB|datetime_medium|1999-12-31 00:30:00|31 Dec 1999, 00:30
+en-GB|date_long|1999-12-31 00:30:00|31 December 1999
+en-GB|datetime_long|1999-12-31 00:30:00|31 December 1999 at 00:30
+en-GB|time_short|1999-12-31 00:30:00|00:30
+en-GB|time_medium|1999-12-31 00:30:00|00:30:00
+en-AU|int|0|0
+en-AU|int|7|7
+en-AU|int|1000|1,000
+en-AU|int|12345|12,345
+en-AU|int|-1234567|-1,234,567
+en-AU|int|1000000|1,000,000
+en-AU|dec2|1234.5678|1,234.57
+en-AU|dec2|-0.25|-0.25
+en-AU|dec3|3.14159|3.142
+en-AU|dec1|1000000.1|1,000,000.1
+en-AU|dec0|42|42
+en-AU|date_short|2026-01-05 09:07:03|5/1/26
+en-AU|datetime_short|2026-01-05 09:07:03|5/1/26, 9:07 am
+en-AU|date_medium|2026-01-05 09:07:03|5 Jan 2026
+en-AU|datetime_medium|2026-01-05 09:07:03|5 Jan 2026, 9:07 am
+en-AU|date_long|2026-01-05 09:07:03|5 January 2026
+en-AU|datetime_long|2026-01-05 09:07:03|5 January 2026 at 9:07 am
+en-AU|time_short|2026-01-05 09:07:03|9:07 am
+en-AU|time_medium|2026-01-05 09:07:03|9:07:03 am
+en-AU|date_short|2026-11-23 14:45:59|23/11/26
+en-AU|datetime_short|2026-11-23 14:45:59|23/11/26, 2:45 pm
+en-AU|date_medium|2026-11-23 14:45:59|23 Nov 2026
+en-AU|datetime_medium|2026-11-23 14:45:59|23 Nov 2026, 2:45 pm
+en-AU|date_long|2026-11-23 14:45:59|23 November 2026
+en-AU|datetime_long|2026-11-23 14:45:59|23 November 2026 at 2:45 pm
+en-AU|time_short|2026-11-23 14:45:59|2:45 pm
+en-AU|time_medium|2026-11-23 14:45:59|2:45:59 pm
+en-AU|date_short|1999-12-31 00:30:00|31/12/99
+en-AU|datetime_short|1999-12-31 00:30:00|31/12/99, 12:30 am
+en-AU|date_medium|1999-12-31 00:30:00|31 Dec 1999
+en-AU|datetime_medium|1999-12-31 00:30:00|31 Dec 1999, 12:30 am
+en-AU|date_long|1999-12-31 00:30:00|31 December 1999
+en-AU|datetime_long|1999-12-31 00:30:00|31 December 1999 at 12:30 am
+en-AU|time_short|1999-12-31 00:30:00|12:30 am
+en-AU|time_medium|1999-12-31 00:30:00|12:30:00 am
+en-CA|int|0|0
+en-CA|int|7|7
+en-CA|int|1000|1,000
+en-CA|int|12345|12,345
+en-CA|int|-1234567|-1,234,567
+en-CA|int|1000000|1,000,000
+en-CA|dec2|1234.5678|1,234.57
+en-CA|dec2|-0.25|-0.25
+en-CA|dec3|3.14159|3.142
+en-CA|dec1|1000000.1|1,000,000.1
+en-CA|dec0|42|42
+en-CA|date_short|2026-01-05 09:07:03|2026-01-05
+en-CA|datetime_short|2026-01-05 09:07:03|2026-01-05, 9:07 a.m.
+en-CA|date_medium|2026-01-05 09:07:03|Jan 5, 2026
+en-CA|datetime_medium|2026-01-05 09:07:03|Jan 5, 2026, 9:07 a.m.
+en-CA|date_long|2026-01-05 09:07:03|January 5, 2026
+en-CA|datetime_long|2026-01-05 09:07:03|January 5, 2026 at 9:07 a.m.
+en-CA|time_short|2026-01-05 09:07:03|9:07 a.m.
+en-CA|time_medium|2026-01-05 09:07:03|9:07:03 a.m.
+en-CA|date_short|2026-11-23 14:45:59|2026-11-23
+en-CA|datetime_short|2026-11-23 14:45:59|2026-11-23, 2:45 p.m.
+en-CA|date_medium|2026-11-23 14:45:59|Nov 23, 2026
+en-CA|datetime_medium|2026-11-23 14:45:59|Nov 23, 2026, 2:45 p.m.
+en-CA|date_long|2026-11-23 14:45:59|November 23, 2026
+en-CA|datetime_long|2026-11-23 14:45:59|November 23, 2026 at 2:45 p.m.
+en-CA|time_short|2026-11-23 14:45:59|2:45 p.m.
+en-CA|time_medium|2026-11-23 14:45:59|2:45:59 p.m.
+en-CA|date_short|1999-12-31 00:30:00|1999-12-31
+en-CA|datetime_short|1999-12-31 00:30:00|1999-12-31, 12:30 a.m.
+en-CA|date_medium|1999-12-31 00:30:00|Dec 31, 1999
+en-CA|datetime_medium|1999-12-31 00:30:00|Dec 31, 1999, 12:30 a.m.
+en-CA|date_long|1999-12-31 00:30:00|December 31, 1999
+en-CA|datetime_long|1999-12-31 00:30:00|December 31, 1999 at 12:30 a.m.
+en-CA|time_short|1999-12-31 00:30:00|12:30 a.m.
+en-CA|time_medium|1999-12-31 00:30:00|12:30:00 a.m.
+nb|int|0|0
+nb|int|7|7
+nb|int|1000|1 000
+nb|int|12345|12 345
+nb|int|-1234567|−1 234 567
+nb|int|1000000|1 000 000
+nb|dec2|1234.5678|1 234,57
+nb|dec2|-0.25|−0,25
+nb|dec3|3.14159|3,142
+nb|dec1|1000000.1|1 000 000,1
+nb|dec0|42|42
+nb|date_short|2026-01-05 09:07:03|05.01.2026
+nb|datetime_short|2026-01-05 09:07:03|05.01.2026, 09:07
+nb|date_medium|2026-01-05 09:07:03|5. jan. 2026
+nb|datetime_medium|2026-01-05 09:07:03|5. jan. 2026, 09:07
+nb|date_long|2026-01-05 09:07:03|5. januar 2026
+nb|datetime_long|2026-01-05 09:07:03|5. januar 2026 kl. 09:07
+nb|time_short|2026-01-05 09:07:03|09:07
+nb|time_medium|2026-01-05 09:07:03|09:07:03
+nb|date_short|2026-11-23 14:45:59|23.11.2026
+nb|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+nb|date_medium|2026-11-23 14:45:59|23. nov. 2026
+nb|datetime_medium|2026-11-23 14:45:59|23. nov. 2026, 14:45
+nb|date_long|2026-11-23 14:45:59|23. november 2026
+nb|datetime_long|2026-11-23 14:45:59|23. november 2026 kl. 14:45
+nb|time_short|2026-11-23 14:45:59|14:45
+nb|time_medium|2026-11-23 14:45:59|14:45:59
+nb|date_short|1999-12-31 00:30:00|31.12.1999
+nb|datetime_short|1999-12-31 00:30:00|31.12.1999, 00:30
+nb|date_medium|1999-12-31 00:30:00|31. des. 1999
+nb|datetime_medium|1999-12-31 00:30:00|31. des. 1999, 00:30
+nb|date_long|1999-12-31 00:30:00|31. desember 1999
+nb|datetime_long|1999-12-31 00:30:00|31. desember 1999 kl. 00:30
+nb|time_short|1999-12-31 00:30:00|00:30
+nb|time_medium|1999-12-31 00:30:00|00:30:00
+nn|int|0|0
+nn|int|7|7
+nn|int|1000|1 000
+nn|int|12345|12 345
+nn|int|-1234567|−1 234 567
+nn|int|1000000|1 000 000
+nn|dec2|1234.5678|1 234,57
+nn|dec2|-0.25|−0,25
+nn|dec3|3.14159|3,142
+nn|dec1|1000000.1|1 000 000,1
+nn|dec0|42|42
+nn|date_short|2026-01-05 09:07:03|05.01.2026
+nn|datetime_short|2026-01-05 09:07:03|05.01.2026, 09:07
+nn|date_medium|2026-01-05 09:07:03|5. jan. 2026
+nn|datetime_medium|2026-01-05 09:07:03|5. jan. 2026, 09:07
+nn|date_long|2026-01-05 09:07:03|5. januar 2026
+nn|datetime_long|2026-01-05 09:07:03|5. januar 2026 kl. 09:07
+nn|time_short|2026-01-05 09:07:03|09:07
+nn|time_medium|2026-01-05 09:07:03|09:07:03
+nn|date_short|2026-11-23 14:45:59|23.11.2026
+nn|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+nn|date_medium|2026-11-23 14:45:59|23. nov. 2026
+nn|datetime_medium|2026-11-23 14:45:59|23. nov. 2026, 14:45
+nn|date_long|2026-11-23 14:45:59|23. november 2026
+nn|datetime_long|2026-11-23 14:45:59|23. november 2026 kl. 14:45
+nn|time_short|2026-11-23 14:45:59|14:45
+nn|time_medium|2026-11-23 14:45:59|14:45:59
+nn|date_short|1999-12-31 00:30:00|31.12.1999
+nn|datetime_short|1999-12-31 00:30:00|31.12.1999, 00:30
+nn|date_medium|1999-12-31 00:30:00|31. des. 1999
+nn|datetime_medium|1999-12-31 00:30:00|31. des. 1999, 00:30
+nn|date_long|1999-12-31 00:30:00|31. desember 1999
+nn|datetime_long|1999-12-31 00:30:00|31. desember 1999 kl. 00:30
+nn|time_short|1999-12-31 00:30:00|00:30
+nn|time_medium|1999-12-31 00:30:00|00:30:00
+da|int|0|0
+da|int|7|7
+da|int|1000|1.000
+da|int|12345|12.345
+da|int|-1234567|-1.234.567
+da|int|1000000|1.000.000
+da|dec2|1234.5678|1.234,57
+da|dec2|-0.25|-0,25
+da|dec3|3.14159|3,142
+da|dec1|1000000.1|1.000.000,1
+da|dec0|42|42
+da|date_short|2026-01-05 09:07:03|05.01.2026
+da|datetime_short|2026-01-05 09:07:03|05.01.2026, 09.07
+da|date_medium|2026-01-05 09:07:03|5. jan. 2026
+da|datetime_medium|2026-01-05 09:07:03|5. jan. 2026, 09.07
+da|date_long|2026-01-05 09:07:03|5. januar 2026
+da|datetime_long|2026-01-05 09:07:03|5. januar 2026 kl. 09.07
+da|time_short|2026-01-05 09:07:03|09.07
+da|time_medium|2026-01-05 09:07:03|09.07.03
+da|date_short|2026-11-23 14:45:59|23.11.2026
+da|datetime_short|2026-11-23 14:45:59|23.11.2026, 14.45
+da|date_medium|2026-11-23 14:45:59|23. nov. 2026
+da|datetime_medium|2026-11-23 14:45:59|23. nov. 2026, 14.45
+da|date_long|2026-11-23 14:45:59|23. november 2026
+da|datetime_long|2026-11-23 14:45:59|23. november 2026 kl. 14.45
+da|time_short|2026-11-23 14:45:59|14.45
+da|time_medium|2026-11-23 14:45:59|14.45.59
+da|date_short|1999-12-31 00:30:00|31.12.1999
+da|datetime_short|1999-12-31 00:30:00|31.12.1999, 00.30
+da|date_medium|1999-12-31 00:30:00|31. dec. 1999
+da|datetime_medium|1999-12-31 00:30:00|31. dec. 1999, 00.30
+da|date_long|1999-12-31 00:30:00|31. december 1999
+da|datetime_long|1999-12-31 00:30:00|31. december 1999 kl. 00.30
+da|time_short|1999-12-31 00:30:00|00.30
+da|time_medium|1999-12-31 00:30:00|00.30.00
+sv|int|0|0
+sv|int|7|7
+sv|int|1000|1 000
+sv|int|12345|12 345
+sv|int|-1234567|−1 234 567
+sv|int|1000000|1 000 000
+sv|dec2|1234.5678|1 234,57
+sv|dec2|-0.25|−0,25
+sv|dec3|3.14159|3,142
+sv|dec1|1000000.1|1 000 000,1
+sv|dec0|42|42
+sv|date_short|2026-01-05 09:07:03|2026-01-05
+sv|datetime_short|2026-01-05 09:07:03|2026-01-05 09:07
+sv|date_medium|2026-01-05 09:07:03|5 jan. 2026
+sv|datetime_medium|2026-01-05 09:07:03|5 jan. 2026 09:07
+sv|date_long|2026-01-05 09:07:03|5 januari 2026
+sv|datetime_long|2026-01-05 09:07:03|5 januari 2026 kl. 09:07
+sv|time_short|2026-01-05 09:07:03|09:07
+sv|time_medium|2026-01-05 09:07:03|09:07:03
+sv|date_short|2026-11-23 14:45:59|2026-11-23
+sv|datetime_short|2026-11-23 14:45:59|2026-11-23 14:45
+sv|date_medium|2026-11-23 14:45:59|23 nov. 2026
+sv|datetime_medium|2026-11-23 14:45:59|23 nov. 2026 14:45
+sv|date_long|2026-11-23 14:45:59|23 november 2026
+sv|datetime_long|2026-11-23 14:45:59|23 november 2026 kl. 14:45
+sv|time_short|2026-11-23 14:45:59|14:45
+sv|time_medium|2026-11-23 14:45:59|14:45:59
+sv|date_short|1999-12-31 00:30:00|1999-12-31
+sv|datetime_short|1999-12-31 00:30:00|1999-12-31 00:30
+sv|date_medium|1999-12-31 00:30:00|31 dec. 1999
+sv|datetime_medium|1999-12-31 00:30:00|31 dec. 1999 00:30
+sv|date_long|1999-12-31 00:30:00|31 december 1999
+sv|datetime_long|1999-12-31 00:30:00|31 december 1999 kl. 00:30
+sv|time_short|1999-12-31 00:30:00|00:30
+sv|time_medium|1999-12-31 00:30:00|00:30:00
+de|int|0|0
+de|int|7|7
+de|int|1000|1.000
+de|int|12345|12.345
+de|int|-1234567|-1.234.567
+de|int|1000000|1.000.000
+de|dec2|1234.5678|1.234,57
+de|dec2|-0.25|-0,25
+de|dec3|3.14159|3,142
+de|dec1|1000000.1|1.000.000,1
+de|dec0|42|42
+de|date_short|2026-01-05 09:07:03|05.01.26
+de|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+de|date_medium|2026-01-05 09:07:03|05.01.2026
+de|datetime_medium|2026-01-05 09:07:03|05.01.2026, 09:07
+de|date_long|2026-01-05 09:07:03|5. Januar 2026
+de|datetime_long|2026-01-05 09:07:03|5. Januar 2026 um 09:07
+de|time_short|2026-01-05 09:07:03|09:07
+de|time_medium|2026-01-05 09:07:03|09:07:03
+de|date_short|2026-11-23 14:45:59|23.11.26
+de|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+de|date_medium|2026-11-23 14:45:59|23.11.2026
+de|datetime_medium|2026-11-23 14:45:59|23.11.2026, 14:45
+de|date_long|2026-11-23 14:45:59|23. November 2026
+de|datetime_long|2026-11-23 14:45:59|23. November 2026 um 14:45
+de|time_short|2026-11-23 14:45:59|14:45
+de|time_medium|2026-11-23 14:45:59|14:45:59
+de|date_short|1999-12-31 00:30:00|31.12.99
+de|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+de|date_medium|1999-12-31 00:30:00|31.12.1999
+de|datetime_medium|1999-12-31 00:30:00|31.12.1999, 00:30
+de|date_long|1999-12-31 00:30:00|31. Dezember 1999
+de|datetime_long|1999-12-31 00:30:00|31. Dezember 1999 um 00:30
+de|time_short|1999-12-31 00:30:00|00:30
+de|time_medium|1999-12-31 00:30:00|00:30:00
+de-AT|int|0|0
+de-AT|int|7|7
+de-AT|int|1000|1 000
+de-AT|int|12345|12 345
+de-AT|int|-1234567|-1 234 567
+de-AT|int|1000000|1 000 000
+de-AT|dec2|1234.5678|1 234,57
+de-AT|dec2|-0.25|-0,25
+de-AT|dec3|3.14159|3,142
+de-AT|dec1|1000000.1|1 000 000,1
+de-AT|dec0|42|42
+de-AT|date_short|2026-01-05 09:07:03|05.01.26
+de-AT|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+de-AT|date_medium|2026-01-05 09:07:03|05.01.2026
+de-AT|datetime_medium|2026-01-05 09:07:03|05.01.2026, 09:07
+de-AT|date_long|2026-01-05 09:07:03|5. Jänner 2026
+de-AT|datetime_long|2026-01-05 09:07:03|5. Jänner 2026 um 09:07
+de-AT|time_short|2026-01-05 09:07:03|09:07
+de-AT|time_medium|2026-01-05 09:07:03|09:07:03
+de-AT|date_short|2026-11-23 14:45:59|23.11.26
+de-AT|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+de-AT|date_medium|2026-11-23 14:45:59|23.11.2026
+de-AT|datetime_medium|2026-11-23 14:45:59|23.11.2026, 14:45
+de-AT|date_long|2026-11-23 14:45:59|23. November 2026
+de-AT|datetime_long|2026-11-23 14:45:59|23. November 2026 um 14:45
+de-AT|time_short|2026-11-23 14:45:59|14:45
+de-AT|time_medium|2026-11-23 14:45:59|14:45:59
+de-AT|date_short|1999-12-31 00:30:00|31.12.99
+de-AT|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+de-AT|date_medium|1999-12-31 00:30:00|31.12.1999
+de-AT|datetime_medium|1999-12-31 00:30:00|31.12.1999, 00:30
+de-AT|date_long|1999-12-31 00:30:00|31. Dezember 1999
+de-AT|datetime_long|1999-12-31 00:30:00|31. Dezember 1999 um 00:30
+de-AT|time_short|1999-12-31 00:30:00|00:30
+de-AT|time_medium|1999-12-31 00:30:00|00:30:00
+de-CH|int|0|0
+de-CH|int|7|7
+de-CH|int|1000|1'000
+de-CH|int|12345|12'345
+de-CH|int|-1234567|-1'234'567
+de-CH|int|1000000|1'000'000
+de-CH|dec2|1234.5678|1'234.57
+de-CH|dec2|-0.25|-0.25
+de-CH|dec3|3.14159|3.142
+de-CH|dec1|1000000.1|1'000'000.1
+de-CH|dec0|42|42
+de-CH|date_short|2026-01-05 09:07:03|05.01.26
+de-CH|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+de-CH|date_medium|2026-01-05 09:07:03|05.01.2026
+de-CH|datetime_medium|2026-01-05 09:07:03|05.01.2026, 09:07
+de-CH|date_long|2026-01-05 09:07:03|5. Januar 2026
+de-CH|datetime_long|2026-01-05 09:07:03|5. Januar 2026 um 09:07
+de-CH|time_short|2026-01-05 09:07:03|09:07
+de-CH|time_medium|2026-01-05 09:07:03|09:07:03
+de-CH|date_short|2026-11-23 14:45:59|23.11.26
+de-CH|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+de-CH|date_medium|2026-11-23 14:45:59|23.11.2026
+de-CH|datetime_medium|2026-11-23 14:45:59|23.11.2026, 14:45
+de-CH|date_long|2026-11-23 14:45:59|23. November 2026
+de-CH|datetime_long|2026-11-23 14:45:59|23. November 2026 um 14:45
+de-CH|time_short|2026-11-23 14:45:59|14:45
+de-CH|time_medium|2026-11-23 14:45:59|14:45:59
+de-CH|date_short|1999-12-31 00:30:00|31.12.99
+de-CH|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+de-CH|date_medium|1999-12-31 00:30:00|31.12.1999
+de-CH|datetime_medium|1999-12-31 00:30:00|31.12.1999, 00:30
+de-CH|date_long|1999-12-31 00:30:00|31. Dezember 1999
+de-CH|datetime_long|1999-12-31 00:30:00|31. Dezember 1999 um 00:30
+de-CH|time_short|1999-12-31 00:30:00|00:30
+de-CH|time_medium|1999-12-31 00:30:00|00:30:00
+nl|int|0|0
+nl|int|7|7
+nl|int|1000|1.000
+nl|int|12345|12.345
+nl|int|-1234567|-1.234.567
+nl|int|1000000|1.000.000
+nl|dec2|1234.5678|1.234,57
+nl|dec2|-0.25|-0,25
+nl|dec3|3.14159|3,142
+nl|dec1|1000000.1|1.000.000,1
+nl|dec0|42|42
+nl|date_short|2026-01-05 09:07:03|05-01-2026
+nl|datetime_short|2026-01-05 09:07:03|05-01-2026, 09:07
+nl|date_medium|2026-01-05 09:07:03|5 jan 2026
+nl|datetime_medium|2026-01-05 09:07:03|5 jan 2026, 09:07
+nl|date_long|2026-01-05 09:07:03|5 januari 2026
+nl|datetime_long|2026-01-05 09:07:03|5 januari 2026 om 09:07
+nl|time_short|2026-01-05 09:07:03|09:07
+nl|time_medium|2026-01-05 09:07:03|09:07:03
+nl|date_short|2026-11-23 14:45:59|23-11-2026
+nl|datetime_short|2026-11-23 14:45:59|23-11-2026, 14:45
+nl|date_medium|2026-11-23 14:45:59|23 nov 2026
+nl|datetime_medium|2026-11-23 14:45:59|23 nov 2026, 14:45
+nl|date_long|2026-11-23 14:45:59|23 november 2026
+nl|datetime_long|2026-11-23 14:45:59|23 november 2026 om 14:45
+nl|time_short|2026-11-23 14:45:59|14:45
+nl|time_medium|2026-11-23 14:45:59|14:45:59
+nl|date_short|1999-12-31 00:30:00|31-12-1999
+nl|datetime_short|1999-12-31 00:30:00|31-12-1999, 00:30
+nl|date_medium|1999-12-31 00:30:00|31 dec 1999
+nl|datetime_medium|1999-12-31 00:30:00|31 dec 1999, 00:30
+nl|date_long|1999-12-31 00:30:00|31 december 1999
+nl|datetime_long|1999-12-31 00:30:00|31 december 1999 om 00:30
+nl|time_short|1999-12-31 00:30:00|00:30
+nl|time_medium|1999-12-31 00:30:00|00:30:00
+fi|int|0|0
+fi|int|7|7
+fi|int|1000|1 000
+fi|int|12345|12 345
+fi|int|-1234567|−1 234 567
+fi|int|1000000|1 000 000
+fi|dec2|1234.5678|1 234,57
+fi|dec2|-0.25|−0,25
+fi|dec3|3.14159|3,142
+fi|dec1|1000000.1|1 000 000,1
+fi|dec0|42|42
+fi|date_short|2026-01-05 09:07:03|5.1.2026
+fi|datetime_short|2026-01-05 09:07:03|5.1.2026 klo 9.07
+fi|date_medium|2026-01-05 09:07:03|5.1.2026
+fi|datetime_medium|2026-01-05 09:07:03|5.1.2026 klo 9.07
+fi|date_long|2026-01-05 09:07:03|5. tammikuuta 2026
+fi|datetime_long|2026-01-05 09:07:03|5. tammikuuta 2026 klo 9.07
+fi|time_short|2026-01-05 09:07:03|9.07
+fi|time_medium|2026-01-05 09:07:03|9.07.03
+fi|date_short|2026-11-23 14:45:59|23.11.2026
+fi|datetime_short|2026-11-23 14:45:59|23.11.2026 klo 14.45
+fi|date_medium|2026-11-23 14:45:59|23.11.2026
+fi|datetime_medium|2026-11-23 14:45:59|23.11.2026 klo 14.45
+fi|date_long|2026-11-23 14:45:59|23. marraskuuta 2026
+fi|datetime_long|2026-11-23 14:45:59|23. marraskuuta 2026 klo 14.45
+fi|time_short|2026-11-23 14:45:59|14.45
+fi|time_medium|2026-11-23 14:45:59|14.45.59
+fi|date_short|1999-12-31 00:30:00|31.12.1999
+fi|datetime_short|1999-12-31 00:30:00|31.12.1999 klo 0.30
+fi|date_medium|1999-12-31 00:30:00|31.12.1999
+fi|datetime_medium|1999-12-31 00:30:00|31.12.1999 klo 0.30
+fi|date_long|1999-12-31 00:30:00|31. joulukuuta 1999
+fi|datetime_long|1999-12-31 00:30:00|31. joulukuuta 1999 klo 0.30
+fi|time_short|1999-12-31 00:30:00|0.30
+fi|time_medium|1999-12-31 00:30:00|0.30.00
+et|int|0|0
+et|int|7|7
+et|int|1000|1000
+et|int|12345|12 345
+et|int|-1234567|−1 234 567
+et|int|1000000|1 000 000
+et|dec2|1234.5678|1234,57
+et|dec2|-0.25|−0,25
+et|dec3|3.14159|3,142
+et|dec1|1000000.1|1 000 000,1
+et|dec0|42|42
+et|date_short|2026-01-05 09:07:03|05.01.26
+et|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+et|date_medium|2026-01-05 09:07:03|5. jaan 2026
+et|datetime_medium|2026-01-05 09:07:03|5. jaan 2026, 09:07
+et|date_long|2026-01-05 09:07:03|5. jaanuar 2026
+et|datetime_long|2026-01-05 09:07:03|5. jaanuar 2026, kell 09:07
+et|time_short|2026-01-05 09:07:03|09:07
+et|time_medium|2026-01-05 09:07:03|09:07:03
+et|date_short|2026-11-23 14:45:59|23.11.26
+et|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+et|date_medium|2026-11-23 14:45:59|23. nov 2026
+et|datetime_medium|2026-11-23 14:45:59|23. nov 2026, 14:45
+et|date_long|2026-11-23 14:45:59|23. november 2026
+et|datetime_long|2026-11-23 14:45:59|23. november 2026, kell 14:45
+et|time_short|2026-11-23 14:45:59|14:45
+et|time_medium|2026-11-23 14:45:59|14:45:59
+et|date_short|1999-12-31 00:30:00|31.12.99
+et|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+et|date_medium|1999-12-31 00:30:00|31. dets 1999
+et|datetime_medium|1999-12-31 00:30:00|31. dets 1999, 00:30
+et|date_long|1999-12-31 00:30:00|31. detsember 1999
+et|datetime_long|1999-12-31 00:30:00|31. detsember 1999, kell 00:30
+et|time_short|1999-12-31 00:30:00|00:30
+et|time_medium|1999-12-31 00:30:00|00:30:00
+el|int|0|0
+el|int|7|7
+el|int|1000|1.000
+el|int|12345|12.345
+el|int|-1234567|-1.234.567
+el|int|1000000|1.000.000
+el|dec2|1234.5678|1.234,57
+el|dec2|-0.25|-0,25
+el|dec3|3.14159|3,142
+el|dec1|1000000.1|1.000.000,1
+el|dec0|42|42
+el|date_short|2026-01-05 09:07:03|5/1/26
+el|datetime_short|2026-01-05 09:07:03|5/1/26, 9:07 π.μ.
+el|date_medium|2026-01-05 09:07:03|5 Ιαν 2026
+el|datetime_medium|2026-01-05 09:07:03|5 Ιαν 2026, 9:07 π.μ.
+el|date_long|2026-01-05 09:07:03|5 Ιανουαρίου 2026
+el|datetime_long|2026-01-05 09:07:03|5 Ιανουαρίου 2026 στις 9:07 π.μ.
+el|time_short|2026-01-05 09:07:03|9:07 π.μ.
+el|time_medium|2026-01-05 09:07:03|9:07:03 π.μ.
+el|date_short|2026-11-23 14:45:59|23/11/26
+el|datetime_short|2026-11-23 14:45:59|23/11/26, 2:45 μ.μ.
+el|date_medium|2026-11-23 14:45:59|23 Νοε 2026
+el|datetime_medium|2026-11-23 14:45:59|23 Νοε 2026, 2:45 μ.μ.
+el|date_long|2026-11-23 14:45:59|23 Νοεμβρίου 2026
+el|datetime_long|2026-11-23 14:45:59|23 Νοεμβρίου 2026 στις 2:45 μ.μ.
+el|time_short|2026-11-23 14:45:59|2:45 μ.μ.
+el|time_medium|2026-11-23 14:45:59|2:45:59 μ.μ.
+el|date_short|1999-12-31 00:30:00|31/12/99
+el|datetime_short|1999-12-31 00:30:00|31/12/99, 12:30 π.μ.
+el|date_medium|1999-12-31 00:30:00|31 Δεκ 1999
+el|datetime_medium|1999-12-31 00:30:00|31 Δεκ 1999, 12:30 π.μ.
+el|date_long|1999-12-31 00:30:00|31 Δεκεμβρίου 1999
+el|datetime_long|1999-12-31 00:30:00|31 Δεκεμβρίου 1999 στις 12:30 π.μ.
+el|time_short|1999-12-31 00:30:00|12:30 π.μ.
+el|time_medium|1999-12-31 00:30:00|12:30:00 π.μ.
+hu|int|0|0
+hu|int|7|7
+hu|int|1000|1000
+hu|int|12345|12 345
+hu|int|-1234567|-1 234 567
+hu|int|1000000|1 000 000
+hu|dec2|1234.5678|1234,57
+hu|dec2|-0.25|-0,25
+hu|dec3|3.14159|3,142
+hu|dec1|1000000.1|1 000 000,1
+hu|dec0|42|42
+hu|date_short|2026-01-05 09:07:03|2026. 01. 05.
+hu|datetime_short|2026-01-05 09:07:03|2026. 01. 05. 9:07
+hu|date_medium|2026-01-05 09:07:03|2026. jan. 5.
+hu|datetime_medium|2026-01-05 09:07:03|2026. jan. 5. 9:07
+hu|date_long|2026-01-05 09:07:03|2026. január 5.
+hu|datetime_long|2026-01-05 09:07:03|2026. január 5. 9:07
+hu|time_short|2026-01-05 09:07:03|9:07
+hu|time_medium|2026-01-05 09:07:03|9:07:03
+hu|date_short|2026-11-23 14:45:59|2026. 11. 23.
+hu|datetime_short|2026-11-23 14:45:59|2026. 11. 23. 14:45
+hu|date_medium|2026-11-23 14:45:59|2026. nov. 23.
+hu|datetime_medium|2026-11-23 14:45:59|2026. nov. 23. 14:45
+hu|date_long|2026-11-23 14:45:59|2026. november 23.
+hu|datetime_long|2026-11-23 14:45:59|2026. november 23. 14:45
+hu|time_short|2026-11-23 14:45:59|14:45
+hu|time_medium|2026-11-23 14:45:59|14:45:59
+hu|date_short|1999-12-31 00:30:00|1999. 12. 31.
+hu|datetime_short|1999-12-31 00:30:00|1999. 12. 31. 0:30
+hu|date_medium|1999-12-31 00:30:00|1999. dec. 31.
+hu|datetime_medium|1999-12-31 00:30:00|1999. dec. 31. 0:30
+hu|date_long|1999-12-31 00:30:00|1999. december 31.
+hu|datetime_long|1999-12-31 00:30:00|1999. december 31. 0:30
+hu|time_short|1999-12-31 00:30:00|0:30
+hu|time_medium|1999-12-31 00:30:00|0:30:00
+tr|int|0|0
+tr|int|7|7
+tr|int|1000|1.000
+tr|int|12345|12.345
+tr|int|-1234567|-1.234.567
+tr|int|1000000|1.000.000
+tr|dec2|1234.5678|1.234,57
+tr|dec2|-0.25|-0,25
+tr|dec3|3.14159|3,142
+tr|dec1|1000000.1|1.000.000,1
+tr|dec0|42|42
+tr|date_short|2026-01-05 09:07:03|5.01.2026
+tr|datetime_short|2026-01-05 09:07:03|5.01.2026 09:07
+tr|date_medium|2026-01-05 09:07:03|5 Oca 2026
+tr|datetime_medium|2026-01-05 09:07:03|5 Oca 2026 09:07
+tr|date_long|2026-01-05 09:07:03|5 Ocak 2026
+tr|datetime_long|2026-01-05 09:07:03|5 Ocak 2026 09:07
+tr|time_short|2026-01-05 09:07:03|09:07
+tr|time_medium|2026-01-05 09:07:03|09:07:03
+tr|date_short|2026-11-23 14:45:59|23.11.2026
+tr|datetime_short|2026-11-23 14:45:59|23.11.2026 14:45
+tr|date_medium|2026-11-23 14:45:59|23 Kas 2026
+tr|datetime_medium|2026-11-23 14:45:59|23 Kas 2026 14:45
+tr|date_long|2026-11-23 14:45:59|23 Kasım 2026
+tr|datetime_long|2026-11-23 14:45:59|23 Kasım 2026 14:45
+tr|time_short|2026-11-23 14:45:59|14:45
+tr|time_medium|2026-11-23 14:45:59|14:45:59
+tr|date_short|1999-12-31 00:30:00|31.12.1999
+tr|datetime_short|1999-12-31 00:30:00|31.12.1999 00:30
+tr|date_medium|1999-12-31 00:30:00|31 Ara 1999
+tr|datetime_medium|1999-12-31 00:30:00|31 Ara 1999 00:30
+tr|date_long|1999-12-31 00:30:00|31 Aralık 1999
+tr|datetime_long|1999-12-31 00:30:00|31 Aralık 1999 00:30
+tr|time_short|1999-12-31 00:30:00|00:30
+tr|time_medium|1999-12-31 00:30:00|00:30:00
+bg|int|0|0
+bg|int|7|7
+bg|int|1000|1000
+bg|int|12345|12 345
+bg|int|-1234567|-1 234 567
+bg|int|1000000|1 000 000
+bg|dec2|1234.5678|1234,57
+bg|dec2|-0.25|-0,25
+bg|dec3|3.14159|3,142
+bg|dec1|1000000.1|1 000 000,1
+bg|dec0|42|42
+bg|date_short|2026-01-05 09:07:03|5.01.26 г.
+bg|datetime_short|2026-01-05 09:07:03|5.01.26 г., 9:07
+bg|date_medium|2026-01-05 09:07:03|5.01.2026 г.
+bg|datetime_medium|2026-01-05 09:07:03|5.01.2026 г., 9:07
+bg|date_long|2026-01-05 09:07:03|5 януари 2026 г.
+bg|datetime_long|2026-01-05 09:07:03|5 януари 2026 г. в 9:07
+bg|time_short|2026-01-05 09:07:03|9:07
+bg|time_medium|2026-01-05 09:07:03|9:07:03
+bg|date_short|2026-11-23 14:45:59|23.11.26 г.
+bg|datetime_short|2026-11-23 14:45:59|23.11.26 г., 14:45
+bg|date_medium|2026-11-23 14:45:59|23.11.2026 г.
+bg|datetime_medium|2026-11-23 14:45:59|23.11.2026 г., 14:45
+bg|date_long|2026-11-23 14:45:59|23 ноември 2026 г.
+bg|datetime_long|2026-11-23 14:45:59|23 ноември 2026 г. в 14:45
+bg|time_short|2026-11-23 14:45:59|14:45
+bg|time_medium|2026-11-23 14:45:59|14:45:59
+bg|date_short|1999-12-31 00:30:00|31.12.99 г.
+bg|datetime_short|1999-12-31 00:30:00|31.12.99 г., 0:30
+bg|date_medium|1999-12-31 00:30:00|31.12.1999 г.
+bg|datetime_medium|1999-12-31 00:30:00|31.12.1999 г., 0:30
+bg|date_long|1999-12-31 00:30:00|31 декември 1999 г.
+bg|datetime_long|1999-12-31 00:30:00|31 декември 1999 г. в 0:30
+bg|time_short|1999-12-31 00:30:00|0:30
+bg|time_medium|1999-12-31 00:30:00|0:30:00
+af|int|0|0
+af|int|7|7
+af|int|1000|1 000
+af|int|12345|12 345
+af|int|-1234567|-1 234 567
+af|int|1000000|1 000 000
+af|dec2|1234.5678|1 234,57
+af|dec2|-0.25|-0,25
+af|dec3|3.14159|3,142
+af|dec1|1000000.1|1 000 000,1
+af|dec0|42|42
+af|date_short|2026-01-05 09:07:03|2026-01-05
+af|datetime_short|2026-01-05 09:07:03|2026-01-05 09:07
+af|date_medium|2026-01-05 09:07:03|05 Jan. 2026
+af|datetime_medium|2026-01-05 09:07:03|05 Jan. 2026 09:07
+af|date_long|2026-01-05 09:07:03|05 Januarie 2026
+af|datetime_long|2026-01-05 09:07:03|05 Januarie 2026 om 09:07
+af|time_short|2026-01-05 09:07:03|09:07
+af|time_medium|2026-01-05 09:07:03|09:07:03
+af|date_short|2026-11-23 14:45:59|2026-11-23
+af|datetime_short|2026-11-23 14:45:59|2026-11-23 14:45
+af|date_medium|2026-11-23 14:45:59|23 Nov. 2026
+af|datetime_medium|2026-11-23 14:45:59|23 Nov. 2026 14:45
+af|date_long|2026-11-23 14:45:59|23 November 2026
+af|datetime_long|2026-11-23 14:45:59|23 November 2026 om 14:45
+af|time_short|2026-11-23 14:45:59|14:45
+af|time_medium|2026-11-23 14:45:59|14:45:59
+af|date_short|1999-12-31 00:30:00|1999-12-31
+af|datetime_short|1999-12-31 00:30:00|1999-12-31 00:30
+af|date_medium|1999-12-31 00:30:00|31 Des. 1999
+af|datetime_medium|1999-12-31 00:30:00|31 Des. 1999 00:30
+af|date_long|1999-12-31 00:30:00|31 Desember 1999
+af|datetime_long|1999-12-31 00:30:00|31 Desember 1999 om 00:30
+af|time_short|1999-12-31 00:30:00|00:30
+af|time_medium|1999-12-31 00:30:00|00:30:00
+sq|int|0|0
+sq|int|7|7
+sq|int|1000|1000
+sq|int|12345|12 345
+sq|int|-1234567|-1 234 567
+sq|int|1000000|1 000 000
+sq|dec2|1234.5678|1234,57
+sq|dec2|-0.25|-0,25
+sq|dec3|3.14159|3,142
+sq|dec1|1000000.1|1 000 000,1
+sq|dec0|42|42
+sq|date_short|2026-01-05 09:07:03|5.1.26
+sq|datetime_short|2026-01-05 09:07:03|5.1.26, 9:07 p.d.
+sq|date_medium|2026-01-05 09:07:03|5 jan 2026
+sq|datetime_medium|2026-01-05 09:07:03|5 jan 2026, 9:07 p.d.
+sq|date_long|2026-01-05 09:07:03|5 janar 2026
+sq|datetime_long|2026-01-05 09:07:03|5 janar 2026 në 9:07 p.d.
+sq|time_short|2026-01-05 09:07:03|9:07 p.d.
+sq|time_medium|2026-01-05 09:07:03|9:07:03 p.d.
+sq|date_short|2026-11-23 14:45:59|23.11.26
+sq|datetime_short|2026-11-23 14:45:59|23.11.26, 2:45 m.d.
+sq|date_medium|2026-11-23 14:45:59|23 nën 2026
+sq|datetime_medium|2026-11-23 14:45:59|23 nën 2026, 2:45 m.d.
+sq|date_long|2026-11-23 14:45:59|23 nëntor 2026
+sq|datetime_long|2026-11-23 14:45:59|23 nëntor 2026 në 2:45 m.d.
+sq|time_short|2026-11-23 14:45:59|2:45 m.d.
+sq|time_medium|2026-11-23 14:45:59|2:45:59 m.d.
+sq|date_short|1999-12-31 00:30:00|31.12.99
+sq|datetime_short|1999-12-31 00:30:00|31.12.99, 12:30 p.d.
+sq|date_medium|1999-12-31 00:30:00|31 dhj 1999
+sq|datetime_medium|1999-12-31 00:30:00|31 dhj 1999, 12:30 p.d.
+sq|date_long|1999-12-31 00:30:00|31 dhjetor 1999
+sq|datetime_long|1999-12-31 00:30:00|31 dhjetor 1999 në 12:30 p.d.
+sq|time_short|1999-12-31 00:30:00|12:30 p.d.
+sq|time_medium|1999-12-31 00:30:00|12:30:00 p.d.
+eu|int|0|0
+eu|int|7|7
+eu|int|1000|1.000
+eu|int|12345|12.345
+eu|int|-1234567|−1.234.567
+eu|int|1000000|1.000.000
+eu|dec2|1234.5678|1.234,57
+eu|dec2|-0.25|−0,25
+eu|dec3|3.14159|3,142
+eu|dec1|1000000.1|1.000.000,1
+eu|dec0|42|42
+eu|date_short|2026-01-05 09:07:03|26/1/5
+eu|datetime_short|2026-01-05 09:07:03|26/1/5 (09:07)
+eu|date_medium|2026-01-05 09:07:03|2026(e)ko urt. 5(a)
+eu|datetime_medium|2026-01-05 09:07:03|2026(e)ko urt. 5(a) (09:07)
+eu|date_long|2026-01-05 09:07:03|2026(e)ko urtarrilaren 5(a)
+eu|datetime_long|2026-01-05 09:07:03|2026(e)ko urtarrilaren 5(a) (09:07)
+eu|time_short|2026-01-05 09:07:03|09:07
+eu|time_medium|2026-01-05 09:07:03|09:07:03
+eu|date_short|2026-11-23 14:45:59|26/11/23
+eu|datetime_short|2026-11-23 14:45:59|26/11/23 (14:45)
+eu|date_medium|2026-11-23 14:45:59|2026(e)ko aza. 23(a)
+eu|datetime_medium|2026-11-23 14:45:59|2026(e)ko aza. 23(a) (14:45)
+eu|date_long|2026-11-23 14:45:59|2026(e)ko azaroaren 23(a)
+eu|datetime_long|2026-11-23 14:45:59|2026(e)ko azaroaren 23(a) (14:45)
+eu|time_short|2026-11-23 14:45:59|14:45
+eu|time_medium|2026-11-23 14:45:59|14:45:59
+eu|date_short|1999-12-31 00:30:00|99/12/31
+eu|datetime_short|1999-12-31 00:30:00|99/12/31 (00:30)
+eu|date_medium|1999-12-31 00:30:00|1999(e)ko abe. 31(a)
+eu|datetime_medium|1999-12-31 00:30:00|1999(e)ko abe. 31(a) (00:30)
+eu|date_long|1999-12-31 00:30:00|1999(e)ko abenduaren 31(a)
+eu|datetime_long|1999-12-31 00:30:00|1999(e)ko abenduaren 31(a) (00:30)
+eu|time_short|1999-12-31 00:30:00|00:30
+eu|time_medium|1999-12-31 00:30:00|00:30:00
+gl|int|0|0
+gl|int|7|7
+gl|int|1000|1.000
+gl|int|12345|12.345
+gl|int|-1234567|-1.234.567
+gl|int|1000000|1.000.000
+gl|dec2|1234.5678|1.234,57
+gl|dec2|-0.25|-0,25
+gl|dec3|3.14159|3,142
+gl|dec1|1000000.1|1.000.000,1
+gl|dec0|42|42
+gl|date_short|2026-01-05 09:07:03|05/01/26
+gl|datetime_short|2026-01-05 09:07:03|05/01/26, 09:07
+gl|date_medium|2026-01-05 09:07:03|5 de xan. de 2026
+gl|datetime_medium|2026-01-05 09:07:03|5 de xan. de 2026, 09:07
+gl|date_long|2026-01-05 09:07:03|5 de xaneiro de 2026
+gl|datetime_long|2026-01-05 09:07:03|5 de xaneiro de 2026, 09:07
+gl|time_short|2026-01-05 09:07:03|09:07
+gl|time_medium|2026-01-05 09:07:03|09:07:03
+gl|date_short|2026-11-23 14:45:59|23/11/26
+gl|datetime_short|2026-11-23 14:45:59|23/11/26, 14:45
+gl|date_medium|2026-11-23 14:45:59|23 de nov. de 2026
+gl|datetime_medium|2026-11-23 14:45:59|23 de nov. de 2026, 14:45
+gl|date_long|2026-11-23 14:45:59|23 de novembro de 2026
+gl|datetime_long|2026-11-23 14:45:59|23 de novembro de 2026, 14:45
+gl|time_short|2026-11-23 14:45:59|14:45
+gl|time_medium|2026-11-23 14:45:59|14:45:59
+gl|date_short|1999-12-31 00:30:00|31/12/99
+gl|datetime_short|1999-12-31 00:30:00|31/12/99, 00:30
+gl|date_medium|1999-12-31 00:30:00|31 de dec. de 1999
+gl|datetime_medium|1999-12-31 00:30:00|31 de dec. de 1999, 00:30
+gl|date_long|1999-12-31 00:30:00|31 de decembro de 1999
+gl|datetime_long|1999-12-31 00:30:00|31 de decembro de 1999, 00:30
+gl|time_short|1999-12-31 00:30:00|00:30
+gl|time_medium|1999-12-31 00:30:00|00:30:00
+ka|int|0|0
+ka|int|7|7
+ka|int|1000|1000
+ka|int|12345|12 345
+ka|int|-1234567|-1 234 567
+ka|int|1000000|1 000 000
+ka|dec2|1234.5678|1234,57
+ka|dec2|-0.25|-0,25
+ka|dec3|3.14159|3,142
+ka|dec1|1000000.1|1 000 000,1
+ka|dec0|42|42
+ka|date_short|2026-01-05 09:07:03|05.01.26
+ka|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+ka|date_medium|2026-01-05 09:07:03|5 იან. 2026
+ka|datetime_medium|2026-01-05 09:07:03|5 იან. 2026, 09:07
+ka|date_long|2026-01-05 09:07:03|5 იანვარი, 2026
+ka|datetime_long|2026-01-05 09:07:03|5 იანვარი, 2026, 09:07
+ka|time_short|2026-01-05 09:07:03|09:07
+ka|time_medium|2026-01-05 09:07:03|09:07:03
+ka|date_short|2026-11-23 14:45:59|23.11.26
+ka|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+ka|date_medium|2026-11-23 14:45:59|23 ნოე. 2026
+ka|datetime_medium|2026-11-23 14:45:59|23 ნოე. 2026, 14:45
+ka|date_long|2026-11-23 14:45:59|23 ნოემბერი, 2026
+ka|datetime_long|2026-11-23 14:45:59|23 ნოემბერი, 2026, 14:45
+ka|time_short|2026-11-23 14:45:59|14:45
+ka|time_medium|2026-11-23 14:45:59|14:45:59
+ka|date_short|1999-12-31 00:30:00|31.12.99
+ka|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+ka|date_medium|1999-12-31 00:30:00|31 დეკ. 1999
+ka|datetime_medium|1999-12-31 00:30:00|31 დეკ. 1999, 00:30
+ka|date_long|1999-12-31 00:30:00|31 დეკემბერი, 1999
+ka|datetime_long|1999-12-31 00:30:00|31 დეკემბერი, 1999, 00:30
+ka|time_short|1999-12-31 00:30:00|00:30
+ka|time_medium|1999-12-31 00:30:00|00:30:00
+az|int|0|0
+az|int|7|7
+az|int|1000|1.000
+az|int|12345|12.345
+az|int|-1234567|-1.234.567
+az|int|1000000|1.000.000
+az|dec2|1234.5678|1.234,57
+az|dec2|-0.25|-0,25
+az|dec3|3.14159|3,142
+az|dec1|1000000.1|1.000.000,1
+az|dec0|42|42
+az|date_short|2026-01-05 09:07:03|05.01.26
+az|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+az|date_medium|2026-01-05 09:07:03|5 yan 2026
+az|datetime_medium|2026-01-05 09:07:03|5 yan 2026, 09:07
+az|date_long|2026-01-05 09:07:03|5 yanvar 2026
+az|datetime_long|2026-01-05 09:07:03|5 yanvar 2026/09:07
+az|time_short|2026-01-05 09:07:03|09:07
+az|time_medium|2026-01-05 09:07:03|09:07:03
+az|date_short|2026-11-23 14:45:59|23.11.26
+az|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+az|date_medium|2026-11-23 14:45:59|23 noy 2026
+az|datetime_medium|2026-11-23 14:45:59|23 noy 2026, 14:45
+az|date_long|2026-11-23 14:45:59|23 noyabr 2026
+az|datetime_long|2026-11-23 14:45:59|23 noyabr 2026/14:45
+az|time_short|2026-11-23 14:45:59|14:45
+az|time_medium|2026-11-23 14:45:59|14:45:59
+az|date_short|1999-12-31 00:30:00|31.12.99
+az|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+az|date_medium|1999-12-31 00:30:00|31 dek 1999
+az|datetime_medium|1999-12-31 00:30:00|31 dek 1999, 00:30
+az|date_long|1999-12-31 00:30:00|31 dekabr 1999
+az|datetime_long|1999-12-31 00:30:00|31 dekabr 1999/00:30
+az|time_short|1999-12-31 00:30:00|00:30
+az|time_medium|1999-12-31 00:30:00|00:30:00
+kk|int|0|0
+kk|int|7|7
+kk|int|1000|1 000
+kk|int|12345|12 345
+kk|int|-1234567|-1 234 567
+kk|int|1000000|1 000 000
+kk|dec2|1234.5678|1 234,57
+kk|dec2|-0.25|-0,25
+kk|dec3|3.14159|3,142
+kk|dec1|1000000.1|1 000 000,1
+kk|dec0|42|42
+kk|date_short|2026-01-05 09:07:03|05.01.26
+kk|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+kk|date_medium|2026-01-05 09:07:03|2026 ж. 05 қаң.
+kk|datetime_medium|2026-01-05 09:07:03|2026 ж. 05 қаң., 09:07
+kk|date_long|2026-01-05 09:07:03|2026 ж. 5 қаңтар
+kk|datetime_long|2026-01-05 09:07:03|2026 ж. 5 қаңтар, 09:07
+kk|time_short|2026-01-05 09:07:03|09:07
+kk|time_medium|2026-01-05 09:07:03|09:07:03
+kk|date_short|2026-11-23 14:45:59|23.11.26
+kk|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+kk|date_medium|2026-11-23 14:45:59|2026 ж. 23 қар.
+kk|datetime_medium|2026-11-23 14:45:59|2026 ж. 23 қар., 14:45
+kk|date_long|2026-11-23 14:45:59|2026 ж. 23 қараша
+kk|datetime_long|2026-11-23 14:45:59|2026 ж. 23 қараша, 14:45
+kk|time_short|2026-11-23 14:45:59|14:45
+kk|time_medium|2026-11-23 14:45:59|14:45:59
+kk|date_short|1999-12-31 00:30:00|31.12.99
+kk|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+kk|date_medium|1999-12-31 00:30:00|1999 ж. 31 жел.
+kk|datetime_medium|1999-12-31 00:30:00|1999 ж. 31 жел., 00:30
+kk|date_long|1999-12-31 00:30:00|1999 ж. 31 желтоқсан
+kk|datetime_long|1999-12-31 00:30:00|1999 ж. 31 желтоқсан, 00:30
+kk|time_short|1999-12-31 00:30:00|00:30
+kk|time_medium|1999-12-31 00:30:00|00:30:00
+ur|int|0|0
+ur|int|7|7
+ur|int|1000|1,000
+ur|int|12345|12,345
+ur|int|-1234567|‎-1,234,567
+ur|int|1000000|1,000,000
+ur|dec2|1234.5678|1,234.57
+ur|dec2|-0.25|‎-0.25
+ur|dec3|3.14159|3.142
+ur|dec1|1000000.1|1,000,000.1
+ur|dec0|42|42
+ur|date_short|2026-01-05 09:07:03|5/1/26
+ur|datetime_short|2026-01-05 09:07:03|5/1/26، 9:07 AM
+ur|date_medium|2026-01-05 09:07:03|5 جنوری، 2026
+ur|datetime_medium|2026-01-05 09:07:03|5 جنوری، 2026، 9:07 AM
+ur|date_long|2026-01-05 09:07:03|5 جنوری، 2026
+ur|datetime_long|2026-01-05 09:07:03|5 جنوری، 2026 کو 9:07 AM
+ur|time_short|2026-01-05 09:07:03|9:07 AM
+ur|time_medium|2026-01-05 09:07:03|9:07:03 AM
+ur|date_short|2026-11-23 14:45:59|23/11/26
+ur|datetime_short|2026-11-23 14:45:59|23/11/26، 2:45 PM
+ur|date_medium|2026-11-23 14:45:59|23 نومبر، 2026
+ur|datetime_medium|2026-11-23 14:45:59|23 نومبر، 2026، 2:45 PM
+ur|date_long|2026-11-23 14:45:59|23 نومبر، 2026
+ur|datetime_long|2026-11-23 14:45:59|23 نومبر، 2026 کو 2:45 PM
+ur|time_short|2026-11-23 14:45:59|2:45 PM
+ur|time_medium|2026-11-23 14:45:59|2:45:59 PM
+ur|date_short|1999-12-31 00:30:00|31/12/99
+ur|datetime_short|1999-12-31 00:30:00|31/12/99، 12:30 AM
+ur|date_medium|1999-12-31 00:30:00|31 دسمبر، 1999
+ur|datetime_medium|1999-12-31 00:30:00|31 دسمبر، 1999، 12:30 AM
+ur|date_long|1999-12-31 00:30:00|31 دسمبر، 1999
+ur|datetime_long|1999-12-31 00:30:00|31 دسمبر، 1999 کو 12:30 AM
+ur|time_short|1999-12-31 00:30:00|12:30 AM
+ur|time_medium|1999-12-31 00:30:00|12:30:00 AM
+sw|int|0|0
+sw|int|7|7
+sw|int|1000|1,000
+sw|int|12345|12,345
+sw|int|-1234567|-1,234,567
+sw|int|1000000|1,000,000
+sw|dec2|1234.5678|1,234.57
+sw|dec2|-0.25|-0.25
+sw|dec3|3.14159|3.142
+sw|dec1|1000000.1|1,000,000.1
+sw|dec0|42|42
+sw|date_short|2026-01-05 09:07:03|05/01/2026
+sw|datetime_short|2026-01-05 09:07:03|05/01/2026, 09:07
+sw|date_medium|2026-01-05 09:07:03|5 Jan 2026
+sw|datetime_medium|2026-01-05 09:07:03|5 Jan 2026, 09:07
+sw|date_long|2026-01-05 09:07:03|5 Januari 2026
+sw|datetime_long|2026-01-05 09:07:03|5 Januari 2026, 09:07
+sw|time_short|2026-01-05 09:07:03|09:07
+sw|time_medium|2026-01-05 09:07:03|09:07:03
+sw|date_short|2026-11-23 14:45:59|23/11/2026
+sw|datetime_short|2026-11-23 14:45:59|23/11/2026, 14:45
+sw|date_medium|2026-11-23 14:45:59|23 Nov 2026
+sw|datetime_medium|2026-11-23 14:45:59|23 Nov 2026, 14:45
+sw|date_long|2026-11-23 14:45:59|23 Novemba 2026
+sw|datetime_long|2026-11-23 14:45:59|23 Novemba 2026, 14:45
+sw|time_short|2026-11-23 14:45:59|14:45
+sw|time_medium|2026-11-23 14:45:59|14:45:59
+sw|date_short|1999-12-31 00:30:00|31/12/1999
+sw|datetime_short|1999-12-31 00:30:00|31/12/1999, 00:30
+sw|date_medium|1999-12-31 00:30:00|31 Des 1999
+sw|datetime_medium|1999-12-31 00:30:00|31 Des 1999, 00:30
+sw|date_long|1999-12-31 00:30:00|31 Desemba 1999
+sw|datetime_long|1999-12-31 00:30:00|31 Desemba 1999, 00:30
+sw|time_short|1999-12-31 00:30:00|00:30
+sw|time_medium|1999-12-31 00:30:00|00:30:00
+fr|int|0|0
+fr|int|7|7
+fr|int|1000|1 000
+fr|int|12345|12 345
+fr|int|-1234567|-1 234 567
+fr|int|1000000|1 000 000
+fr|dec2|1234.5678|1 234,57
+fr|dec2|-0.25|-0,25
+fr|dec3|3.14159|3,142
+fr|dec1|1000000.1|1 000 000,1
+fr|dec0|42|42
+fr|date_short|2026-01-05 09:07:03|05/01/2026
+fr|datetime_short|2026-01-05 09:07:03|05/01/2026 09:07
+fr|date_medium|2026-01-05 09:07:03|5 janv. 2026
+fr|datetime_medium|2026-01-05 09:07:03|5 janv. 2026, 09:07
+fr|date_long|2026-01-05 09:07:03|5 janvier 2026
+fr|datetime_long|2026-01-05 09:07:03|5 janvier 2026 à 09:07
+fr|time_short|2026-01-05 09:07:03|09:07
+fr|time_medium|2026-01-05 09:07:03|09:07:03
+fr|date_short|2026-11-23 14:45:59|23/11/2026
+fr|datetime_short|2026-11-23 14:45:59|23/11/2026 14:45
+fr|date_medium|2026-11-23 14:45:59|23 nov. 2026
+fr|datetime_medium|2026-11-23 14:45:59|23 nov. 2026, 14:45
+fr|date_long|2026-11-23 14:45:59|23 novembre 2026
+fr|datetime_long|2026-11-23 14:45:59|23 novembre 2026 à 14:45
+fr|time_short|2026-11-23 14:45:59|14:45
+fr|time_medium|2026-11-23 14:45:59|14:45:59
+fr|date_short|1999-12-31 00:30:00|31/12/1999
+fr|datetime_short|1999-12-31 00:30:00|31/12/1999 00:30
+fr|date_medium|1999-12-31 00:30:00|31 déc. 1999
+fr|datetime_medium|1999-12-31 00:30:00|31 déc. 1999, 00:30
+fr|date_long|1999-12-31 00:30:00|31 décembre 1999
+fr|datetime_long|1999-12-31 00:30:00|31 décembre 1999 à 00:30
+fr|time_short|1999-12-31 00:30:00|00:30
+fr|time_medium|1999-12-31 00:30:00|00:30:00
+fr-CA|int|0|0
+fr-CA|int|7|7
+fr-CA|int|1000|1 000
+fr-CA|int|12345|12 345
+fr-CA|int|-1234567|-1 234 567
+fr-CA|int|1000000|1 000 000
+fr-CA|dec2|1234.5678|1 234,57
+fr-CA|dec2|-0.25|-0,25
+fr-CA|dec3|3.14159|3,142
+fr-CA|dec1|1000000.1|1 000 000,1
+fr-CA|dec0|42|42
+fr-CA|date_short|2026-01-05 09:07:03|2026-01-05
+fr-CA|datetime_short|2026-01-05 09:07:03|2026-01-05 09 h 07
+fr-CA|date_medium|2026-01-05 09:07:03|5 janv. 2026
+fr-CA|datetime_medium|2026-01-05 09:07:03|5 janv. 2026, 09 h 07
+fr-CA|date_long|2026-01-05 09:07:03|5 janvier 2026
+fr-CA|datetime_long|2026-01-05 09:07:03|5 janvier 2026 à 09 h 07
+fr-CA|time_short|2026-01-05 09:07:03|09 h 07
+fr-CA|time_medium|2026-01-05 09:07:03|09 h 07 min 03 s
+fr-CA|date_short|2026-11-23 14:45:59|2026-11-23
+fr-CA|datetime_short|2026-11-23 14:45:59|2026-11-23 14 h 45
+fr-CA|date_medium|2026-11-23 14:45:59|23 nov. 2026
+fr-CA|datetime_medium|2026-11-23 14:45:59|23 nov. 2026, 14 h 45
+fr-CA|date_long|2026-11-23 14:45:59|23 novembre 2026
+fr-CA|datetime_long|2026-11-23 14:45:59|23 novembre 2026 à 14 h 45
+fr-CA|time_short|2026-11-23 14:45:59|14 h 45
+fr-CA|time_medium|2026-11-23 14:45:59|14 h 45 min 59 s
+fr-CA|date_short|1999-12-31 00:30:00|1999-12-31
+fr-CA|datetime_short|1999-12-31 00:30:00|1999-12-31 00 h 30
+fr-CA|date_medium|1999-12-31 00:30:00|31 déc. 1999
+fr-CA|datetime_medium|1999-12-31 00:30:00|31 déc. 1999, 00 h 30
+fr-CA|date_long|1999-12-31 00:30:00|31 décembre 1999
+fr-CA|datetime_long|1999-12-31 00:30:00|31 décembre 1999 à 00 h 30
+fr-CA|time_short|1999-12-31 00:30:00|00 h 30
+fr-CA|time_medium|1999-12-31 00:30:00|00 h 30 min 00 s
+fr-CH|int|0|0
+fr-CH|int|7|7
+fr-CH|int|1000|1'000
+fr-CH|int|12345|12'345
+fr-CH|int|-1234567|-1'234'567
+fr-CH|int|1000000|1'000'000
+fr-CH|dec2|1234.5678|1'234,57
+fr-CH|dec2|-0.25|-0,25
+fr-CH|dec3|3.14159|3,142
+fr-CH|dec1|1000000.1|1'000'000,1
+fr-CH|dec0|42|42
+fr-CH|date_short|2026-01-05 09:07:03|05.01.26
+fr-CH|datetime_short|2026-01-05 09:07:03|05.01.26 09:07
+fr-CH|date_medium|2026-01-05 09:07:03|5 janv. 2026
+fr-CH|datetime_medium|2026-01-05 09:07:03|5 janv. 2026, 09:07
+fr-CH|date_long|2026-01-05 09:07:03|5 janvier 2026
+fr-CH|datetime_long|2026-01-05 09:07:03|5 janvier 2026 à 09:07
+fr-CH|time_short|2026-01-05 09:07:03|09:07
+fr-CH|time_medium|2026-01-05 09:07:03|09:07:03
+fr-CH|date_short|2026-11-23 14:45:59|23.11.26
+fr-CH|datetime_short|2026-11-23 14:45:59|23.11.26 14:45
+fr-CH|date_medium|2026-11-23 14:45:59|23 nov. 2026
+fr-CH|datetime_medium|2026-11-23 14:45:59|23 nov. 2026, 14:45
+fr-CH|date_long|2026-11-23 14:45:59|23 novembre 2026
+fr-CH|datetime_long|2026-11-23 14:45:59|23 novembre 2026 à 14:45
+fr-CH|time_short|2026-11-23 14:45:59|14:45
+fr-CH|time_medium|2026-11-23 14:45:59|14:45:59
+fr-CH|date_short|1999-12-31 00:30:00|31.12.99
+fr-CH|datetime_short|1999-12-31 00:30:00|31.12.99 00:30
+fr-CH|date_medium|1999-12-31 00:30:00|31 déc. 1999
+fr-CH|datetime_medium|1999-12-31 00:30:00|31 déc. 1999, 00:30
+fr-CH|date_long|1999-12-31 00:30:00|31 décembre 1999
+fr-CH|datetime_long|1999-12-31 00:30:00|31 décembre 1999 à 00:30
+fr-CH|time_short|1999-12-31 00:30:00|00:30
+fr-CH|time_medium|1999-12-31 00:30:00|00:30:00
+pt|int|0|0
+pt|int|7|7
+pt|int|1000|1.000
+pt|int|12345|12.345
+pt|int|-1234567|-1.234.567
+pt|int|1000000|1.000.000
+pt|dec2|1234.5678|1.234,57
+pt|dec2|-0.25|-0,25
+pt|dec3|3.14159|3,142
+pt|dec1|1000000.1|1.000.000,1
+pt|dec0|42|42
+pt|date_short|2026-01-05 09:07:03|05/01/2026
+pt|datetime_short|2026-01-05 09:07:03|05/01/2026, 09:07
+pt|date_medium|2026-01-05 09:07:03|5 de jan. de 2026
+pt|datetime_medium|2026-01-05 09:07:03|5 de jan. de 2026, 09:07
+pt|date_long|2026-01-05 09:07:03|5 de janeiro de 2026
+pt|datetime_long|2026-01-05 09:07:03|5 de janeiro de 2026 às 09:07
+pt|time_short|2026-01-05 09:07:03|09:07
+pt|time_medium|2026-01-05 09:07:03|09:07:03
+pt|date_short|2026-11-23 14:45:59|23/11/2026
+pt|datetime_short|2026-11-23 14:45:59|23/11/2026, 14:45
+pt|date_medium|2026-11-23 14:45:59|23 de nov. de 2026
+pt|datetime_medium|2026-11-23 14:45:59|23 de nov. de 2026, 14:45
+pt|date_long|2026-11-23 14:45:59|23 de novembro de 2026
+pt|datetime_long|2026-11-23 14:45:59|23 de novembro de 2026 às 14:45
+pt|time_short|2026-11-23 14:45:59|14:45
+pt|time_medium|2026-11-23 14:45:59|14:45:59
+pt|date_short|1999-12-31 00:30:00|31/12/1999
+pt|datetime_short|1999-12-31 00:30:00|31/12/1999, 00:30
+pt|date_medium|1999-12-31 00:30:00|31 de dez. de 1999
+pt|datetime_medium|1999-12-31 00:30:00|31 de dez. de 1999, 00:30
+pt|date_long|1999-12-31 00:30:00|31 de dezembro de 1999
+pt|datetime_long|1999-12-31 00:30:00|31 de dezembro de 1999 às 00:30
+pt|time_short|1999-12-31 00:30:00|00:30
+pt|time_medium|1999-12-31 00:30:00|00:30:00
+pt-PT|int|0|0
+pt-PT|int|7|7
+pt-PT|int|1000|1000
+pt-PT|int|12345|12 345
+pt-PT|int|-1234567|-1 234 567
+pt-PT|int|1000000|1 000 000
+pt-PT|dec2|1234.5678|1234,57
+pt-PT|dec2|-0.25|-0,25
+pt-PT|dec3|3.14159|3,142
+pt-PT|dec1|1000000.1|1 000 000,1
+pt-PT|dec0|42|42
+pt-PT|date_short|2026-01-05 09:07:03|05/01/26
+pt-PT|datetime_short|2026-01-05 09:07:03|05/01/26, 09:07
+pt-PT|date_medium|2026-01-05 09:07:03|05/01/2026
+pt-PT|datetime_medium|2026-01-05 09:07:03|05/01/2026, 09:07
+pt-PT|date_long|2026-01-05 09:07:03|5 de janeiro de 2026
+pt-PT|datetime_long|2026-01-05 09:07:03|5 de janeiro de 2026 às 09:07
+pt-PT|time_short|2026-01-05 09:07:03|09:07
+pt-PT|time_medium|2026-01-05 09:07:03|09:07:03
+pt-PT|date_short|2026-11-23 14:45:59|23/11/26
+pt-PT|datetime_short|2026-11-23 14:45:59|23/11/26, 14:45
+pt-PT|date_medium|2026-11-23 14:45:59|23/11/2026
+pt-PT|datetime_medium|2026-11-23 14:45:59|23/11/2026, 14:45
+pt-PT|date_long|2026-11-23 14:45:59|23 de novembro de 2026
+pt-PT|datetime_long|2026-11-23 14:45:59|23 de novembro de 2026 às 14:45
+pt-PT|time_short|2026-11-23 14:45:59|14:45
+pt-PT|time_medium|2026-11-23 14:45:59|14:45:59
+pt-PT|date_short|1999-12-31 00:30:00|31/12/99
+pt-PT|datetime_short|1999-12-31 00:30:00|31/12/99, 00:30
+pt-PT|date_medium|1999-12-31 00:30:00|31/12/1999
+pt-PT|datetime_medium|1999-12-31 00:30:00|31/12/1999, 00:30
+pt-PT|date_long|1999-12-31 00:30:00|31 de dezembro de 1999
+pt-PT|datetime_long|1999-12-31 00:30:00|31 de dezembro de 1999 às 00:30
+pt-PT|time_short|1999-12-31 00:30:00|00:30
+pt-PT|time_medium|1999-12-31 00:30:00|00:30:00
+es|int|0|0
+es|int|7|7
+es|int|1000|1000
+es|int|12345|12.345
+es|int|-1234567|-1.234.567
+es|int|1000000|1.000.000
+es|dec2|1234.5678|1234,57
+es|dec2|-0.25|-0,25
+es|dec3|3.14159|3,142
+es|dec1|1000000.1|1.000.000,1
+es|dec0|42|42
+es|date_short|2026-01-05 09:07:03|5/1/26
+es|datetime_short|2026-01-05 09:07:03|5/1/26, 9:07
+es|date_medium|2026-01-05 09:07:03|5 ene 2026
+es|datetime_medium|2026-01-05 09:07:03|5 ene 2026, 9:07
+es|date_long|2026-01-05 09:07:03|5 de enero de 2026
+es|datetime_long|2026-01-05 09:07:03|5 de enero de 2026 a las 9:07
+es|time_short|2026-01-05 09:07:03|9:07
+es|time_medium|2026-01-05 09:07:03|9:07:03
+es|date_short|2026-11-23 14:45:59|23/11/26
+es|datetime_short|2026-11-23 14:45:59|23/11/26, 14:45
+es|date_medium|2026-11-23 14:45:59|23 nov 2026
+es|datetime_medium|2026-11-23 14:45:59|23 nov 2026, 14:45
+es|date_long|2026-11-23 14:45:59|23 de noviembre de 2026
+es|datetime_long|2026-11-23 14:45:59|23 de noviembre de 2026 a las 14:45
+es|time_short|2026-11-23 14:45:59|14:45
+es|time_medium|2026-11-23 14:45:59|14:45:59
+es|date_short|1999-12-31 00:30:00|31/12/99
+es|datetime_short|1999-12-31 00:30:00|31/12/99, 0:30
+es|date_medium|1999-12-31 00:30:00|31 dic 1999
+es|datetime_medium|1999-12-31 00:30:00|31 dic 1999, 0:30
+es|date_long|1999-12-31 00:30:00|31 de diciembre de 1999
+es|datetime_long|1999-12-31 00:30:00|31 de diciembre de 1999 a las 0:30
+es|time_short|1999-12-31 00:30:00|0:30
+es|time_medium|1999-12-31 00:30:00|0:30:00
+es-MX|int|0|0
+es-MX|int|7|7
+es-MX|int|1000|1,000
+es-MX|int|12345|12,345
+es-MX|int|-1234567|-1,234,567
+es-MX|int|1000000|1,000,000
+es-MX|dec2|1234.5678|1,234.57
+es-MX|dec2|-0.25|-0.25
+es-MX|dec3|3.14159|3.142
+es-MX|dec1|1000000.1|1,000,000.1
+es-MX|dec0|42|42
+es-MX|date_short|2026-01-05 09:07:03|05/01/26
+es-MX|datetime_short|2026-01-05 09:07:03|05/01/26, 9:07 a.m.
+es-MX|date_medium|2026-01-05 09:07:03|5 ene 2026
+es-MX|datetime_medium|2026-01-05 09:07:03|5 ene 2026, 9:07 a.m.
+es-MX|date_long|2026-01-05 09:07:03|5 de enero de 2026
+es-MX|datetime_long|2026-01-05 09:07:03|5 de enero de 2026 a las 9:07 a.m.
+es-MX|time_short|2026-01-05 09:07:03|9:07 a.m.
+es-MX|time_medium|2026-01-05 09:07:03|9:07:03 a.m.
+es-MX|date_short|2026-11-23 14:45:59|23/11/26
+es-MX|datetime_short|2026-11-23 14:45:59|23/11/26, 2:45 p.m.
+es-MX|date_medium|2026-11-23 14:45:59|23 nov 2026
+es-MX|datetime_medium|2026-11-23 14:45:59|23 nov 2026, 2:45 p.m.
+es-MX|date_long|2026-11-23 14:45:59|23 de noviembre de 2026
+es-MX|datetime_long|2026-11-23 14:45:59|23 de noviembre de 2026 a las 2:45 p.m.
+es-MX|time_short|2026-11-23 14:45:59|2:45 p.m.
+es-MX|time_medium|2026-11-23 14:45:59|2:45:59 p.m.
+es-MX|date_short|1999-12-31 00:30:00|31/12/99
+es-MX|datetime_short|1999-12-31 00:30:00|31/12/99, 12:30 a.m.
+es-MX|date_medium|1999-12-31 00:30:00|31 dic 1999
+es-MX|datetime_medium|1999-12-31 00:30:00|31 dic 1999, 12:30 a.m.
+es-MX|date_long|1999-12-31 00:30:00|31 de diciembre de 1999
+es-MX|datetime_long|1999-12-31 00:30:00|31 de diciembre de 1999 a las 12:30 a.m.
+es-MX|time_short|1999-12-31 00:30:00|12:30 a.m.
+es-MX|time_medium|1999-12-31 00:30:00|12:30:00 a.m.
+it|int|0|0
+it|int|7|7
+it|int|1000|1000
+it|int|12345|12.345
+it|int|-1234567|-1.234.567
+it|int|1000000|1.000.000
+it|dec2|1234.5678|1234,57
+it|dec2|-0.25|-0,25
+it|dec3|3.14159|3,142
+it|dec1|1000000.1|1.000.000,1
+it|dec0|42|42
+it|date_short|2026-01-05 09:07:03|05/01/26
+it|datetime_short|2026-01-05 09:07:03|05/01/26, 09:07
+it|date_medium|2026-01-05 09:07:03|5 gen 2026
+it|datetime_medium|2026-01-05 09:07:03|5 gen 2026, 09:07
+it|date_long|2026-01-05 09:07:03|5 gennaio 2026
+it|datetime_long|2026-01-05 09:07:03|5 gennaio 2026 alle ore 09:07
+it|time_short|2026-01-05 09:07:03|09:07
+it|time_medium|2026-01-05 09:07:03|09:07:03
+it|date_short|2026-11-23 14:45:59|23/11/26
+it|datetime_short|2026-11-23 14:45:59|23/11/26, 14:45
+it|date_medium|2026-11-23 14:45:59|23 nov 2026
+it|datetime_medium|2026-11-23 14:45:59|23 nov 2026, 14:45
+it|date_long|2026-11-23 14:45:59|23 novembre 2026
+it|datetime_long|2026-11-23 14:45:59|23 novembre 2026 alle ore 14:45
+it|time_short|2026-11-23 14:45:59|14:45
+it|time_medium|2026-11-23 14:45:59|14:45:59
+it|date_short|1999-12-31 00:30:00|31/12/99
+it|datetime_short|1999-12-31 00:30:00|31/12/99, 00:30
+it|date_medium|1999-12-31 00:30:00|31 dic 1999
+it|datetime_medium|1999-12-31 00:30:00|31 dic 1999, 00:30
+it|date_long|1999-12-31 00:30:00|31 dicembre 1999
+it|datetime_long|1999-12-31 00:30:00|31 dicembre 1999 alle ore 00:30
+it|time_short|1999-12-31 00:30:00|00:30
+it|time_medium|1999-12-31 00:30:00|00:30:00
+ca|int|0|0
+ca|int|7|7
+ca|int|1000|1.000
+ca|int|12345|12.345
+ca|int|-1234567|-1.234.567
+ca|int|1000000|1.000.000
+ca|dec2|1234.5678|1.234,57
+ca|dec2|-0.25|-0,25
+ca|dec3|3.14159|3,142
+ca|dec1|1000000.1|1.000.000,1
+ca|dec0|42|42
+ca|date_short|2026-01-05 09:07:03|5/1/26
+ca|datetime_short|2026-01-05 09:07:03|5/1/26 9:07
+ca|date_medium|2026-01-05 09:07:03|5 de gen. 2026
+ca|datetime_medium|2026-01-05 09:07:03|5 de gen. 2026, 9:07
+ca|date_long|2026-01-05 09:07:03|5 de gener del 2026
+ca|datetime_long|2026-01-05 09:07:03|5 de gener del 2026, a les 9:07
+ca|time_short|2026-01-05 09:07:03|9:07
+ca|time_medium|2026-01-05 09:07:03|9:07:03
+ca|date_short|2026-11-23 14:45:59|23/11/26
+ca|datetime_short|2026-11-23 14:45:59|23/11/26 14:45
+ca|date_medium|2026-11-23 14:45:59|23 de nov. 2026
+ca|datetime_medium|2026-11-23 14:45:59|23 de nov. 2026, 14:45
+ca|date_long|2026-11-23 14:45:59|23 de novembre del 2026
+ca|datetime_long|2026-11-23 14:45:59|23 de novembre del 2026, a les 14:45
+ca|time_short|2026-11-23 14:45:59|14:45
+ca|time_medium|2026-11-23 14:45:59|14:45:59
+ca|date_short|1999-12-31 00:30:00|31/12/99
+ca|datetime_short|1999-12-31 00:30:00|31/12/99 0:30
+ca|date_medium|1999-12-31 00:30:00|31 de des. 1999
+ca|datetime_medium|1999-12-31 00:30:00|31 de des. 1999, 0:30
+ca|date_long|1999-12-31 00:30:00|31 de desembre del 1999
+ca|datetime_long|1999-12-31 00:30:00|31 de desembre del 1999, a les 0:30
+ca|time_short|1999-12-31 00:30:00|0:30
+ca|time_medium|1999-12-31 00:30:00|0:30:00
+pl|int|0|0
+pl|int|7|7
+pl|int|1000|1000
+pl|int|12345|12 345
+pl|int|-1234567|-1 234 567
+pl|int|1000000|1 000 000
+pl|dec2|1234.5678|1234,57
+pl|dec2|-0.25|-0,25
+pl|dec3|3.14159|3,142
+pl|dec1|1000000.1|1 000 000,1
+pl|dec0|42|42
+pl|date_short|2026-01-05 09:07:03|5.01.2026
+pl|datetime_short|2026-01-05 09:07:03|5.01.2026, 09:07
+pl|date_medium|2026-01-05 09:07:03|5 sty 2026
+pl|datetime_medium|2026-01-05 09:07:03|5 sty 2026, 09:07
+pl|date_long|2026-01-05 09:07:03|5 stycznia 2026
+pl|datetime_long|2026-01-05 09:07:03|5 stycznia 2026 09:07
+pl|time_short|2026-01-05 09:07:03|09:07
+pl|time_medium|2026-01-05 09:07:03|09:07:03
+pl|date_short|2026-11-23 14:45:59|23.11.2026
+pl|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+pl|date_medium|2026-11-23 14:45:59|23 lis 2026
+pl|datetime_medium|2026-11-23 14:45:59|23 lis 2026, 14:45
+pl|date_long|2026-11-23 14:45:59|23 listopada 2026
+pl|datetime_long|2026-11-23 14:45:59|23 listopada 2026 14:45
+pl|time_short|2026-11-23 14:45:59|14:45
+pl|time_medium|2026-11-23 14:45:59|14:45:59
+pl|date_short|1999-12-31 00:30:00|31.12.1999
+pl|datetime_short|1999-12-31 00:30:00|31.12.1999, 00:30
+pl|date_medium|1999-12-31 00:30:00|31 gru 1999
+pl|datetime_medium|1999-12-31 00:30:00|31 gru 1999, 00:30
+pl|date_long|1999-12-31 00:30:00|31 grudnia 1999
+pl|datetime_long|1999-12-31 00:30:00|31 grudnia 1999 00:30
+pl|time_short|1999-12-31 00:30:00|00:30
+pl|time_medium|1999-12-31 00:30:00|00:30:00
+ru|int|0|0
+ru|int|7|7
+ru|int|1000|1 000
+ru|int|12345|12 345
+ru|int|-1234567|-1 234 567
+ru|int|1000000|1 000 000
+ru|dec2|1234.5678|1 234,57
+ru|dec2|-0.25|-0,25
+ru|dec3|3.14159|3,142
+ru|dec1|1000000.1|1 000 000,1
+ru|dec0|42|42
+ru|date_short|2026-01-05 09:07:03|05.01.2026
+ru|datetime_short|2026-01-05 09:07:03|05.01.2026, 09:07
+ru|date_medium|2026-01-05 09:07:03|5 янв. 2026 г.
+ru|datetime_medium|2026-01-05 09:07:03|5 янв. 2026 г., 09:07
+ru|date_long|2026-01-05 09:07:03|5 января 2026 г.
+ru|datetime_long|2026-01-05 09:07:03|5 января 2026 г. в 09:07
+ru|time_short|2026-01-05 09:07:03|09:07
+ru|time_medium|2026-01-05 09:07:03|09:07:03
+ru|date_short|2026-11-23 14:45:59|23.11.2026
+ru|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+ru|date_medium|2026-11-23 14:45:59|23 нояб. 2026 г.
+ru|datetime_medium|2026-11-23 14:45:59|23 нояб. 2026 г., 14:45
+ru|date_long|2026-11-23 14:45:59|23 ноября 2026 г.
+ru|datetime_long|2026-11-23 14:45:59|23 ноября 2026 г. в 14:45
+ru|time_short|2026-11-23 14:45:59|14:45
+ru|time_medium|2026-11-23 14:45:59|14:45:59
+ru|date_short|1999-12-31 00:30:00|31.12.1999
+ru|datetime_short|1999-12-31 00:30:00|31.12.1999, 00:30
+ru|date_medium|1999-12-31 00:30:00|31 дек. 1999 г.
+ru|datetime_medium|1999-12-31 00:30:00|31 дек. 1999 г., 00:30
+ru|date_long|1999-12-31 00:30:00|31 декабря 1999 г.
+ru|datetime_long|1999-12-31 00:30:00|31 декабря 1999 г. в 00:30
+ru|time_short|1999-12-31 00:30:00|00:30
+ru|time_medium|1999-12-31 00:30:00|00:30:00
+uk|int|0|0
+uk|int|7|7
+uk|int|1000|1 000
+uk|int|12345|12 345
+uk|int|-1234567|-1 234 567
+uk|int|1000000|1 000 000
+uk|dec2|1234.5678|1 234,57
+uk|dec2|-0.25|-0,25
+uk|dec3|3.14159|3,142
+uk|dec1|1000000.1|1 000 000,1
+uk|dec0|42|42
+uk|date_short|2026-01-05 09:07:03|05.01.26
+uk|datetime_short|2026-01-05 09:07:03|05.01.26, 09:07
+uk|date_medium|2026-01-05 09:07:03|5 січ. 2026 р.
+uk|datetime_medium|2026-01-05 09:07:03|5 січ. 2026 р., 09:07
+uk|date_long|2026-01-05 09:07:03|5 січня 2026 р.
+uk|datetime_long|2026-01-05 09:07:03|5 січня 2026 р. о 09:07
+uk|time_short|2026-01-05 09:07:03|09:07
+uk|time_medium|2026-01-05 09:07:03|09:07:03
+uk|date_short|2026-11-23 14:45:59|23.11.26
+uk|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+uk|date_medium|2026-11-23 14:45:59|23 лист. 2026 р.
+uk|datetime_medium|2026-11-23 14:45:59|23 лист. 2026 р., 14:45
+uk|date_long|2026-11-23 14:45:59|23 листопада 2026 р.
+uk|datetime_long|2026-11-23 14:45:59|23 листопада 2026 р. о 14:45
+uk|time_short|2026-11-23 14:45:59|14:45
+uk|time_medium|2026-11-23 14:45:59|14:45:59
+uk|date_short|1999-12-31 00:30:00|31.12.99
+uk|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+uk|date_medium|1999-12-31 00:30:00|31 груд. 1999 р.
+uk|datetime_medium|1999-12-31 00:30:00|31 груд. 1999 р., 00:30
+uk|date_long|1999-12-31 00:30:00|31 грудня 1999 р.
+uk|datetime_long|1999-12-31 00:30:00|31 грудня 1999 р. о 00:30
+uk|time_short|1999-12-31 00:30:00|00:30
+uk|time_medium|1999-12-31 00:30:00|00:30:00
+be|int|0|0
+be|int|7|7
+be|int|1000|1000
+be|int|12345|12 345
+be|int|-1234567|-1 234 567
+be|int|1000000|1 000 000
+be|dec2|1234.5678|1234,57
+be|dec2|-0.25|-0,25
+be|dec3|3.14159|3,142
+be|dec1|1000000.1|1 000 000,1
+be|dec0|42|42
+be|date_short|2026-01-05 09:07:03|5.01.26
+be|datetime_short|2026-01-05 09:07:03|5.01.26, 09:07
+be|date_medium|2026-01-05 09:07:03|5 сту 2026 г.
+be|datetime_medium|2026-01-05 09:07:03|5 сту 2026 г., 09:07
+be|date_long|2026-01-05 09:07:03|5 студзеня 2026 г.
+be|datetime_long|2026-01-05 09:07:03|5 студзеня 2026 г. у 09:07
+be|time_short|2026-01-05 09:07:03|09:07
+be|time_medium|2026-01-05 09:07:03|09:07:03
+be|date_short|2026-11-23 14:45:59|23.11.26
+be|datetime_short|2026-11-23 14:45:59|23.11.26, 14:45
+be|date_medium|2026-11-23 14:45:59|23 ліс 2026 г.
+be|datetime_medium|2026-11-23 14:45:59|23 ліс 2026 г., 14:45
+be|date_long|2026-11-23 14:45:59|23 лістапада 2026 г.
+be|datetime_long|2026-11-23 14:45:59|23 лістапада 2026 г. у 14:45
+be|time_short|2026-11-23 14:45:59|14:45
+be|time_medium|2026-11-23 14:45:59|14:45:59
+be|date_short|1999-12-31 00:30:00|31.12.99
+be|datetime_short|1999-12-31 00:30:00|31.12.99, 00:30
+be|date_medium|1999-12-31 00:30:00|31 сне 1999 г.
+be|datetime_medium|1999-12-31 00:30:00|31 сне 1999 г., 00:30
+be|date_long|1999-12-31 00:30:00|31 снежня 1999 г.
+be|datetime_long|1999-12-31 00:30:00|31 снежня 1999 г. у 00:30
+be|time_short|1999-12-31 00:30:00|00:30
+be|time_medium|1999-12-31 00:30:00|00:30:00
+cs|int|0|0
+cs|int|7|7
+cs|int|1000|1 000
+cs|int|12345|12 345
+cs|int|-1234567|-1 234 567
+cs|int|1000000|1 000 000
+cs|dec2|1234.5678|1 234,57
+cs|dec2|-0.25|-0,25
+cs|dec3|3.14159|3,142
+cs|dec1|1000000.1|1 000 000,1
+cs|dec0|42|42
+cs|date_short|2026-01-05 09:07:03|05.01.26
+cs|datetime_short|2026-01-05 09:07:03|05.01.26 9:07
+cs|date_medium|2026-01-05 09:07:03|5. 1. 2026
+cs|datetime_medium|2026-01-05 09:07:03|5. 1. 2026 9:07
+cs|date_long|2026-01-05 09:07:03|5. ledna 2026
+cs|datetime_long|2026-01-05 09:07:03|5. ledna 2026 v 9:07
+cs|time_short|2026-01-05 09:07:03|9:07
+cs|time_medium|2026-01-05 09:07:03|9:07:03
+cs|date_short|2026-11-23 14:45:59|23.11.26
+cs|datetime_short|2026-11-23 14:45:59|23.11.26 14:45
+cs|date_medium|2026-11-23 14:45:59|23. 11. 2026
+cs|datetime_medium|2026-11-23 14:45:59|23. 11. 2026 14:45
+cs|date_long|2026-11-23 14:45:59|23. listopadu 2026
+cs|datetime_long|2026-11-23 14:45:59|23. listopadu 2026 v 14:45
+cs|time_short|2026-11-23 14:45:59|14:45
+cs|time_medium|2026-11-23 14:45:59|14:45:59
+cs|date_short|1999-12-31 00:30:00|31.12.99
+cs|datetime_short|1999-12-31 00:30:00|31.12.99 0:30
+cs|date_medium|1999-12-31 00:30:00|31. 12. 1999
+cs|datetime_medium|1999-12-31 00:30:00|31. 12. 1999 0:30
+cs|date_long|1999-12-31 00:30:00|31. prosince 1999
+cs|datetime_long|1999-12-31 00:30:00|31. prosince 1999 v 0:30
+cs|time_short|1999-12-31 00:30:00|0:30
+cs|time_medium|1999-12-31 00:30:00|0:30:00
+sk|int|0|0
+sk|int|7|7
+sk|int|1000|1 000
+sk|int|12345|12 345
+sk|int|-1234567|-1 234 567
+sk|int|1000000|1 000 000
+sk|dec2|1234.5678|1 234,57
+sk|dec2|-0.25|-0,25
+sk|dec3|3.14159|3,142
+sk|dec1|1000000.1|1 000 000,1
+sk|dec0|42|42
+sk|date_short|2026-01-05 09:07:03|5. 1. 2026
+sk|datetime_short|2026-01-05 09:07:03|5. 1. 2026 9:07
+sk|date_medium|2026-01-05 09:07:03|5. 1. 2026
+sk|datetime_medium|2026-01-05 09:07:03|5. 1. 2026, 9:07
+sk|date_long|2026-01-05 09:07:03|5. januára 2026
+sk|datetime_long|2026-01-05 09:07:03|5. januára 2026 o 9:07
+sk|time_short|2026-01-05 09:07:03|9:07
+sk|time_medium|2026-01-05 09:07:03|9:07:03
+sk|date_short|2026-11-23 14:45:59|23. 11. 2026
+sk|datetime_short|2026-11-23 14:45:59|23. 11. 2026 14:45
+sk|date_medium|2026-11-23 14:45:59|23. 11. 2026
+sk|datetime_medium|2026-11-23 14:45:59|23. 11. 2026, 14:45
+sk|date_long|2026-11-23 14:45:59|23. novembra 2026
+sk|datetime_long|2026-11-23 14:45:59|23. novembra 2026 o 14:45
+sk|time_short|2026-11-23 14:45:59|14:45
+sk|time_medium|2026-11-23 14:45:59|14:45:59
+sk|date_short|1999-12-31 00:30:00|31. 12. 1999
+sk|datetime_short|1999-12-31 00:30:00|31. 12. 1999 0:30
+sk|date_medium|1999-12-31 00:30:00|31. 12. 1999
+sk|datetime_medium|1999-12-31 00:30:00|31. 12. 1999, 0:30
+sk|date_long|1999-12-31 00:30:00|31. decembra 1999
+sk|datetime_long|1999-12-31 00:30:00|31. decembra 1999 o 0:30
+sk|time_short|1999-12-31 00:30:00|0:30
+sk|time_medium|1999-12-31 00:30:00|0:30:00
+hr|int|0|0
+hr|int|7|7
+hr|int|1000|1.000
+hr|int|12345|12.345
+hr|int|-1234567|−1.234.567
+hr|int|1000000|1.000.000
+hr|dec2|1234.5678|1.234,57
+hr|dec2|-0.25|−0,25
+hr|dec3|3.14159|3,142
+hr|dec1|1000000.1|1.000.000,1
+hr|dec0|42|42
+hr|date_short|2026-01-05 09:07:03|05. 01. 2026.
+hr|datetime_short|2026-01-05 09:07:03|05. 01. 2026. 09:07
+hr|date_medium|2026-01-05 09:07:03|5. sij 2026.
+hr|datetime_medium|2026-01-05 09:07:03|5. sij 2026. 09:07
+hr|date_long|2026-01-05 09:07:03|5. siječnja 2026.
+hr|datetime_long|2026-01-05 09:07:03|5. siječnja 2026. u 09:07
+hr|time_short|2026-01-05 09:07:03|09:07
+hr|time_medium|2026-01-05 09:07:03|09:07:03
+hr|date_short|2026-11-23 14:45:59|23. 11. 2026.
+hr|datetime_short|2026-11-23 14:45:59|23. 11. 2026. 14:45
+hr|date_medium|2026-11-23 14:45:59|23. stu 2026.
+hr|datetime_medium|2026-11-23 14:45:59|23. stu 2026. 14:45
+hr|date_long|2026-11-23 14:45:59|23. studenoga 2026.
+hr|datetime_long|2026-11-23 14:45:59|23. studenoga 2026. u 14:45
+hr|time_short|2026-11-23 14:45:59|14:45
+hr|time_medium|2026-11-23 14:45:59|14:45:59
+hr|date_short|1999-12-31 00:30:00|31. 12. 1999.
+hr|datetime_short|1999-12-31 00:30:00|31. 12. 1999. 00:30
+hr|date_medium|1999-12-31 00:30:00|31. pro 1999.
+hr|datetime_medium|1999-12-31 00:30:00|31. pro 1999. 00:30
+hr|date_long|1999-12-31 00:30:00|31. prosinca 1999.
+hr|datetime_long|1999-12-31 00:30:00|31. prosinca 1999. u 00:30
+hr|time_short|1999-12-31 00:30:00|00:30
+hr|time_medium|1999-12-31 00:30:00|00:30:00
+sr|int|0|0
+sr|int|7|7
+sr|int|1000|1.000
+sr|int|12345|12.345
+sr|int|-1234567|-1.234.567
+sr|int|1000000|1.000.000
+sr|dec2|1234.5678|1.234,57
+sr|dec2|-0.25|-0,25
+sr|dec3|3.14159|3,142
+sr|dec1|1000000.1|1.000.000,1
+sr|dec0|42|42
+sr|date_short|2026-01-05 09:07:03|5. 1. 2026.
+sr|datetime_short|2026-01-05 09:07:03|5. 1. 2026. 09:07
+sr|date_medium|2026-01-05 09:07:03|5. 1. 2026.
+sr|datetime_medium|2026-01-05 09:07:03|5. 1. 2026. 09:07
+sr|date_long|2026-01-05 09:07:03|5. јануар 2026.
+sr|datetime_long|2026-01-05 09:07:03|5. јануар 2026. 09:07
+sr|time_short|2026-01-05 09:07:03|09:07
+sr|time_medium|2026-01-05 09:07:03|09:07:03
+sr|date_short|2026-11-23 14:45:59|23. 11. 2026.
+sr|datetime_short|2026-11-23 14:45:59|23. 11. 2026. 14:45
+sr|date_medium|2026-11-23 14:45:59|23. 11. 2026.
+sr|datetime_medium|2026-11-23 14:45:59|23. 11. 2026. 14:45
+sr|date_long|2026-11-23 14:45:59|23. новембар 2026.
+sr|datetime_long|2026-11-23 14:45:59|23. новембар 2026. 14:45
+sr|time_short|2026-11-23 14:45:59|14:45
+sr|time_medium|2026-11-23 14:45:59|14:45:59
+sr|date_short|1999-12-31 00:30:00|31. 12. 1999.
+sr|datetime_short|1999-12-31 00:30:00|31. 12. 1999. 00:30
+sr|date_medium|1999-12-31 00:30:00|31. 12. 1999.
+sr|datetime_medium|1999-12-31 00:30:00|31. 12. 1999. 00:30
+sr|date_long|1999-12-31 00:30:00|31. децембар 1999.
+sr|datetime_long|1999-12-31 00:30:00|31. децембар 1999. 00:30
+sr|time_short|1999-12-31 00:30:00|00:30
+sr|time_medium|1999-12-31 00:30:00|00:30:00
+bs|int|0|0
+bs|int|7|7
+bs|int|1000|1.000
+bs|int|12345|12.345
+bs|int|-1234567|-1.234.567
+bs|int|1000000|1.000.000
+bs|dec2|1234.5678|1.234,57
+bs|dec2|-0.25|-0,25
+bs|dec3|3.14159|3,142
+bs|dec1|1000000.1|1.000.000,1
+bs|dec0|42|42
+bs|date_short|2026-01-05 09:07:03|5. 1. 2026.
+bs|datetime_short|2026-01-05 09:07:03|5. 1. 2026. u 09:07
+bs|date_medium|2026-01-05 09:07:03|5. jan 2026.
+bs|datetime_medium|2026-01-05 09:07:03|5. jan 2026. u 09:07
+bs|date_long|2026-01-05 09:07:03|5. januar 2026.
+bs|datetime_long|2026-01-05 09:07:03|5. januar 2026. u 09:07
+bs|time_short|2026-01-05 09:07:03|09:07
+bs|time_medium|2026-01-05 09:07:03|09:07:03
+bs|date_short|2026-11-23 14:45:59|23. 11. 2026.
+bs|datetime_short|2026-11-23 14:45:59|23. 11. 2026. u 14:45
+bs|date_medium|2026-11-23 14:45:59|23. nov 2026.
+bs|datetime_medium|2026-11-23 14:45:59|23. nov 2026. u 14:45
+bs|date_long|2026-11-23 14:45:59|23. novembar 2026.
+bs|datetime_long|2026-11-23 14:45:59|23. novembar 2026. u 14:45
+bs|time_short|2026-11-23 14:45:59|14:45
+bs|time_medium|2026-11-23 14:45:59|14:45:59
+bs|date_short|1999-12-31 00:30:00|31. 12. 1999.
+bs|datetime_short|1999-12-31 00:30:00|31. 12. 1999. u 00:30
+bs|date_medium|1999-12-31 00:30:00|31. dec 1999.
+bs|datetime_medium|1999-12-31 00:30:00|31. dec 1999. u 00:30
+bs|date_long|1999-12-31 00:30:00|31. decembar 1999.
+bs|datetime_long|1999-12-31 00:30:00|31. decembar 1999. u 00:30
+bs|time_short|1999-12-31 00:30:00|00:30
+bs|time_medium|1999-12-31 00:30:00|00:30:00
+ro|int|0|0
+ro|int|7|7
+ro|int|1000|1.000
+ro|int|12345|12.345
+ro|int|-1234567|-1.234.567
+ro|int|1000000|1.000.000
+ro|dec2|1234.5678|1.234,57
+ro|dec2|-0.25|-0,25
+ro|dec3|3.14159|3,142
+ro|dec1|1000000.1|1.000.000,1
+ro|dec0|42|42
+ro|date_short|2026-01-05 09:07:03|05.01.2026
+ro|datetime_short|2026-01-05 09:07:03|05.01.2026, 09:07
+ro|date_medium|2026-01-05 09:07:03|5 ian. 2026
+ro|datetime_medium|2026-01-05 09:07:03|5 ian. 2026, 09:07
+ro|date_long|2026-01-05 09:07:03|5 ianuarie 2026
+ro|datetime_long|2026-01-05 09:07:03|5 ianuarie 2026 la 09:07
+ro|time_short|2026-01-05 09:07:03|09:07
+ro|time_medium|2026-01-05 09:07:03|09:07:03
+ro|date_short|2026-11-23 14:45:59|23.11.2026
+ro|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+ro|date_medium|2026-11-23 14:45:59|23 nov. 2026
+ro|datetime_medium|2026-11-23 14:45:59|23 nov. 2026, 14:45
+ro|date_long|2026-11-23 14:45:59|23 noiembrie 2026
+ro|datetime_long|2026-11-23 14:45:59|23 noiembrie 2026 la 14:45
+ro|time_short|2026-11-23 14:45:59|14:45
+ro|time_medium|2026-11-23 14:45:59|14:45:59
+ro|date_short|1999-12-31 00:30:00|31.12.1999
+ro|datetime_short|1999-12-31 00:30:00|31.12.1999, 00:30
+ro|date_medium|1999-12-31 00:30:00|31 dec. 1999
+ro|datetime_medium|1999-12-31 00:30:00|31 dec. 1999, 00:30
+ro|date_long|1999-12-31 00:30:00|31 decembrie 1999
+ro|datetime_long|1999-12-31 00:30:00|31 decembrie 1999 la 00:30
+ro|time_short|1999-12-31 00:30:00|00:30
+ro|time_medium|1999-12-31 00:30:00|00:30:00
+lt|int|0|0
+lt|int|7|7
+lt|int|1000|1 000
+lt|int|12345|12 345
+lt|int|-1234567|−1 234 567
+lt|int|1000000|1 000 000
+lt|dec2|1234.5678|1 234,57
+lt|dec2|-0.25|−0,25
+lt|dec3|3.14159|3,142
+lt|dec1|1000000.1|1 000 000,1
+lt|dec0|42|42
+lt|date_short|2026-01-05 09:07:03|2026-01-05
+lt|datetime_short|2026-01-05 09:07:03|2026-01-05 09:07
+lt|date_medium|2026-01-05 09:07:03|2026-01-05
+lt|datetime_medium|2026-01-05 09:07:03|2026-01-05 09:07
+lt|date_long|2026-01-05 09:07:03|2026 m. sausio 5 d.
+lt|datetime_long|2026-01-05 09:07:03|2026 m. sausio 5 d. 09:07
+lt|time_short|2026-01-05 09:07:03|09:07
+lt|time_medium|2026-01-05 09:07:03|09:07:03
+lt|date_short|2026-11-23 14:45:59|2026-11-23
+lt|datetime_short|2026-11-23 14:45:59|2026-11-23 14:45
+lt|date_medium|2026-11-23 14:45:59|2026-11-23
+lt|datetime_medium|2026-11-23 14:45:59|2026-11-23 14:45
+lt|date_long|2026-11-23 14:45:59|2026 m. lapkričio 23 d.
+lt|datetime_long|2026-11-23 14:45:59|2026 m. lapkričio 23 d. 14:45
+lt|time_short|2026-11-23 14:45:59|14:45
+lt|time_medium|2026-11-23 14:45:59|14:45:59
+lt|date_short|1999-12-31 00:30:00|1999-12-31
+lt|datetime_short|1999-12-31 00:30:00|1999-12-31 00:30
+lt|date_medium|1999-12-31 00:30:00|1999-12-31
+lt|datetime_medium|1999-12-31 00:30:00|1999-12-31 00:30
+lt|date_long|1999-12-31 00:30:00|1999 m. gruodžio 31 d.
+lt|datetime_long|1999-12-31 00:30:00|1999 m. gruodžio 31 d. 00:30
+lt|time_short|1999-12-31 00:30:00|00:30
+lt|time_medium|1999-12-31 00:30:00|00:30:00
+lv|int|0|0
+lv|int|7|7
+lv|int|1000|1000
+lv|int|12345|12 345
+lv|int|-1234567|-1 234 567
+lv|int|1000000|1 000 000
+lv|dec2|1234.5678|1234,57
+lv|dec2|-0.25|-0,25
+lv|dec3|3.14159|3,142
+lv|dec1|1000000.1|1 000 000,1
+lv|dec0|42|42
+lv|date_short|2026-01-05 09:07:03|05.01.26
+lv|datetime_short|2026-01-05 09:07:03|05.01.26 09:07
+lv|date_medium|2026-01-05 09:07:03|2026. gada 5. janv.
+lv|datetime_medium|2026-01-05 09:07:03|2026. gada 5. janv. 09:07
+lv|date_long|2026-01-05 09:07:03|2026. gada 5. janvāris
+lv|datetime_long|2026-01-05 09:07:03|2026. gada 5. janvāris 09:07
+lv|time_short|2026-01-05 09:07:03|09:07
+lv|time_medium|2026-01-05 09:07:03|09:07:03
+lv|date_short|2026-11-23 14:45:59|23.11.26
+lv|datetime_short|2026-11-23 14:45:59|23.11.26 14:45
+lv|date_medium|2026-11-23 14:45:59|2026. gada 23. nov.
+lv|datetime_medium|2026-11-23 14:45:59|2026. gada 23. nov. 14:45
+lv|date_long|2026-11-23 14:45:59|2026. gada 23. novembris
+lv|datetime_long|2026-11-23 14:45:59|2026. gada 23. novembris 14:45
+lv|time_short|2026-11-23 14:45:59|14:45
+lv|time_medium|2026-11-23 14:45:59|14:45:59
+lv|date_short|1999-12-31 00:30:00|31.12.99
+lv|datetime_short|1999-12-31 00:30:00|31.12.99 00:30
+lv|date_medium|1999-12-31 00:30:00|1999. gada 31. dec.
+lv|datetime_medium|1999-12-31 00:30:00|1999. gada 31. dec. 00:30
+lv|date_long|1999-12-31 00:30:00|1999. gada 31. decembris
+lv|datetime_long|1999-12-31 00:30:00|1999. gada 31. decembris 00:30
+lv|time_short|1999-12-31 00:30:00|00:30
+lv|time_medium|1999-12-31 00:30:00|00:30:00
+ar|int|0|0
+ar|int|7|7
+ar|int|1000|1,000
+ar|int|12345|12,345
+ar|int|-1234567|‎-1,234,567
+ar|int|1000000|1,000,000
+ar|dec2|1234.5678|1,234.57
+ar|dec2|-0.25|‎-0.25
+ar|dec3|3.14159|3.142
+ar|dec1|1000000.1|1,000,000.1
+ar|dec0|42|42
+ar|date_short|2026-01-05 09:07:03|5‏/1‏/2026
+ar|datetime_short|2026-01-05 09:07:03|5‏/1‏/2026، 9:07 ص
+ar|date_medium|2026-01-05 09:07:03|05‏/01‏/2026
+ar|datetime_medium|2026-01-05 09:07:03|05‏/01‏/2026، 9:07 ص
+ar|date_long|2026-01-05 09:07:03|5 يناير 2026
+ar|datetime_long|2026-01-05 09:07:03|5 يناير 2026 في 9:07 ص
+ar|time_short|2026-01-05 09:07:03|9:07 ص
+ar|time_medium|2026-01-05 09:07:03|9:07:03 ص
+ar|date_short|2026-11-23 14:45:59|23‏/11‏/2026
+ar|datetime_short|2026-11-23 14:45:59|23‏/11‏/2026، 2:45 م
+ar|date_medium|2026-11-23 14:45:59|23‏/11‏/2026
+ar|datetime_medium|2026-11-23 14:45:59|23‏/11‏/2026، 2:45 م
+ar|date_long|2026-11-23 14:45:59|23 نوفمبر 2026
+ar|datetime_long|2026-11-23 14:45:59|23 نوفمبر 2026 في 2:45 م
+ar|time_short|2026-11-23 14:45:59|2:45 م
+ar|time_medium|2026-11-23 14:45:59|2:45:59 م
+ar|date_short|1999-12-31 00:30:00|31‏/12‏/1999
+ar|datetime_short|1999-12-31 00:30:00|31‏/12‏/1999، 12:30 ص
+ar|date_medium|1999-12-31 00:30:00|31‏/12‏/1999
+ar|datetime_medium|1999-12-31 00:30:00|31‏/12‏/1999، 12:30 ص
+ar|date_long|1999-12-31 00:30:00|31 ديسمبر 1999
+ar|datetime_long|1999-12-31 00:30:00|31 ديسمبر 1999 في 12:30 ص
+ar|time_short|1999-12-31 00:30:00|12:30 ص
+ar|time_medium|1999-12-31 00:30:00|12:30:00 ص
+he|int|0|0
+he|int|7|7
+he|int|1000|1,000
+he|int|12345|12,345
+he|int|-1234567|‎-1,234,567
+he|int|1000000|1,000,000
+he|dec2|1234.5678|1,234.57
+he|dec2|-0.25|‎-0.25
+he|dec3|3.14159|3.142
+he|dec1|1000000.1|1,000,000.1
+he|dec0|42|42
+he|date_short|2026-01-05 09:07:03|5.1.2026
+he|datetime_short|2026-01-05 09:07:03|5.1.2026, 9:07
+he|date_medium|2026-01-05 09:07:03|5 בינו׳ 2026
+he|datetime_medium|2026-01-05 09:07:03|5 בינו׳ 2026, 9:07
+he|date_long|2026-01-05 09:07:03|5 בינואר 2026
+he|datetime_long|2026-01-05 09:07:03|5 בינואר 2026 בשעה 9:07
+he|time_short|2026-01-05 09:07:03|9:07
+he|time_medium|2026-01-05 09:07:03|9:07:03
+he|date_short|2026-11-23 14:45:59|23.11.2026
+he|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+he|date_medium|2026-11-23 14:45:59|23 בנוב׳ 2026
+he|datetime_medium|2026-11-23 14:45:59|23 בנוב׳ 2026, 14:45
+he|date_long|2026-11-23 14:45:59|23 בנובמבר 2026
+he|datetime_long|2026-11-23 14:45:59|23 בנובמבר 2026 בשעה 14:45
+he|time_short|2026-11-23 14:45:59|14:45
+he|time_medium|2026-11-23 14:45:59|14:45:59
+he|date_short|1999-12-31 00:30:00|31.12.1999
+he|datetime_short|1999-12-31 00:30:00|31.12.1999, 0:30
+he|date_medium|1999-12-31 00:30:00|31 בדצמ׳ 1999
+he|datetime_medium|1999-12-31 00:30:00|31 בדצמ׳ 1999, 0:30
+he|date_long|1999-12-31 00:30:00|31 בדצמבר 1999
+he|datetime_long|1999-12-31 00:30:00|31 בדצמבר 1999 בשעה 0:30
+he|time_short|1999-12-31 00:30:00|0:30
+he|time_medium|1999-12-31 00:30:00|0:30:00
+is|int|0|0
+is|int|7|7
+is|int|1000|1.000
+is|int|12345|12.345
+is|int|-1234567|-1.234.567
+is|int|1000000|1.000.000
+is|dec2|1234.5678|1.234,57
+is|dec2|-0.25|-0,25
+is|dec3|3.14159|3,142
+is|dec1|1000000.1|1.000.000,1
+is|dec0|42|42
+is|date_short|2026-01-05 09:07:03|5.1.2026
+is|datetime_short|2026-01-05 09:07:03|5.1.2026, 09:07
+is|date_medium|2026-01-05 09:07:03|5. jan. 2026
+is|datetime_medium|2026-01-05 09:07:03|5. jan. 2026, 09:07
+is|date_long|2026-01-05 09:07:03|5. janúar 2026
+is|datetime_long|2026-01-05 09:07:03|5. janúar 2026 kl. 09:07
+is|time_short|2026-01-05 09:07:03|09:07
+is|time_medium|2026-01-05 09:07:03|09:07:03
+is|date_short|2026-11-23 14:45:59|23.11.2026
+is|datetime_short|2026-11-23 14:45:59|23.11.2026, 14:45
+is|date_medium|2026-11-23 14:45:59|23. nóv. 2026
+is|datetime_medium|2026-11-23 14:45:59|23. nóv. 2026, 14:45
+is|date_long|2026-11-23 14:45:59|23. nóvember 2026
+is|datetime_long|2026-11-23 14:45:59|23. nóvember 2026 kl. 14:45
+is|time_short|2026-11-23 14:45:59|14:45
+is|time_medium|2026-11-23 14:45:59|14:45:59
+is|date_short|1999-12-31 00:30:00|31.12.1999
+is|datetime_short|1999-12-31 00:30:00|31.12.1999, 00:30
+is|date_medium|1999-12-31 00:30:00|31. des. 1999
+is|datetime_medium|1999-12-31 00:30:00|31. des. 1999, 00:30
+is|date_long|1999-12-31 00:30:00|31. desember 1999
+is|datetime_long|1999-12-31 00:30:00|31. desember 1999 kl. 00:30
+is|time_short|1999-12-31 00:30:00|00:30
+is|time_medium|1999-12-31 00:30:00|00:30:00
+ja|int|0|0
+ja|int|7|7
+ja|int|1000|1,000
+ja|int|12345|12,345
+ja|int|-1234567|-1,234,567
+ja|int|1000000|1,000,000
+ja|dec2|1234.5678|1,234.57
+ja|dec2|-0.25|-0.25
+ja|dec3|3.14159|3.142
+ja|dec1|1000000.1|1,000,000.1
+ja|dec0|42|42
+ja|date_short|2026-01-05 09:07:03|2026/01/05
+ja|datetime_short|2026-01-05 09:07:03|2026/01/05 9:07
+ja|date_medium|2026-01-05 09:07:03|2026/01/05
+ja|datetime_medium|2026-01-05 09:07:03|2026/01/05 9:07
+ja|date_long|2026-01-05 09:07:03|2026年1月5日
+ja|datetime_long|2026-01-05 09:07:03|2026年1月5日 9:07
+ja|time_short|2026-01-05 09:07:03|9:07
+ja|time_medium|2026-01-05 09:07:03|9:07:03
+ja|date_short|2026-11-23 14:45:59|2026/11/23
+ja|datetime_short|2026-11-23 14:45:59|2026/11/23 14:45
+ja|date_medium|2026-11-23 14:45:59|2026/11/23
+ja|datetime_medium|2026-11-23 14:45:59|2026/11/23 14:45
+ja|date_long|2026-11-23 14:45:59|2026年11月23日
+ja|datetime_long|2026-11-23 14:45:59|2026年11月23日 14:45
+ja|time_short|2026-11-23 14:45:59|14:45
+ja|time_medium|2026-11-23 14:45:59|14:45:59
+ja|date_short|1999-12-31 00:30:00|1999/12/31
+ja|datetime_short|1999-12-31 00:30:00|1999/12/31 0:30
+ja|date_medium|1999-12-31 00:30:00|1999/12/31
+ja|datetime_medium|1999-12-31 00:30:00|1999/12/31 0:30
+ja|date_long|1999-12-31 00:30:00|1999年12月31日
+ja|datetime_long|1999-12-31 00:30:00|1999年12月31日 0:30
+ja|time_short|1999-12-31 00:30:00|0:30
+ja|time_medium|1999-12-31 00:30:00|0:30:00
+zh|int|0|0
+zh|int|7|7
+zh|int|1000|1,000
+zh|int|12345|12,345
+zh|int|-1234567|-1,234,567
+zh|int|1000000|1,000,000
+zh|dec2|1234.5678|1,234.57
+zh|dec2|-0.25|-0.25
+zh|dec3|3.14159|3.142
+zh|dec1|1000000.1|1,000,000.1
+zh|dec0|42|42
+zh|date_short|2026-01-05 09:07:03|2026/1/5
+zh|datetime_short|2026-01-05 09:07:03|2026/1/5 09:07
+zh|date_medium|2026-01-05 09:07:03|2026年1月5日
+zh|datetime_medium|2026-01-05 09:07:03|2026年1月5日 09:07
+zh|date_long|2026-01-05 09:07:03|2026年1月5日
+zh|datetime_long|2026-01-05 09:07:03|2026年1月5日 09:07
+zh|time_short|2026-01-05 09:07:03|09:07
+zh|time_medium|2026-01-05 09:07:03|09:07:03
+zh|date_short|2026-11-23 14:45:59|2026/11/23
+zh|datetime_short|2026-11-23 14:45:59|2026/11/23 14:45
+zh|date_medium|2026-11-23 14:45:59|2026年11月23日
+zh|datetime_medium|2026-11-23 14:45:59|2026年11月23日 14:45
+zh|date_long|2026-11-23 14:45:59|2026年11月23日
+zh|datetime_long|2026-11-23 14:45:59|2026年11月23日 14:45
+zh|time_short|2026-11-23 14:45:59|14:45
+zh|time_medium|2026-11-23 14:45:59|14:45:59
+zh|date_short|1999-12-31 00:30:00|1999/12/31
+zh|datetime_short|1999-12-31 00:30:00|1999/12/31 00:30
+zh|date_medium|1999-12-31 00:30:00|1999年12月31日
+zh|datetime_medium|1999-12-31 00:30:00|1999年12月31日 00:30
+zh|date_long|1999-12-31 00:30:00|1999年12月31日
+zh|datetime_long|1999-12-31 00:30:00|1999年12月31日 00:30
+zh|time_short|1999-12-31 00:30:00|00:30
+zh|time_medium|1999-12-31 00:30:00|00:30:00
+zh-TW|int|0|0
+zh-TW|int|7|7
+zh-TW|int|1000|1,000
+zh-TW|int|12345|12,345
+zh-TW|int|-1234567|-1,234,567
+zh-TW|int|1000000|1,000,000
+zh-TW|dec2|1234.5678|1,234.57
+zh-TW|dec2|-0.25|-0.25
+zh-TW|dec3|3.14159|3.142
+zh-TW|dec1|1000000.1|1,000,000.1
+zh-TW|dec0|42|42
+zh-TW|date_short|2026-01-05 09:07:03|2026/1/5
+zh-TW|datetime_short|2026-01-05 09:07:03|2026/1/5 上午9:07
+zh-TW|date_medium|2026-01-05 09:07:03|2026年1月5日
+zh-TW|datetime_medium|2026-01-05 09:07:03|2026年1月5日 上午9:07
+zh-TW|date_long|2026-01-05 09:07:03|2026年1月5日
+zh-TW|datetime_long|2026-01-05 09:07:03|2026年1月5日 上午9:07
+zh-TW|time_short|2026-01-05 09:07:03|上午9:07
+zh-TW|time_medium|2026-01-05 09:07:03|上午9:07:03
+zh-TW|date_short|2026-11-23 14:45:59|2026/11/23
+zh-TW|datetime_short|2026-11-23 14:45:59|2026/11/23 下午2:45
+zh-TW|date_medium|2026-11-23 14:45:59|2026年11月23日
+zh-TW|datetime_medium|2026-11-23 14:45:59|2026年11月23日 下午2:45
+zh-TW|date_long|2026-11-23 14:45:59|2026年11月23日
+zh-TW|datetime_long|2026-11-23 14:45:59|2026年11月23日 下午2:45
+zh-TW|time_short|2026-11-23 14:45:59|下午2:45
+zh-TW|time_medium|2026-11-23 14:45:59|下午2:45:59
+zh-TW|date_short|1999-12-31 00:30:00|1999/12/31
+zh-TW|datetime_short|1999-12-31 00:30:00|1999/12/31 凌晨12:30
+zh-TW|date_medium|1999-12-31 00:30:00|1999年12月31日
+zh-TW|datetime_medium|1999-12-31 00:30:00|1999年12月31日 凌晨12:30
+zh-TW|date_long|1999-12-31 00:30:00|1999年12月31日
+zh-TW|datetime_long|1999-12-31 00:30:00|1999年12月31日 凌晨12:30
+zh-TW|time_short|1999-12-31 00:30:00|凌晨12:30
+zh-TW|time_medium|1999-12-31 00:30:00|凌晨12:30:00
+ko|int|0|0
+ko|int|7|7
+ko|int|1000|1,000
+ko|int|12345|12,345
+ko|int|-1234567|-1,234,567
+ko|int|1000000|1,000,000
+ko|dec2|1234.5678|1,234.57
+ko|dec2|-0.25|-0.25
+ko|dec3|3.14159|3.142
+ko|dec1|1000000.1|1,000,000.1
+ko|dec0|42|42
+ko|date_short|2026-01-05 09:07:03|26. 1. 5.
+ko|datetime_short|2026-01-05 09:07:03|26. 1. 5. 오전 9:07
+ko|date_medium|2026-01-05 09:07:03|2026. 1. 5.
+ko|datetime_medium|2026-01-05 09:07:03|2026. 1. 5. 오전 9:07
+ko|date_long|2026-01-05 09:07:03|2026년 1월 5일
+ko|datetime_long|2026-01-05 09:07:03|2026년 1월 5일 오전 9:07
+ko|time_short|2026-01-05 09:07:03|오전 9:07
+ko|time_medium|2026-01-05 09:07:03|오전 9:07:03
+ko|date_short|2026-11-23 14:45:59|26. 11. 23.
+ko|datetime_short|2026-11-23 14:45:59|26. 11. 23. 오후 2:45
+ko|date_medium|2026-11-23 14:45:59|2026. 11. 23.
+ko|datetime_medium|2026-11-23 14:45:59|2026. 11. 23. 오후 2:45
+ko|date_long|2026-11-23 14:45:59|2026년 11월 23일
+ko|datetime_long|2026-11-23 14:45:59|2026년 11월 23일 오후 2:45
+ko|time_short|2026-11-23 14:45:59|오후 2:45
+ko|time_medium|2026-11-23 14:45:59|오후 2:45:59
+ko|date_short|1999-12-31 00:30:00|99. 12. 31.
+ko|datetime_short|1999-12-31 00:30:00|99. 12. 31. 오전 12:30
+ko|date_medium|1999-12-31 00:30:00|1999. 12. 31.
+ko|datetime_medium|1999-12-31 00:30:00|1999. 12. 31. 오전 12:30
+ko|date_long|1999-12-31 00:30:00|1999년 12월 31일
+ko|datetime_long|1999-12-31 00:30:00|1999년 12월 31일 오전 12:30
+ko|time_short|1999-12-31 00:30:00|오전 12:30
+ko|time_medium|1999-12-31 00:30:00|오전 12:30:00
+th|int|0|0
+th|int|7|7
+th|int|1000|1,000
+th|int|12345|12,345
+th|int|-1234567|-1,234,567
+th|int|1000000|1,000,000
+th|dec2|1234.5678|1,234.57
+th|dec2|-0.25|-0.25
+th|dec3|3.14159|3.142
+th|dec1|1000000.1|1,000,000.1
+th|dec0|42|42
+th|date_short|2026-01-05 09:07:03|5/1/26
+th|datetime_short|2026-01-05 09:07:03|5/1/26 09:07
+th|date_medium|2026-01-05 09:07:03|5 ม.ค. 2026
+th|datetime_medium|2026-01-05 09:07:03|5 ม.ค. 2026 09:07
+th|date_long|2026-01-05 09:07:03|5 มกราคม ค.ศ. 2026
+th|datetime_long|2026-01-05 09:07:03|5 มกราคม ค.ศ. 2026 เวลา 09:07
+th|time_short|2026-01-05 09:07:03|09:07
+th|time_medium|2026-01-05 09:07:03|09:07:03
+th|date_short|2026-11-23 14:45:59|23/11/26
+th|datetime_short|2026-11-23 14:45:59|23/11/26 14:45
+th|date_medium|2026-11-23 14:45:59|23 พ.ย. 2026
+th|datetime_medium|2026-11-23 14:45:59|23 พ.ย. 2026 14:45
+th|date_long|2026-11-23 14:45:59|23 พฤศจิกายน ค.ศ. 2026
+th|datetime_long|2026-11-23 14:45:59|23 พฤศจิกายน ค.ศ. 2026 เวลา 14:45
+th|time_short|2026-11-23 14:45:59|14:45
+th|time_medium|2026-11-23 14:45:59|14:45:59
+th|date_short|1999-12-31 00:30:00|31/12/99
+th|datetime_short|1999-12-31 00:30:00|31/12/99 00:30
+th|date_medium|1999-12-31 00:30:00|31 ธ.ค. 1999
+th|datetime_medium|1999-12-31 00:30:00|31 ธ.ค. 1999 00:30
+th|date_long|1999-12-31 00:30:00|31 ธันวาคม ค.ศ. 1999
+th|datetime_long|1999-12-31 00:30:00|31 ธันวาคม ค.ศ. 1999 เวลา 00:30
+th|time_short|1999-12-31 00:30:00|00:30
+th|time_medium|1999-12-31 00:30:00|00:30:00
+vi|int|0|0
+vi|int|7|7
+vi|int|1000|1.000
+vi|int|12345|12.345
+vi|int|-1234567|-1.234.567
+vi|int|1000000|1.000.000
+vi|dec2|1234.5678|1.234,57
+vi|dec2|-0.25|-0,25
+vi|dec3|3.14159|3,142
+vi|dec1|1000000.1|1.000.000,1
+vi|dec0|42|42
+vi|date_short|2026-01-05 09:07:03|5/1/26
+vi|datetime_short|2026-01-05 09:07:03|09:07 5/1/26
+vi|date_medium|2026-01-05 09:07:03|5 thg 1, 2026
+vi|datetime_medium|2026-01-05 09:07:03|09:07 5 thg 1, 2026
+vi|date_long|2026-01-05 09:07:03|5 tháng 1, 2026
+vi|datetime_long|2026-01-05 09:07:03|lúc 09:07 5 tháng 1, 2026
+vi|time_short|2026-01-05 09:07:03|09:07
+vi|time_medium|2026-01-05 09:07:03|09:07:03
+vi|date_short|2026-11-23 14:45:59|23/11/26
+vi|datetime_short|2026-11-23 14:45:59|14:45 23/11/26
+vi|date_medium|2026-11-23 14:45:59|23 thg 11, 2026
+vi|datetime_medium|2026-11-23 14:45:59|14:45 23 thg 11, 2026
+vi|date_long|2026-11-23 14:45:59|23 tháng 11, 2026
+vi|datetime_long|2026-11-23 14:45:59|lúc 14:45 23 tháng 11, 2026
+vi|time_short|2026-11-23 14:45:59|14:45
+vi|time_medium|2026-11-23 14:45:59|14:45:59
+vi|date_short|1999-12-31 00:30:00|31/12/99
+vi|datetime_short|1999-12-31 00:30:00|00:30 31/12/99
+vi|date_medium|1999-12-31 00:30:00|31 thg 12, 1999
+vi|datetime_medium|1999-12-31 00:30:00|00:30 31 thg 12, 1999
+vi|date_long|1999-12-31 00:30:00|31 tháng 12, 1999
+vi|datetime_long|1999-12-31 00:30:00|lúc 00:30 31 tháng 12, 1999
+vi|time_short|1999-12-31 00:30:00|00:30
+vi|time_medium|1999-12-31 00:30:00|00:30:00
+id|int|0|0
+id|int|7|7
+id|int|1000|1.000
+id|int|12345|12.345
+id|int|-1234567|-1.234.567
+id|int|1000000|1.000.000
+id|dec2|1234.5678|1.234,57
+id|dec2|-0.25|-0,25
+id|dec3|3.14159|3,142
+id|dec1|1000000.1|1.000.000,1
+id|dec0|42|42
+id|date_short|2026-01-05 09:07:03|05/01/26
+id|datetime_short|2026-01-05 09:07:03|05/01/26, 09.07
+id|date_medium|2026-01-05 09:07:03|5 Jan 2026
+id|datetime_medium|2026-01-05 09:07:03|5 Jan 2026, 09.07
+id|date_long|2026-01-05 09:07:03|5 Januari 2026
+id|datetime_long|2026-01-05 09:07:03|5 Januari 2026 pukul 09.07
+id|time_short|2026-01-05 09:07:03|09.07
+id|time_medium|2026-01-05 09:07:03|09.07.03
+id|date_short|2026-11-23 14:45:59|23/11/26
+id|datetime_short|2026-11-23 14:45:59|23/11/26, 14.45
+id|date_medium|2026-11-23 14:45:59|23 Nov 2026
+id|datetime_medium|2026-11-23 14:45:59|23 Nov 2026, 14.45
+id|date_long|2026-11-23 14:45:59|23 November 2026
+id|datetime_long|2026-11-23 14:45:59|23 November 2026 pukul 14.45
+id|time_short|2026-11-23 14:45:59|14.45
+id|time_medium|2026-11-23 14:45:59|14.45.59
+id|date_short|1999-12-31 00:30:00|31/12/99
+id|datetime_short|1999-12-31 00:30:00|31/12/99, 00.30
+id|date_medium|1999-12-31 00:30:00|31 Des 1999
+id|datetime_medium|1999-12-31 00:30:00|31 Des 1999, 00.30
+id|date_long|1999-12-31 00:30:00|31 Desember 1999
+id|datetime_long|1999-12-31 00:30:00|31 Desember 1999 pukul 00.30
+id|time_short|1999-12-31 00:30:00|00.30
+id|time_medium|1999-12-31 00:30:00|00.30.00
+ms|int|0|0
+ms|int|7|7
+ms|int|1000|1,000
+ms|int|12345|12,345
+ms|int|-1234567|-1,234,567
+ms|int|1000000|1,000,000
+ms|dec2|1234.5678|1,234.57
+ms|dec2|-0.25|-0.25
+ms|dec3|3.14159|3.142
+ms|dec1|1000000.1|1,000,000.1
+ms|dec0|42|42
+ms|date_short|2026-01-05 09:07:03|5/01/26
+ms|datetime_short|2026-01-05 09:07:03|5/01/26, 9:07 PG
+ms|date_medium|2026-01-05 09:07:03|5 Jan 2026
+ms|datetime_medium|2026-01-05 09:07:03|5 Jan 2026, 9:07 PG
+ms|date_long|2026-01-05 09:07:03|5 Januari 2026
+ms|datetime_long|2026-01-05 09:07:03|5 Januari 2026 pada 9:07 PG
+ms|time_short|2026-01-05 09:07:03|9:07 PG
+ms|time_medium|2026-01-05 09:07:03|9:07:03 PG
+ms|date_short|2026-11-23 14:45:59|23/11/26
+ms|datetime_short|2026-11-23 14:45:59|23/11/26, 2:45 PTG
+ms|date_medium|2026-11-23 14:45:59|23 Nov 2026
+ms|datetime_medium|2026-11-23 14:45:59|23 Nov 2026, 2:45 PTG
+ms|date_long|2026-11-23 14:45:59|23 November 2026
+ms|datetime_long|2026-11-23 14:45:59|23 November 2026 pada 2:45 PTG
+ms|time_short|2026-11-23 14:45:59|2:45 PTG
+ms|time_medium|2026-11-23 14:45:59|2:45:59 PTG
+ms|date_short|1999-12-31 00:30:00|31/12/99
+ms|datetime_short|1999-12-31 00:30:00|31/12/99, 12:30 PG
+ms|date_medium|1999-12-31 00:30:00|31 Dis 1999
+ms|datetime_medium|1999-12-31 00:30:00|31 Dis 1999, 12:30 PG
+ms|date_long|1999-12-31 00:30:00|31 Disember 1999
+ms|datetime_long|1999-12-31 00:30:00|31 Disember 1999 pada 12:30 PG
+ms|time_short|1999-12-31 00:30:00|12:30 PG
+ms|time_medium|1999-12-31 00:30:00|12:30:00 PG

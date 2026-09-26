@@ -109,6 +109,13 @@ interpreting a table at run time. **The Svelte pages are not typed against
 anything**: a rename breaks the controller and leaves the pages showing an
 empty cell. They say so at the top.
 
+**The list and the page write money, decimals and dates as the reader
+does**, with Lauf's `numbers()` and `dates()` in the request's locale:
+`12.50` and `Feb 3, 2026` in English, `12,50` and `3. feb. 2026` in
+Norwegian. An integer is written as it comes — a year and a quantity are
+both integers, and "2,026" is not a year — so group one yourself where it
+is a count. The forms keep the plain form, which is what an input takes.
+
 `Add` and `Remove`, not `Create` and `Destroy`: those are `TObject`'s
 constructor and destructor, and a method with either name hides it.
 

@@ -30,7 +30,7 @@ interface
 uses
   SysUtils, TypInfo, SyncObjs,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Json,
-  Askr.Core.Lang, Askr.Urd.Driver;
+  Askr.Core.Lang, Askr.Core.Format, Askr.Urd.Driver;
 
 type
   TModel = class;
@@ -1235,7 +1235,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if Length(AsStr) < N then
-    Fail(TransCount('validation.min_length', N, ['attribute', AttributeName(FColumn), 'min', N]));
+    Fail(TransCount('validation.min_length', N, ['attribute', AttributeName(FColumn), 'min', LocaleNumber(N)]));
 end;
 
 function TFieldRules.MaxLen(N: Integer): TFieldRules;
@@ -1244,7 +1244,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if Length(AsStr) > N then
-    Fail(TransCount('validation.max_length', N, ['attribute', AttributeName(FColumn), 'max', N]));
+    Fail(TransCount('validation.max_length', N, ['attribute', AttributeName(FColumn), 'max', LocaleNumber(N)]));
 end;
 
 { Deliberately loose. A strict email validation refuses valid
@@ -1287,16 +1287,11 @@ begin
 end;
 
 { CurrencyToSql gives 0.0000. In a message to a user that is 0. }
+{ A limit as the reader writes numbers: 12.5 in English, 12,5 in
+  Norwegian, 1,000 or 1 000. Exact, and without trailing zeros. }
 function Readable(V: Currency): string;
 begin
-  Result := CurrencyToSql(V);
-  if Pos('.', Result) > 0 then
-  begin
-    while (Length(Result) > 0) and (Result[Length(Result)] = '0') do
-      Delete(Result, Length(Result), 1);
-    if (Length(Result) > 0) and (Result[Length(Result)] = '.') then
-      Delete(Result, Length(Result), 1);
-  end;
+  Result := LocaleCurrency(V);
 end;
 
 function TFieldRules.Min(V: Currency): TFieldRules;

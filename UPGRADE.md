@@ -26,6 +26,19 @@ form holds the ticked values as an array. A single box that happened to
 have a `value` attribute sent `true` or `false` before; it sends `["yes"]`
 or `[]` now. Take the `value` off to keep the boolean.
 
+**A number in a validation message is written as the locale writes it.**
+In English that means grouping: `MinLen(1500)` says "at least 1,500
+characters", not "1500". A test that compared the message will see the
+comma. The same goes for Lauf's pagination, which says `of 9,000`.
+
+**Inertia pages carry a `locale` prop.** An app that shares a prop of its
+own called `locale` still wins -- it is written after -- but it is what
+Lauf will format numbers with, so it should be a locale tag.
+
+**A root template of your own gets no `lang` by itself.** The default one
+has `<html lang="{{lang}}">`; put `{{lang}}` in yours to have the request's
+locale there.
+
 ## 0.13.1
 
 **`FillInto` no longer fills `created_at`, `updated_at` or `deleted_at`**

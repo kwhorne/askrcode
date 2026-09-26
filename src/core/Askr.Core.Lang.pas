@@ -113,6 +113,10 @@ function PluralExamples(const Locale, Category: string): string;
 { Whether Name is one of CLDR's six categories. }
 function IsPluralCategory(const Name: string): Boolean;
 
+{ The text Locale's own file has for Key, and nothing else: no fallback
+  and no built-in English. The [format] overrides are read with it. }
+function LangFileText(const Locale, Key: string; out Text_: string): Boolean;
+
 { Whether Locale's file has Key -- the file, not the built-in English. }
 function HasTrans(const Locale, Key: string): Boolean;
 
@@ -152,7 +156,7 @@ const
   { The framework's own words. English, and the text every message had
     before there were keys: an app with no lang directory must not notice
     that there are. }
-  BuiltIn: array[0..63] of string = (
+  BuiltIn: array[0..65] of string = (
     'validation.required=:attribute is required',
     'validation.min_length.one=:attribute must be at least :min character',
     'validation.min_length.other=:attribute must be at least :min characters',
@@ -193,6 +197,8 @@ const
     'lauf.columns=Columns',
     'lauf.select_all_rows=Select all rows on this page',
     'lauf.select_row=Select row :n',
+    'lauf.selected_count=:count selected',
+    'lauf.pages_of=:caption pages',
     'lauf.formatting=Formatting',
     'lauf.heading_1=Heading 1',
     'lauf.heading_2=Heading 2',
@@ -583,6 +589,12 @@ end;
 function Trans(const Key: string; const Args: array of const): string;
 begin
   Result := Fill(RawText(Key), Args, '', '');
+end;
+
+function LangFileText(const Locale, Key: string; out Text_: string): Boolean;
+begin
+  Text_ := '';
+  Result := LookUp(Locale, Key, Text_);
 end;
 
 function HasTrans(const Locale, Key: string): Boolean;

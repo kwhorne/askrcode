@@ -1448,13 +1448,67 @@ begin
   end;
 end;
 
+{ The expression that writes a column's Value as the reader's locale
+  does -- with n and d, Lauf's numbers() and dates() -- or '' when it is
+  written as it comes. An integer comes as it is: a year and a quantity
+  are both integers, and "2,026" is not a year. Money has at least two
+  decimals and at most the four Currency holds. }
+function LocaleFormatOf(Kind: TFieldType; const Value: string): string;
+begin
+  case Kind of
+    ftMoney: Result := 'n(' + Value + ', { minimumFractionDigits: 2, maximumFractionDigits: 4 })';
+    ftFloat: Result := 'n(' + Value + ')';
+    ftDate: Result := 'd(' + Value + ')';
+    ftDateTime: Result := 'd(' + Value + ', { dateStyle: ''medium'', timeStyle: ''short'' })';
+  else
+    Result := '';
+  end;
+end;
+
+{ What a page needs from Lauf to write its columns: ', numbers, dates'
+  for the import, and the lines that set up n and d. The list writes the
+  listed columns, the page all it shows. }
+procedure LocaleNeedsOf(const P: TResourcePlan; ListedOnly: Boolean;
+  out Imports, Setup: string);
+var
+  I: Integer;
+  Nums, Dates: Boolean;
+  PC: TPlanColumn;
+begin
+  Nums := False;
+  Dates := False;
+  for I := 0 to High(P.Columns) do
+  begin
+    PC := P.Columns[I];
+    if (ListedOnly and not PC.Listed) or PC.LooksSecret or not PC.Supported then
+      Continue;
+    case PC.Field.Kind of
+      ftMoney, ftFloat: Nums := True;
+      ftDate, ftDateTime: Dates := True;
+    else
+    end;
+  end;
+  Imports := '';
+  Setup := '';
+  if Nums then
+  begin
+    Imports := Imports + ', numbers';
+    Setup := Setup + '  const n = numbers()' + #10;
+  end;
+  if Dates then
+  begin
+    Imports := Imports + ', dates';
+    Setup := Setup + '  const d = dates()' + #10;
+  end;
+end;
+
 function IndexText(const P: TResourcePlan): string;
 var
   B: TStringList;
   N: TResourceNames;
   I: Integer;
   PC: TPlanColumn;
-  Link, Extra: string;
+  Link, Extra, Fmt, Imports, Setup: string;
 
   procedure A(const S: string);
   begin
@@ -1463,6 +1517,7 @@ var
 
 begin
   N := ResourceNamesOf(P);
+  LocaleNeedsOf(P, True, Imports, Setup);
   Link := FirstStringOf(P);
   if Link = '' then
     Link := P.PrimaryKey;
@@ -1471,10 +1526,15 @@ begin
     A(PagesNote);
     A('<script>');
     A('  import { router, Link } from ''@inertiajs/svelte''');
-    A('  import { Heading, Button, DataGrid } from ''@askrcode/lauf''');
+    A('  import { Heading, Button, DataGrid' + Imports + ' } from ''@askrcode/lauf''');
     A('  import Layout from ''../../Layout.svelte''');
     A('');
     A('  let { rows = [], grid = null } = $props()');
+    if Setup <> '' then
+    begin
+      A('  // Money and dates as the reader writes them.');
+      A(TrimRight(Setup));
+    end;
     A('');
     A('  // The keys are the column names, and the server''s Sortable list is');
     A('  // keyed the same way: a column the server does not name cannot be');
@@ -1492,6 +1552,9 @@ begin
         Extra := Extra + ', align: ''right''';
       if PC.Field.Kind = ftBool then
         Extra := Extra + ', format: (v) => (v ? ''Yes'' : ''No'')';
+      Fmt := LocaleFormatOf(PC.Field.Kind, 'v');
+      if Fmt <> '' then
+        Extra := Extra + ', format: (v) => ' + Fmt;
       if PC.Field.Column = Link then
         Extra := Extra + ', cell: linkCell';
       A('    { key: ' + JsStr(PC.Field.Column) + ', label: ' +
@@ -1534,7 +1597,7 @@ var
   N: TResourceNames;
   I: Integer;
   PC: TPlanColumn;
-  Col, Props, Rel: string;
+  Col, Props, Rel, Imports, Setup: string;
   Par: TParentInfo;
   Many: Boolean;
 
@@ -1563,10 +1626,13 @@ begin
     A(PagesNote);
     A('<script>');
     A('  import { router, Link } from ''@inertiajs/svelte''');
-    A('  import { Heading, Button } from ''@askrcode/lauf''');
+    LocaleNeedsOf(P, False, Imports, Setup);
+    A('  import { Heading, Button' + Imports + ' } from ''@askrcode/lauf''');
     A('  import Layout from ''../../Layout.svelte''');
     A('');
     A('  let { ' + Props + ' } = $props()');
+    if Setup <> '' then
+      A(TrimRight(Setup));
     A('');
     A('  function remove() {');
     A('    if (!confirm(''Delete this ' + N.Human + '?'')) return');
@@ -1614,6 +1680,8 @@ begin
           A('      <dd class="whitespace-pre-wrap' +
             BoolToStr(PC.Field.Kind = ftJson, ' font-mono text-sm', '') +
             '">{shown(' + N.Prop + '.' + Col + ')}</dd>')
+        else if LocaleFormatOf(PC.Field.Kind, Col) <> '' then
+          A('      <dd>{shown(' + LocaleFormatOf(PC.Field.Kind, N.Prop + '.' + Col) + ')}</dd>')
         else
           A('      <dd>{shown(' + N.Prop + '.' + Col + ')}</dd>');
       end;

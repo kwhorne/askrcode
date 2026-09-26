@@ -845,14 +845,14 @@ begin
   Emit(Root + '/frontend/src/Layout.svelte',
     '<script>' + #10 +
     '  import { page } from ' + Q + '@inertiajs/svelte' + Q + #10 +
-    '  import { provideStrings } from ' + Q + '@askrcode/lauf' + Q + #10 +
     '  import { Flash } from ' + Q + '@askrcode/lauf/inertia' + Q + #10 +
     '  let { children } = $props()' + #10 + #10 +
-    '  // Lauf''s own words -- a close button, an empty list -- in the' + #10 +
-    '  // request''s language: the [lauf] section of lang/<locale>.toml,' + #10 +
-    '  // which Askr sends when it says something other than English.' + #10 +
-    '  // page is Inertia 3''s state object, not a store: no $ in front.' + #10 +
-    '  provideStrings(() => page.props.lauf)' + #10 +
+    '  // <html lang> kept up after a visit that did not load the page --' + #10 +
+    '  // a change of language is one. Lauf''s words and locale are given' + #10 +
+    '  // to it in main.js.' + #10 +
+    '  $effect(() => {' + #10 +
+    '    document.documentElement.lang = page.props.locale ?? ' + Q + 'en' + Q + #10 +
+    '  })' + #10 +
     '</script>' + #10 + #10 +
     '<!-- Flash sets up the live regions once and turns flash from Askr' + #10 +
     '     into toasts. It has to sit outside the pages, or the region is' + #10 +
@@ -864,8 +864,9 @@ begin
     '</main>' + #10);
 
   Emit(Root + '/frontend/src/main.js',
-    'import { createInertiaApp } from ' + Q + '@inertiajs/svelte' + Q + #10 +
+    'import { createInertiaApp, page } from ' + Q + '@inertiajs/svelte' + Q + #10 +
     'import { mount } from ' + Q + 'svelte' + Q + #10 +
+    'import { laufContext } from ' + Q + '@askrcode/lauf' + Q + #10 +
     'import ' + Q + './app.css' + Q + #10 + #10 +
     'createInertiaApp({' + #10 +
     '  resolve: (name) => {' + #10 +
@@ -879,7 +880,19 @@ begin
     '    // that do not run JavaScript -- would stay behind the app' + #10 +
     '    // instead of being replaced by it.' + #10 +
     '    el.innerHTML = ' + Q + Q + #10 +
-    '    mount(App, { target: el, props })' + #10 +
+    '    // Lauf''s own words and the locale it writes numbers and dates in,' + #10 +
+    '    // as Askr sends them: the [lauf] section of lang/<locale>.toml,' + #10 +
+    '    // and the locale the request was answered in. Here at the root,' + #10 +
+    '    // so a page''s own script sees them too -- the page is its' + #10 +
+    '    // layout''s parent. page is Inertia 3''s state object, not a store.' + #10 +
+    '    mount(App, {' + #10 +
+    '      target: el,' + #10 +
+    '      props,' + #10 +
+    '      context: laufContext({' + #10 +
+    '        strings: () => page.props.lauf,' + #10 +
+    '        locale: () => page.props.locale,' + #10 +
+    '      }),' + #10 +
+    '    })' + #10 +
     '  },' + #10 +
     '})' + #10);
 

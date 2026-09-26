@@ -22,8 +22,9 @@
   import Icon from './Icon.svelte'
   import { CalendarDays, ChevronLeft, ChevronRight } from './icons/micro/index.js'
 
-  import { strings } from './strings.js'
+  import { strings, locale as readerLocale } from './strings.js'
   const word = strings()
+  const reader = readerLocale()
 
   let {
     /** ISO-dato, 'YYYY-MM-DD', eller '' for tom. */
@@ -32,8 +33,10 @@
     min,
     max,
     disabled = false,
-    /** Brukes til ukedagsnavn og månedsnavn. */
-    locale = 'en-US',
+    /** For the names of weekdays and months, and the order of the
+        segments. The reader's locale from provideLocale when not given,
+        and English without one. */
+    locale,
     class: klass,
     ...rest
   } = $props()
@@ -67,7 +70,7 @@
   minValue={tilDato(min)}
   maxValue={tilDato(max)}
   {disabled}
-  {locale}
+  locale={locale ?? reader()}
   data-lauf="datepicker"
   {...rest}
 >
