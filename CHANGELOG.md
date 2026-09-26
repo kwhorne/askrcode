@@ -32,6 +32,12 @@ with the zero-major caveat that minor releases may break things until
   writes give a unique column a new value for every row, so three rows,
   or a test database that keeps its rows between runs, do not collide.
 
+- **A resource's page lists the rows that point at it.** The page of a
+  maker lists its gadgets: labelled by their first string column, linked
+  to their pages when those exist, fifty at most and saying so. Asked
+  with the typed columns -- `Where(Gadgets.MakerId, Eq, M.Id)` -- so a
+  dropped foreign key is a compile error.
+
 ### Changed
 
 - **`FillInto` never fills the columns a model sets itself.** The key it

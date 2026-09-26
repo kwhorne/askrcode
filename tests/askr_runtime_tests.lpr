@@ -2404,11 +2404,13 @@ var
   Parents: TParentInfos;
   F: TGenFiles;
   Ctl, Fields, Index_, Show, Test_, Model, Api: string;
+  Kids: TChildInfos;
   PC: TPlanColumn;
   L: TStringList;
 begin
   ForceDirectories(Root + '/app/Models');
   DeleteFile(Root + '/app/Models/App.Models.Maker.pas');
+  DeleteFile(Root + '/app/Models/App.Models.Part.pas');
   A := TArena.Create(64 * 1024);
   C := OpenDbConnection('sqlite::memory:');
   try
@@ -2429,7 +2431,7 @@ begin
       Parents := ParentsOf(S, P, Root);
       AssertEqual(Length(Parents), 1, 'one table to point at');
       AssertFalse(Parents[0].Available, 'with no model for it, there is no select');
-      F := ResourceFiles(P, Parents, True, True, False);
+      F := ResourceFiles(P, Parents, nil, True, True, False);
       AssertContains(TextOf(F, 'Fields.svelte'),
         'label="Maker" required description="The id of a row in makers"',
         'and the field is a number that says what it is');
@@ -2445,7 +2447,26 @@ begin
       AssertTrue(Parents[0].Available, 'with one, there is');
       AssertEqual(Parents[0].LabelColumn, 'name', 'labelled by its first string');
 
-      F := ResourceFiles(P, Parents, True, True, True);
+      { A table that points here, whose model is there: the page lists its
+        rows. parts.gadget_id points at gadgets, as in the plan's test. }
+      C.Exec(A, 'CREATE TABLE parts (id INTEGER PRIMARY KEY, ' +
+        'gadget_id BIGINT REFERENCES gadgets(id), sku VARCHAR(10))');
+      S.Free;
+      S := IntrospectSchema(C);
+      P := PlanResource(S, 'Gadget');
+      Parents := ParentsOf(S, P, Root);
+      L := TStringList.Create;
+      try
+        L.Text := 'unit App.Models.Part;';
+        L.SaveToFile(Root + '/app/Models/App.Models.Part.pas');
+      finally
+        L.Free;
+      end;
+      Kids := ChildrenOf(S, P, Root);
+      AssertEqual(Length(Kids), 1, 'one table points here');
+      AssertTrue(Kids[0].Available, 'with a model to query it with');
+      AssertFalse(Kids[0].Linked, 'and no pages of its own to link to yet');
+      F := ResourceFiles(P, Parents, Kids, True, True, True);
       Ctl := TextOf(F, 'App.Http.GadgetsController.pas');
       Fields := TextOf(F, 'Fields.svelte');
       Index_ := TextOf(F, 'Index.svelte');
@@ -2482,6 +2503,15 @@ begin
       AssertContains(Fields, '<Select placeholder="Choose a maker">', 'a reference is a select');
       AssertContains(Fields, 'maker_id: r.maker_id == null ? '''' : String(r.maker_id)',
         'whose value is text, as its options are');
+
+      { The rows that point here. }
+      AssertContains(Ctl, '.Where(Parts.GadgetId, Eq, M.Id)',
+        'the page asks for the parts that point at this gadget, by typed column');
+      AssertContains(Ctl, '.Limit(Listed).Get', 'no more than it lists');
+      AssertContains(Ctl, 'Listed = 50;', 'and the limit is said once');
+      AssertContains(Show, '{#each parts as c (c.id)}', 'the page lists them');
+      AssertContains(Show, 'The first {listed}.', 'and says when that is not all of them');
+      AssertNotContains(Show, 'href={`/parts/', 'without a link to pages that are not there');
 
       { The list and the page. }
       AssertContains(Index_, 'align: ''right''', 'a number is aligned the way DataGrid knows');
@@ -2525,7 +2555,7 @@ begin
         not pretend to write. }
       Locked := PlanResource(S, 'Lock');
       AssertFalse(Locked.CanCreate, 'a NOT NULL secret with no default means no create');
-      F := ResourceFiles(Locked, nil, True, True, False);
+      F := ResourceFiles(Locked, nil, nil, True, True, False);
       AssertNotContains(TextOf(F, 'App.Tests.Locks.pas'), '@TestStore',
         'so the test does not try');
       AssertContains(TextOf(F, 'App.Tests.Locks.pas'), 'Nothing that writes is tested',

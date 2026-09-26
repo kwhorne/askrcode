@@ -139,6 +139,20 @@ check(/Active\s*Yes/.test(t), 'the checkbox saved', t)
 check(t.includes('{"k":1}') || t.includes('{"k": 1}'), 'the JSON', t)
 check((await js('document.body.innerText')).includes('Gadget created.'), 'and the flash says so')
 
+// ---- the maker's page lists what points at it ----
+await go(`/makers/${makerId}`)
+check(await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Sprocket' && a.getAttribute('href').endsWith('/gadgets/${gid}'))`),
+  'the maker\'s page lists its gadget, linked to the gadget\'s page')
+
+// And a maker with none: its page lists nothing, not every gadget there is.
+await go('/makers/new')
+await fill('Name', 'Empty Co')
+await submit()
+await until(`/^\\/makers\\/\\d+$/.test(location.pathname) && location.pathname !== '/makers/${makerId}'`, 'the second maker')
+t = await text()
+check(t.includes('None yet') && !t.includes('Sprocket'),
+  'a maker with no gadgets lists none, not another maker\'s', t.slice(0, 300))
+
 // ---- the edit form starts from the row ----
 await go(`/gadgets/${gid}/edit`)
 check((await valueOf('Name')) === 'Sprocket', 'the edit form has the name')

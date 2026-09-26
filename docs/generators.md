@@ -130,6 +130,11 @@ What the table says, the resource does:
   together is a note: a rule is on one field, so a duplicate pair is
   still refused by the database, not by the form.
 - A foreign key is `Exists` against the table it points at.
+- A table that points **here** — `gadgets.maker_id` on the page of a maker
+  — is listed on the page: its rows, labelled by their first string
+  column, linked to their own pages when those exist, and never more than
+  fifty, with a line that says so. A table with no model is not listed;
+  there is nothing to query it with.
 - A foreign key to a table whose model exists is a select of its rows,
   labelled by its first string column and capped at a thousand — a select
   with more is the wrong control. Without a model for it, it is a number,
@@ -260,8 +265,9 @@ later is a compile error in the controller and an empty cell on the page.
 It is the one place the chain is not closed, and the pages say so at the
 top.
 
-**A has-many relation is not shown** on the parent's page. The plan knows
-about it; nothing draws it yet.
+**The rows that point here are on the page, not in the API.** A JSON
+resource's `GET /api/gadgets/:id` answers with the row alone; asking for
+its children is a second request to their own list.
 
 **Two requests at once can both pass `Unique` and `Exists`.** The rules
 ask the database before the save, and a second request can take the name

@@ -56,6 +56,24 @@ type
   end;
   TParentInfos = array of TParentInfo;
 
+  { A table that points at this one, as its page shows it: the rows that
+    point here, labelled by one of their columns. }
+  TChildInfo = record
+    Rel: TPlanRelation;
+    { The child's model file is there, so there is something to query
+      them with. Without it the page does not list them. }
+    Available: Boolean;
+    LabelColumn: string;
+    LabelMember: string;
+    FkMember: string;
+    SchemaVar: string;
+    SchemaUnit: string;
+    { The child's own pages are there, so a row can link to its page. }
+    Linked: Boolean;
+    Url: string;
+  end;
+  TChildInfos = array of TChildInfo;
+
   TGenFile = record
     Path: string;       { relative to the project root }
     Content: string;
@@ -97,7 +115,12 @@ function ResourceNamesOf(const P: TResourcePlan): TResourceNames;
   hold the text. WithModel adds the model unit, Web the controller, pages
   and test for a browser, Api the JSON controller and its test. }
 function ResourceFiles(const P: TResourcePlan; const Parents: TParentInfos;
-  WithModel, Web, Api: Boolean): TGenFiles;
+  const Children: TChildInfos; WithModel, Web, Api: Boolean): TGenFiles;
+
+{ The tables that point at P, as its page lists them: those whose model is
+  in Root, linked when their pages are there too. }
+function ChildrenOf(Schema: TDbSchema; const P: TResourcePlan;
+  const Root: string): TChildInfos;
 
 { The tables P points at, as its form needs them: a select for each
   whose model is in Root, a number for the rest. }
@@ -365,7 +388,7 @@ begin
 end;
 
 function ControllerText(const P: TResourcePlan;
-  const Parents: TParentInfos): string;
+  const Parents: TParentInfos; const Children: TChildInfos): string;
 var
   B: TStringList;
   N: TResourceNames;
@@ -400,6 +423,11 @@ begin
       if Parents[I].Available then
         Uses_ := Uses_ + ',' + #10 + '  App.Models.' + Parents[I].Rel.Model +
           ', ' + Parents[I].SchemaUnit;
+    for I := 0 to High(Children) do
+      if Children[I].Available and
+         (Pos('App.Models.' + Children[I].Rel.Model + ',', Uses_ + ',') = 0) then
+        Uses_ := Uses_ + ',' + #10 + '  App.Models.' + Children[I].Rel.Model +
+          ', ' + Children[I].SchemaUnit;
 
     A('{ ' + Capital(N.HumanPlural) + ': the seven actions over the ' +
       P.Table + ' table.');
@@ -488,6 +516,17 @@ begin
         A('');
       end;
 
+    for I := 0 to High(Children) do
+      if Children[I].Available then
+      begin
+        A('const');
+        A('  { How many rows of a table that points here the page lists. The page');
+        A('    says when there are this many, rather than fetching them all. }');
+        A('  Listed = 50;');
+        A('');
+        Break;
+      end;
+
     A('function NotFound: TResponse;');
     A('begin');
     A('  Result := Respond(404).WithBody(''No such ' + N.Human + '.'');');
@@ -528,6 +567,16 @@ begin
         Opt := Opt + ',' + #10 + '     ' + PasStr(SnakeCase(Parents[I].Rel.Name)) +
           ', TQuery<T' + Parents[I].Rel.Model + '>.New.Find(M.' +
           P.Columns[PlanColumnIndex(P, Parents[I].Rel.ForeignKey)].Field.Prop + ')';
+    for I := 0 to High(Children) do
+      if Children[I].Available then
+        Opt := Opt + ',' + #10 + '     ' + PasStr(SnakeCase(Children[I].Rel.Name)) +
+          ', TQuery<T' + Children[I].Rel.Model + '>.New' + #10 +
+          '       .Where(' + Children[I].SchemaVar + '.' + Children[I].FkMember +
+          ', Eq, M.Id)' + #10 +
+          '       .OrderBy(' + Children[I].SchemaVar + '.' + Children[I].LabelMember + ')' + #10 +
+          '       .Limit(Listed).Get';
+    if Pos('Limit(Listed)', Opt) > 0 then
+      Opt := Opt + ',' + #10 + '     ''listed'', Listed';
     A('  Result := Inertia(''' + N.PagesDir + '/Show'', [''' + N.Prop + ''', M' +
       Opt + ']);');
     A('end;');
@@ -1087,7 +1136,8 @@ begin
   end;
 end;
 
-function ShowText(const P: TResourcePlan; const Parents: TParentInfos): string;
+function ShowText(const P: TResourcePlan; const Parents: TParentInfos;
+  const Children: TChildInfos): string;
 var
   B: TStringList;
   N: TResourceNames;
@@ -1095,6 +1145,7 @@ var
   PC: TPlanColumn;
   Col, Props, Rel: string;
   Par: TParentInfo;
+  Many: Boolean;
 
   procedure A(const S: string);
   begin
@@ -1109,9 +1160,18 @@ begin
     for I := 0 to High(Parents) do
       if Parents[I].Available then
         Props := Props + ', ' + SnakeCase(Parents[I].Rel.Name) + ' = null';
+    Many := False;
+    for I := 0 to High(Children) do
+      if Children[I].Available then
+      begin
+        Props := Props + ', ' + SnakeCase(Children[I].Rel.Name) + ' = []';
+        Many := True;
+      end;
+    if Many then
+      Props := Props + ', listed = 50';
     A(PagesNote);
     A('<script>');
-    A('  import { router } from ''@inertiajs/svelte''');
+    A('  import { router, Link } from ''@inertiajs/svelte''');
     A('  import { Heading, Button } from ''@askrcode/lauf''');
     A('  import Layout from ''../../Layout.svelte''');
     A('');
@@ -1169,6 +1229,33 @@ begin
       A('    </div>');
     end;
     A('  </dl>');
+    for I := 0 to High(Children) do
+      if Children[I].Available then
+      begin
+        Rel := SnakeCase(Children[I].Rel.Name);
+        A('');
+        A('  <section class="mt-12" aria-labelledby="rows-' + Rel + '">');
+        A('    <h2 id="rows-' + Rel + '" class="text-lg font-medium">' +
+          Capital(StringReplace(Children[I].Rel.Table, '_', ' ', [rfReplaceAll])) + '</h2>');
+        A('    {#if ' + Rel + '.length === 0}');
+        A('      <p class="mt-2 text-sm text-muted">None yet.</p>');
+        A('    {:else}');
+        A('      <ul class="mt-3 flex flex-col border-t border-line">');
+        A('        {#each ' + Rel + ' as c (c.id)}');
+        if Children[I].Linked then
+          A('          <li class="border-b border-line py-2"><Link href={`' + Children[I].Url +
+            '/${c.id}`} class="underline-offset-2 hover:underline">{c.' +
+            Children[I].LabelColumn + '}</Link></li>')
+        else
+          A('          <li class="border-b border-line py-2">{c.' + Children[I].LabelColumn + '}</li>');
+        A('        {/each}');
+        A('      </ul>');
+        A('      {#if ' + Rel + '.length >= listed}');
+        A('        <p class="mt-2 text-sm text-muted">The first {listed}.</p>');
+        A('      {/if}');
+        A('    {/if}');
+        A('  </section>');
+      end;
     A('  <p class="mt-8"><a href="' + N.Url + '" class="underline-offset-2 hover:underline">All ' +
       N.HumanPlural + '</a></p>');
     A('</Layout>');
@@ -1940,7 +2027,7 @@ begin
 end;
 
 function ResourceFiles(const P: TResourcePlan; const Parents: TParentInfos;
-  WithModel, Web, Api: Boolean): TGenFiles;
+  const Children: TChildInfos; WithModel, Web, Api: Boolean): TGenFiles;
 var
   N: TResourceNames;
   Pages, Why: string;
@@ -1952,9 +2039,9 @@ begin
     AddFile(Result, 'app/Models/' + N.ModelUnit + '.pas', ModelText(P));
   if Web then
   begin
-    AddFile(Result, 'app/Http/' + N.CtlUnit + '.pas', ControllerText(P, Parents));
+    AddFile(Result, 'app/Http/' + N.CtlUnit + '.pas', ControllerText(P, Parents, Children));
     AddFile(Result, Pages + 'Index.svelte', IndexText(P));
-    AddFile(Result, Pages + 'Show.svelte', ShowText(P, Parents));
+    AddFile(Result, Pages + 'Show.svelte', ShowText(P, Parents, Children));
     AddFile(Result, Pages + 'Add.svelte', FormPageText(P, Parents, False));
     AddFile(Result, Pages + 'Edit.svelte', FormPageText(P, Parents, True));
     AddFile(Result, Pages + 'Fields.svelte', FieldsText(P, Parents));
@@ -2164,6 +2251,45 @@ begin
     end;
 end;
 
+function ChildrenOf(Schema: TDbSchema; const P: TResourcePlan;
+  const Root: string): TChildInfos;
+var
+  I, K: Integer;
+  Base: string;
+  Plan: TResourcePlan;
+begin
+  Base := IncludeTrailingPathDelimiter(Root);
+  Result := nil;
+  for I := 0 to High(P.Relations) do
+    if P.Relations[I].Kind = prHasMany then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      with Result[High(Result)] do
+      begin
+        Rel := P.Relations[I];
+        Plan := PlanResource(Schema, Rel.Model, Rel.Table);
+        Available := (Length(Plan.Problems) = 0) and
+          FileExists(Base + 'app/Models/App.Models.' + Rel.Model + '.pas');
+        LabelColumn := Plan.DefaultSort;
+        LabelMember := '';
+        FkMember := '';
+        K := PlanColumnIndex(Plan, LabelColumn);
+        if K >= 0 then
+          LabelMember := Plan.Columns[K].Member;
+        K := PlanColumnIndex(Plan, Rel.ForeignKey);
+        if K >= 0 then
+          FkMember := Plan.Columns[K].Member;
+        if (LabelMember = '') or (FkMember = '') then
+          Available := False;
+        SchemaVar := TableConstName(Rel.Table);
+        SchemaUnit := 'App.Schema.' + PascalCase(Rel.Table);
+        Linked := FileExists(Base + 'app/Http/App.Http.' + PascalCase(Rel.Table) +
+          'Controller.pas');
+        Url := '/' + StringReplace(Rel.Table, '_', '-', [rfReplaceAll]);
+      end;
+    end;
+end;
+
 function MakeResource(const Root: string; Schema: TDbSchema;
   const ModelName, Table, Title: string; Force, Web, Api: Boolean): Boolean;
 var
@@ -2195,7 +2321,7 @@ begin
 
   ModelPath := Base + 'app/Models/' + N.ModelUnit + '.pas';
   WithModel := not FileExists(ModelPath);
-  Files := ResourceFiles(P, Parents, WithModel, Web, Api);
+  Files := ResourceFiles(P, Parents, ChildrenOf(Schema, P, Root), WithModel, Web, Api);
 
   Paths := nil;
   for I := 0 to High(Files) do

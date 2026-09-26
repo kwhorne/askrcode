@@ -25,12 +25,17 @@ await send('Page.navigate', { url: BASE + '/gadgets' })
 for (let i = 0; i < 100 && !(await js(`!!document.querySelector('main h1')`)); i++) await wait(100)
 const g = await js(`document.querySelector('tbody a')?.getAttribute('href')`)
 if (g) pages.push(new URL(g).pathname, new URL(g).pathname + '/edit')
+// A maker's page, with the rows that point at it.
+await send('Page.navigate', { url: BASE + '/makers' })
+for (let i = 0; i < 100 && !(await js(`!!document.querySelector('main h1')`)); i++) await wait(100)
+const mk = await js(`document.querySelector('tbody a')?.getAttribute('href')`)
+if (mk) pages.push(new URL(mk).pathname)
 // Run once on empty tables and once with rows: the empty list is where
 // the grid lost its tab stop. With AXE_EXPECT_ROWS a missing row is a
 // failure, not a smaller run -- the pages of a row would otherwise go
 // unchecked in silence.
-if (process.env.AXE_EXPECT_ROWS && !g) {
-  console.log('  FAIL  there is no gadget, so its page and its form are not checked')
+if (process.env.AXE_EXPECT_ROWS && (!g || !mk)) {
+  console.log('  FAIL  there is no gadget or no maker, so their pages are not checked')
   process.exit(1)
 }
 let bad = 0
