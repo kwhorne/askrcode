@@ -31,7 +31,10 @@ const
 type
   TMigration = class
   public
-    { A timestamp as text: '20260919143000'. Sorting is order. }
+    { A timestamp as text: '20260919143000'. A plugin's migrations put
+      its name in front, 'stripe:20261001120000', so the rows in
+      askr_migrations say whose they are and cannot collide with the
+      app's. The order is the timestamp's, whoever owns it. }
     class function Version: string; virtual; abstract;
     { A readable name. Derived from the class name unless it is
       overridden. }
@@ -91,6 +94,13 @@ type
 
 procedure RegisterMigration(M: TMigrationClass);
 function RegisteredMigrations: TList;
+{ The part of a version that orders it: what comes after the colon. }
+function MigrationSortKey(const Version: string): string;
+{ Negative, zero or positive, by the timestamp and then by the whole
+  version -- a plugin's migration takes its place among the app's. }
+function CompareMigrationVersions(const A, B: string): Integer;
+{ Forgets every registered migration. For tests. }
+procedure ClearMigrations;
 
 implementation
 
@@ -109,10 +119,32 @@ begin
   GMigrations.Add(Pointer(M));
 end;
 
+function MigrationSortKey(const Version: string): string;
+begin
+  { A plugin name has no colon in it, so the first is the only one. }
+  Result := Copy(Version, Pos(':', Version) + 1, MaxInt);
+end;
+
+function CompareMigrationVersions(const A, B: string): Integer;
+begin
+  { By the timestamp: sorted as text, stripe:... would always come after
+    every app migration, and an app migration that refers to a plugin's
+    table would run first on a fresh database. }
+  Result := CompareStr(MigrationSortKey(A), MigrationSortKey(B));
+  if Result = 0 then
+    Result := CompareStr(A, B);
+end;
+
 function CompareVersions(Item1, Item2: Pointer): Integer;
 begin
-  Result := CompareStr(TMigrationClass(Item1).Version,
-                       TMigrationClass(Item2).Version);
+  Result := CompareMigrationVersions(TMigrationClass(Item1).Version,
+                                     TMigrationClass(Item2).Version);
+end;
+
+procedure ClearMigrations;
+begin
+  if GMigrations <> nil then
+    GMigrations.Clear;
 end;
 
 function RegisteredMigrations: TList;
@@ -250,6 +282,11 @@ begin
   end;
 end;
 
+function CompareApplied(List: TStringList; I, J: Integer): Integer;
+begin
+  Result := CompareMigrationVersions(List[I], List[J]);
+end;
+
 function TMigrator.AppliedVersions: TStringList;
 var
   R: TDbResult;
@@ -259,10 +296,13 @@ begin
   Result.Sorted := False;
   FArena.Reset;
   R := FConn.Exec(FArena, 'SELECT version, applied_at FROM ' +
-    MigrationsTable + ' ORDER BY version');
+    MigrationsTable);
   for I := 0 to R.RowCount - 1 do
     Result.AddObject(R.Value(I, 0).ToString,
       TObject(PtrInt(I)));
+  { In the order the migrator runs them, not the table's text order:
+    Down walks this list backwards for the latest. }
+  Result.CustomSort(CompareApplied);
 end;
 
 procedure TMigrator.MarkApplied(const AVersion, ATitle: string);

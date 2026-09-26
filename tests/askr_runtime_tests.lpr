@@ -24,7 +24,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
 
 { -------------------------------------------------------------- versjon -- }
@@ -8000,6 +8000,130 @@ begin
   AssertContains(Err, 'UsePlugins(R);', 'and the lines to add are shown');
 end;
 
+{ ---------------------------------------------- plugin migrations -- }
+
+var
+  GMigLog: string;
+
+type
+  { The app's, before the plugin's in time. }
+  TMigAppEarly = class(TMigration)
+  public
+    class function Version: string; override;
+    procedure Up(S: TSchemaBuilder); override;
+    procedure Down(S: TSchemaBuilder); override;
+  end;
+
+  { A plugin's, earlier than both of the app's. As text it would sort
+    last of the three. }
+  TMigPlugin = class(TMigration)
+  public
+    class function Version: string; override;
+    procedure Up(S: TSchemaBuilder); override;
+    procedure Down(S: TSchemaBuilder); override;
+  end;
+
+  TMigAppLate = class(TMigration)
+  public
+    class function Version: string; override;
+    procedure Up(S: TSchemaBuilder); override;
+    procedure Down(S: TSchemaBuilder); override;
+  end;
+
+class function TMigAppEarly.Version: string;
+begin
+  Result := '20260101000000';
+end;
+
+procedure TMigAppEarly.Up(S: TSchemaBuilder);
+begin
+  GMigLog := GMigLog + 'up:app-early ';
+  S.Create('mig_early').Id;
+end;
+
+procedure TMigAppEarly.Down(S: TSchemaBuilder);
+begin
+  GMigLog := GMigLog + 'down:app-early ';
+  S.Drop('mig_early');
+end;
+
+class function TMigPlugin.Version: string;
+begin
+  Result := 'stripe:20250601000000';
+end;
+
+procedure TMigPlugin.Up(S: TSchemaBuilder);
+begin
+  GMigLog := GMigLog + 'up:stripe ';
+  S.Create('mig_stripe').Id;
+end;
+
+procedure TMigPlugin.Down(S: TSchemaBuilder);
+begin
+  GMigLog := GMigLog + 'down:stripe ';
+  S.Drop('mig_stripe');
+end;
+
+class function TMigAppLate.Version: string;
+begin
+  Result := '20270101000000';
+end;
+
+procedure TMigAppLate.Up(S: TSchemaBuilder);
+begin
+  GMigLog := GMigLog + 'up:app-late ';
+  S.Create('mig_late').Id;
+end;
+
+procedure TMigAppLate.Down(S: TSchemaBuilder);
+begin
+  GMigLog := GMigLog + 'down:app-late ';
+  S.Drop('mig_late');
+end;
+
+procedure TestPluginMigrations;
+var
+  C: TDbConnection;
+  M: TMigrator;
+  St: TMigrationInfoArray;
+begin
+  AssertTrue(CompareMigrationVersions('stripe:20250601000000', '20260101000000') < 0,
+    'a plugin''s migration orders by its timestamp, not by its name');
+  AssertEqual(MigrationSortKey('stripe:20250601000000'), '20250601000000', 'the key is what follows the colon');
+  AssertEqual(MigrationSortKey('20260101000000'), '20260101000000', 'and an app''s is its version');
+  AssertTrue(CompareMigrationVersions('20260101000000', 'stripe:20260101000000') <> 0,
+    'the same timestamp twice is still two migrations');
+
+  ClearMigrations;
+  GMigLog := '';
+  C := OpenDbConnection('sqlite::memory:');
+  M := TMigrator.Create(C);
+  try
+    RegisterMigration(TMigAppLate);
+    RegisterMigration(TMigPlugin);
+    RegisterMigration(TMigAppEarly);
+    AssertEqual(M.Up, 3, 'all three run');
+    AssertEqual(GMigLog, 'up:stripe up:app-early up:app-late ',
+      'in the order of their timestamps, the plugin''s among the app''s');
+    St := M.Status;
+    AssertTrue((Length(St) = 3) and (St[0].Version = 'stripe:20250601000000') and St[0].Applied,
+      'askr_migrations records the plugin''s under its own name');
+
+    GMigLog := '';
+    M.Down(1);
+    AssertEqual(GMigLog, 'down:app-late ', 'Down takes back the latest by time');
+    M.Down(1);
+    AssertEqual(GMigLog, 'down:app-late down:app-early ', 'and then the one before it');
+    M.Down(1);
+    AssertEqual(GMigLog, 'down:app-late down:app-early down:stripe ',
+      'and the plugin''s last, though its version sorts after both as text');
+  finally
+    M.Free;
+    C.Free;
+    ClearMigrations;
+  end;
+end;
+
 procedure TestSigV4;
 const
   Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
@@ -12828,6 +12952,7 @@ begin
   Test('add, update, install and remove fetch from git, pin the commit and check it', @TestPluginGit);
   Test('an app starts its plugins in order, and one that cannot start stops it', @TestPluginContract);
   Test('an app.lpr from before plugins is wired, and a reshaped one is not guessed at', @TestWireAppLpr);
+  Test('a plugin''s migrations run among the app''s by time, and roll back the same way', @TestPluginMigrations);
 
   Group('Storage');
   Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);

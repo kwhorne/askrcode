@@ -1264,6 +1264,13 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   appens første linje — før `LoadConfig` — så ingenting den leser der er
   konfigurasjonen appen kjører med. `UsePlugins(R)` står etter `UseAuth(R)`
   og lager pluginene da: `Configure`, så `Routes`.
+* **En plugins migrasjon er `navn:tidsstempel`, og rekkefølgen er
+  tidsstempelets.** Sortert som tekst ville `stripe:` alltid kommet etter
+  alle appens, og en app-migrasjon som peker på en plugin-tabell ville
+  kjørt først på en fersk database. `Down` leste de kjørte i tabellens
+  tekstrekkefølge; den sorteres nå med samme nøkkel. Første og siste kolon
+  er det samme — et pluginnavn har ingen — og mutasjonen som byttet dem
+  overlevde, så nøkkelen er `Pos`.
 * **Byggingen nekter plugins `app.lpr` ikke starter.** Linket og aldri
   startet er en plugin som stille ikke gjør noe. `plugin add` syr linjene
   inn ved to markører og finner begge før den skriver noe, samme regel som

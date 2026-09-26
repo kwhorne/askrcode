@@ -39,6 +39,10 @@ with the zero-major caveat that minor releases may break things until
   app.lpr from before plugins, or shows them when the file does not look
   the way askr wrote it. The build refuses plugins an app.lpr does not
   start: linked and never started is a plugin that silently does nothing.
+- **A plugin's migrations are its own.** Versioned `stripe:20261001120000`,
+  so a row in `askr_migrations` says whose it is and cannot collide with
+  the app's. The migrator orders by the timestamp, whoever owns it, and
+  `db:rollback` takes back the latest by time.
 
 ## 0.15.0 — 2026-09-26
 
