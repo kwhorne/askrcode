@@ -8,6 +8,11 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## Unreleased
+
+**`askr <word>` for a word nothing answers exits 64, not 1.** A script
+that checked for exit 1 after an unknown command will see 64.
+
 ## 0.13.1
 
 **`FillInto` no longer fills `created_at`, `updated_at` or `deleted_at`**

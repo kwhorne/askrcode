@@ -944,6 +944,21 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   et tall, så lagringen er uendret.
 * `db:wipe` nekter når `APP_ENV=production` uten `--force`. Den ene
   kommandoen som sletter alt skal ikke kunne kjøres ved et uhell.
+* **Appens egne kommandoer rutes av én liste.** `ToolCommands` i
+  `Askr.Console.Commands` er ordene verktøyet svarer på selv; et ord som
+  verken står der eller blant `ConsoleCommands` sendes til appen, som
+  kjører en registrert kommando eller svarer 64. Legger noen til en
+  verktøykommando uten å føre den opp, havner den hos appen og virker
+  ikke — det merkes første gang. Motsatt ville en apps kommando med samme
+  navn blitt skygget i stillhet.
+* **En registrering som nektes, kastes ikke.** `RegisterCommand` kalles
+  gjerne fra en `initialization`, og et unntak der er et ufanget unntak
+  med en kolonne adresser. Problemet lagres, og `RunConsole` sier det og
+  stopper appen — også når den startes som server.
+* **`out=$(cmd); code=$?` under `set -e` dreper porten** når `cmd` gir
+  noe annet enn 0, og det er nettopp exitkodene porten skal måle. Skriv
+  `code=0; out=$(cmd) || code=$?`. Samme felle som `grep -c` på en
+  telling som blir 0.
 
 ## Dokumentasjonen i docs/
 

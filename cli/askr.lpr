@@ -1806,11 +1806,26 @@ begin
       Si('expressions, and is not worth it before the phase 3 language call.');
       Halt(1);
     end
-    else
+    else if not IsToolCommand(Kommando) then
     begin
+      { A word neither the tool nor every app answers to: the app's own,
+        if it registered one. Only the app can say -- its commands are
+        compiled into it -- so it is asked, and it answers "unknown" with
+        exit code 64 when it has none by that name. }
+      if FileExists(AppBinaryOf(P)) then
+        Halt(RunApp(P, '--' + Kommando));
       Si('Unknown command: ' + Kommando);
+      Si('If it is one this app registers, build it first: askr build');
       Si('');
       Bruk;
+      Halt(UnknownCommandExit);
+    end
+    else
+    begin
+      { Listed as the tool's and handled by nothing above: a tool command
+        added to ToolCommands without its branch here. }
+      Si(Kommando + ' is listed as a tool command, and nothing in the tool ' +
+        'answers it. This is a bug in askr.');
       Halt(1);
     end;
   finally

@@ -24,7 +24,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
@@ -2690,6 +2690,30 @@ procedure OaDocUncovered(D: TOpenApi);
 begin
   D.Title('Docs API');
   D.Get('/api/pages').ReturnsList(TApiPage);
+end;
+
+{ ------------------------------------------------ the app's own commands -- }
+
+{ Which names an app may give a command of its own. The tool routes by
+  the same two lists, so a name refused here is one the app would never
+  have been asked for. }
+procedure TestCommandNames;
+begin
+  AssertEqual(CommandNameProblem('invoices:send'), '', 'a plain name is fine');
+  AssertEqual(CommandNameProblem('report-2026'), '', 'with a dash and digits');
+  AssertContains(CommandNameProblem('build'), 'tool',
+    'the tool''s own word is refused, since the tool answers it first');
+  AssertContains(CommandNameProblem('migrate'), 'every Askr app',
+    'and so is one every app has');
+  AssertContains(CommandNameProblem('Send'), 'lower case', 'a capital is refused');
+  AssertContains(CommandNameProblem('send mail'), 'lower case letters, digits',
+    'and a space');
+  AssertContains(CommandNameProblem(''), 'name', 'and no name at all');
+  AssertTrue(IsToolCommand('mcp:install') and IsToolCommand('serve'),
+    'the tool''s words are the tool''s');
+  AssertFalse(IsToolCommand('invoices:send'), 'and an app''s are not');
+  AssertEqual(UnknownCommandExit, 64,
+    'no such command is EX_USAGE, which a script can tell from a failure');
 end;
 
 { ------------------------------------------------- columns the model owns -- }
@@ -7541,6 +7565,9 @@ begin
   Group('Unset dates');
   Test('an unset date is blank to a form, to JSON and to the rules',
     @TestUnsetDates);
+
+  Group('Commands of the app''s own');
+  Test('the names an app may use, and the ones it may not', @TestCommandNames);
 
   Group('Columns the model owns');
   Test('a request does not set them, and the document says so', @TestOwnedColumns);

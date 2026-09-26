@@ -60,6 +60,32 @@ const
   what to forward, and by the application to decide what to run. }
 function IsConsoleCommand(const K: string): Boolean;
 
+const
+  { The words the askr tool answers to itself, before any app is asked.
+
+    The tool routes by this list: a word on neither list goes to the
+    app, for a command the app registered. So a tool command added
+    without being listed here goes to the app and does not work -- which
+    is noticed the first time it is run -- rather than an app's command
+    of the same name being shadowed by the tool in silence. }
+  ToolCommands: array[0..16] of string = (
+    'build', 'config', 'help', 'install', 'key:generate', 'make', 'mcp',
+    'mcp:install', 'new', 'outdated', 'repl', 'run', 'serve', 'test',
+    'update', 'version', 'routes');
+
+function IsToolCommand(const K: string): Boolean;
+
+const
+  { askr <word> for a word nothing answers to, from the tool and from the
+    app alike. EX_USAGE, so a script can tell "no such command" from a
+    command that ran and failed. }
+  UnknownCommandExit = 64;
+
+{ Why an app may not register a command by this name, or '' when it may:
+  it is the tool's or the app's own, or it is not a word a command line
+  can carry unquoted. }
+function CommandNameProblem(const K: string): string;
+
 implementation
 
 function IsConsoleCommand(const K: string): Boolean;
@@ -70,6 +96,37 @@ begin
     if ConsoleCommands[I].Name_ = K then
       Exit(True);
   Result := False;
+end;
+
+function IsToolCommand(const K: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := Low(ToolCommands) to High(ToolCommands) do
+    if ToolCommands[I] = K then
+      Exit(True);
+  Result := False;
+end;
+
+function CommandNameProblem(const K: string): string;
+var
+  I: Integer;
+begin
+  if K = '' then
+    Exit('A command needs a name.');
+  if not (K[1] in ['a'..'z']) then
+    Exit(K + ' has to start with a lower case letter.');
+  for I := 1 to Length(K) do
+    if not (K[I] in ['a'..'z', '0'..'9', ':', '-']) then
+      Exit(K + ' may have lower case letters, digits, : and - in it, ' +
+        'as invoices:send does.');
+  if IsToolCommand(K) then
+    Exit(K + ' is the askr tool''s own command. The tool answers it before ' +
+      'the app is asked, so this one would never run.');
+  if IsConsoleCommand(K) then
+    Exit(K + ' is a command every Askr app has. Registering it again ' +
+      'would change what askr ' + K + ' does in this app alone.');
+  Result := '';
 end;
 
 end.

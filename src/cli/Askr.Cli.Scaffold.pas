@@ -648,7 +648,10 @@ begin
     '  { The commands the app answers to itself: migrate, db:seed, schema,' + #10 +
     '    routes, about and the rest. Migrations and routes are compiled in' + #10 +
     '    here, so the tool cannot run them — it asks the binary to. See' + #10 +
-    '    the whole list with: askr list }' + #10 +
+    '    the whole list with: askr list' + #10 + #10 +
+    '    Commands of your own go before RunConsole:' + #10 + #10 +
+    '      RegisterCommand(' + Q + 'invoices:send' + Q + ', ' + Q + 'send what is due' + Q + ', @SendInvoices);' + #10 + #10 +
+    '    and askr invoices:send runs SendInvoices. See docs/cli.md. }' + #10 +
     '  SetConsoleDsn(Cfg(' + Q + 'database.url' + Q + '));' + #10 +
     '  SetConsoleRouter(R);' + #10 +
     '  if RunConsole then' + #10 +

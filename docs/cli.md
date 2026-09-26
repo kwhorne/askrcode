@@ -33,6 +33,47 @@ generated `app.lpr`.
 
 Run `askr list` to see what your binary answers to.
 
+### Commands of your own
+
+```pascal
+function SendInvoices(const A: TConsoleArgs): Integer;
+begin
+  { askr invoices:send 2026-09 --dry-run --limit=10 }
+  Month := A.Arg(1);              { '2026-09' }
+  DryRun := A.Has('dry-run');
+  Limit := A.Int('limit', 50);
+  ...
+  Result := 0;                    { the exit code }
+end;
+
+RegisterCommand('invoices:send', 'send what is due', @SendInvoices);
+```
+
+Register it before `RunConsole` — in `app.lpr`, or in the `initialization`
+of a unit `app.lpr` uses — and `askr invoices:send` runs it. The tool has
+never heard of it: a word that is neither the tool's nor one every app
+has goes to your binary, which runs it or answers that it has none by
+that name.
+
+The command gets an arena, and **the database the app is configured
+with**, as the ambient connection — a model or a query works as it does
+in a handler. Pass `False` as the fourth argument for a command that does
+not need one, and it will run when the database is down.
+
+- **What it returns is the exit code.** To fail with a message, raise:
+  the message comes out as one line, as the built-in commands fail, and
+  the exit code is 1.
+- **A word nothing answers is exit 64** (EX_USAGE), from the tool and the
+  app alike, so a script can tell "no such command" from one that ran and
+  failed.
+- `askr list` shows yours under the built-in ones, with their help.
+
+**A name that can never run stops the app at start-up**, with a sentence
+saying which: one of the tool's words (`build`, `serve`, …), a command
+every app has (`migrate`), a name registered twice, or one that is not a
+plain lower-case word. A command that silently never ran would look like
+one that did nothing.
+
 ## Project
 
 | Command | What it does

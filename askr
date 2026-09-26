@@ -805,6 +805,124 @@ cmd_api_check() {
 # the server on a socket, and curl. The generated tests drive the router;
 # this is the server's own answer to a refusal, its WWW-Authenticate, the
 # 204 with nothing in it, and /openapi.json served from what is running.
+# Commands an app registers itself, run the way a user runs them: through
+# the tool, which has never heard of them and forwards the word, to an app
+# that was built with them in it.
+make_check_commands() {
+  mkdir -p "$work/shop/app/Console"
+  cat > "$work/shop/app/Console/App.Console.Hello.pas" <<'EOF'
+unit App.Console.Hello;
+
+{$mode Delphi}{$H+}
+
+interface
+
+implementation
+
+uses
+  SysUtils, Askr.Console, Askr.Urd.Query, App.Models.Maker;
+
+function Greet(const A: TConsoleArgs): Integer;
+begin
+  if A.Has('loud') then
+    WriteLn(UpperCase('hello ' + A.Arg(1)))
+  else
+    WriteLn('hello ' + A.Arg(1));
+  Result := A.Int('code', 0);
+end;
+
+function Boom(const A: TConsoleArgs): Integer;
+begin
+  raise Exception.Create('the invoices are not ready');
+end;
+
+function CountMakers(const A: TConsoleArgs): Integer;
+begin
+  WriteLn('makers: ', TQuery<TMaker>.New.Count);
+  Result := 0;
+end;
+
+initialization
+  RegisterCommand('hello:greet', 'say hello to someone', @Greet, False);
+  RegisterCommand('hello:boom', 'fail on purpose', @Boom, False);
+  RegisterCommand('hello:makers', 'count the makers', @CountMakers);
+end.
+EOF
+  sed -i.bak 's|^  App.Migrations, App.Seeders,$|  App.Migrations, App.Seeders, App.Console.Hello,|' "$work/shop/app.lpr"
+  rm -f "$work/shop/app.lpr.bak"
+  if ! in_box "$askr_bin build" shop >"$work/cmd-build.log" 2>&1; then
+    bad "the app builds with commands of its own" "$(grep -E 'rror|Fatal' "$work/cmd-build.log" | head -4)"
+    return 0
+  fi
+
+  code=0; out=$(in_box "$askr_bin hello:greet Ada --loud" shop 2>&1) || code=$?
+  [ $code -eq 0 ] && echo "$out" | grep -q '^HELLO ADA$' &&
+    ok "askr hello:greet Ada --loud runs it, with its word and its flag" ||
+    bad "askr hello:greet runs the app's command" "exit $code: $out"
+  code=0; in_box "$askr_bin hello:greet Ada --code=3" shop >/dev/null 2>&1 || code=$?
+  [ $code -eq 3 ] && ok "what it returns is the exit code" || bad "what it returns is the exit code" "exit $code"
+  code=0; out=$(in_box "$askr_bin hello:boom" shop 2>&1) || code=$?
+  if [ $code -eq 1 ] && echo "$out" | grep -q 'the invoices are not ready' &&
+     ! echo "$out" | grep -q 'unhandled exception\|^  \$0000'; then
+    ok "one that raises says why in a line, and exits 1"
+  else
+    bad "one that raises says why in a line" "exit $code: $(echo "$out" | head -3)"
+  fi
+  code=0; out=$(in_box "$askr_bin hello:makers" shop 2>&1) || code=$?
+  [ $code -eq 0 ] && echo "$out" | grep -q '^makers: [0-9]' &&
+    ok "one that needs the database has it, and a model works in it" ||
+    bad "one that needs the database has it" "exit $code: $out"
+  code=0; out=$(in_box "$askr_bin nosuch:thing" shop 2>&1) || code=$?
+  [ $code -eq 64 ] && echo "$out" | grep -q 'Unknown command: nosuch:thing' &&
+    ok "a word nobody answers is still unknown, with exit 64" ||
+    bad "a word nobody answers is still unknown" "exit $code: $out"
+  out=$(in_box "$askr_bin list" shop 2>&1) || true
+  echo "$out" | grep -q 'hello:greet *say hello to someone' &&
+    ok "askr list shows it, with its help" || bad "askr list shows it" "$out"
+
+  # Under set -e an exit code that is not 0 would end the whole gate at
+  # the assignment; each one above is caught with || code=$? instead.
+
+  # A name that can never run stops the app, as a sentence and not as a
+  # column of addresses from an initialization.
+  cat > "$work/shop/app/Console/App.Console.Bad.pas" <<'EOF'
+unit App.Console.Bad;
+
+{$mode Delphi}{$H+}
+
+interface
+
+implementation
+
+uses
+  Askr.Console;
+
+function Nothing(const A: TConsoleArgs): Integer;
+begin
+  Result := 0;
+end;
+
+initialization
+  RegisterCommand('build', 'shadow the tool', @Nothing, False);
+end.
+EOF
+  sed -i.bak 's|App.Console.Hello,$|App.Console.Hello, App.Console.Bad,|' "$work/shop/app.lpr"
+  rm -f "$work/shop/app.lpr.bak"
+  if in_box "$askr_bin build" shop >"$work/cmd-bad-build.log" 2>&1; then
+    code=0; out=$(in_box "$askr_bin about" shop 2>&1) || code=$?
+    if [ $code -eq 1 ] && echo "$out" | grep -q "build is the askr tool's own command" &&
+       ! echo "$out" | grep -q 'unhandled exception\|^  \$0000'; then
+      ok "registering the tool's own word stops the app, saying which"
+    else
+      bad "registering the tool's own word stops the app" "exit $code: $(echo "$out" | head -3)"
+    fi
+  else
+    bad "the app with a bad command builds" "$(grep -E 'rror|Fatal' "$work/cmd-bad-build.log" | head -3)"
+  fi
+  sed -i.bak 's| App.Console.Bad,$|,|; s|App.Console.Hello,,$|App.Console.Hello,|' "$work/shop/app.lpr"
+  rm -f "$work/shop/app.lpr.bak" "$work/shop/app/Console/App.Console.Bad.pas"
+}
+
 make_check_socket() {
   api_port=${ASKR_MAKE_API_PORT:-8354}
   base="http://127.0.0.1:$api_port"
@@ -1389,6 +1507,10 @@ EOF
   echo
   echo "- the pages in a browser"
   make_check_browser
+  echo
+  echo "- commands of the app's own"
+  make_check_commands
+
   echo
   echo "- two migrations with one version"
 

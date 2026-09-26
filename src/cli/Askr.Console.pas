@@ -40,7 +40,7 @@ uses
   SysUtils, Classes, TypInfo,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Env,
   Askr.Core.Config, Askr.Core.Log, Askr.Core.Crypto,
-  Askr.Urd.Driver, Askr.Norn.Schema, Askr.Norn.Migration,
+  Askr.Urd.Driver, Askr.Urd.Model, Askr.Norn.Schema, Askr.Norn.Migration,
   Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Queue, Askr.Scheduler, Askr.Cache, Askr.Auth.Token, Askr.OpenApi,
@@ -65,6 +65,35 @@ procedure SetConsoleDsn(const Dsn: string);
 { The router, the queue, the schedule and the cache are set by the app
   when it has them. Whatever is not set, the command says so. }
 procedure SetConsoleRouter(R: TRouter);
+
+type
+  { What a command of the app's own was given: the words after its name,
+    and its flags. askr invoices:send 2026-09 --dry-run --limit=10 gives
+    Arg(1) = '2026-09', Has('dry-run') and Int('limit', 50) = 10. }
+  TConsoleArgs = record
+    function Arg(Index: Integer): string;
+    function Has(const Flag: string): Boolean;
+    function Text(const Flag: string; const Default: string = ''): string;
+    function Int(const Flag: string; Default: Integer): Integer;
+  end;
+
+  { The command. What it returns is the exit code: 0 for done. To fail
+    with a message, raise -- the message is printed as one line, the way
+    the built-in commands fail, and the exit code is 1. }
+  TConsoleProc = function(const A: TConsoleArgs): Integer;
+
+{ A command of the app's own: askr <Name> runs Proc. Call it before
+  RunConsole -- in app.lpr, or in the initialization of a unit app.lpr
+  uses.
+
+  NeedsDb opens the database the app is configured with and makes it the
+  ambient one, so a model or a query in Proc works as it does in a
+  handler; an arena is set up either way. A name that is the tool's, one
+  every app has, one already registered or one that is not a plain word
+  stops the app at start-up with a sentence saying which -- a command that
+  silently never ran would look like one that did nothing. }
+procedure RegisterCommand(const Name_, Help: string; Proc: TConsoleProc;
+  NeedsDb: Boolean = True);
 
 { Runs the command in ParamStr(1) if there is one. True means "handled,
   do not start the server". The exit code is set with Halt inside the
@@ -1208,6 +1237,110 @@ begin
     Result[I] := Askr.Console.Commands.ConsoleCommands[I].Name_;
 end;
 
+{ ------------------------------------------ the app's own commands -- }
+
+type
+  TRegistered = record
+    Name_: string;
+    Help: string;
+    Proc: TConsoleProc;
+    NeedsDb: Boolean;
+  end;
+
+var
+  GCommands: array of TRegistered;
+  { A registration that was refused. Kept, not raised: RegisterCommand is
+    often called from a unit's initialization, where an exception is an
+    unhandled one and a column of addresses. RunConsole says it, and the
+    app does not start. }
+  GCommandProblems: array of string;
+
+procedure RegisterCommand(const Name_, Help: string; Proc: TConsoleProc;
+  NeedsDb: Boolean);
+var
+  I: Integer;
+  Problem: string;
+begin
+  Problem := CommandNameProblem(Name_);
+  if (Problem = '') and not Assigned(Proc) then
+    Problem := Name_ + ' was registered without a procedure to run.';
+  if Problem = '' then
+    for I := 0 to High(GCommands) do
+      if GCommands[I].Name_ = Name_ then
+        Problem := Name_ + ' is registered twice. One of the two would ' +
+          'never run.';
+  if Problem <> '' then
+  begin
+    SetLength(GCommandProblems, Length(GCommandProblems) + 1);
+    GCommandProblems[High(GCommandProblems)] := Problem;
+    Exit;
+  end;
+  SetLength(GCommands, Length(GCommands) + 1);
+  GCommands[High(GCommands)].Name_ := Name_;
+  GCommands[High(GCommands)].Help := Help;
+  GCommands[High(GCommands)].Proc := Proc;
+  GCommands[High(GCommands)].NeedsDb := NeedsDb;
+end;
+
+function TConsoleArgs.Arg(Index: Integer): string;
+begin
+  Result := Askr.Console.Arg(Index);
+end;
+
+function TConsoleArgs.Has(const Flag: string): Boolean;
+begin
+  Result := HasFlag(Flag);
+end;
+
+function TConsoleArgs.Text(const Flag: string; const Default: string): string;
+begin
+  Result := FlagText(Flag, Default);
+end;
+
+function TConsoleArgs.Int(const Flag: string; Default: Integer): Integer;
+begin
+  Result := FlagValue(Flag, Default);
+end;
+
+{ Runs a registered command, or returns False when there is none by that
+  name. }
+function RunRegistered(const K: string): Boolean;
+var
+  I, Code: Integer;
+  A: TArena;
+  Prev: TArena;
+  C: TDbConnection;
+  Args: TConsoleArgs;
+begin
+  for I := 0 to High(GCommands) do
+    if GCommands[I].Name_ = K then
+    begin
+      A := TArena.Create(64 * 1024);
+      Prev := UseArena(A);
+      C := nil;
+      try
+        if GCommands[I].NeedsDb then
+        begin
+          C := OpenDb;
+          UseDb(C);
+        end;
+        Code := GCommands[I].Proc(Args);
+      finally
+        if C <> nil then
+        begin
+          UseDb(nil);
+          C.Free;
+        end;
+        UseArena(Prev);
+        A.Free;
+      end;
+      if Code <> 0 then
+        Halt(Code);
+      Exit(True);
+    end;
+  Result := False;
+end;
+
 procedure CmdList;
 var
   I: Integer;
@@ -1219,6 +1352,14 @@ begin
     Si(Format('  %-18s %s',
       [Askr.Console.Commands.ConsoleCommands[I].Name_,
        Askr.Console.Commands.ConsoleCommands[I].Help]));
+  if Length(GCommands) > 0 then
+  begin
+    Si('');
+    Si('And its own:');
+    Si('');
+    for I := 0 to High(GCommands) do
+      Si(Format('  %-18s %s', [GCommands[I].Name_, GCommands[I].Help]));
+  end;
 end;
 
 procedure Dispatch_(const K: string); forward;
@@ -1228,6 +1369,15 @@ var
   K: string;
 begin
   Result := False;
+  { Before anything else, and whether or not a command was asked for: an
+    app with a command that can never run does not start, as a server or
+    otherwise. }
+  if Length(GCommandProblems) > 0 then
+  begin
+    for K in GCommandProblems do
+      Err(K);
+    Halt(1);
+  end;
   if ParamCount < 1 then
     Exit;
   K := ParamStr(1);
@@ -1296,11 +1446,11 @@ begin
   else if K = 'up' then CmdUp
   else if K = 'env' then Si(AppEnv)
   else if K = 'list' then CmdList
-  else
+  else if not RunRegistered(K) then
   begin
     Err('Unknown command: ' + K);
     Err('Try: askr list');
-    Halt(1);
+    Halt(UnknownCommandExit);
   end;
 end;
 

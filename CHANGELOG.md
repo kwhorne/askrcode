@@ -12,6 +12,24 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **Commands of an app's own.** `RegisterCommand('invoices:send', 'send
+  what is due', @SendInvoices)` before `RunConsole`, and `askr
+  invoices:send` runs it: with its words and flags in a `TConsoleArgs`,
+  an arena, the app's database as the ambient connection unless it says
+  it needs none, and its return value as the exit code. A command that
+  raises says why in a line and exits 1; `askr list` shows it.
+
+  The tool routes by one list of its own words, beside the list every app
+  has, and a word on neither goes to the app. A name that is on either,
+  registered twice or not a plain word stops the app at start-up with a
+  sentence rather than never running. A word nothing answers is exit 64
+  now, from the tool and the app alike, so a script can tell it from a
+  command that failed.
+
 ## 0.13.1 — 2026-09-26
 
 What the generators left open. A form now refuses a duplicate and a key
