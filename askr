@@ -880,6 +880,19 @@ make_check_socket() {
   else
     bad "a writer creates one" "got $c: $(head -c 300 "$work/sock-body")"
   fi
+  # Refused on the form, not by the database: before Exists and Unique a
+  # key to nothing and a duplicate name were both a 500.
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -d '{"name":"No maker","born":"2026-01-02","maker_id":999}' "$base/api/gadgets")
+  [ "$c" = "422" ] && grep -q '"maker_id"' "$work/sock-body" &&
+    ok "a maker that is not there is a 422 on maker_id, not a 500" ||
+    bad "a maker that is not there is a 422" "got $c: $(head -c 200 "$work/sock-body")"
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -d '{"name":"Over a socket","born":"2026-01-02","maker_id":1}' "$base/api/gadgets")
+  [ "$c" = "422" ] && grep -q '"name"' "$work/sock-body" &&
+    ok "and a name that is taken is a 422 on name" ||
+    bad "a name that is taken is a 422" "got $c: $(head -c 200 "$work/sock-body")"
+
   c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
         -X PATCH -d '{"name":"Patched"}' "$base$loc")
   if [ "$c" = "200" ] && grep -q '"name":"Patched"' "$work/sock-body" &&
@@ -1049,7 +1062,7 @@ cmd_make_check() {
   rm -f "$work/shop/askr.toml.bak"
   ok "a project is scaffolded"
 
-  if in_box "$askr_bin make model Maker 'name:string(80)'" shop >"$work/m1.log" 2>&1; then
+  if in_box "$askr_bin make model Maker 'name:string(80):unique'" shop >"$work/m1.log" 2>&1; then
     ok "a parent model"
   else
     bad "a parent model" "$(tail -3 "$work/m1.log")"
@@ -1057,7 +1070,7 @@ cmd_make_check() {
 
   # Quoted one by one: a bracket and a question mark both mean something to
   # a shell, and the spec has to arrive as it was written.
-  spec="'name:string(60)' 'notes:text?' qty:int big:bigint active:bool price:money ratio:float 'seen_at:datetime?' born:date 'meta:json?' 'tag:uuid?' maker:references"
+  spec="'name:string(60):unique' 'notes:text?' qty:int big:bigint active:bool price:money ratio:float 'seen_at:datetime?' born:date 'meta:json?' 'tag:uuid?' maker:references"
   if in_box "$askr_bin make model Gadget $spec" shop >"$work/m2.log" 2>&1; then
     ok "a model with every type there is"
   else

@@ -294,6 +294,15 @@ type
     { No other row in the table has this value. Uses the ambient
       connection, and skips the row itself when the model is stored. }
     function UniqueIn(const ATable: string; const AColumn: string = ''): TFieldRules;
+    { UniqueIn on the model's own table and column -- the common case, and
+      the one a generator can write without knowing the table's name. }
+    function Unique: TFieldRules;
+    { The value is a row in ATable: a reference that points at something.
+      Blank passes -- that is Required's to refuse -- so a nullable
+      reference is checked only when it is set. Without it, a key to a row
+      that is not there failed in the database, as a 500, instead of on
+      the form. A soft-deleted row is still a row here. }
+    function Exists(const ATable: string; const AColumn: string = 'id'): TFieldRules;
     { Overstyrer meldingen til regelen rett foran. }
     function Says(const AMessage: string): TFieldRules;
     property Column: string read FColumn;
@@ -1298,6 +1307,58 @@ begin
 
   if not R.IsEmpty then
     Fail(FColumn + ' is already taken');
+end;
+
+function TFieldRules.Unique: TFieldRules;
+begin
+  Result := UniqueIn(FValidator.FMeta.Table);
+end;
+
+function TFieldRules.Exists(const ATable: string;
+  const AColumn: string): TFieldRules;
+var
+  C: TDbConnection;
+  A: TArena;
+  B: TStrBuilder;
+  R: TDbResult;
+  Mark: TArenaMark;
+  Sql: string;
+  P: TDbParam;
+begin
+  Result := Self;
+  if FFailed or not FFound or IsBlank then
+    Exit;
+
+  C := CurrentDb;
+  if C = nil then
+    raise EValidationError.Create(
+      'Exists needs a database connection. Set the ambient one with UseDb.');
+
+  A := FValidator.Model.Arena;
+  Mark := A.Mark;
+  try
+    B.Init(A, 128);
+    B.Append('SELECT 1 FROM ');
+    C.AppendIdentStr(B, ATable);
+    B.Append(' WHERE ');
+    C.AppendIdentStr(B, AColumn);
+    B.Append(' = ');
+    C.AppendPlaceholder(B, 1);
+    B.Append(' LIMIT 1');
+    Sql := B.ToString;
+  finally
+    A.Rewind(Mark);
+  end;
+
+  { An id is compared as the number it is. As text it would work in some
+    databases and fail to match in others. }
+  if FCol.Kind = ckInteger then
+    P := DbParam(A, GetInt64Prop(FValidator.Model, FCol.Prop))
+  else
+    P := DbParam(A, AsStr);
+  R := C.ExecParams(A, Sql, [P]);
+  if R.IsEmpty then
+    Fail(FColumn + ' does not match a row in ' + ATable);
 end;
 
 function TFieldRules.Says(const AMessage: string): TFieldRules;

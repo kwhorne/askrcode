@@ -55,6 +55,7 @@ type
     Length: Integer;    { string(n); 0 means the default }
     Nullable: Boolean;  { a trailing ? }
     RefTable: string;   { for references: the table it points at }
+    Unique: Boolean;    { :unique -- no two rows with one value }
   end;
   TFieldSpecs = array of TFieldSpec;
 
@@ -176,6 +177,7 @@ begin
   Result.Length := 0;
   Result.Nullable := False;
   Result.RefTable := '';
+  Result.Unique := False;
 
   P := Pos(':', Arg);
   if P = 0 then
@@ -184,6 +186,18 @@ begin
       [Arg, Arg]);
   Name_ := Copy(Arg, 1, P - 1);
   TypePart := Copy(Arg, P + 1, MaxInt);
+
+  { email:string(120):unique -- after the type, and after its ? when it
+    has one. }
+  if LowerCase(Copy(TypePart, Length(TypePart) - 6, 7)) = ':unique' then
+  begin
+    Result.Unique := True;
+    System.Delete(TypePart, Length(TypePart) - 6, 7);
+  end;
+  if Pos(':', TypePart) > 0 then
+    raise EFieldSpec.CreateFmt(
+      '%s: after the type the only word is :unique, as email:string(120):unique.',
+      [Arg]);
 
   if (TypePart <> '') and (TypePart[Length(TypePart)] = '?') then
   begin
@@ -229,6 +243,16 @@ begin
       raise EFieldSpec.CreateFmt(
         '%s: the length has to be a whole number from 1 to 65535.', [Arg]);
   end;
+
+  { A unique index on TEXT or JSON needs a length MySQL will not guess,
+    and on a boolean it allows two rows. Refused rather than written into
+    a migration that fails on one database. }
+  if Result.Unique and (Result.Kind in [ftText, ftJson, ftBool]) then
+    raise EFieldSpec.CreateFmt(
+      '%s: %s cannot be unique here. MySQL will not index a text or a json ' +
+      'column without a length, and a boolean has two values. Use ' +
+      'string(n) for something that must not repeat.',
+      [Arg, TypeWords[Result.Kind]]);
 
   if not ValidColumnName(Name_) then
     raise EFieldSpec.CreateFmt(
@@ -360,6 +384,8 @@ begin
   end;
   if F.Nullable then
     Result := Result + '.Nullable';
+  if F.Unique then
+    Result := Result + '.Unique';
   Result := Result + ';';
 end;
 
@@ -403,6 +429,12 @@ begin
       Len := DefaultStringLength;
     R := R + '.MaxLen(' + IntToStr(Len) + ')';
   end;
+  { The database refuses a duplicate or a key to nothing either way; the
+    rule is what makes that a message on the form instead of a 500. }
+  if F.Unique then
+    R := R + '.Unique';
+  if F.Kind = ftReferences then
+    R := R + '.Exists(' + Q + F.RefTable + Q + ')';
   if R = '' then
     Exit('');
   Result := 'V.Field(' + Q + F.Prop + Q + ')' + R + ';';

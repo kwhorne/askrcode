@@ -220,6 +220,23 @@ begin
   Result := False;
 end;
 
+{ Whether a unique index covers this column alone. The primary key's own
+  index is not counted: the key is never on a form. }
+function UniqueAlone(T: TDbTable; const Column: string): Boolean;
+var
+  I: Integer;
+  X: TDbIndex;
+begin
+  for I := 0 to T.IndexCount - 1 do
+  begin
+    X := T.IndexAt(I);
+    if X.IsUnique and not X.IsPrimary and (Length(X.Columns) = 1) and
+       (X.Columns[0] = Column) then
+      Exit(True);
+  end;
+  Result := False;
+end;
+
 { The kind a column's SQL type says it is. Nothing from the name: a
   column called email is text. }
 function KindOf(const C: TDbColumn; out Kind: TFieldType;
@@ -370,6 +387,7 @@ begin
     PC.Field.Column := C.Name;
     PC.Field.Prop := '';
     PC.Field.RefTable := '';
+    PC.Field.Unique := UniqueAlone(T, C.Name) and not C.IsPrimaryKey;
     PC.SqlType := C.SqlType;
     PC.Member := '';
     PC.ColAlias := '';
@@ -496,6 +514,14 @@ begin
     SetLength(Result.Columns, Length(Result.Columns) + 1);
     Result.Columns[High(Result.Columns)] := PC;
   end;
+
+  for I := 0 to T.IndexCount - 1 do
+    if T.IndexAt(I).IsUnique and not T.IndexAt(I).IsPrimary and
+       (Length(T.IndexAt(I).Columns) > 1) then
+      Say(Result.Notes, Format(
+        'The unique index %s is on %d columns together. A rule is on one ' +
+        'field, so a duplicate of the pair is refused by the database, not ' +
+        'on the form.', [T.IndexAt(I).Name, Length(T.IndexAt(I).Columns)]));
 
   if Pks = 0 then
     Say(Result.Problems, Format(

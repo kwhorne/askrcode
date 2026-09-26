@@ -118,7 +118,7 @@ function MakeResource(const Root: string; Schema: TDbSchema;
 implementation
 
 uses
-  Askr.Urd.Model, Askr.Cli.Scaffold;
+  Math, Askr.Urd.Model, Askr.Cli.Scaffold;
 
 { ------------------------------------------------------------ names -- }
 
@@ -1283,6 +1283,20 @@ end;
   a reference, which the parent cannot be given here. }
 function SamplePascal(const PC: TPlanColumn): string;
 begin
+  { A unique column gets Seq, which the test moves on for every row: three
+    rows with one value would be refused by the rule, and on a test
+    database that keeps its rows, so would the next run's. }
+  if PC.Field.Unique then
+    case PC.Field.Kind of
+      ftString, ftText, ftJson:
+        Exit('Copy(''S'' + IntToStr(Seq), 1, ' + IntToStr(Max(PC.Field.Length, 1)) + ')');
+      ftInt, ftBigInt:
+        Exit('Seq');
+      ftUuid:
+        Exit('Format(''%.8d-0000-4000-8000-%.12d'', [Seq mod 100000000, Seq mod 1000000000000])');
+      ftDateTime, ftDate:
+        Exit('(EncodeDate(2000, 1, 1) + Seq mod 30000)');
+    end;
   case PC.Field.Kind of
     ftString: Result := PasStr(Copy('Sample', 1, PC.Field.Length));
     ftText: Result := PasStr('Sample text');
@@ -1294,6 +1308,22 @@ begin
     ftJson: Result := PasStr('[]');
     ftUuid: Result := PasStr('123e4567-e89b-12d3-a456-426614174000');
     ftReferences: Result := '';
+  end;
+end;
+
+{ A Pascal expression for the JSON of a sample value. A literal, unless the
+  column is unique; a reference is the caller's to fill in. }
+function SampleJsonExpr(const PC: TPlanColumn): string;
+begin
+  if not PC.Field.Unique or (PC.Field.Kind = ftReferences) then
+    Exit(PasStr(SampleJson(PC)));
+  case PC.Field.Kind of
+    ftInt, ftBigInt: Result := 'IntToStr(' + SamplePascal(PC) + ')';
+    ftDate: Result := '''"'' + FormatDateTime(''yyyy-mm-dd'', ' + SamplePascal(PC) + ') + ''"''';
+    ftDateTime: Result := '''"'' + FormatDateTime(''yyyy-mm-dd"T"hh:nn'', ' +
+      SamplePascal(PC) + ') + ''"''';
+  else
+    Result := '''"'' + ' + SamplePascal(PC) + ' + ''"''';
   end;
 end;
 
@@ -1324,7 +1354,7 @@ var
   Ed: TPlanColumns;
   I, K: Integer;
   PC: TPlanColumn;
-  Body, Args, First, Firstmember, RequiredCol, Uses_: string;
+  Body, First, Firstmember, RequiredCol, Uses_: string;
   CtlUnit, Url, RoutesProc, TestUnit, TestsProc, RD, WR, Forged: string;
   CanWrite: Boolean;
   Par: TParentInfo;
@@ -1484,6 +1514,10 @@ begin
     A('  Client: TTestClient;');
     if Api then
       A('  ReadToken, WriteToken: string;');
+    A('  { Moves on for every row, so a unique column never repeats -- not in');
+    A('    this run, and not against the rows an earlier run left behind. }');
+    A('  Seq: Int64;');
+    A('  LastFirst: string;');
     A('');
     if Api then
     begin
@@ -1503,6 +1537,7 @@ begin
     A('begin');
     A('  if Client <> nil then');
     A('    Exit;');
+    A('  Seq := Trunc((Now - EncodeDate(2020, 1, 1)) * 86400000);');
     A('  Arena := TArena.Create(64 * 1024);');
     A('  UseArena(Arena);');
     A('  Conn := OpenDbConnection(Env(''TEST_DATABASE_URL'', ''sqlite::memory:''));');
@@ -1573,6 +1608,7 @@ begin
       for I := 0 to High(ParentIdx) do
         A('  P' + IntToStr(I) + ': T' + Parents[ParentIdx[I]].Rel.Model + ';');
       A('begin');
+      A('  Inc(Seq);');
       for I := 0 to High(ParentIdx) do
       begin
         Par := Parents[ParentIdx[I]];
@@ -1585,23 +1621,32 @@ begin
         end;
         A('  P' + IntToStr(I) + '.Save;');
       end;
-      Body := BodyWith('', '');
-      Args := '';
-      { One %d per reference, in the order they are in the body. }
+      { The body as an expression: a literal for most columns, Seq for a
+        unique one, and the parent's id for a reference. }
+      Body := '';
       K := 0;
       for I := 0 to High(Ed) do
-        if (Ed[I].Field.Kind = ftReferences) and MadeFor(Ed[I].Field.Column) then
+      begin
+        if Body <> '' then
+          Body := Body + ' + ' + PasStr(',');
+        Body := Body + ' + ' + PasStr('"' + Ed[I].Field.Column + '":') + ' + ';
+        if Ed[I].Field.Kind = ftReferences then
         begin
-          if Args <> '' then
-            Args := Args + ', ';
-          Args := Args + 'P' + IntToStr(K) + '.Id';
-          Inc(K);
-        end;
-      if Args = '' then
-        A('  Res := ' + WR + '.Post(''' + Url + ''', ' + PasStr(Body) + ');')
-      else
-        A('  Res := ' + WR + '.Post(''' + Url + ''', Format(' + PasStr(Body) +
-          ', [' + Args + ']));');
+          if MadeFor(Ed[I].Field.Column) then
+          begin
+            Body := Body + 'IntToStr(P' + IntToStr(K) + '.Id)';
+            Inc(K);
+          end
+          else
+            Body := Body + PasStr('null');
+        end
+        else
+          Body := Body + SampleJsonExpr(Ed[I]);
+      end;
+      Body := PasStr('{') + Body + ' + ' + PasStr('}');
+      if First <> '' then
+        A('  LastFirst := ' + SamplePascal(P.Columns[PlanColumnIndex(P, First)]) + ';');
+      A('  Res := ' + WR + '.Post(''' + Url + ''', ' + Body + ');');
       if Api then
         A('  AssertStatus(Res, 201, ''a valid ' + N.Human + ' is created'');')
       else
@@ -1685,8 +1730,7 @@ begin
       A('  M := TQuery<T' + N.Model + '>.New.Find(Id);');
       A('  AssertNotNil(M, ''and it can be found'');');
       if Firstmember <> '' then
-        A('  AssertEqual(M.' + Firstmember + ', ' + FirstLen('Sample') +
-          ', ''with what was sent'');');
+        A('  AssertEqual(M.' + Firstmember + ', LastFirst, ''with what was sent'');');
       if Api then
       begin
         A('  Res := Reader.Get(''' + Url + '/'' + IntToStr(Id));');
@@ -1740,6 +1784,8 @@ begin
       A('var');
       A('  Id: Int64;');
       A('  Res: TResponse;');
+      if First <> '' then
+        A('  NewFirst: string;');
       if (Firstmember <> '') or (Hidden <> nil) then
         A('  M: T' + N.Model + ';');
       A('begin');
@@ -1754,31 +1800,36 @@ begin
            (P.Columns[PlanColumnIndex(P, Hidden[I])].Field.Kind in [ftString, ftText]) then
           Forged := Hidden[I];
       if First <> '' then
-        Body := '{"' + First + '":"' +
-          Copy('Changed', 1, P.Columns[PlanColumnIndex(P, First)].Field.Length) +
-          '","id":999999,"created_at":"2001-01-01 00:00:00"'
+      begin
+        if P.Columns[PlanColumnIndex(P, First)].Field.Unique then
+          A('  NewFirst := Copy(''C'' + IntToStr(Seq), 1, ' +
+            IntToStr(P.Columns[PlanColumnIndex(P, First)].Field.Length) + ');')
+        else
+          A('  NewFirst := ' + FirstLen('Changed') + ';');
+        Body := PasStr('{"' + First + '":"') + ' + NewFirst + ' +
+          PasStr('","id":999999,"created_at":"2001-01-01 00:00:00"');
+      end
       else
-        Body := '{"id":999999';
+        Body := PasStr('{"id":999999');
       if Forged <> '' then
-        Body := Body + ',"' + Forged + '":"forged"';
-      Body := Body + '}';
+        Body := Body + ' + ' + PasStr(',"' + Forged + '":"forged"');
+      Body := Body + ' + ' + PasStr('}');
       if Api then
       begin
-        A('  Res := Writer.Send(''PATCH'', ''' + Url + '/'' + IntToStr(Id), ' + PasStr(Body) +
+        A('  Res := Writer.Send(''PATCH'', ''' + Url + '/'' + IntToStr(Id), ' + Body +
           ', ''application/json'');');
         A('  AssertStatus(Res, 200, ''a change answers with the row as it is now'');');
       end
       else
       begin
-        A('  Res := ' + WR + '.Put(''' + Url + '/'' + IntToStr(Id), ' + PasStr(Body) + ');');
+        A('  Res := ' + WR + '.Put(''' + Url + '/'' + IntToStr(Id), ' + Body + ');');
         A('  AssertStatus(Res, 303, ''a save answers 303, so the browser does not repeat the PUT'');');
       end;
       if Firstmember <> '' then
       begin
         A('  M := TQuery<T' + N.Model + '>.New.Find(Id);');
         A('  AssertNotNil(M, ''the id in the body did not move it'');');
-        A('  AssertEqual(M.' + Firstmember + ', ' + FirstLen('Changed') +
-          ', ''the change is saved'');');
+        A('  AssertEqual(M.' + Firstmember + ', NewFirst, ''the change is saved'');');
         if P.HasTimestamps then
           A('  AssertTrue(M.CreatedAt > EncodeDate(2002, 1, 1),' + #10 +
             '    ''and created_at, which the model sets, is not set from the body'');');

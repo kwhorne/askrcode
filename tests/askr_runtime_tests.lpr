@@ -1872,10 +1872,28 @@ begin
   AssertEqual(F[7].RefTable, 'makers', 'pointing at its table');
   AssertEqual(MigrationLineOf(F[7]), 'ForeignKey(''maker_id'', ''makers'');',
     'as a foreign key');
-  { Every reference, nullable or not: no table has a row 0. }
-  AssertEqual(DescribeLineOf(F[7]), 'S.ZeroIsNull(''MakerId'');',
-    'and zero is no row, to the database and to JSON');
+  AssertEqual(RuleLineOf(F[7]), 'V.Field(''MakerId'').Required.Exists(''makers'');',
+    'and has to point at a row that is there');
   AssertEqual(F[8].Prop, 'Address2', 'a digit in a name is kept');
+  { :unique, after the type and after its ?. }
+  F := ParseFields(['email:string(120):unique', 'code:string(8)?:unique',
+    'owner:references:unique']);
+  AssertTrue(F[0].Unique and not F[0].Nullable, ':unique makes it unique');
+  AssertTrue(F[1].Unique and F[1].Nullable, 'and goes after the ?');
+  AssertEqual(MigrationLineOf(F[0]), 'Text(''email'', 120).Unique;',
+    'the migration makes a unique index');
+  AssertEqual(RuleLineOf(F[0]), 'V.Field(''Email'').Required.MaxLen(120).Unique;',
+    'and the rule refuses a duplicate on the form');
+  AssertEqual(RuleLineOf(F[2]), 'V.Field(''OwnerId'').Required.Unique.Exists(''owners'');',
+    'a unique reference is one-to-one, and still has to point at a row');
+  AssertTrue(SpecRefused('notes:text:unique', Msg), 'text cannot be unique');
+  AssertContains(Msg, 'string(n)', 'and it says what to use instead');
+  AssertTrue(SpecRefused('email:string:uniq', Msg), 'a typo after the type is refused');
+  F := ParseFields(['maker:references']);
+
+  { Every reference, nullable or not: no table has a row 0. }
+  AssertEqual(DescribeLineOf(F[0]), 'S.ZeroIsNull(''MakerId'');',
+    'and zero is no row, to the database and to JSON');
 
   { A NOT NULL json is required: '' is not JSON, so the database would
     refuse it with an error a long way from the form. }
@@ -2030,6 +2048,8 @@ begin
       'deleted_at DATETIME)');
     C.Exec(A, 'CREATE TABLE parts (id INTEGER PRIMARY KEY, ' +
       'gadget_id BIGINT REFERENCES gadgets(id), sku VARCHAR(10))');
+    C.Exec(A, 'CREATE UNIQUE INDEX parts_sku ON parts (sku)');
+    C.Exec(A, 'CREATE UNIQUE INDEX gadgets_name_born ON gadgets (name, born)');
     C.Exec(A, 'CREATE TABLE nokeys (a INTEGER, b TEXT)');
     C.Exec(A, 'CREATE TABLE twokeys (a INTEGER, b INTEGER, PRIMARY KEY (a, b))');
     C.Exec(A, 'CREATE TABLE textkeys (code TEXT PRIMARY KEY, name TEXT)');
@@ -2076,8 +2096,8 @@ begin
       Lines := RuleLinesOf(P);
       AssertTrue(PlanHas(Lines, 'V.Field(''Name'').Required.MaxLen(60);'),
         'the rule the schema states');
-      AssertTrue(PlanHas(Lines, 'V.Field(''MakerId'').Required;'),
-        'a NOT NULL reference is required');
+      AssertTrue(PlanHas(Lines, 'V.Field(''MakerId'').Required.Exists(''makers'');'),
+        'a NOT NULL reference is required, and has to point at a maker');
       { A database default is not what an insert through the model gets
         -- a model writes every column it maps -- so the column is not
         Required; the form starts with the default instead. }
@@ -2158,6 +2178,20 @@ begin
       P := PlanResource(S, 'Textkey', 'textkeys');
       AssertTrue((Length(P.Problems) > 0) and (Pos('whole number', P.Problems[0]) > 0),
         'nor one whose key is text');
+
+      { A unique index on one column is a rule; one on two is a note. }
+      P := PlanResource(S, 'Gadget');
+      AssertFalse(ColOf('name').Field.Unique,
+        'a column in a two-column unique index is not unique by itself');
+      AssertTrue(NoteMentions(P, 'gadgets_name_born'),
+        'and the pair is a note, since a rule is on one field');
+      P := PlanResource(S, 'Part');
+      AssertTrue(P.Columns[PlanColumnIndex(P, 'sku')].Field.Unique,
+        'a unique index on one column makes it unique');
+      AssertTrue(PlanHas(RuleLinesOf(P), 'V.Field(''Sku'').MaxLen(10).Unique;'),
+        'and the rule says so');
+      AssertTrue(PlanHas(RuleLinesOf(P), 'V.Field(''GadgetId'').Exists(''gadgets'');'),
+        'a nullable reference is checked only when it is set');
 
       AssertEqual(SingularOf('makers'), 'maker', 'makers comes from maker');
       AssertEqual(SingularOf('categories'), 'category', 'categories from category');
@@ -2261,6 +2295,80 @@ begin
         Msg := E.Message;
     end;
     AssertContains(Msg, 'integer', 'ZeroIsNull on a string is refused, saying what it is for');
+  finally
+    UseDb(nil);
+    UseArena(nil);
+    C.Free;
+    A.Free;
+  end;
+end;
+
+{ ----------------------------------------------- Exists and Unique -- }
+
+type
+  TRuledPart = class(TModel)
+  private
+    FId: Int64;
+    FSku: string;
+    FMakerId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property Sku: string read FSku write FSku;
+    property MakerId: Int64 read FMakerId write FMakerId;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
+class procedure TRuledPart.Describe(S: TSchema);
+begin
+  S.Table('ruled_parts');
+  S.ZeroIsNull('MakerId');
+end;
+
+procedure TRuledPart.Rules(V: TValidator);
+begin
+  V.Field('Sku').Unique;
+  V.Field('MakerId').Exists('ruled_makers');
+end;
+
+{ A key to a row that is not there, and a duplicate, both failed in the
+  database -- as a 500 -- instead of on the form. }
+procedure TestExistsAndUnique;
+var
+  A: TArena;
+  C: TDbConnection;
+  P: TRuledPart;
+begin
+  A := TArena.Create(32 * 1024);
+  UseArena(A);
+  C := OpenDbConnection('sqlite::memory:');
+  UseDb(C);
+  try
+    C.Exec(A, 'CREATE TABLE ruled_makers (id INTEGER PRIMARY KEY, name TEXT)');
+    C.Exec(A, 'INSERT INTO ruled_makers (id, name) VALUES (1, ''Acme'')');
+    C.Exec(A, 'CREATE TABLE ruled_parts (id INTEGER PRIMARY KEY, sku TEXT, maker_id BIGINT)');
+
+    P := TRuledPart.Create;
+    P.Sku := 'A-1';
+    P.MakerId := 1;
+    AssertTrue(P.Validate, 'a new sku and a maker that is there pass');
+    P.Save;
+
+    P.MakerId := 99;
+    AssertFalse(P.Validate, 'a maker that is not there is refused');
+    AssertContains(P.Errors.First('maker_id'), 'ruled_makers',
+      'on the column, naming the table');
+    P.MakerId := 0;
+    AssertTrue(P.Validate, 'no maker at all is left to Required');
+    AssertTrue(P.Validate, 'and the row does not collide with its own sku when saved');
+
+    P := TRuledPart.Create;
+    P.Sku := 'A-1';
+    AssertFalse(P.Validate, 'another row with the same sku is refused');
+    AssertTrue(P.Errors.Has('sku'), 'on the sku');
+    P.Sku := 'A-2';
+    AssertTrue(P.Validate, 'and a different one passes');
   finally
     UseDb(nil);
     UseArena(nil);
@@ -7406,6 +7514,9 @@ begin
 
   Group('Columns the model owns');
   Test('a request does not set them, and the document says so', @TestOwnedColumns);
+
+  Group('Exists and Unique');
+  Test('a key to nothing and a duplicate are refused on the form', @TestExistsAndUnique);
 
   Group('Zero is null');
   Test('a reference to no row is NULL, null and blank', @TestZeroIsNull);

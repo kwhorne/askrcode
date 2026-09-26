@@ -41,11 +41,17 @@ column at a time.
 | `json`, `uuid` | the dialect's JSON and UUID where it has them | `string` |
 | `thing:references` | `thing_id BIGINT`, a foreign key to `things` | `Int64` |
 
-A trailing `?` makes a column nullable. Timestamps are on by default, in
+A trailing `?` makes a column nullable, and `:unique` after the type — and
+after its `?` — makes a unique index: `email:string(120):unique`. Not on
+`text`, `json` or `bool`: MySQL will not index the first two without a
+length, and a boolean has two values. Timestamps are on by default, in
 both files together — `--no-timestamps` leaves them out of both.
 
 `Rules` gets what the spec **states**: `Required` for a NOT NULL text,
-date or reference, and `MaxLen(n)` for a `string(n)`. Not for a NOT NULL
+date or reference, `MaxLen(n)` for a `string(n)`, `Unique` for a
+`:unique` column, and `Exists('makers')` for a reference — so a duplicate
+and a key to nothing are messages on the form rather than a 500 from the
+database. Not for a NOT NULL
 number or boolean — zero and false are values, and Required would refuse
 the one nobody thinks of as missing. **Nothing is inferred from a name**:
 a column called `email` is not therefore an email.
@@ -120,6 +126,10 @@ What the table says, the resource does:
   starts from the default when it is a plain value (`'draft'`, `0`,
   `false`); a function such as `now()` is left to the database.
 - `VARCHAR(n)` is `MaxLen(n)` and `maxlength="n"`.
+- A unique index on the column alone is `Unique`. One on two columns
+  together is a note: a rule is on one field, so a duplicate pair is
+  still refused by the database, not by the form.
+- A foreign key is `Exists` against the table it points at.
 - A foreign key to a table whose model exists is a select of its rows,
   labelled by its first string column and capped at a thousand — a select
   with more is the wrong control. Without a model for it, it is a number,
@@ -253,10 +263,11 @@ top.
 **A has-many relation is not shown** on the parent's page. The plan knows
 about it; nothing draws it yet.
 
-**A foreign key and a unique column are not checked before saving.** A
-key to a row that is not there, or a duplicate, fails in the database —
-as a 500 — instead of on the form. `UniqueIn` exists; the generator does
-not write it yet.
+**Two requests at once can both pass `Unique` and `Exists`.** The rules
+ask the database before the save, and a second request can take the name
+or delete the row in between; the database then refuses one of them, as a
+500. The rule is what makes the ordinary case a message on the form; the
+constraint is what keeps the data right in the other one.
 
 **A nullable number other than a reference cannot be NULL.** Pascal has no
 null `Int64`, and nothing tells 0 from "not set". A reference has

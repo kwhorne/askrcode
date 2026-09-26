@@ -14,6 +14,24 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **`Exists(table)` and `Unique`, two validation rules.** `Exists` says a
+  reference points at a row that is there, and passes a blank so a
+  nullable one is checked only when set; `Unique` is `UniqueIn` on the
+  model's own table. A key to nothing and a duplicate both failed in the
+  database, as a 500, instead of on the form.
+
+- **`:unique` in a `make model` spec** -- `email:string(120):unique` -- for
+  a unique index in the migration and `Unique` in the rules. Refused on
+  text, json and bool.
+
+- **`make model` and `make resource` write `Exists` for every reference,**
+  and `make resource` reads single-column unique indexes into `Unique`. A
+  unique index on two columns becomes a note. The tests `make resource`
+  writes give a unique column a new value for every row, so three rows,
+  or a test database that keeps its rows between runs, do not collide.
+
 ### Changed
 
 - **`FillInto` never fills the columns a model sets itself.** The key it

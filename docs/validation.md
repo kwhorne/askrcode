@@ -34,6 +34,8 @@ C.Save;
 | `OneOf([...])` | One of a set |
 | `SameAs(prop)` | Equal to another field — password and confirmation |
 | `UniqueIn(table[, column])` | No other row has this value |
+| `Unique` | `UniqueIn` on the model's own table and column |
+| `Exists(table[, column])` | The value is a row in `table` — a reference that points at something; `column` is `id` unless you say |
 | `Says(message)` | Overrides the message of the rule immediately before it |
 
 Each returns the chain, so they compose:
@@ -43,6 +45,10 @@ V.Field('Email').Required.Says('We need an email address.').Email;
 ```
 
 They stop at the first failure per field: one error per field, not five.
+
+`Exists` passes a blank value — 0 for a number, `''` for text — because
+refusing one is `Required`'s job; a nullable reference is checked only when
+it is set. A soft-deleted row still counts as a row.
 
 `UniqueIn` uses the ambient connection and **skips the row itself** when the
 model is already persisted — otherwise updating a record would always report
