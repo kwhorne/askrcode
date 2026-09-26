@@ -44,6 +44,7 @@ uses
 const
   DefaultJobsTable = 'askr_jobs';
   DefaultFailedTable = 'askr_failed_jobs';
+  DefaultBatchesTable = 'askr_job_batches';
   { How long a job may stay reserved before somebody else can take it.
     This is not a deadline for the job — it is how long we wait before
     assuming the worker that took it is gone. }
@@ -52,6 +53,11 @@ const
 type
   EQueueDbError = class(Exception);
 
+  { Called between the SELECT that found a job and the UPDATE that takes
+    it. For the test only: it is the one way to put another connection's
+    write in that window every time. }
+  TClaimHook = procedure(C: TDbConnection);
+
   TDbJobStore = class(TJobStore)
   private
     FPool: TDbPool;
@@ -59,12 +65,14 @@ type
     FDialect: TSqlDialect;
     FJobsTable: string;
     FFailedTable: string;
+    FBatchesTable: string;
     FVisibilityMs: Int64;
     FPollMs: Integer;
     FLock: TCriticalSection;
     { The name of this process's workers in reserved_by. For diagnostics: a
       row that has been reserved for an hour says who took it. }
     FOwner: string;
+    FBeforeClaim: TClaimHook;
     function SkipLocked: Boolean;
     procedure ReleaseAbandoned(C: TDbConnection; A: TArena);
   public
@@ -99,8 +107,16 @@ type
     function Durable: Boolean; override;
     function PollIntervalMs: Integer; override;
 
+    procedure CreateBatch(const Id, Name: string; Total: Integer;
+      const Callbacks: TBatchCallbacks); override;
+    function SettleBatchJob(const Id: string; Failed: Boolean): TJobSpecs; override;
+    function FindBatch(const Id: string; out State: TBatchState): Boolean; override;
+    procedure CancelBatch(const Id: string); override;
+
     property JobsTable: string read FJobsTable write FJobsTable;
     property FailedTable: string read FFailedTable write FFailedTable;
+    property BatchesTable: string read FBatchesTable write FBatchesTable;
+    property BeforeClaim: TClaimHook read FBeforeClaim write FBeforeClaim;
     property VisibilityMs: Int64 read FVisibilityMs write FVisibilityMs;
     property Poll: Integer read FPollMs write FPollMs;
   end;
@@ -129,6 +145,7 @@ begin
   FOwnsPool := AOwnsPool;
   FJobsTable := DefaultJobsTable;
   FFailedTable := DefaultFailedTable;
+  FBatchesTable := DefaultBatchesTable;
   FVisibilityMs := DefaultVisibilityMs;
   { 250 ms, not 20. An idle worker asks the database every time it wakes,
     and four workers at 20 ms is 200 queries a second against an empty
@@ -173,7 +190,7 @@ end;
 function TDbJobStore.SkipLocked: Boolean;
 begin
   { SQLite has no SKIP LOCKED, and does not need it: it has one writer,
-    and an immediate transaction serialises the claim. }
+    and the immediate transaction in Reserve serialises the claim. }
   Result := FDialect in [sdPostgres, sdMySql];
 end;
 
@@ -186,7 +203,7 @@ var
   A: TArena;
   C: TDbConnection;
   Schema_: TDbSchema;
-  Finnes: Boolean;
+  HasJobs, HasFailed, HasBatches: Boolean;
 begin
   { Check first, rather than relying on the DDL being idempotent. `CREATE
     TABLE IF NOT EXISTS` exists in all three, but `CREATE INDEX IF NOT
@@ -198,8 +215,9 @@ begin
     C := FPool.Acquire;
     try
       Schema_ := IntrospectSchema(C);
-      Finnes := (Schema_.Table(FJobsTable) <> nil) and
-                (Schema_.Table(FFailedTable) <> nil);
+      HasJobs := Schema_.Table(FJobsTable) <> nil;
+      HasFailed := Schema_.Table(FFailedTable) <> nil;
+      HasBatches := Schema_.Table(FBatchesTable) <> nil;
       Schema_.Free;
     finally
       FPool.Release(C);
@@ -207,11 +225,15 @@ begin
   finally
     A.Free;
   end;
-  if Finnes then
+  if HasJobs and HasFailed and HasBatches then
     Exit;
 
+  { Only what is missing: the batches table came in a later release, and
+    creating the jobs table's index a second time fails in MySQL. }
   S := TSchemaBuilder.Create(FDialect);
   try
+    if not HasJobs then
+    begin
     T := S.Create(FJobsTable);
     T.IfNotExists := True;
     T.Id;
@@ -228,7 +250,10 @@ begin
     { The claim sorts on available_at among what is not reserved. Without
       the index every poll becomes a full scan. }
     T.Index(['available_at']);
+    end;
 
+    if not HasFailed then
+    begin
     T := S.Create(FFailedTable);
     T.IfNotExists := True;
     T.Id;
@@ -237,6 +262,32 @@ begin
     T.Int('attempts');
     T.Text('error');
     T.BigInt('failed_at');
+    end;
+
+    if not HasBatches then
+    begin
+      T := S.Create(FBatchesTable);
+      T.IfNotExists := True;
+      T.Id;
+      T.Text('uid', 32).Unique;
+      T.Text('name', 128);
+      T.Int('total');
+      T.Int('pending');
+      T.Int('failed').Default(0);
+      T.Int('cancelled').Default(0);
+      { Set by the one settling that queues OnFailure, so it is queued
+        once. }
+      T.Int('caught').Default(0);
+      T.Text('success_name', 128);
+      T.Text('success_payload');
+      T.Text('failure_name', 128);
+      T.Text('failure_payload');
+      T.Text('always_name', 128);
+      T.Text('always_payload');
+      T.BigInt('created_at');
+      { Set by the one settling that finishes the batch. }
+      T.BigInt('finished_at').Nullable;
+    end;
 
     Statements := S.ToSql;
   finally
@@ -377,8 +428,19 @@ begin
       Now_ := UnixNowMs;
 
       { One transaction around "find and take". Two workers seeing the same
-        row must not both get it. }
-      C.StartTransaction;
+        row must not both get it.
+
+        In SQLite it has to be IMMEDIATE, which takes the write lock at
+        BEGIN. A deferred one reads under a snapshot and asks for the
+        lock at the UPDATE, and in WAL mode a worker whose snapshot another
+        worker has written past gets SQLITE_BUSY at once -- the busy
+        timeout does not wait for that. The comment here said immediate
+        for a long time while the code said BEGIN, and each time it
+        happened a worker thread died without a word. }
+      if FDialect = sdSqlite then
+        C.Exec(A, 'BEGIN IMMEDIATE')
+      else
+        C.StartTransaction;
       try
         Sql := 'SELECT id, name, payload, attempts FROM ' +
           Quoted(C, A, FJobsTable) +
@@ -397,6 +459,8 @@ begin
         J.Name := R.Value(0, 1).ToString;
         Payload := R.Value(0, 2).ToString;
         J.Attempt := Integer(R.AsInt64(0, 3));
+        if Assigned(FBeforeClaim) then
+          FBeforeClaim(C);
 
         Sql := 'UPDATE ' + Quoted(C, A, FJobsTable) +
           ' SET reserved_at = ' + Ph(C, A, 1) +
@@ -559,6 +623,169 @@ begin
       R := C.Exec(A, 'SELECT count(*) FROM ' + Quoted(C, A, FJobsTable));
       if (R <> nil) and not R.IsEmpty then
         Result := Integer(R.AsInt64(0, 0));
+    finally
+      FPool.Release(C);
+    end;
+  finally
+    A.Free;
+  end;
+end;
+
+
+{ ------------------------------------------------------------- batches -- }
+
+{ Every step of a settling is one conditional UPDATE, and the affected row
+  count says who won it. Two workers finishing the last two jobs at once
+  both decrement, but only one of them finds pending at nothing and
+  finished_at unset -- in all three dialects, without SELECT FOR UPDATE. }
+
+procedure TDbJobStore.CreateBatch(const Id, Name: string; Total: Integer;
+  const Callbacks: TBatchCallbacks);
+var
+  A: TArena;
+  C: TDbConnection;
+  FinishedParam: TDbParam;
+begin
+  A := TArena.Create(8 * 1024);
+  try
+    C := FPool.Acquire;
+    try
+      { A batch of nothing is finished when it is made. }
+      if Total = 0 then
+        FinishedParam := DbParam(A, UnixNowMs)
+      else
+        FinishedParam := DbNull;
+      C.ExecParams(A, 'INSERT INTO ' + Quoted(C, A, FBatchesTable) +
+        ' (uid, name, total, pending, failed, cancelled, caught, success_name,' +
+        ' success_payload, failure_name, failure_payload, always_name,' +
+        ' always_payload, created_at, finished_at) VALUES (' + Phs(C, A, 1, 15) + ')',
+        [DbParam(A, Id), DbParam(A, Name), DbParam(A, Int64(Total)),
+         DbParam(A, Int64(Total)), DbParam(A, Int64(0)), DbParam(A, Int64(0)),
+         DbParam(A, Int64(0)),
+         DbParam(A, Callbacks.OnSuccess.Name), DbParam(A, Callbacks.OnSuccess.Payload),
+         DbParam(A, Callbacks.OnFailure.Name), DbParam(A, Callbacks.OnFailure.Payload),
+         DbParam(A, Callbacks.Always.Name), DbParam(A, Callbacks.Always.Payload),
+         DbParam(A, UnixNowMs), FinishedParam]);
+    finally
+      FPool.Release(C);
+    end;
+  finally
+    A.Free;
+  end;
+end;
+
+procedure AddSpec_(var L: TJobSpecs; const Name, Payload: string);
+var
+  I: Integer;
+begin
+  if Name = '' then
+    Exit;
+  I := Length(L);
+  SetLength(L, I + 1);
+  L[I].Name := Name;
+  L[I].Payload := Payload;
+end;
+
+function TDbJobStore.SettleBatchJob(const Id: string; Failed: Boolean): TJobSpecs;
+var
+  A: TArena;
+  C: TDbConnection;
+  R: TDbResult;
+  Tbl, FailedSet: string;
+begin
+  Result := nil;
+  A := TArena.Create(8 * 1024);
+  try
+    C := FPool.Acquire;
+    try
+      Tbl := Quoted(C, A, FBatchesTable);
+      FailedSet := '';
+      if Failed then
+        FailedSet := ', failed = failed + 1';
+      { pending > 0: a job run again after it was counted -- put back from
+        the failed table -- does not take the count below nothing. }
+      R := C.ExecParams(A, 'UPDATE ' + Tbl + ' SET pending = pending - 1' + FailedSet +
+        ' WHERE uid = ' + Ph(C, A, 1) + ' AND pending > 0', [DbParam(A, Id)]);
+      if (R = nil) or (R.AffectedRows = 0) then
+        Exit;
+      if Failed then
+      begin
+        R := C.ExecParams(A, 'UPDATE ' + Tbl + ' SET caught = 1 WHERE uid = ' +
+          Ph(C, A, 1) + ' AND caught = 0', [DbParam(A, Id)]);
+        if (R <> nil) and (R.AffectedRows > 0) then
+        begin
+          R := C.ExecParams(A, 'SELECT failure_name, failure_payload FROM ' + Tbl +
+            ' WHERE uid = ' + Ph(C, A, 1), [DbParam(A, Id)]);
+          if (R <> nil) and not R.IsEmpty then
+            AddSpec_(Result, R.Value(0, 0).ToString, R.Value(0, 1).ToString);
+        end;
+      end;
+      R := C.ExecParams(A, 'UPDATE ' + Tbl + ' SET finished_at = ' + Ph(C, A, 1) +
+        ' WHERE uid = ' + Ph(C, A, 2) + ' AND pending = 0 AND finished_at IS NULL',
+        [DbParam(A, UnixNowMs), DbParam(A, Id)]);
+      if (R <> nil) and (R.AffectedRows > 0) then
+      begin
+        R := C.ExecParams(A, 'SELECT failed, cancelled, success_name, success_payload,' +
+          ' always_name, always_payload FROM ' + Tbl + ' WHERE uid = ' + Ph(C, A, 1),
+          [DbParam(A, Id)]);
+        if (R <> nil) and not R.IsEmpty then
+        begin
+          if (R.AsInt64(0, 0) = 0) and (R.AsInt64(0, 1) = 0) then
+            AddSpec_(Result, R.Value(0, 2).ToString, R.Value(0, 3).ToString);
+          AddSpec_(Result, R.Value(0, 4).ToString, R.Value(0, 5).ToString);
+        end;
+      end;
+    finally
+      FPool.Release(C);
+    end;
+  finally
+    A.Free;
+  end;
+end;
+
+function TDbJobStore.FindBatch(const Id: string; out State: TBatchState): Boolean;
+var
+  A: TArena;
+  C: TDbConnection;
+  R: TDbResult;
+begin
+  State := Default(TBatchState);
+  Result := False;
+  A := TArena.Create(8 * 1024);
+  try
+    C := FPool.Acquire;
+    try
+      R := C.ExecParams(A, 'SELECT name, total, pending, failed, cancelled, finished_at FROM ' +
+        Quoted(C, A, FBatchesTable) + ' WHERE uid = ' + Ph(C, A, 1), [DbParam(A, Id)]);
+      if (R = nil) or R.IsEmpty then
+        Exit;
+      State.Id := Id;
+      State.Name := R.Value(0, 0).ToString;
+      State.Total := R.AsInt64(0, 1);
+      State.Pending := R.AsInt64(0, 2);
+      State.Failed := R.AsInt64(0, 3);
+      State.Cancelled := R.AsInt64(0, 4) <> 0;
+      State.Finished := not R.IsNull(0, 5);
+      Result := True;
+    finally
+      FPool.Release(C);
+    end;
+  finally
+    A.Free;
+  end;
+end;
+
+procedure TDbJobStore.CancelBatch(const Id: string);
+var
+  A: TArena;
+  C: TDbConnection;
+begin
+  A := TArena.Create(4 * 1024);
+  try
+    C := FPool.Acquire;
+    try
+      C.ExecParams(A, 'UPDATE ' + Quoted(C, A, FBatchesTable) + ' SET cancelled = 1' +
+        ' WHERE uid = ' + Ph(C, A, 1), [DbParam(A, Id)]);
     finally
       FPool.Release(C);
     end;

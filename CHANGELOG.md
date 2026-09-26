@@ -120,6 +120,15 @@ with the zero-major caveat that minor releases may break things until
   Twilio request is held to its documented form over a socket; **no
   message has gone through Twilio itself**. `FakeNotifications` records
   what would be sent, after building it.
+- **Chains and batches of jobs.** `Queue.Chain.Add(...).Add(...).Push`
+  runs steps one after another, each only when the one before succeeded,
+  with `OnFailure` when a step fails for good. `Queue.Batch(name)` runs jobs
+  side by side, with `OnSuccess`, `OnFailure` — once, however many fail —
+  and `Always`, `CancelBatch`, and `BatchStatus` for a progress bar. Both
+  work on the durable queue: a chain survives a restart between two steps,
+  and a batch is counted in `askr_job_batches`, where one conditional
+  UPDATE decides which worker settled the last job. Jobs see
+  `Ctx.BatchId`, `Ctx.Last` and `Ctx.Queue`.
 
 ### Changed
 
@@ -130,6 +139,18 @@ with the zero-major caveat that minor releases may break things until
 
 ### Fixed
 
+- **A queue worker died when its store failed, without a word.** A
+  `database is locked` from the store killed the worker thread, and the
+  queue ran on with one worker fewer — with one worker, not at all. The
+  worker now logs it, tells `OnError`, and carries on. A job that ran and
+  whose store then failed to record it is no longer counted and retried as
+  a failed job.
+- **The durable queue's claim in SQLite was a deferred transaction**, while
+  its own comment said immediate. Two workers claiming at once in WAL mode
+  got `database is locked` at the UPDATE, without the busy timeout waiting,
+  and — with the worker bug above — a worker died each time. It is
+  `BEGIN IMMEDIATE` now, and a test puts another write between the look and
+  the claim every time.
 - **`Queue.WaitUntilEmpty` returned while the last job was still
   running.** The store counts a job as gone once a worker has taken it,
   and that was all it asked. It waits for the running jobs now. A queued

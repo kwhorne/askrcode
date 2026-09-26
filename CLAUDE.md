@@ -1232,6 +1232,40 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Kjeder og batcher
+
+* **En kjede er én jobb om gangen**: første steg, med resten i seg. Lykkes
+  det, legges resten tilbake som en egen kjede. Da får hvert steg køens
+  forsøk, og en kjede i databasen overlever en omstart mellom to steg.
+* **Hvem som avgjorde den siste jobben i en batch, avgjøres i lageret, i
+  ett steg.** I prosessen er det en lås. I databasen er hvert ledd en
+  betinget UPDATE der antall rader sier hvem som vant: `pending > 0`,
+  `caught = 0`, `finished_at IS NULL`. Uten den siste fyrer to workere
+  begge når A har talt ned og B har talt til null før A spør. De to siste
+  vaktene er mutasjonssjekket mot Postgres under ekte samtidighet, ikke
+  med tvungen rekkefølge.
+* **`batchlast` overlevde først.** Med dårlige rader som feilet på begge
+  forsøk ble tellingene riktige uansett; det som gikk galt var at batchen
+  ble ferdig før forsøket etter kom. Bare en jobb som feiler én gang og så
+  lykkes viser det, og den står i testen nå.
+* **`not State.Finished` i minnelageret var død** — en avgjøring på en
+  batch som står på null går ut før. Fjernet.
+* **Workeren døde når lageret feilet, uten et ord.** Eldre enn batchene:
+  et unntak fra `Reserve` drepte tråden, og køen gikk videre med én worker
+  mindre. `WaitUntilEmpty`-telleren gjorde det synlig — den ble stående
+  over null — og det var den varige flyt-testen som hang. Workeren logger
+  nå, sier fra til `OnError`, og fortsetter.
+* **SQLite-claimen var deferred mens kommentaren sa immediate.** I WAL får
+  en transaksjon som har lest under et øyeblikksbilde `SQLITE_BUSY` med én
+  gang når den vil skrive etter at noen andre har skrevet — busy timeout
+  venter ikke på det. `BEGIN IMMEDIATE` nå. Stresstesten med fire workere
+  fanget mutasjonen tilbake én kjøring av tre; derfor en krok
+  (`BeforeClaim`) som legger en annen tilkoblings skriving mellom SELECT og
+  UPDATE hver gang, som `BeforeInsert` i databasesesjonene.
+* **En jobb som kjørte, der lageret så ikke fikk registrert det, er ikke
+  en feilet jobb.** Før gikk en feil fra `Complete` inn i samme `except`
+  som handleren og ble telt og prøvd på nytt som en feil.
+
 ## Varsler
 
 * **Et varsel er en `TEvent`**, så publiserte properties er det som krysser

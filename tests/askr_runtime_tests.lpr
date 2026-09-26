@@ -7282,6 +7282,96 @@ begin
   end;
 end;
 
+type
+  { Fails the first claim, the way a busy database does. }
+  TStumblingStore = class(TMemoryJobStore)
+  public
+    Stumbled: Boolean;
+    function Reserve(out J: TReservedJob): Boolean; override;
+  end;
+
+function TStumblingStore.Reserve(out J: TReservedJob): Boolean;
+begin
+  if (Pending > 0) and not Stumbled then
+  begin
+    Stumbled := True;
+    raise Exception.Create('database is locked');
+  end;
+  Result := inherited Reserve(J);
+end;
+
+type
+  { Records the job and then fails to say so, the way a connection lost
+    after the DELETE does. }
+  TForgetfulStore = class(TMemoryJobStore)
+  public
+    Stumbled: Boolean;
+    procedure Complete(var J: TReservedJob); override;
+  end;
+
+procedure TForgetfulStore.Complete(var J: TReservedJob);
+begin
+  inherited Complete(J);
+  if not Stumbled then
+  begin
+    Stumbled := True;
+    raise Exception.Create('the connection went');
+  end;
+end;
+
+var
+  GStoreComplaint: string;
+
+procedure NoteComplaint(const JobName, Message_: string);
+begin
+  GStoreComplaint := Message_;
+end;
+
+{ A worker whose store failed died of it, without a word, and took its
+  share of the queue with it. With one worker, that was the whole queue. }
+procedure TestWorkerSurvivesStore;
+var
+  Store: TStumblingStore;
+  Q: TQueue;
+begin
+  GSlowDone := 0;
+  GStoreComplaint := '';
+  Store := TStumblingStore.Create;
+  Q := TQueue.Create(Store, 1, 1, True);
+  try
+    Q.Handle('slow', SlowJob);
+    Q.OnError := NoteComplaint;
+    Q.Push('slow', 'x');
+    Q.Start;
+    AssertTrue(Q.WaitUntilEmpty(5000), 'the queue empties after the store failed once');
+    AssertTrue(Store.Stumbled, 'the store did fail');
+    AssertEqual(Integer(GSlowDone), 1, 'and the one worker lived to run the job');
+    AssertContains(GStoreComplaint, 'the job store failed: Exception: database is locked',
+      'and said what happened');
+  finally
+    Q.Stop;
+    Q.Free;
+  end;
+
+  { A job that ran, whose store then failed to record it, is not a job
+    that failed: it is not counted as one, nor retried as one. }
+  GStoreComplaint := '';
+  Q := TQueue.Create(TForgetfulStore.Create, 1, 3, True);
+  try
+    Q.Handle('slow', SlowJob);
+    Q.OnError := NoteComplaint;
+    Q.Push('slow', 'x');
+    Q.Start;
+    AssertTrue(Q.WaitUntilEmpty(5000), 'the queue empties');
+    AssertTrue((Q.Processed = 1) and (Q.Retried = 0) and (Q.Failed = 0),
+      'the job counts as done, and is not retried');
+    AssertContains(GStoreComplaint, 'the job store failed', 'and the store''s failure is said');
+  finally
+    Q.Stop;
+    Q.Free;
+  end;
+end;
+
 procedure TestSigV4;
 const
   Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
@@ -9417,6 +9507,445 @@ begin
   DeleteFile('.build/queue-test.db-shm');
 end;
 
+{ -------------------------------------------------- chains and batches -- }
+
+var
+  GFlowLock: TRTLCriticalSection;
+  GFlowLog: string;
+  GFlowFlaky: Integer;
+  GFlowBatchIds: string;
+
+procedure FlowNote(const S: string);
+begin
+  EnterCriticalSection(GFlowLock);
+  try
+    GFlowLog := GFlowLog + S + ' ';
+  finally
+    LeaveCriticalSection(GFlowLock);
+  end;
+end;
+
+function FlowLog: string;
+begin
+  EnterCriticalSection(GFlowLock);
+  try
+    Result := GFlowLog;
+  finally
+    LeaveCriticalSection(GFlowLock);
+  end;
+end;
+
+function FlowCount(const S: string): Integer;
+var
+  L: string;
+  P: Integer;
+begin
+  L := FlowLog;
+  Result := 0;
+  P := Pos(S, L);
+  while P > 0 do
+  begin
+    Inc(Result);
+    P := PosEx(S, L, P + Length(S));
+  end;
+end;
+
+{ Slow on purpose: with three workers, a step that was not waited for
+  would be written before this one. }
+procedure FlowSlow(const Ctx: TJobContext);
+begin
+  Sleep(150);
+  FlowNote(Ctx.Name + ':' + Ctx.Payload.ToString);
+end;
+
+procedure FlowStep(const Ctx: TJobContext);
+begin
+  FlowNote(Ctx.Name + ':' + Ctx.Payload.ToString);
+end;
+
+procedure FlowFails(const Ctx: TJobContext);
+begin
+  FlowNote('tried:' + Ctx.Payload.ToString);
+  raise Exception.Create('this step always fails');
+end;
+
+procedure FlowFlaky(const Ctx: TJobContext);
+begin
+  if InterLockedIncrement(GFlowFlaky) = 1 then
+    raise Exception.Create('the first attempt fails');
+  FlowNote('flaky:' + Ctx.Payload.ToString);
+end;
+
+{ A row of an import: 'bad' fails, anything else succeeds. Notes its
+  batch. }
+procedure FlowRow(const Ctx: TJobContext);
+begin
+  if Ctx.Payload.ToString = 'bad' then
+    raise Exception.Create('a bad row');
+  EnterCriticalSection(GFlowLock);
+  try
+    if Pos(Ctx.BatchId, GFlowBatchIds) = 0 then
+      GFlowBatchIds := GFlowBatchIds + Ctx.BatchId + ' ';
+  finally
+    LeaveCriticalSection(GFlowLock);
+  end;
+  FlowNote('row:' + Ctx.Payload.ToString);
+end;
+
+procedure FlowCallback(const Ctx: TJobContext);
+begin
+  FlowNote(Ctx.Name + ':' + Ctx.Payload.ToString + '@' + Ctx.BatchId);
+end;
+
+{ Cancels its own batch: the rows after it are skipped. }
+procedure FlowCancels(const Ctx: TJobContext);
+begin
+  FlowNote('cancels');
+  Ctx.Queue.CancelBatch(Ctx.BatchId);
+end;
+
+procedure FlowHandlers(Q: TQueue);
+begin
+  Q.Handle('slow', FlowSlow);
+  Q.Handle('step', FlowStep);
+  Q.Handle('fails', FlowFails);
+  Q.Handle('flaky', FlowFlaky);
+  Q.Handle('row', FlowRow);
+  Q.Handle('done', FlowCallback);
+  Q.Handle('caught', FlowCallback);
+  Q.Handle('always', FlowCallback);
+  Q.Handle('cleanup', FlowStep);
+  Q.Handle('cancels', FlowCancels);
+end;
+
+procedure FlowReset;
+begin
+  EnterCriticalSection(GFlowLock);
+  try
+    GFlowLog := '';
+    GFlowBatchIds := '';
+  finally
+    LeaveCriticalSection(GFlowLock);
+  end;
+  GFlowFlaky := 0;
+end;
+
+procedure TestChains;
+var
+  Q: TQueue;
+  Msg: string;
+begin
+  InitCriticalSection(GFlowLock);
+  Q := TQueue.Create(3, 2);
+  try
+    FlowHandlers(Q);
+    Q.Start;
+
+    FlowReset;
+    Q.Chain.Add('slow', 'a').Add('step', 'b').Add('slow', 'c').Add('step', 'd').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the chain ran');
+    AssertEqual(FlowLog, 'slow:a step:b slow:c step:d ',
+      'one after another, each waiting for the one before, with three workers free');
+
+    FlowReset;
+    Q.Chain.Add('step', 'a').Add('fails', 'b').Add('step', 'c')
+      .OnFailure('cleanup', 'order-1').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the failing chain settled');
+    AssertEqual(FlowCount('tried:b'), 2, 'the failing step got the queue''s attempts');
+    AssertEqual(FlowCount('step:c'), 0, 'and the step after it never ran');
+    AssertEqual(FlowCount('cleanup:order-1'), 1, 'OnFailure ran once, after the last attempt');
+
+    FlowReset;
+    Q.Chain.Add('step', 'a').Add('flaky', 'b').Add('step', 'c')
+      .OnFailure('cleanup', 'order-2').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the chain with a flaky step settled');
+    AssertEqual(FlowLog, 'step:a flaky:b step:c ', 'a step that fails once is retried, and the chain goes on');
+
+    Msg := '';
+    try
+      Q.Chain.Push;
+    except
+      on E: EQueueError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'at least one step', 'an empty chain is refused');
+    Q.Stop;
+
+    { Faked, a chain is one job, and RunPushed walks it a step at a time. }
+    FlowReset;
+    Q.Fake;
+    Q.Chain.Add('step', 'x').Add('step', 'y').Push;
+    AssertEqual(Q.Pushed(ChainJob), 1, 'faked, a chain is one job');
+    Q.RunPushed;
+    AssertEqual(FlowLog, 'step:x ', 'RunPushed runs its first step');
+    AssertEqual(Q.Pushed(ChainJob), 1, 'and the rest is queued as a chain of its own');
+    Q.RunPushed;
+    AssertEqual(FlowLog, 'step:x step:y ', 'which runs the next');
+    Q.StopFaking;
+  finally
+    Q.Free;
+    DoneCriticalSection(GFlowLock);
+  end;
+end;
+
+procedure TestBatches;
+var
+  Q: TQueue;
+  Id: string;
+  S: TBatchState;
+  I: Integer;
+  B: TBatch;
+begin
+  InitCriticalSection(GFlowLock);
+  Q := TQueue.Create(4, 2);
+  try
+    FlowHandlers(Q);
+    Q.Start;
+
+    FlowReset;
+    B := Q.Batch('import');
+    for I := 1 to 50 do
+      B := B.Add('row', IntToStr(I));
+    Id := B.OnSuccess('done', 'import-1').OnFailure('caught', 'import-1')
+      .Always('always', 'import-1').Push;
+    AssertEqual(Length(Id), 32, 'a batch has an id');
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the batch ran');
+    AssertEqual(FlowCount('row:'), 50, 'every job, on four workers');
+    AssertEqual(FlowCount('done:import-1@' + Id), 1, 'OnSuccess once, with the batch''s id');
+    AssertEqual(FlowCount('always:import-1@' + Id), 1, 'and Always once');
+    AssertEqual(FlowCount('caught:'), 0, 'and not OnFailure');
+    AssertEqual(Trim(GFlowBatchIds), Id, 'every job knew its batch');
+    AssertTrue(Q.BatchStatus(Id, S), 'the batch can be looked up');
+    AssertTrue((S.Name = 'import') and (S.Total = 50) and (S.Pending = 0) and (S.Failed = 0) and
+      S.Finished and not S.Cancelled, 'and it says it is done, all of it');
+    { A job run again after it was counted -- put back from the failed
+      table -- settles against a batch that is done. }
+    AssertEqual(Length(Q.Store.SettleBatchJob(Id, False)), 0, 'settling a finished batch queues nothing');
+    AssertTrue(Q.BatchStatus(Id, S) and (S.Pending = 0), 'and does not take the count below nothing');
+
+    FlowReset;
+    Id := Q.Batch('import').Add('row', '1').Add('row', 'bad').Add('row', '3').Add('row', 'bad')
+      .OnSuccess('done', 'i2').OnFailure('caught', 'i2').Always('always', 'i2').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the batch with bad rows settled');
+    AssertEqual(FlowCount('row:'), 2, 'the good rows ran');
+    AssertEqual(FlowCount('caught:i2'), 1, 'OnFailure once, not once per failure');
+    AssertEqual(FlowCount('always:i2'), 1, 'Always all the same');
+    AssertEqual(FlowCount('done:'), 0, 'and not OnSuccess');
+    AssertTrue(Q.BatchStatus(Id, S) and (S.Failed = 2) and S.Finished, 'two failed, and it is done');
+
+    { A job that fails once and then succeeds has not failed: the batch
+      waits for the attempt after it, and succeeds. }
+    FlowReset;
+    Q.Batch('retried').Add('row', 'r').Add('flaky', 'f')
+      .OnSuccess('done', 'rt').OnFailure('caught', 'rt').Always('always', 'rt').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the batch with a flaky job settled');
+    AssertEqual(FlowCount('flaky:f'), 1, 'the flaky job succeeded on its second attempt');
+    AssertEqual(FlowCount('done:rt'), 1, 'and the batch succeeded');
+    AssertEqual(FlowCount('caught:rt'), 0, 'with no OnFailure for an attempt that was retried');
+
+    FlowReset;
+    Id := Q.Batch('nothing').OnSuccess('done', 'empty').Always('always', 'empty').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'an empty batch settles');
+    AssertEqual(FlowCount('done:empty'), 1, 'at once, as a success');
+    AssertEqual(FlowCount('always:empty'), 1, 'and Always');
+    AssertTrue(Q.BatchStatus(Id, S) and S.Finished, 'and it is finished');
+
+    AssertFalse(Q.BatchStatus('0000', S), 'a batch that is not there is not found');
+    Q.Stop;
+
+    { One worker, so the order is known: the first job cancels, and the
+      two after it are skipped. }
+    Q.Free;
+    Q := TQueue.Create(1, 2);
+    FlowHandlers(Q);
+    Q.Start;
+    FlowReset;
+    Id := Q.Batch('cancelled').Add('cancels').Add('row', 'x').Add('row', 'y')
+      .OnSuccess('done', 'c').Always('always', 'c').Push;
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the cancelled batch settled');
+    AssertEqual(FlowCount('row:'), 0, 'the jobs after the cancel were skipped');
+    AssertEqual(FlowCount('always:c'), 1, 'Always ran');
+    AssertEqual(FlowCount('done:c'), 0, 'OnSuccess did not');
+    AssertTrue(Q.BatchStatus(Id, S) and S.Cancelled and S.Finished and (S.Pending = 0),
+      'it says it was cancelled, and is done');
+  finally
+    Q.Free;
+    DoneCriticalSection(GFlowLock);
+  end;
+end;
+
+{ A chain and a batch in the database: a chain survives the process going
+  away between two steps, and a batch's count is in the table. }
+var
+  GStoreErrors: Integer = 0;
+
+{ Counts what the store itself failed at, not the jobs that failed. }
+procedure FlowStoreErrors(const JobName, Message_: string);
+begin
+  if Pos('the job store failed', Message_) > 0 then
+    InterLockedIncrement(GStoreErrors);
+end;
+
+var
+  GClaimBlocked: Boolean;
+
+{ Another worker writes between the SELECT and the UPDATE. }
+procedure WriteBetween(C: TDbConnection);
+var
+  X: TDbConnection;
+  A: TArena;
+begin
+  A := TArena.Create(4096);
+  X := OpenDbConnection(DurableDsn);
+  try
+    X.Exec(A, 'PRAGMA busy_timeout = 50');
+    try
+      X.Exec(A, 'UPDATE askr_jobs SET created_at = created_at + 0');
+    except
+      on EDbError do GClaimBlocked := True;
+    end;
+  finally
+    X.Free;
+    A.Free;
+  end;
+end;
+
+{ A deferred transaction reads under a snapshot and asks for the write
+  lock at the UPDATE. When another connection has written since, SQLite in
+  WAL mode answers SQLITE_BUSY at once, and the busy timeout does not wait
+  for it. Immediate takes the lock at BEGIN, and the other writer is the
+  one that waits. }
+procedure TestSqliteClaimIsImmediate;
+var
+  Storage: TDbJobStore;
+  J: TReservedJob;
+  Got: Boolean;
+  Msg: string;
+begin
+  DurableSetup;
+  try
+    Storage := NewStore;
+    try
+      Storage.Push('x', PByte(PChar('p')), 1, 0);
+      Storage.BeforeClaim := WriteBetween;
+      GClaimBlocked := False;
+      Msg := '';
+      Got := False;
+      try
+        Got := Storage.Reserve(J);
+      except
+        on E: EDbError do Msg := E.Message;
+      end;
+      AssertEqual(Msg, '', 'a write between the look and the claim does not make the claim fail');
+      AssertTrue(Got, 'the job is claimed');
+      AssertTrue(GClaimBlocked, 'the other writer waited for the lock the claim holds');
+      if Got then
+        Storage.Complete(J);
+    finally
+      Storage.Free;
+    end;
+  finally
+    DurableClean;
+  end;
+end;
+
+procedure TestDurableFlows;
+var
+  Storage: TDbJobStore;
+  Q: TQueue;
+  Id: string;
+  S: TBatchState;
+  B: TBatch;
+  I: Integer;
+begin
+  InitCriticalSection(GFlowLock);
+  DurableSetup;
+  try
+    FlowReset;
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 1, 2, True);
+    try
+      Q.Chain.Add('step', 'one').Add('step', 'two').OnFailure('cleanup', 'x').Push;
+      Id := Q.Batch('rows').Add('row', 'r1').Add('row', 'bad').Add('row', 'r3')
+        .OnSuccess('done', 'b').OnFailure('caught', 'b').Always('always', 'b').Push;
+    finally
+      { No Start: a process that dies. }
+      Q.Free;
+    end;
+
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 2, 2, True);
+    try
+      FlowHandlers(Q);
+      AssertTrue(Q.BatchStatus(Id, S) and (S.Total = 3) and (S.Pending = 3),
+        'the batch was in the table before a job ran');
+      Q.Start;
+      Q.OnError := FlowStoreErrors;
+      AssertTrue(Q.WaitUntilEmpty(10000), 'after the restart everything ran');
+      Q.Stop(True);
+      AssertTrue(Pos('step:one', FlowLog) < Pos('step:two', FlowLog), 'the chain, in order');
+      AssertEqual(FlowCount('step:two'), 1, 'each step once');
+      AssertEqual(FlowCount('row:'), 2, 'the good rows');
+      AssertEqual(FlowCount('caught:b@' + Id), 1, 'OnFailure once');
+      AssertEqual(FlowCount('always:b@' + Id), 1, 'Always once');
+      AssertEqual(FlowCount('done:b'), 0, 'and not OnSuccess, with a row failed');
+      AssertTrue(Q.BatchStatus(Id, S) and (S.Pending = 0) and (S.Failed = 1) and S.Finished,
+        'and the table says it is done, with one failed');
+      AssertEqual(Length(Q.Store.SettleBatchJob(Id, False)), 0, 'settling it again queues nothing');
+      AssertTrue(Q.BatchStatus(Id, S) and (S.Pending = 0), 'and the table''s count stays at nothing');
+    finally
+      Q.Free;
+    end;
+
+    { Cancelled in the table: one worker, so the cancel comes first. }
+    FlowReset;
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 1, 2, True);
+    try
+      FlowHandlers(Q);
+      Id := Q.Batch('cancelled').Add('cancels').Add('row', 'x').Add('row', 'y')
+        .OnSuccess('done', 'c').Always('always', 'c').Push;
+      Q.Start;
+      AssertTrue(Q.WaitUntilEmpty(10000), 'the cancelled batch settled');
+      Q.Stop(True);
+      AssertEqual(FlowCount('row:'), 0, 'the jobs after the cancel were skipped');
+      AssertEqual(FlowCount('always:c'), 1, 'Always ran');
+      AssertEqual(FlowCount('done:c'), 0, 'OnSuccess did not');
+      AssertTrue(Q.BatchStatus(Id, S) and S.Cancelled and S.Finished,
+        'the table says it was cancelled, and is done');
+    finally
+      Q.Free;
+    end;
+
+    { Four workers claiming from SQLite at once, as a count over many
+      claims. It is not what proves the claim -- the mutation back to a
+      deferred BEGIN failed it one run in three. TestSqliteClaimIsImmediate
+      does that. }
+    FlowReset;
+    GStoreErrors := 0;
+    Storage := NewStore;
+    Q := TQueue.Create(Storage, 4, 2, True);
+    try
+      FlowHandlers(Q);
+      Q.OnError := FlowStoreErrors;
+      B := Q.Batch('many');
+      for I := 1 to 120 do
+        B := B.Add('row', IntToStr(I));
+      Id := B.OnSuccess('done', 'many').Push;
+      Q.Start;
+      AssertTrue(Q.WaitUntilEmpty(30000), 'a hundred and twenty rows on four workers ran');
+      Q.Stop(True);
+      AssertEqual(FlowCount('row:'), 120, 'every one');
+      AssertEqual(FlowCount('done:many'), 1, 'and OnSuccess once');
+      AssertEqual(Integer(GStoreErrors), 0, 'with no worker turned away by a locked database');
+    finally
+      Q.Free;
+    end;
+  finally
+    DurableClean;
+    DoneCriticalSection(GFlowLock);
+  end;
+end;
+
 { What it all turns on: the job is to still be there after the process
   that queued it is gone. }
 procedure TestDurableSurvivesRestart;
@@ -11452,6 +11981,13 @@ begin
   Test('a delay, and binary is rejected', @TestDurableDelayAndBinary);
   Test('an abandoned reservation is released', @TestDurableAbandonedReservation);
   Test('WaitUntilEmpty waits for the job that is running, not only the ones waiting', @TestWaitForRunningJob);
+  Test('a worker whose store fails says so and goes on', @TestWorkerSurvivesStore);
+
+  Group('Chains and batches');
+  Test('a chain runs a step at a time, retries one, and stops at one that fails', @TestChains);
+  Test('a batch runs side by side, and its callbacks run once each', @TestBatches);
+  Test('in the database, a chain survives a restart and a batch is counted in the table', @TestDurableFlows);
+  Test('a claim in SQLite takes the write lock first, so a worker is not turned away', @TestSqliteClaimIsImmediate);
 
   Group('Sesjoner');
   Test('a round trip with a cookie', @TestSessionRoundTrip);

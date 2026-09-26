@@ -36,7 +36,10 @@ end;
 | `Ctx.Name` | The job name |
 | `Ctx.Payload` | `TStr`, in the worker's arena |
 | `Ctx.Attempt` | Which attempt this is, from 1 |
+| `Ctx.Last` | True when a failure now is final — no attempt comes after it |
 | `Ctx.Arena` | The worker's arena |
+| `Ctx.BatchId` | The [batch](#batches) this job belongs to, or `''` |
+| `Ctx.Queue` | The queue running it |
 
 `askr make job <Name>` writes the skeleton.
 
@@ -70,6 +73,93 @@ Queue.OnError := @LogJobFailure;
 A handler that raises is retried with **exponential backoff**, capped at 30
 seconds, until `MaxAttempts` is used up. `OnError` is called for every
 failure, not only the last.
+
+When the store itself fails — a database that is busy, or gone for a
+moment — the worker logs it, tells `OnError` (`the job store failed: …`)
+and carries on. A job that ran and whose store then failed to record it
+is not a job that failed, and is not retried as one; a durable store's row
+stays reserved until the visibility timeout lets it go.
+
+## Chains
+
+```pascal
+Queue.Chain
+  .Add('resize-photo', Id)
+  .Add('upload-photo', Id)
+  .Add('tell-owner', Id)
+  .OnFailure('photo-failed', Id)
+  .Push;
+```
+
+The steps run **one after another**, each only when the one before it has
+succeeded, however many workers are free. A step that fails is retried like
+any job; when its last attempt fails, the steps after it never run and
+`OnFailure` is queued, once.
+
+A chain is one job at a time: the first step, carrying the rest. When it
+succeeds, the rest goes back in the queue as a chain of its own. So each
+step gets the queue's retries, and a chain in a durable store survives a
+restart between two steps — tested by queuing a chain, dropping the queue
+without running it, and starting another on the same database.
+
+Each step is an ordinary job, with an ordinary handler and payload.
+
+## Batches
+
+```pascal
+B := Queue.Batch('import customers.csv');
+for Row in Rows do
+  B := B.Add('import-row', Row);
+Id := B.OnSuccess('import-done', FileId)
+       .OnFailure('import-failed', FileId)
+       .Always('import-finished', FileId)
+       .Push;
+```
+
+The jobs run **side by side**, and the batch knows when they are all done:
+
+| | |
+|---|---|
+| `OnSuccess` | When every job has succeeded |
+| `OnFailure` | When the first job has failed for good — once, however many fail |
+| `Always` | When every job has run, however it went |
+
+A job that fails and then succeeds on a retry has not failed: the batch
+waits for the attempt after it. The rest of the batch keeps running after
+a failure — for an import, one bad row is no reason to drop the others.
+To stop it, cancel it:
+
+```pascal
+Queue.CancelBatch(Ctx.BatchId);           { from OnFailure, or a job }
+```
+
+The jobs not yet started are skipped; those running finish. `OnSuccess` is
+not queued, `Always` is.
+
+Every job and every callback of a batch has `Ctx.BatchId`, and the state
+can be read for a progress bar:
+
+```pascal
+if Queue.BatchStatus(Id, S) then
+  Percent := (S.Total - S.Pending) * 100 div S.Total;
+```
+
+`TBatchState` has `Total`, `Pending`, `Failed`, `Cancelled` and
+`Finished`. A batch with no jobs has succeeded the moment it is pushed.
+
+**Which job was the last is decided in the store, in one step.** Two
+workers settling the last two jobs at once must not both think they
+finished the batch, or neither. In the process it is a lock; in a database
+it is a conditional `UPDATE`, whose row count says who won — the same in
+all three dialects, without `SELECT … FOR UPDATE`. Measured with 240 jobs
+on six workers against Postgres and MySQL: each callback once.
+
+**At least once, like every job.** A job that finished and was counted,
+in a process that died before the job was marked done, runs again after a
+restart. Its second settling is not counted: the count does not go below
+nothing. The batch is made before its jobs are queued; a process that dies
+halfway through queuing them leaves a batch that waits for jobs that are
+not there.
 
 ## Counters
 
@@ -108,7 +198,7 @@ detail — it is data that is gone.
 uses Askr.Queue.Db;
 
 Store := TDbJobStore.Create(Cfg('database.url'));
-Store.EnsureSchema;                     { askr_jobs, askr_failed_jobs }
+Store.EnsureSchema;                     { askr_jobs, askr_failed_jobs, askr_job_batches }
 SetQueue(TQueue.Create(Store, 4));
 Queue.Handle('send-welcome', @SendWelcome);
 Queue.Start;
@@ -153,7 +243,10 @@ does not reset it to zero.
 ### Concurrency
 
 `FOR UPDATE SKIP LOCKED` in Postgres and MySQL 8; an immediate transaction
-in SQLite, which has a single writer anyway. Measured with **200 jobs and
+in SQLite, which has a single writer anyway. Immediate matters: a deferred
+transaction reads under a snapshot and asks for the write lock at the
+`UPDATE`, and in WAL mode a worker another worker has written past gets
+`database is locked` at once, without waiting for the busy timeout. Measured with **200 jobs and
 six workers** against both servers: no job ran twice, none was skipped.
 
 > Worth knowing: that test does **not** prove the guards are necessary.
@@ -189,4 +282,11 @@ when you want to scale them apart.
 **Horizon.** A status endpoint in the app gives the same thing without an
 app to operate, and "no sidecars" is a PRD principle.
 
-**Job batches and chains.** Not built.
+**A chain inside a batch, or a batch inside a chain.** Each is one of
+the two. A chain step can push a batch of its own, and a batch's
+`OnSuccess` can push a chain.
+
+**Pruning batches.** A durable batch's row stays in `askr_job_batches`.
+Delete finished ones older than you care about from the
+[scheduler](scheduler.md). In the process, the last thousand finished
+batches are kept.

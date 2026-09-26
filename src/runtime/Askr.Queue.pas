@@ -33,12 +33,54 @@ uses
 type
   EQueueError = class(Exception);
 
+  TQueue = class;
+
   TJobContext = record
     Name: string;
     { Lives in the worker's arena. Dies when the job is done. }
     Payload: TStr;
     Attempt: Integer;
     Arena: TArena;
+    { True when a failure now is final: no attempt comes after this one. }
+    Last: Boolean;
+    { The batch this job -- or this batch's callback -- belongs to; '' for
+      a job that is in none. }
+    BatchId: string;
+    Queue: TQueue;
+  end;
+
+  { A job to be queued: its name and its payload. }
+  TJobSpec = record
+    Name: string;
+    Payload: string;
+  end;
+  TJobSpecs = array of TJobSpec;
+
+  { What a batch queues when it ends. A job with no name is none. }
+  TBatchCallbacks = record
+    { When every job has succeeded. }
+    OnSuccess: TJobSpec;
+    { When the first job has failed for good -- once, not per failure. }
+    OnFailure: TJobSpec;
+    { When every job has run, however it went. }
+    Always: TJobSpec;
+  end;
+
+  TBatchState = record
+    Id: string;
+    Name: string;
+    Total: Integer;
+    { Not yet settled: waiting, running, or between attempts. }
+    Pending: Integer;
+    Failed: Integer;
+    Cancelled: Boolean;
+    Finished: Boolean;
+  end;
+
+  TMemoryBatch = record
+    State: TBatchState;
+    Callbacks: TBatchCallbacks;
+    Caught: Boolean;
   end;
 
   TJobHandler = procedure(const Ctx: TJobContext);
@@ -95,6 +137,22 @@ type
       process is woken by a signal and can wait briefly; a store in a
       database has to ask, and then 20 ms is hammering on it. }
     function PollIntervalMs: Integer; virtual;
+
+    { Batches. The store keeps the count, because deciding which job was
+      the last one has to be one step there: two workers finishing at once
+      must not both think they did, or neither. Kept in the process here;
+      Askr.Queue.Db keeps them in a table. }
+    procedure CreateBatch(const Id, Name: string; Total: Integer;
+      const Callbacks: TBatchCallbacks); virtual;
+    { One job of the batch is settled, for good. Gives the callbacks to
+      queue now, if this settling is what calls for them. }
+    function SettleBatchJob(const Id: string; Failed: Boolean): TJobSpecs; virtual;
+    function FindBatch(const Id: string; out State: TBatchState): Boolean; virtual;
+    procedure CancelBatch(const Id: string); virtual;
+  private
+    FBatches: array of TMemoryBatch;
+    function CreateBatch_Index(const Id: string): Integer;
+    procedure Delete_(Index: Integer);
   end;
 
   { The jobs in a chain in the process. This is the behaviour the queue
@@ -124,7 +182,37 @@ type
     Handler: TJobHandler;
   end;
 
-  TQueue = class;
+  { The jobs of a chain run one after the other, each only when the one
+    before it has succeeded. Built with Queue.Chain. }
+  TChain = record
+  private
+    FQueue: TQueue;
+    FSteps: TJobSpecs;
+    FFailure: TJobSpec;
+  public
+    function Add(const Name: string; const Payload: string = ''): TChain;
+    { Queued when a step has failed for good. The steps after it never
+      run. }
+    function OnFailure(const Name: string; const Payload: string = ''): TChain;
+    procedure Push;
+  end;
+
+  { The jobs of a batch run side by side, and the batch knows when they
+    are all done. Built with Queue.Batch. }
+  TBatch = record
+  private
+    FQueue: TQueue;
+    FName: string;
+    FJobs: TJobSpecs;
+    FCallbacks: TBatchCallbacks;
+  public
+    function Add(const Name: string; const Payload: string = ''): TBatch;
+    function OnSuccess(const Name: string; const Payload: string = ''): TBatch;
+    function OnFailure(const Name: string; const Payload: string = ''): TBatch;
+    function Always(const Name: string; const Payload: string = ''): TBatch;
+    { Makes the batch and queues its jobs. The batch's id comes back. }
+    function Push: string;
+  end;
 
   TQueueWorker = class(TThread)
   private
@@ -166,6 +254,8 @@ type
     FFakePayloads: array of string;
     function HandlerFor(const JobName: string): TJobHandler;
     function IsRunning: Boolean;
+    class procedure RunChainJob(const Ctx: TJobContext); static;
+    class procedure RunBatchJob(const Ctx: TJobContext); static;
   public
     constructor Create(AWorkers: Integer = 2;
       AMaxAttempts: Integer = 3); overload;
@@ -208,6 +298,17 @@ type
     function Pushed(const JobName: string): Integer;
     function PushedPayload(const JobName: string; Index: Integer = 0): string;
     procedure RunPushed;
+
+    { Jobs that run one after another. }
+    function Chain: TChain;
+    { Jobs that run side by side, as one piece of work. Name is for people
+      reading the status. }
+    function Batch(const Name: string): TBatch;
+    { False when there is no such batch. }
+    function BatchStatus(const Id: string; out State: TBatchState): Boolean;
+    { The jobs of the batch not yet started are skipped; those running
+      finish. OnSuccess is not queued, Always is. }
+    procedure CancelBatch(const Id: string);
     property Processed: QWord read FProcessed;
     property Failed: QWord read FFailed;
     property Retried: QWord read FRetried;
@@ -224,10 +325,26 @@ type
 function Queue: TQueue;
 procedure SetQueue(AQueue: TQueue);
 
+const
+  ChainJob = 'askr.chain';
+  BatchJob = 'askr.batch';
+
+function Job(const Name: string; const Payload: string = ''): TJobSpec;
+
 implementation
+
+uses
+  Askr.Core.Json, Askr.Core.Crypto, Askr.Core.Log;
 
 var
   GQueue: TQueue = nil;
+  GBatchLock: TCriticalSection = nil;
+
+function Job(const Name, Payload: string): TJobSpec;
+begin
+  Result.Name := Name;
+  Result.Payload := Payload;
+end;
 
 function Queue: TQueue;
 begin
@@ -252,6 +369,145 @@ end;
 function TJobStore.PollIntervalMs: Integer;
 begin
   Result := 20;
+end;
+
+{ The batches of a store in the process. One lock for all of them: a
+  settling is a handful of assignments. }
+
+function TJobStore.CreateBatch_Index(const Id: string): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FBatches) do
+    if FBatches[I].State.Id = Id then
+      Exit(I);
+  Result := -1;
+end;
+
+procedure TJobStore.CreateBatch(const Id, Name: string; Total: Integer;
+  const Callbacks: TBatchCallbacks);
+var
+  I, Finished_: Integer;
+begin
+  GBatchLock.Acquire;
+  try
+    { Finished ones are kept for BatchStatus, but not for ever: past a
+      thousand, the oldest finished one goes. }
+    Finished_ := 0;
+    for I := 0 to High(FBatches) do
+      if FBatches[I].State.Finished then
+        Inc(Finished_);
+    if Finished_ >= 1000 then
+      for I := 0 to High(FBatches) do
+        if FBatches[I].State.Finished then
+        begin
+          Delete_(I);
+          Break;
+        end;
+    I := Length(FBatches);
+    SetLength(FBatches, I + 1);
+    FBatches[I].State.Id := Id;
+    FBatches[I].State.Name := Name;
+    FBatches[I].State.Total := Total;
+    FBatches[I].State.Pending := Total;
+    FBatches[I].State.Failed := 0;
+    FBatches[I].State.Cancelled := False;
+    FBatches[I].State.Finished := Total = 0;
+    FBatches[I].Callbacks := Callbacks;
+    FBatches[I].Caught := False;
+  finally
+    GBatchLock.Release;
+  end;
+end;
+
+procedure TJobStore.Delete_(Index: Integer);
+var
+  I: Integer;
+begin
+  for I := Index to High(FBatches) - 1 do
+    FBatches[I] := FBatches[I + 1];
+  SetLength(FBatches, Length(FBatches) - 1);
+end;
+
+procedure AddSpec(var L: TJobSpecs; const S: TJobSpec);
+var
+  I: Integer;
+begin
+  if S.Name = '' then
+    Exit;
+  I := Length(L);
+  SetLength(L, I + 1);
+  L[I] := S;
+end;
+
+function TJobStore.SettleBatchJob(const Id: string; Failed: Boolean): TJobSpecs;
+var
+  I: Integer;
+begin
+  Result := nil;
+  GBatchLock.Acquire;
+  try
+    I := CreateBatch_Index(Id);
+    if I < 0 then
+      Exit;
+    with FBatches[I] do
+    begin
+      { A job put back from somewhere and run again after it was counted
+        does not take the count below nothing. }
+      if State.Pending = 0 then
+        Exit;
+      Dec(State.Pending);
+      if Failed then
+      begin
+        Inc(State.Failed);
+        if not Caught then
+        begin
+          Caught := True;
+          AddSpec(Result, Callbacks.OnFailure);
+        end;
+      end;
+      if State.Pending = 0 then
+      begin
+        State.Finished := True;
+        if (State.Failed = 0) and not State.Cancelled then
+          AddSpec(Result, Callbacks.OnSuccess);
+        AddSpec(Result, Callbacks.Always);
+      end;
+    end;
+  finally
+    GBatchLock.Release;
+  end;
+end;
+
+function TJobStore.FindBatch(const Id: string; out State: TBatchState): Boolean;
+var
+  I: Integer;
+begin
+  GBatchLock.Acquire;
+  try
+    I := CreateBatch_Index(Id);
+    Result := I >= 0;
+    if Result then
+      State := FBatches[I].State
+    else
+      State := Default(TBatchState);
+  finally
+    GBatchLock.Release;
+  end;
+end;
+
+procedure TJobStore.CancelBatch(const Id: string);
+var
+  I: Integer;
+begin
+  GBatchLock.Acquire;
+  try
+    I := CreateBatch_Index(Id);
+    if I >= 0 then
+      FBatches[I].State.Cancelled := True;
+  finally
+    GBatchLock.Release;
+  end;
 end;
 
 { TMemoryJobStore }
@@ -445,6 +701,8 @@ begin
   FMaxAttempts := AMaxAttempts;
   FLock := TCriticalSection.Create;
   FSignal := TEvent.Create(nil, False, False, '');
+  Handle(ChainJob, RunChainJob);
+  Handle(BatchJob, RunBatchJob);
 end;
 
 destructor TQueue.Destroy;
@@ -628,12 +886,291 @@ begin
       Ctx.Payload := StrDup(A, Payloads[I]);
       Ctx.Attempt := 1;
       Ctx.Arena := A;
+      { Nothing retries what RunPushed runs: its failure is the last. }
+      Ctx.Last := True;
+      Ctx.BatchId := '';
+      Ctx.Queue := Self;
       H(Ctx);
     finally
       UseArena(Prev);
       A.Free;
     end;
   end;
+end;
+
+
+{ ------------------------------------------------------ chains, batches -- }
+
+procedure WriteSpec(var W: TJsonWriter; const S: TJobSpec);
+begin
+  W.BeginObject;
+  W.Field('name', S.Name);
+  W.Field('payload', S.Payload);
+  W.EndObject;
+end;
+
+function ReadSpec(V: PJsonValue): TJobSpec;
+begin
+  Result.Name := JsonAsString(JsonMember(V, 'name'));
+  Result.Payload := JsonAsString(JsonMember(V, 'payload'));
+end;
+
+function ChainPayload(const Steps: TJobSpecs; From_: Integer; const Failure: TJobSpec): string;
+var
+  A: TArena;
+  W: TJsonWriter;
+  I: Integer;
+begin
+  A := TArena.Create(4096);
+  try
+    W.Init(A, 512);
+    W.BeginObject;
+    W.Key('steps');
+    W.BeginArray;
+    for I := From_ to High(Steps) do
+      WriteSpec(W, Steps[I]);
+    W.EndArray;
+    W.Key('failure');
+    WriteSpec(W, Failure);
+    W.EndObject;
+    Result := W.ToString;
+  finally
+    A.Free;
+  end;
+end;
+
+function BatchPayload(const Id: string; const S: TJobSpec; Callback: Boolean): string;
+var
+  A: TArena;
+  W: TJsonWriter;
+begin
+  A := TArena.Create(4096);
+  try
+    W.Init(A, 512);
+    W.BeginObject;
+    W.Field('batch', Id);
+    W.Field('name', S.Name);
+    W.Field('payload', S.Payload);
+    W.Field('callback', Callback);
+    W.EndObject;
+    Result := W.ToString;
+  finally
+    A.Free;
+  end;
+end;
+
+{ The step's own handler, with a context of its own: its name and payload
+  where the envelope's were. }
+procedure RunInner(const Ctx: TJobContext; const S: TJobSpec; const BatchId: string);
+var
+  H: TJobHandler;
+  Inner: TJobContext;
+begin
+  H := Ctx.Queue.HandlerFor(S.Name);
+  if not Assigned(H) then
+    raise EQueueError.CreateFmt('No handler is registered for "%s"', [S.Name]);
+  Inner := Ctx;
+  Inner.Name := S.Name;
+  Inner.Payload := StrDup(Ctx.Arena, S.Payload);
+  Inner.BatchId := BatchId;
+  H(Inner);
+end;
+
+{ A chain is one job at a time: the first step, carrying the rest. When it
+  succeeds the rest goes back in the queue as a chain of its own, so each
+  step gets the queue's retries, and a chain in a durable store survives
+  a restart between two steps. }
+class procedure TQueue.RunChainJob(const Ctx: TJobContext);
+var
+  A: TArena;
+  Root, Steps, V: PJsonValue;
+  ErrorAt: SizeInt;
+  L: TJobSpecs;
+  Failure: TJobSpec;
+begin
+  A := TArena.Create(4096);
+  try
+    if not JsonParse(A, StrDup(A, Ctx.Payload.ToString), Root, ErrorAt) or
+       (Root^.Kind <> jkObject) then
+      raise EQueueError.Create('A chain job that is not a chain');
+    L := nil;
+    Steps := JsonMember(Root, 'steps');
+    if Steps <> nil then
+    begin
+      V := Steps^.First;
+      while V <> nil do
+      begin
+        SetLength(L, Length(L) + 1);
+        L[High(L)] := ReadSpec(V);
+        V := V^.Next;
+      end;
+    end;
+    Failure := ReadSpec(JsonMember(Root, 'failure'));
+  finally
+    A.Free;
+  end;
+  if Length(L) = 0 then
+    Exit;
+  try
+    RunInner(Ctx, L[0], '');
+  except
+    if Ctx.Last and (Failure.Name <> '') then
+      Ctx.Queue.Push(Failure.Name, Failure.Payload);
+    raise;
+  end;
+  if Length(L) > 1 then
+    Ctx.Queue.Push(ChainJob, ChainPayload(L, 1, Failure));
+end;
+
+procedure PushCallbacks(Q: TQueue; const Id: string; const L: TJobSpecs);
+var
+  I: Integer;
+begin
+  for I := 0 to High(L) do
+    Q.Push(BatchJob, BatchPayload(Id, L[I], True));
+end;
+
+class procedure TQueue.RunBatchJob(const Ctx: TJobContext);
+var
+  A: TArena;
+  Root: PJsonValue;
+  ErrorAt: SizeInt;
+  Id: string;
+  S: TJobSpec;
+  Callback: Boolean;
+  State: TBatchState;
+begin
+  A := TArena.Create(4096);
+  try
+    if not JsonParse(A, StrDup(A, Ctx.Payload.ToString), Root, ErrorAt) or
+       (Root^.Kind <> jkObject) then
+      raise EQueueError.Create('A batch job that is not a batch''s');
+    Id := JsonAsString(JsonMember(Root, 'batch'));
+    S := ReadSpec(Root);
+    Callback := JsonAsBool(JsonMember(Root, 'callback'));
+  finally
+    A.Free;
+  end;
+  if Callback then
+  begin
+    RunInner(Ctx, S, Id);
+    Exit;
+  end;
+  { Cancelled: skipped, and settled, so the batch still ends. }
+  if Ctx.Queue.FStore.FindBatch(Id, State) and State.Cancelled then
+  begin
+    PushCallbacks(Ctx.Queue, Id, Ctx.Queue.FStore.SettleBatchJob(Id, False));
+    Exit;
+  end;
+  try
+    RunInner(Ctx, S, Id);
+  except
+    { Settled as failed only when no attempt comes after this one. }
+    if Ctx.Last then
+      PushCallbacks(Ctx.Queue, Id, Ctx.Queue.FStore.SettleBatchJob(Id, True));
+    raise;
+  end;
+  PushCallbacks(Ctx.Queue, Id, Ctx.Queue.FStore.SettleBatchJob(Id, False));
+end;
+
+function TQueue.Chain: TChain;
+begin
+  Result.FQueue := Self;
+  Result.FSteps := nil;
+  Result.FFailure := Job('');
+end;
+
+function TQueue.Batch(const Name: string): TBatch;
+begin
+  Result.FQueue := Self;
+  Result.FName := Name;
+  Result.FJobs := nil;
+  Result.FCallbacks := Default(TBatchCallbacks);
+end;
+
+function TQueue.BatchStatus(const Id: string; out State: TBatchState): Boolean;
+begin
+  Result := FStore.FindBatch(Id, State);
+end;
+
+procedure TQueue.CancelBatch(const Id: string);
+begin
+  FStore.CancelBatch(Id);
+end;
+
+{ TChain }
+
+function TChain.Add(const Name, Payload: string): TChain;
+begin
+  if Name = '' then
+    raise EQueueError.Create('A step in a chain needs a name');
+  Result := Self;
+  SetLength(Result.FSteps, Length(Result.FSteps) + 1);
+  Result.FSteps[High(Result.FSteps)] := Job(Name, Payload);
+end;
+
+function TChain.OnFailure(const Name, Payload: string): TChain;
+begin
+  Result := Self;
+  Result.FFailure := Job(Name, Payload);
+end;
+
+procedure TChain.Push;
+begin
+  if Length(FSteps) = 0 then
+    raise EQueueError.Create('A chain needs at least one step');
+  FQueue.Push(ChainJob, ChainPayload(FSteps, 0, FFailure));
+end;
+
+{ TBatch }
+
+function TBatch.Add(const Name, Payload: string): TBatch;
+begin
+  if Name = '' then
+    raise EQueueError.Create('A job in a batch needs a name');
+  Result := Self;
+  SetLength(Result.FJobs, Length(Result.FJobs) + 1);
+  Result.FJobs[High(Result.FJobs)] := Job(Name, Payload);
+end;
+
+function TBatch.OnSuccess(const Name, Payload: string): TBatch;
+begin
+  Result := Self;
+  Result.FCallbacks.OnSuccess := Job(Name, Payload);
+end;
+
+function TBatch.OnFailure(const Name, Payload: string): TBatch;
+begin
+  Result := Self;
+  Result.FCallbacks.OnFailure := Job(Name, Payload);
+end;
+
+function TBatch.Always(const Name, Payload: string): TBatch;
+begin
+  Result := Self;
+  Result.FCallbacks.Always := Job(Name, Payload);
+end;
+
+function TBatch.Push: string;
+var
+  I: Integer;
+  Done: TJobSpecs;
+begin
+  Result := LowerCase(RandomHex(16));
+  { Made before a job is queued: a job that finished before its batch
+    existed would have nothing to count against. }
+  FQueue.FStore.CreateBatch(Result, FName, Length(FJobs), FCallbacks);
+  if Length(FJobs) = 0 then
+  begin
+    { Nothing to wait for: it has succeeded. }
+    Done := nil;
+    AddSpec(Done, FCallbacks.OnSuccess);
+    AddSpec(Done, FCallbacks.Always);
+    PushCallbacks(FQueue, Result, Done);
+    Exit;
+  end;
+  for I := 0 to High(FJobs) do
+    FQueue.Push(BatchJob, BatchPayload(Result, FJobs[I], False));
 end;
 
 procedure TQueue.Start;
@@ -716,6 +1253,16 @@ begin
   FArena.Free;
 end;
 
+{ The store failed -- a database that was busy, or gone for a moment. The
+  worker says so and carries on: a thread that died of it would take its
+  share of the queue with it, without a word. }
+procedure StoreTrouble(Q: TQueue; const JobName: string; E: Exception);
+begin
+  LogException(E, 'the job store failed', ['job', JobName]);
+  if Assigned(Q.FOnError) then
+    Q.FOnError(JobName, 'the job store failed: ' + E.ClassName + ': ' + E.Message);
+end;
+
 procedure TQueueWorker.Execute;
 var
   J: TReservedJob;
@@ -723,11 +1270,24 @@ var
   Ctx: TJobContext;
   Prev: TArena;
   Backoff: Int64;
+  Got, Ok: Boolean;
+  Err: string;
 begin
   while FQueue.IsRunning do
   begin
     InterLockedIncrement(FQueue.FBusy);
-    if not FQueue.FStore.Reserve(J) then
+    try
+      Got := FQueue.FStore.Reserve(J);
+    except
+      on E: Exception do
+      begin
+        InterLockedDecrement(FQueue.FBusy);
+        StoreTrouble(FQueue, '', E);
+        FQueue.FSignal.WaitFor(FQueue.FStore.PollIntervalMs);
+        Continue;
+      end;
+    end;
+    if not Got then
     begin
       InterLockedDecrement(FQueue.FBusy);
       { Waits on a signal, but wakes regularly regardless: a delayed job
@@ -743,7 +1303,12 @@ begin
       InterLockedIncrement64(Int64(FQueue.FDropped));
       if Assigned(FQueue.FOnError) then
         FQueue.FOnError(J.Name, 'no handler registered');
-      FQueue.FStore.Drop(J, 'no handler registered');
+      try
+        FQueue.FStore.Drop(J, 'no handler registered');
+      except
+        on E: Exception do
+          StoreTrouble(FQueue, J.Name, E);
+      end;
       InterLockedDecrement(FQueue.FBusy);
       Continue;
     end;
@@ -754,6 +1319,9 @@ begin
       Ctx.Name := J.Name;
       Ctx.Attempt := J.Attempt + 1;
       Ctx.Arena := FArena;
+      Ctx.Last := J.Attempt + 1 >= FQueue.FMaxAttempts;
+      Ctx.BatchId := '';
+      Ctx.Queue := FQueue;
       { The second copy: from the store's memory into the worker's arena, so
         the handler can be written like a controller. }
       if J.Len > 0 then
@@ -761,16 +1329,31 @@ begin
       else
         Ctx.Payload := StrEmpty;
 
+      Ok := False;
+      Err := '';
       try
         H(Ctx);
-        InterLockedIncrement64(Int64(FQueue.FProcessed));
-        Inc(FDone);
-        FQueue.FStore.Complete(J);
+        Ok := True;
       except
         on E: Exception do
+          Err := E.ClassName + ': ' + E.Message;
+      end;
+
+      { Settled apart from the handler: a store that fails to record a job
+        that ran is not a job that failed, and is not retried as one. A
+        durable store's row stays reserved and is released after the
+        visibility timeout. }
+      try
+        if Ok then
+        begin
+          InterLockedIncrement64(Int64(FQueue.FProcessed));
+          Inc(FDone);
+          FQueue.FStore.Complete(J);
+        end
+        else
         begin
           if Assigned(FQueue.FOnError) then
-            FQueue.FOnError(J.Name, E.ClassName + ': ' + E.Message);
+            FQueue.FOnError(J.Name, Err);
           if J.Attempt + 1 < FQueue.FMaxAttempts then
           begin
             InterLockedIncrement64(Int64(FQueue.FRetried));
@@ -783,9 +1366,12 @@ begin
           else
           begin
             InterLockedIncrement64(Int64(FQueue.FFailed));
-            FQueue.FStore.Fail(J, E.ClassName + ': ' + E.Message);
+            FQueue.FStore.Fail(J, Err);
           end;
         end;
+      except
+        on E: Exception do
+          StoreTrouble(FQueue, J.Name, E);
       end;
     finally
       UseArena(Prev);
@@ -795,5 +1381,11 @@ begin
     end;
   end;
 end;
+
+initialization
+  GBatchLock := TCriticalSection.Create;
+
+finalization
+  FreeAndNil(GBatchLock);
 
 end.

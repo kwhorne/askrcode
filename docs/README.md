@@ -89,7 +89,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 
 | | |
 |---|---|
-| [Queues](queue.md) | Background jobs, in-process or durable |
+| [Queues](queue.md) | Background jobs, in-process or durable, in chains and batches |
 | [Events](events.md) | Saying what happened, and listeners now or in the queue |
 | [Real time](realtime.md) | Server-sent events, websockets, and broadcasting to both |
 | [Scheduler](scheduler.md) | Recurring work |

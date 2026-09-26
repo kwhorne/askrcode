@@ -28,6 +28,92 @@ begin
   end;
 end;
 
+var
+  BatchRows, BatchDone, BatchAlways, BatchCaught: Integer;
+  ChainLog: string;
+
+procedure BatchRow(const Ctx: TJobContext);
+begin
+  if Ctx.Payload.ToString = 'bad' then
+    raise Exception.Create('a bad row');
+  InterLockedIncrement(BatchRows);
+end;
+
+procedure BatchCallback(const Ctx: TJobContext);
+begin
+  if Ctx.Name = 'batch-done' then
+    InterLockedIncrement(BatchDone)
+  else if Ctx.Name = 'batch-always' then
+    InterLockedIncrement(BatchAlways)
+  else if Ctx.Name = 'batch-caught' then
+    InterLockedIncrement(BatchCaught);
+end;
+
+procedure ChainStep(const Ctx: TJobContext);
+begin
+  EnterCriticalSection(QueueLock);
+  try
+    ChainLog := ChainLog + Ctx.Payload.ToString;
+  finally
+    LeaveCriticalSection(QueueLock);
+  end;
+end;
+
+{ Batches and a chain under six workers. The one thing that matters for a
+  batch here: of the workers settling its last jobs at the same moment,
+  exactly one finds it finished -- or the callbacks run twice, or never. }
+procedure QueueFlows(const QueueDsn: string);
+var
+  Storage: TDbJobStore;
+  Q: TQueue;
+  B: TBatch;
+  I: Integer;
+  Id: string;
+  S: TBatchState;
+begin
+  BatchRows := 0;
+  BatchDone := 0;
+  BatchAlways := 0;
+  BatchCaught := 0;
+  ChainLog := '';
+  Storage := TDbJobStore.Create(QueueDsn, 8);
+  Storage.Poll := 10;
+  Storage.EnsureSchema;
+  Q := TQueue.Create(Storage, 6, 1, True);
+  try
+    Q.Handle('batch-row', @BatchRow);
+    Q.Handle('batch-done', @BatchCallback);
+    Q.Handle('batch-always', @BatchCallback);
+    Q.Handle('batch-caught', @BatchCallback);
+    Q.Handle('chain-step', @ChainStep);
+    B := Q.Batch('rows');
+    for I := 1 to 200 do
+      B := B.Add('batch-row', IntToStr(I));
+    Id := B.OnSuccess('batch-done').Always('batch-always').Push;
+    B := Q.Batch('some bad');
+    for I := 1 to 40 do
+      if I mod 5 = 0 then
+        B := B.Add('batch-row', 'bad')
+      else
+        B := B.Add('batch-row', IntToStr(I));
+    B.OnSuccess('batch-done').OnFailure('batch-caught').Always('batch-always').Push;
+    Q.Chain.Add('chain-step', 'a').Add('chain-step', 'b').Add('chain-step', 'c')
+      .Add('chain-step', 'd').Add('chain-step', 'e').Push;
+    Q.Start;
+    Ok('the batches and the chain drained', Q.WaitUntilEmpty(60000));
+    Q.Stop(True);
+    LikeI('every good row ran', 232, BatchRows);
+    LikeI('OnSuccess once, for the batch with no bad rows', 1, BatchDone);
+    LikeI('OnFailure once, not once per bad row', 1, BatchCaught);
+    LikeI('Always once per batch', 2, BatchAlways);
+    Ok('the table says the batch is done', Q.BatchStatus(Id, S) and (S.Pending = 0) and
+      S.Finished and (S.Failed = 0));
+    Ok('the chain ran in order, on six workers', ChainLog = 'abcde');
+  finally
+    Q.Free;
+  end;
+end;
+
 procedure QueuePart(const QueueDsn: string);
 const
   Jobs_ = 200;
@@ -49,6 +135,7 @@ begin
       try
         C.Exec(A, 'DROP TABLE IF EXISTS askr_jobs');
         C.Exec(A, 'DROP TABLE IF EXISTS askr_failed_jobs');
+        C.Exec(A, 'DROP TABLE IF EXISTS askr_job_batches');
       except
         on EDbError do ;
       end;
@@ -118,6 +205,7 @@ begin
     finally
       Q.Free;
     end;
+    QueueFlows(QueueDsn);
   finally
     A.Free;
     DoneCriticalSection(QueueLock);
