@@ -1259,6 +1259,38 @@ begin
   RemoveDir(Dir);
 end;
 
+{ Every file askr new writes ends with a line break, and has no carriage
+  returns. Emit dropped the last break, and `echo KEY=value >> .env` then
+  joined the last comment line. }
+procedure TestScaffoldEndsLines;
+const
+  Folder = '.build/scaffold-lines';
+  Files: array[0..5] of string = ('.env', '.env.example', 'app.lpr',
+    'askr.toml', '.gitignore', 'AGENTS.md');
+var
+  I: Integer;
+  F: TFileStream;
+  Text_: string;
+begin
+  RemoveTree(Folder + '/shop');
+  ForceDirectories(Folder);
+  NewProject(Folder, 'shop', False);
+  for I := 0 to High(Files) do
+  begin
+    F := TFileStream.Create(Folder + '/shop/' + Files[I], fmOpenRead);
+    try
+      SetLength(Text_, F.Size);
+      if F.Size > 0 then
+        F.ReadBuffer(Text_[1], F.Size);
+    finally
+      F.Free;
+    end;
+    AssertTrue((Text_ <> '') and (Text_[Length(Text_)] = #10),
+      Files[I] + ' ends with a line break');
+    AssertTrue(Pos(#13, Text_) = 0, Files[I] + ' has no carriage returns');
+  end;
+end;
+
 { The installer edits a file askr new wrote and the user may since have
   changed. Every edit it makes needs its anchor; 0.12.0 to 0.13.1 missed
   one in silence and wrote an app.lpr that did not compile. What is held
@@ -12902,6 +12934,8 @@ begin
   Group('make auth');
   Test('every place in app.lpr is found before anything is written',
     @TestAuthInstall);
+  Test('every file askr new writes ends with a line break',
+    @TestScaffoldEndsLines);
 
   Group('API tokens');
   Test('hashed at rest, scoped, revocable, and never from a URL',

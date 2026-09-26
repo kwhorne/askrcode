@@ -93,18 +93,19 @@ const
 
 procedure Emit(const Path_, Content_: string);
 var
-  L: TStringList;
+  F: TFileStream;
 begin
   ForceDirectories(ExtractFilePath(Path_));
-  L := TStringList.Create;
+  { The bytes as given. This went through a TStringList with
+    TrailingLineBreak off, which took the last line break off every file
+    askr new wrote -- and `echo KEY=value >> .env` then landed on the end
+    of a comment. Found by a plugin's check appending to .env. }
+  F := TFileStream.Create(Path_, fmCreate);
   try
-    L.Text := Content_;
-    { TStringList adds a line break at the end. The content is written with
-      #10 throughout, and SaveToFile is not to translate them. }
-    L.TrailingLineBreak := False;
-    L.SaveToFile(Path_);
+    if Content_ <> '' then
+      F.WriteBuffer(Content_[1], Length(Content_));
   finally
-    L.Free;
+    F.Free;
   end;
   WriteLn('  new  ', Path_);
 end;

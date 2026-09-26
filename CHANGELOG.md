@@ -12,7 +12,18 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.16.0 — 2026-09-26
+
+Plugins. A plugin is a git repository of Pascal that an app builds with,
+the way it builds with the framework: `askr plugin add` fetches its newest
+release, pins the commit in askr.lock, and wires it into app.lpr, and the
+build compiles it into the one binary. It gets the app's configuration,
+router and database once the app's own middleware is on, its migrations
+under its own name, and its docs served to coding agents. The build
+stops on a plugin for another Askr, on two plugins claiming one table,
+and on a lock that disagrees. There is no registry and no sandbox, and
+docs/plugins.md says why. The first is
+[askr-stripe](https://github.com/kwhorne/askr-stripe).
 
 ### Added
 
@@ -24,7 +35,7 @@ with the zero-major caveat that minor releases may break things until
   version, the Askr versions it builds against, its units, its entry unit,
   and the configuration prefix and tables it owns. The build puts its units
   on the search path and writes `App.Plugins`, which uses each entry unit
-  and each migration -- a unit nothing refers to is never linked. It stops
+  and each migration — a unit nothing refers to is never linked. It stops
   on a plugin that builds against another Askr, on two plugins claiming
   the same table or prefix, on a lock that disagrees with askr.toml, and
   on `plugins.stripe = "..."`, which is not how a plugin is written here.
@@ -32,7 +43,7 @@ with the zero-major caveat that minor releases may break things until
   lock. Git only: the version lives in the tag.
 - **What a plugin gives an app, and when.** `Askr.Plugins`: a plugin is a
   `TPlugin` its initialization registers, and `UsePlugins(R)` in app.lpr
-  makes each one after the app's own middleware -- `Configure` once the
+  makes each one after the app's own middleware — `Configure` once the
   configuration is loaded, then `Routes` with a router that has sessions
   and sign-in on it. A plugin that cannot start stops the app and says
   which. `askr new` writes the lines; `askr plugin add` adds them to an
@@ -40,8 +51,8 @@ with the zero-major caveat that minor releases may break things until
   the way askr wrote it. The build refuses plugins an app.lpr does not
   start: linked and never started is a plugin that silently does nothing.
 - **A route added twice is refused where it is added.** The same method
-  and shape -- `/orders/:id` beside `/orders/:slug`, `/about` beside
-  `/about/` -- used to be registered twice, and one of the two never
+  and shape — `/orders/:id` beside `/orders/:slug`, `/about` beside
+  `/about/` — used to be registered twice, and one of the two never
   answered. It raises now, naming both, and when the first is a plugin's,
   naming the plugin. See UPGRADE.md.
 - **A plugin's docs are served to coding agents.** `docs_search` and
@@ -54,6 +65,13 @@ with the zero-major caveat that minor releases may break things until
   so a row in `askr_migrations` says whose it is and cannot collide with
   the app's. The migrator orders by the timestamp, whoever owns it, and
   `askr migrate:rollback` takes back the latest by time.
+
+### Fixed
+
+- **Every file `askr new` wrote ended without a line break.** The writer
+  took the last one off, so `echo KEY=value >> .env` joined the last
+  comment line and the key was never read. Found by a plugin's check
+  appending to a new app's .env.
 
 ## 0.15.0 — 2026-09-26
 

@@ -8,7 +8,9 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
-## Unreleased
+## 0.16.0
+
+**Worth reading if the app registers routes by hand.**
 
 **A route added twice stops the app where it is added.** Two routes with
 the same method and the same shape -- `/orders/:id` and `/orders/:slug`,
