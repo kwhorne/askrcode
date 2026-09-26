@@ -196,6 +196,7 @@ begin
   Si('  askr make resource <Name>  pages over a table: list, show, add, edit');
   Si('  askr make controller <Name>');
   Si('  askr make migration <Name>');
+  Si('  askr make pivot <Model> <Model>  the table for a many-to-many');
   Si('  askr make seeder|job|middleware <Name>');
   Si('  askr make auth           /login, /register, /reset-password');
   Si('  askr migrate             run pending migrations');
@@ -803,6 +804,8 @@ begin
     Si('         a trailing ? for nullable. --no-timestamps, --force');
     Si('       askr make resource <Name> [--web] [--api] [--table=name] [--force]');
     Si('         from the table: pages (--web, the default), JSON (--api), or both');
+    Si('       askr make pivot <Model> <Model> [--force]');
+    Si('         the table between two models, for BelongsToMany');
     Si('       askr make auth [--force]');
     Halt(1);
   end;
@@ -845,6 +848,11 @@ begin
     MakeController(P.Root, Name_)
   else if Slag = 'migration' then
     MakeMigration(P.Root, Name_)
+  else if Slag = 'pivot' then
+  begin
+    if not MakePivot(P.Root, Name_, ParamStr(4), HasFlag('force')) then
+      Halt(1);
+  end
   else if Slag = 'seeder' then
     MakeSeeder(P.Root, Name_)
   else if Slag = 'job' then

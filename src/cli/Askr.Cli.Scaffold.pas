@@ -42,6 +42,19 @@ function PascalName(const S: string): string;
   worse than none. }
 function RefuseExisting(const Paths: array of string; Force: Boolean): Boolean;
 procedure MakeMigration(const Root, Name: string);
+{ The pivot between two models, for a BelongsToMany:
+
+    askr make pivot Post Tag
+
+  writes a migration for post_tag -- the two singular names in
+  alphabetical order, as BelongsToMany expects without being told -- with
+  post_id and tag_id as foreign keys that cascade, the pair unique, and
+  tag_id indexed for loading from the other side. It does not touch the
+  models: it prints the three lines that go in one of them.
+
+  A model related to itself is refused: the two keys would have the same
+  name, and which one means which is a decision, not a convention. }
+function MakePivot(const Root, First, Second: string; Force: Boolean): Boolean;
 procedure MakeSeeder(const Root, Name: string);
 procedure MakeJob(const Root, Name: string);
 procedure MakeMiddleware(const Root, Name: string);
@@ -1371,6 +1384,138 @@ begin
     'end.' + #10);
 
   UpdateIndex(Root, 'database', 'App.Migrations', 'App.Migrations.');
+end;
+
+function MakePivot(const Root, First, Second: string; Force: Boolean): Boolean;
+var
+  N1, N2, S1, S2, T1, T2, Pivot, K1, K2, MigName, MigPath, VersionStr: string;
+  Lo, Hi: string;
+  B: TStringList;
+
+  procedure A(const S: string);
+  begin
+    B.Add(S);
+  end;
+
+begin
+  Result := False;
+  N1 := PascalName(First);
+  N2 := PascalName(Second);
+  if (N1 = '') or (N2 = '') then
+  begin
+    WriteLn('A pivot is between two models: askr make pivot Post Tag');
+    Exit;
+  end;
+  S1 := SnakeName(N1);
+  S2 := SnakeName(N2);
+  if S1 = S2 then
+  begin
+    WriteLn('A model related to itself needs two key names that say which');
+    WriteLn('side is which -- follower_id and followed_id, say. That is a');
+    WriteLn('decision rather than a convention: write the migration with');
+    WriteLn('askr make migration, and name the keys in BelongsToMany.');
+    Exit;
+  end;
+  T1 := Plural(S1);
+  T2 := Plural(S2);
+  K1 := S1 + '_id';
+  K2 := S2 + '_id';
+  if S1 < S2 then
+    Pivot := S1 + '_' + S2
+  else
+    Pivot := S2 + '_' + S1;
+  MigName := 'Create' + PascalName(Pivot);
+  MigPath := IncludeTrailingPathDelimiter(Root) + 'database/App.Migrations.' +
+    MigName + '.pas';
+  if RefuseExisting([MigPath], Force) then
+    Exit;
+
+  { The key that is not first in the unique index gets its own: the index
+    on the pair serves a lookup by its first column only, and loading from
+    the other side asks by the second. }
+  if K1 < K2 then
+  begin
+    Lo := K1;
+    Hi := K2;
+  end
+  else
+  begin
+    Lo := K2;
+    Hi := K1;
+  end;
+
+  VersionStr := NextVersion(Root);
+  B := TStringList.Create;
+  try
+    A('{ The pivot between ' + T1 + ' and ' + T2 + ', written by');
+    A('  askr make pivot ' + N1 + ' ' + N2 + '. Two keys and nothing else: a link that');
+    A('  carries data of its own is a model with two BelongsTo. }');
+    A('unit App.Migrations.' + MigName + ';');
+    A('');
+    A('{$mode Delphi}{$H+}');
+    A('');
+    A('interface');
+    A('');
+    A('uses');
+    A('  Askr.Norn.Schema, Askr.Norn.Migration;');
+    A('');
+    A('type');
+    A('  T' + MigName + ' = class(TMigration)');
+    A('  public');
+    A('    class function Version: string; override;');
+    A('    procedure Up(S: TSchemaBuilder); override;');
+    A('    procedure Down(S: TSchemaBuilder); override;');
+    A('  end;');
+    A('');
+    A('implementation');
+    A('');
+    A('class function T' + MigName + '.Version: string;');
+    A('begin');
+    A('  Result := ''' + VersionStr + ''';');
+    A('end;');
+    A('');
+    A('procedure T' + MigName + '.Up(S: TSchemaBuilder);');
+    A('begin');
+    A('  with S.Create(''' + Pivot + ''') do');
+    A('  begin');
+    A('    { ON DELETE CASCADE: a deleted ' + S1 + ' takes its rows here with it,');
+    A('      rather than being refused for having any. }');
+    A('    ForeignKey(''' + K1 + ''', ''' + T1 + ''');');
+    A('    ForeignKey(''' + K2 + ''', ''' + T2 + ''');');
+    A('    UniqueIndex([''' + Lo + ''', ''' + Hi + ''']);');
+    A('    Index([''' + Hi + ''']);');
+    A('  end;');
+    A('end;');
+    A('');
+    A('procedure T' + MigName + '.Down(S: TSchemaBuilder);');
+    A('begin');
+    A('  S.Drop(''' + Pivot + ''');');
+    A('end;');
+    A('');
+    A('initialization');
+    A('  RegisterMigration(T' + MigName + ');');
+    A('');
+    A('end.');
+    Emit(MigPath, B.Text);
+  finally
+    B.Free;
+  end;
+  UpdateIndex(Root, 'database', 'App.Migrations', 'App.Migrations.');
+
+  WriteLn('');
+  WriteLn('Next:');
+  WriteLn('  askr migrate     makes the ' + Pivot + ' table');
+  WriteLn('');
+  WriteLn('Then, in app/Models/App.Models.' + N1 + '.pas:');
+  WriteLn('  uses       App.Models.' + N2 + ';');
+  WriteLn('  type       T' + N2 + 'List = TModelList<T' + N2 + '>;');
+  WriteLn('  published  ' + PascalName(T2) + ': T' + N2 + 'List;    { before the properties }');
+  WriteLn('  Describe   S.BelongsToMany(''' + PascalName(T2) + ''', T' + N2 + ');');
+  WriteLn('');
+  WriteLn('One side only, unless both models are in one unit: two units cannot');
+  WriteLn('use each other. The pivot works from either; the side you load from is');
+  WriteLn('the one that needs the field.');
+  Result := True;
 end;
 
 procedure MakeSeeder(const Root, Name: string);

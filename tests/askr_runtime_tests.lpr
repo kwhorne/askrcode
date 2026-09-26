@@ -1315,6 +1315,51 @@ begin
   end;
 end;
 
+{ --------------------------------------------------------- make pivot -- }
+
+{ The migration make pivot writes: named as BelongsToMany expects without
+  being told, whichever order the models are given in, with keys that
+  cascade and the pair unique. make:check migrates it on all three
+  databases; this holds the text. }
+procedure TestMakePivot;
+const
+  Root = '.build/pivot-test';
+var
+  L: TStringList;
+  Mig, Before: string;
+begin
+  RemoveTree(Root);
+  ForceDirectories(Root + '/database');
+  L := TStringList.Create;
+  try
+    AssertTrue(MakePivot(Root, 'Tag', 'post', False), 'a pivot between two models');
+    AssertTrue(FileExists(Root + '/database/App.Migrations.CreatePostTag.pas'),
+      'named post_tag whichever order they came in');
+    L.LoadFromFile(Root + '/database/App.Migrations.CreatePostTag.pas');
+    Mig := L.Text;
+    AssertContains(Mig, 'S.Create(''post_tag'')', 'the table');
+    AssertContains(Mig, 'ForeignKey(''tag_id'', ''tags'');', 'a key to each side');
+    AssertContains(Mig, 'ForeignKey(''post_id'', ''posts'');', 'and to the other');
+    AssertContains(Mig, 'UniqueIndex([''post_id'', ''tag_id'']);', 'the pair once');
+    AssertContains(Mig, 'Index([''tag_id'']);', 'the second key indexed on its own');
+    AssertContains(Mig, 'S.Drop(''post_tag'');', 'and a way back');
+    L.LoadFromFile(Root + '/database/App.Migrations.pas');
+    AssertContains(L.Text, 'App.Migrations.CreatePostTag', 'and it is in the index');
+
+    Before := Mig;
+    AssertFalse(MakePivot(Root, 'Post', 'Tag', False), 'making it again is refused');
+    L.LoadFromFile(Root + '/database/App.Migrations.CreatePostTag.pas');
+    AssertEqual(L.Text, Before, 'and the file is left as it was');
+
+    AssertFalse(MakePivot(Root, 'Post', 'Post', False), 'a model related to itself is refused');
+    AssertFalse(FileExists(Root + '/database/App.Migrations.CreatePostPost.pas'),
+      'and nothing is written');
+  finally
+    L.Free;
+    RemoveTree(Root);
+  end;
+end;
+
 { ------------------------------------------------------------- cors -- }
 
 type
@@ -7998,6 +8043,10 @@ begin
     @TestDbSessions);
   Test('the driver comes from config, and what it refuses',
     @TestSessionsFromConfig);
+
+  Group('make pivot');
+  Test('the table between two models, named as BelongsToMany expects',
+    @TestMakePivot);
 
   Group('make auth');
   Test('every place in app.lpr is found before anything is written',

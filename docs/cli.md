@@ -143,6 +143,7 @@ or set it for this project only, in askr.toml:
 | `askr make resource <Name> [--web] [--api]` | Pages or JSON over a table that exists — see [Generators](generators.md) |
 | `askr make controller <Name>` | `app/Http/App.Http.<Name>Controller.pas` |
 | `askr make migration <Name>` | `database/App.Migrations.<Name>.pas` |
+| `askr make pivot <Model> <Model>` | The table between two models, for a `BelongsToMany` — see [Many to many](models.md#many-to-many) |
 | `askr make seeder <Name>` | `database/App.Seeders.<Name>.pas` |
 | `askr make job <Name>` | `app/Jobs/App.Jobs.<Name>.pas` |
 | `askr make middleware <Name>` | `app/Http/App.Http.<Name>.pas` |

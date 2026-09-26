@@ -62,6 +62,12 @@ with the zero-major caveat that minor releases may break things until
   form with every box unticked. `IdsExist` checks a list in one query and
   names every id that is not a row, on the field.
 
+  `askr make pivot Post Tag` writes the migration for `post_tag`: both
+  keys cascade, the pair is unique, and the second key is indexed on its
+  own. It prints the lines for the model rather than editing it, and
+  refuses a model related to itself, whose keys need names a convention
+  cannot choose.
+
 ### Changed
 
 - A database error from SQLite or Postgres ends in `— in: <the SQL>`, not

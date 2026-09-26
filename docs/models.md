@@ -240,7 +240,12 @@ S.BelongsToMany('Tags', TTag);
 
 That is posts to tags through `post_tag`, where `post_id` points at the post
 and `tag_id` at the tag — the two singular names in alphabetical order, as
-in Laravel. Name them when yours differ:
+in Laravel. `askr make pivot Post Tag` writes the migration for exactly
+that table: both keys cascade on delete, the pair is unique, and the second
+key has an index of its own for loading from the other side. It prints the
+lines that go in the model rather than editing it.
+
+Name them when yours differ:
 
 ```pascal
 S.BelongsToMany('Tags', TTag, 'article_labels', 'article_id', 'label_id');
@@ -376,6 +381,10 @@ at compile time, which is the stronger guarantee, not the weaker one.
 **Casts and accessors.** The types are already static: a `Currency` is a
 `Currency` the whole way. Casts exist in dynamically typed stacks because
 every value arrives from the database as a string.
+
+**Both sides as typed fields, in two units.** A `TModelList<TTag>` field
+needs `TTag` in the interface, and two units cannot use each other. Declare
+the relation on the side you load from, or keep the two models in one unit.
 
 **Columns on the pivot.** A pivot is two keys. A link that carries its own
 data — a quantity, a role, a date — is a model of its own with two
