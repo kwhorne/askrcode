@@ -311,6 +311,38 @@ A signed link works as often as it is valid. Where once matters — a
 password reset — a token in the database is the tool, because only a table
 can forget a token when it has been used.
 
+## QR codes
+
+```pascal
+uses Askr.Qr;
+
+Html := QrSvg(QrEncode(TotpUri('Shop', U.Email, Secret)),
+  'Scan with your authenticator app');
+```
+
+For the page where two-factor sign-in is set up: a phone scans it and has
+the secret. `QrEncode` takes bytes — UTF-8 as it is — at one of four levels
+(`qrMedium` unless you say), uses the smallest of the forty versions that
+holds them, and picks the mask by the standard's penalty score.
+`QrSvg` draws it as an inline SVG with the four-module quiet zone, dark on
+light whatever the page's theme, so it needs no script, no network and no
+file next to the binary — like the rest of the sign-in pages.
+
+Three things hold it:
+
+- **python-qrcode**, module for module, at a fixed mask, at every level and
+  across the versions — every module of such a code is set by the
+  standard.
+- **Nayuki's qrcodegen** for the mask the score picks. python-qrcode is no
+  reference there: it scores each mask with the format bits left light.
+- **Chrome's own barcode reader**, in `./askr qr:check`: codes from a few
+  bytes to what version 40 holds, at every level, read back as the text
+  they were made from. The reader is macOS's, through Chrome's
+  `BarcodeDetector`; elsewhere the gate says it did not run.
+
+Byte mode only — what a URI needs. No numeric, alphanumeric or kanji mode,
+and no structured append.
+
 ## Requiring login
 
 ```pascal

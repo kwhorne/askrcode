@@ -2139,6 +2139,70 @@ cmd_auth_check() {
   echo "auth:check holds: an address is confirmed by the mail it was sent, and by nothing else."
 }
 
+# The gate behind Askr.Qr: codes at every level, from a few bytes to what
+# version 40 holds, read back by Chrome's own barcode reader and compared
+# with the text they were made from. The suite holds the encoder to
+# another encoder, module for module; this holds it to a reader, which is
+# what a phone is. The reader is there in Chrome on macOS; elsewhere the
+# gate says so and does not claim to have run.
+cmd_qr_check() {
+  prepare
+  ensure_image
+  chrome=${ASKR_CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+  [ -x "$chrome" ] || chrome=$(command -v google-chrome || command -v chromium || true)
+  if ! command -v node >/dev/null 2>&1 || [ -z "$chrome" ] || [ ! -x "$chrome" ]; then
+    echo "qr:check needs node and Chrome (ASKR_CHROME). Skipped, not passed."
+    return 0
+  fi
+  work="$BUILD/qrcheck"
+  qr_units="$BUILD/qrcheck-units"
+  rm -rf "$work"
+  mkdir -p "$work" "$qr_units"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$qr_units|; s|-FE$BIN|-FE$work|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       sh -c "fpc $flags tools/qr/qrwrite.lpr && /work/${work#$ROOT/}/qrwrite /work/${work#$ROOT/}/codes" \
+       >"$work/build.log" 2>&1; then
+    echo "  FAIL  the codes are written"
+    grep -iE 'error|fatal' "$work/build.log" | head -5
+    return 1
+  fi
+  echo '<!doctype html><title>qr:check</title>' > "$work/codes/index.html"
+  web=${ASKR_QR_WEB:-9235}
+  ( cd "$work/codes" && exec python3 -m http.server "$web" --bind 127.0.0.1 ) >/dev/null 2>&1 &
+  web_pid=$!
+  profile=$(mktemp -d)
+  port=${ASKR_QR_CDP:-9232}
+  "$chrome" --headless --disable-gpu --remote-debugging-port=$port \
+    --user-data-dir="$profile" about:blank >/dev/null 2>&1 &
+  chrome_pid=$!
+  n=0
+  until curl -s -o /dev/null "http://127.0.0.1:$port/json/list" &&
+        curl -s -o /dev/null "http://127.0.0.1:$web/"; do
+    n=$((n + 1))
+    if [ $n -gt 80 ]; then
+      echo "  FAIL  Chrome and the page start"
+      kill "$chrome_pid" "$web_pid" 2>/dev/null
+      return 1
+    fi
+    sleep 0.25
+  done
+  code=0
+  DIR="$work/codes" CDP="http://127.0.0.1:$port" PAGE="http://127.0.0.1:$web/" \
+    node "$ROOT/tools/qr/qrread.mjs" || code=$?
+  # || true: wait gives the status of what was just killed, 143, and
+  # under set -e that ended the gate after every code had passed.
+  kill "$chrome_pid" "$web_pid" 2>/dev/null || true
+  wait "$chrome_pid" "$web_pid" 2>/dev/null || true
+  rm -rf "$profile"
+  echo
+  case $code in
+    0) echo "qr:check holds: every code reads back as the text it was made from." ;;
+    2) echo "qr:check skipped: no QR reader in this Chrome. Not passed." ;;
+    *) echo "qr:check failed."; return 1 ;;
+  esac
+}
+
 cmd_seo_check() {
   prepare
 
@@ -2908,6 +2972,7 @@ case "${1:-}" in
   seo:check) shift; cmd_seo_check "$@" ;;
   session:check) shift; cmd_session_check "$@" ;;
   auth:check) shift; cmd_auth_check "$@" ;;
+  qr:check) shift; cmd_qr_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -2949,6 +3014,10 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   en app fra askr new --auth over en socket: registrer,
                   bekreft adressen med lenka fra mailen i loggen, og ingen
                   annen lenke åpner dashbordet. Bare SQLite
+  ./askr qr:check
+                  QR-koder på alle nivåer, fra noen få byte til det
+                  versjon 40 rommer, lest tilbake av Chromes egen
+                  strekkodeleser. Krever node og Chrome på macOS
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,

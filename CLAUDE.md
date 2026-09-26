@@ -18,6 +18,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr check      # samme som test, med -Cr -Co -Ci
 ./askr make:check # generatorene: tre databaser, en socket og Chrome
 ./askr auth:check # en --auth-app over en socket: bekreftelse via mailen
+./askr qr:check   # QR-kodene lest tilbake av Chromes egen strekkodeleser
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -360,6 +361,32 @@ og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
 * **To sjekker i `VerifyTotp` var døde**: sifre og lengde. En kode som ikke
   er seks sifre kan aldri bli lik en, og sammenligningen sier det. Tatt ut;
   testene står.
+
+## QR-koder
+
+* **Tre ting holder koderen**: python-qrcode modul for modul ved fast
+  maske (hver modul er da gitt av standarden), qrcodegen for masken
+  straffepoengene velger, og Chromes `BarcodeDetector` i `qr:check`, som er
+  det en telefon gjør. `tools/vectors/qr.py` skriver vektorene; den
+  trenger `pip install qrcode qrcodegen`.
+* **python-qrcode er ingen referanse for maskevalget.** Den regner
+  straffepoeng med formatbitene lyse (`makeImpl(True, i)`), så 34 av 60
+  valg var ulike før jeg leste koden dens. qrcodegen regner på det ferdige
+  symbolet og leser regel 3 som 1:1:3:1:1 i hvilken som helst bredde, med
+  stillesonen som lys — portert rett over, og 64 av 64 valg er like.
+* **`BarcodeDetector` finnes bare i en sikker kontekst.** `about:blank` er
+  ikke det; første prøve spurte Chromes egen omnibox-side, som har den, og
+  så ut til å virke. Porten serverer kodene fra localhost.
+* **Terminatoren var død i byte-modus.** Modus, lengde og hele byte gir
+  alltid fire bit over, og avrundingen til hel byte legger dem til.
+* **Én mutasjon overlever, og det er et svar**: gulv i stedet for
+  tak-minus-én i balansen i regel 4. De er ulike bare når mørk andel er et
+  helt antall femprosent fra halvparten, og med odde størrelser er det
+  bare mulig ved nøyaktig 40 eller 60 prosent mørkt. Maskerte koder ligger
+  rundt 50. Et søk etter et slikt tilfelle ble stoppet da regnestykket
+  viste at det ikke finnes i praksis; formelen er qrcodegens.
+* **`wait` på en drept prosess gir 143**, og under `set -e` avsluttet det
+  `qr:check` etter at alle kodene hadde bestått. `|| true`.
 
 ## Elliptiske kurver
 

@@ -22,7 +22,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
-  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
@@ -5953,6 +5953,111 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------------ QR codes -- }
+
+function BytesAsText(const Hex: string): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  SetLength(Result, Length(Hex) div 2);
+  for I := 1 to Length(Result) do
+    Result[I] := Chr(StrToInt('$' + Copy(Hex, I * 2 - 1, 2)));
+end;
+
+{ Every module of a code at a fixed mask is set by the standard, so the
+  whole matrix is held to python-qrcode's -- an encoder that is not ours --
+  at every level and across the versions. The rows with mask -1 are
+  qrcodegen's own choice of mask by the penalty score, which ours has to
+  make the same. }
+procedure TestQrAgainstPython;
+var
+  L, F, Rows: TStringList;
+  I, X, Y, Good, Total, Digit: Integer;
+  Q: TQrCode;
+  Ecc: TQrEcc;
+  Same: Boolean;
+  Versions: string;
+begin
+  L := TStringList.Create;
+  F := TStringList.Create;
+  Rows := TStringList.Create;
+  try
+    L.LoadFromFile('tests/vectors/qr.txt');
+    F.Delimiter := '|';
+    F.StrictDelimiter := True;
+    Rows.Delimiter := '/';
+    Rows.StrictDelimiter := True;
+    Good := 0;
+    Total := 0;
+    Versions := '';
+    for I := 0 to L.Count - 1 do
+    begin
+      if (L[I] = '') or (L[I][1] = '#') then
+        Continue;
+      F.DelimitedText := L[I];
+      case F[0][1] of
+        'L': Ecc := qrLow;
+        'M': Ecc := qrMedium;
+        'Q': Ecc := qrQuartile;
+      else
+        Ecc := qrHigh;
+      end;
+      Inc(Total);
+      Q := QrEncode(BytesAsText(F[3]), Ecc, StrToInt(F[1]));
+      Rows.DelimitedText := F[4];
+      Same := (Q.Version = StrToInt(F[2])) and (Rows.Count = Q.Size);
+      if Same then
+        for Y := 0 to Q.Size - 1 do
+          for X := 0 to Q.Size - 1 do
+          begin
+            Digit := StrToInt('$' + Rows[Y][X div 4 + 1]);
+            if (((Digit shr (3 - X mod 4)) and 1) <> 0) <> QrDark(Q, X, Y) then
+              Same := False;
+          end;
+      if Same then
+      begin
+        Inc(Good);
+        if Pos(' ' + F[2] + ' ', Versions + ' ') = 0 then
+          Versions := Versions + ' ' + F[2];
+      end
+      else
+        WriteLn('        differs: level ', F[0], ' mask ', F[1], ' version ', F[2],
+          ', ours ', Q.Version, ', ', Length(F[3]) div 2, ' bytes');
+    end;
+    AssertTrue(Total > 50, 'the vectors are there (run from the repository root)');
+    AssertEqual(Good, Total, 'every module the same as python-qrcode''s and qrcodegen''s, versions' + Versions);
+  finally
+    Rows.Free;
+    F.Free;
+    L.Free;
+  end;
+end;
+
+procedure TestQrShape;
+var
+  Q: TQrCode;
+  Svg: string;
+  Raised: Boolean;
+begin
+  Q := QrEncode('otpauth://totp/Shop:ada@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Shop');
+  AssertTrue((Q.Mask >= 0) and (Q.Mask <= 7), 'a mask is chosen by the penalty score');
+  AssertEqual(Q.Size, Q.Version * 4 + 17, 'and the size follows the version');
+  Svg := QrSvg(Q, 'Scan <this>');
+  AssertContains(Svg, 'viewBox="0 0 ' + IntToStr(Q.Size + 8) + ' ' + IntToStr(Q.Size + 8) + '"',
+    'with four modules of quiet zone on every side');
+  AssertContains(Svg, 'aria-label="Scan &lt;this&gt;"', 'a label, escaped');
+  AssertContains(Svg, 'fill="#fff"', 'dark on light, whatever the page''s theme');
+  AssertNotContains(Svg, 'http://www.w3.org/2000/svg"' + ' href', 'and nothing fetched from outside');
+  Raised := False;
+  try
+    QrEncode(StringOfChar('x', 3000), qrLow);
+  except
+    on EQrError do Raised := True;
+  end;
+  AssertTrue(Raised, 'more than version 40 holds is an error, not a truncated code');
+end;
+
 procedure TestMailFraConfig;
 const
   Directory = 'askr-mailcfg-test.tmp';
@@ -10097,6 +10202,10 @@ begin
   Group('Signed links and verified addresses');
   Test('a signed link holds, and nothing changed about it does', @TestSignedLinks);
   Test('RequireVerified answers each client its own way, and closed by default', @TestRequireVerified);
+
+  Group('QR codes');
+  Test('module for module the same as two other encoders, the mask they choose too', @TestQrAgainstPython);
+  Test('a mask is chosen, the SVG has its quiet zone, and too much is an error', @TestQrShape);
 
   Group('Mail attachments and templates');
   Test('files go as multipart/mixed, and read back byte for byte', @TestMailAttachments);

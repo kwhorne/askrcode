@@ -45,6 +45,11 @@ with the zero-major caveat that minor releases may break things until
   ChaCha20-Poly1305 from RFC 8439 in Pascal and the purpose bound in, so a
   sealed value moved to another column does not open. Held to RFC 8439,
   its Appendix A.3 and 150 vectors from python-cryptography.
+- **QR codes.** `QrEncode` and `QrSvg` in `Askr.Qr` draw a code as an
+  inline SVG, for the page where two-factor sign-in is set up: byte mode,
+  four levels, forty versions, the mask by the standard's penalty score.
+  Held to python-qrcode module for module, to Nayuki's qrcodegen for the
+  mask, and to Chrome's own barcode reader in `./askr qr:check`.
 - **TOTP.** `Askr.Totp`: secrets, codes by RFC 6238, a check that takes
   the step before and after and refuses a code already used, the
   `otpauth://` URI, and recovery codes kept as hashes. Under it,
