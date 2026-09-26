@@ -12,7 +12,22 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.15.0 — 2026-09-26
+
+What an app does once it has users. A new account confirms its address,
+and sign-in can ask for a code from an authenticator app. Mail carries
+attachments and is written from templates, and a notification goes by
+mail, into the database, to Slack or as a text message. Files live on a
+disk or in S3. The server can talk to the browser without being asked,
+with server-sent events and websockets. Something that happened is an
+event with listeners, and jobs run in chains and batches. Tests get
+factories for rows and fakes for the queue, mail, events and
+notifications.
+
+S3 is held to AWS's own signer and to an S3 server, and Twilio to its
+documented form; neither AWS nor Twilio itself has been called from here.
+One change can be felt in an app that exists -- an address with a name
+in it is refused where it is added. See UPGRADE.md.
 
 ### Added
 

@@ -8,7 +8,9 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
-## Unreleased
+## 0.15.0
+
+**Worth reading if the app writes a name into a mail address.**
 
 **An address with a space, a line break or an angle bracket in it raises
 `EMailError` where it is added.** `AddTo('"Ada" <ada@example.com>')` used to
