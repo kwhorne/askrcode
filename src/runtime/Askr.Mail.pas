@@ -185,6 +185,7 @@ type
   TSentMail = record
     From, ToList, Cc, Bcc, Subject, Text, Html: string;
     Attachments: TStringArray;
+    Idempotency: string;
   end;
 
   { For a test: keeps every message instead of sending it. FakeMail puts
@@ -1047,6 +1048,7 @@ begin
   S.Subject := M.SubjectLine;
   S.Text := M.TextBody;
   S.Html := M.HtmlBody;
+  S.Idempotency := M.IdempotencyKey;
   S.Attachments := nil;
   SetLength(S.Attachments, Length(M.Attachments));
   for I := 0 to High(M.Attachments) do

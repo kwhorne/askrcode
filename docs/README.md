@@ -95,6 +95,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Scheduler](scheduler.md) | Recurring work |
 | [Cache](cache.md) | A sharded LRU in the process |
 | [Mail](mail.md) | Resend, SMTP with STARTTLS, or a log file |
+| [Notifications](notifications.md) | Telling a person something by mail, in the database, on Slack or by text message |
 | [Logging](logging.md) | Levels, fields, text or JSON |
 | [HTTP client](http-client.md) | Calling other services, with certificate verification |
 | [AI](ai.md) | Claude: text, streaming, tools, structured output |

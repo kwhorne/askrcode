@@ -1232,6 +1232,43 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Varsler
+
+* **Et varsel er en `TEvent`**, så publiserte properties er det som krysser
+  køen, med samme sjekk og samme feilmelding. `EventClassNamed` og
+  `UncarriedProperty` er eksportert fra `Askr.Events` for det.
+* **Én jobb per kanal.** En SMS som feiler, prøves igjen uten at mailen går
+  én gang til. Testen har en SMS-transport som feiler første gang, og
+  krever én mail og to SMS-forsøk.
+* **Uid-en er lik for alle kanaler og alle forsøk**, laget der varselet ble
+  lagt i køen: mailens idempotensnøkkel og radens nøkkel. Slack og Twilio
+  har ingen nøkkel — det står i docs, ikke gjemt.
+* **`Notify` prøver alle kanalene før den kaster.** Første testutkast hadde
+  bare feil i den *siste* kanalen i `Via`, så mutasjonen som stoppet ved
+  første feil ble fanget av meldingsteksten, ikke av oppførselen. En
+  mottaker uten adresse — mail først — og raden etter den er assertet nå.
+* **En kanal ingen har registrert, kaster før noe er sendt.** Ellers gikk
+  mailen før kanalen etter den feilet.
+* **Webhook-URL-en til Slack er hemmeligheten, og HTTP-klienten siterer
+  URL-en i sine egne feil.** En port ingen lytter på ga «Could not
+  connect to host:port» uten URL, så mutasjonen som fjernet vaskingen
+  overlevde. En server som godtar og lukker uten svar gir feilen som
+  siterer URL-en; den fanger det.
+* **Falske varsler bygger det som ville blitt sendt**, som falsk mail: en
+  kanal uten `ToMail` feiler i testen også.
+* **Mail-fake-en har bare adresser**, ikke navn. Navnet sjekkes gjennom en
+  transport som tar vare på den rendrete meldingen.
+* **Twilio er ikke kjørt mot**, bare holdt mot dokumentert form over en
+  socket. Står i unitens overskrift, docs og changeloggen.
+* **`WaitUntilEmpty` returnerte mens siste jobb kjørte.** Minnelageret
+  teller en jobb som borte i det den reserveres. Event-testen fra punkt
+  12 feilet én gang av det under en mutasjonskjøring. `FBusy` telles opp
+  *før* `Reserve`, så det finnes ikke et øyeblikk der jobben er ute av
+  lageret uten å være telt; en `Retry` legger jobben tilbake før telleren
+  går ned. Testen har en jobb på 300 ms og er mutasjonssjekket.
+* **zsh splitter ikke `$names`.** En mutasjonsliste i en variabel gikk inn
+  som ett argument og kjørte ingenting — uten feil. Kjør gjennom `bash -c`.
+
 ## Fillagring
 
 * **Signature V4 er holdt mot botocore, og mot en server som sjekker

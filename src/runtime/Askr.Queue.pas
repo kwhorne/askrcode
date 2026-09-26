@@ -150,6 +150,10 @@ type
     FWorkerCount: Integer;
     FMaxAttempts: Integer;
     FRunning: LongInt;
+    { Workers between asking the store for a job and settling it. Counted
+      up before Reserve, so there is no moment where a job has left the
+      store and is not counted here. }
+    FBusy: LongInt;
     { Name to handler. An ordinary table with a linear search, not a
       TStringList with Objects: a procedure variable cannot be cast to
       TObject in Delphi mode without the compiler reading it as a call.
@@ -185,8 +189,10 @@ type
     { Drain waits until the queue is empty. Without drain, whatever is left
       is discarded. }
     procedure Stop(Drain: Boolean = True);
-    { Waits until the queue is empty or the time runs out. It exists for
-      tests. }
+    { Waits until no job is waiting and none is running, or the time runs
+      out. It exists for tests. The store alone counts a job as gone once
+      a worker has taken it, so asking the store returned while the last
+      job still ran. }
     function WaitUntilEmpty(TimeoutMs: Integer): Boolean;
 
     function Pending: Integer;
@@ -648,7 +654,9 @@ var
 begin
   Deadline := MonotonicMs + TimeoutMs;
   repeat
-    if Pending = 0 then
+    { Pending first: a worker counts itself busy before it takes a job,
+      so a job that has left the store is seen here. }
+    if (Pending = 0) and (InterLockedExchangeAdd(FBusy, 0) = 0) then
       Exit(True);
     if MonotonicMs > Deadline then
       Exit(False);
@@ -718,8 +726,10 @@ var
 begin
   while FQueue.IsRunning do
   begin
+    InterLockedIncrement(FQueue.FBusy);
     if not FQueue.FStore.Reserve(J) then
     begin
+      InterLockedDecrement(FQueue.FBusy);
       { Waits on a signal, but wakes regularly regardless: a delayed job
         does not signal itself when its time comes, and a job added by
         another process does not signal at all. }
@@ -734,6 +744,7 @@ begin
       if Assigned(FQueue.FOnError) then
         FQueue.FOnError(J.Name, 'no handler registered');
       FQueue.FStore.Drop(J, 'no handler registered');
+      InterLockedDecrement(FQueue.FBusy);
       Continue;
     end;
 
@@ -778,6 +789,9 @@ begin
       end;
     finally
       UseArena(Prev);
+      { After Complete, Retry or Fail: a retried job is back in the store
+        before it stops being counted here. }
+      InterLockedDecrement(FQueue.FBusy);
     end;
   end;
 end;

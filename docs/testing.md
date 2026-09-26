@@ -158,6 +158,7 @@ try
   AssertEqual(F.SentTo('ada@example.com'), 1, 'a receipt');
   AssertEqual(F.Last.Subject, 'Your order', '');
   AssertEqual(F.Last.Attachments[0], 'receipt.pdf', '');
+  AssertEqual(F.Last.Idempotency, 'order-42', 'safe to retry');
 finally
   StopFakingMail;
 end;
@@ -174,6 +175,17 @@ finally
 end;
 ```
 
+```pascal
+FakeNotifications([TOrderShipped]);
+try
+  PlaceOrder;
+  AssertEqual(NotificationsSent(TOrderShipped, '7'), 1, 'user 7 was told');
+  AssertEqual(SentNotificationChannels(TOrderShipped), 'mail,database', '');
+finally
+  StopFakingNotifications;
+end;
+```
+
 - **The queue** records what is pushed and runs nothing, so a test can ask
   without a worker racing it; `RunPushed` then runs the record through the
   real handlers, in order, with an arena as a worker would, and lets an
@@ -183,6 +195,10 @@ end;
   would be a test that passes on mail that never goes.
 - **Faked events** are recorded instead of delivered: no listener runs and
   nothing is queued. The fields are kept as they were when dispatched.
+- **Faked notifications** are recorded and not sent, and `NotifyLater`
+  needs no queue. `Via` is asked and each channel's `To…` is built and
+  thrown away, so one that would fail for real fails here. See
+  [notifications](notifications.md#testing).
 
 | | |
 |---|---|

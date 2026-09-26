@@ -107,6 +107,19 @@ with the zero-major caveat that minor releases may break things until
   SDK, held to botocore's signatures and run against an S3 gateway that
   checks every one (`./askr storage:check`). **No request has gone to AWS
   itself.**
+- **Notifications.** A `TNotification` says what to tell a person, `Via`
+  says where for each one, and `Notify` or `NotifyLater` sends it: by
+  mail, into a `notifications` table (`Askr.Notify.Db`), to Slack over an
+  incoming webhook (`Askr.Notify.Slack`) or as a text message through
+  Twilio (`Askr.Notify.Sms`), and on channels an app registers itself.
+  `NotifyLater` queues a job per channel, so a text message that is
+  retried does not send the mail again; the mail's idempotency key and the
+  row's key are the notification's own uid, so a retry does not deliver
+  twice there. Every read and write of the table names whose, so one
+  user cannot mark another's read. The Slack webhook is in no error. The
+  Twilio request is held to its documented form over a socket; **no
+  message has gone through Twilio itself**. `FakeNotifications` records
+  what would be sent, after building it.
 
 ### Changed
 
@@ -117,6 +130,11 @@ with the zero-major caveat that minor releases may break things until
 
 ### Fixed
 
+- **`Queue.WaitUntilEmpty` returned while the last job was still
+  running.** The store counts a job as gone once a worker has taken it,
+  and that was all it asked. It waits for the running jobs now. A queued
+  event listener's test saw it, now and then, as a listener that had not
+  run yet.
 - **A `HEAD` request through the HTTP client waited for a body.** The
   answer to a `HEAD` carries the length the `GET` would have had, and no
   body; the client read for one, and against a server that kept the

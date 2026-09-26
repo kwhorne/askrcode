@@ -22,7 +22,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
-  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
@@ -6495,6 +6495,793 @@ end;
 
 { Signature V4, held to botocore's for the same requests at the same
   time. }
+{ ------------------------------------------------------ notifications -- }
+
+type
+  TShipped = class(TNotification)
+  private
+    FOrderId: Int64;
+    FNote: string;
+  public
+    function Via(const N: TNotifiable): TStringArray; override;
+    function ToMail(const N: TNotifiable): TMailMessage; override;
+    function ToSms(const N: TNotifiable): string; override;
+    function ToSlack(const N: TNotifiable): string; override;
+  published
+    property OrderId: Int64 read FOrderId write FOrderId;
+    property Note: string read FNote write FNote;
+  end;
+
+  { Goes somewhere nothing has registered, after mail. }
+  TByPigeon = class(TNotification)
+  public
+    function Via(const N: TNotifiable): TStringArray; override;
+    function ToMail(const N: TNotifiable): TMailMessage; override;
+  end;
+
+  TNowhere = class(TNotification)
+  end;
+
+  { Says mail, and has no ToMail. }
+  TMailless = class(TNotification)
+  public
+    function Via(const N: TNotifiable): TStringArray; override;
+  end;
+
+  TBadRow = class(TNotification)
+  public
+    function Via(const N: TNotifiable): TStringArray; override;
+    function ToDatabase(const N: TNotifiable): string; override;
+  end;
+
+  TCarriesAStringList = class(TNotification)
+  private
+    FItems: TStringList;
+  public
+    function Via(const N: TNotifiable): TStringArray; override;
+  published
+    property Items: TStringList read FItems write FItems;
+  end;
+
+  TToSlack = class(TNotification)
+  private
+    FText: string;
+  public
+    function Via(const N: TNotifiable): TStringArray; override;
+    function ToSlack(const N: TNotifiable): string; override;
+  published
+    property Text: string read FText write FText;
+  end;
+
+  { Fails the first time it is asked, and sends after that. }
+  TFlakySms = class(TSmsTransport)
+  public
+    Calls: Integer;
+    Sent: string;
+    function Send(const To_, Body: string): string; override;
+    function Describe: string; override;
+  end;
+
+function TShipped.Via(const N: TNotifiable): TStringArray;
+begin
+  Result := [ChannelMail, ChannelDatabase];
+  if N.Phone <> '' then
+    Result := Result + [ChannelSms];
+end;
+
+function TShipped.ToMail(const N: TNotifiable): TMailMessage;
+begin
+  Result := TMailMessage.Create.From('shop@example.com')
+    .Subject(Format('Order %d has shipped', [OrderId])).Text('It is on its way.');
+end;
+
+function TShipped.ToSms(const N: TNotifiable): string;
+begin
+  Result := Format('Order %d is on its way (%s)', [OrderId, CurrentLocale]);
+end;
+
+function TShipped.ToSlack(const N: TNotifiable): string;
+begin
+  Result := Format('Order %d shipped', [OrderId]);
+end;
+
+function TByPigeon.Via(const N: TNotifiable): TStringArray;
+begin
+  Result := [ChannelMail, 'pigeon'];
+end;
+
+function TByPigeon.ToMail(const N: TNotifiable): TMailMessage;
+begin
+  Result := TMailMessage.Create.From('shop@example.com').Subject('Coo').Text('x');
+end;
+
+function TMailless.Via(const N: TNotifiable): TStringArray;
+begin
+  Result := [ChannelMail];
+end;
+
+function TBadRow.Via(const N: TNotifiable): TStringArray;
+begin
+  Result := [ChannelDatabase];
+end;
+
+function TBadRow.ToDatabase(const N: TNotifiable): string;
+begin
+  Result := '"just a string"';
+end;
+
+function TCarriesAStringList.Via(const N: TNotifiable): TStringArray;
+begin
+  Result := [ChannelDatabase];
+end;
+
+function TToSlack.Via(const N: TNotifiable): TStringArray;
+begin
+  Result := [ChannelSlack];
+end;
+
+function TToSlack.ToSlack(const N: TNotifiable): string;
+begin
+  Result := Text;
+end;
+
+function TFlakySms.Send(const To_, Body: string): string;
+begin
+  Inc(Calls);
+  if Calls = 1 then
+    raise Exception.Create('the provider is down');
+  Sent := Sent + To_ + ': ' + Body + #10;
+  Result := 'flaky-' + IntToStr(Calls);
+end;
+
+function TFlakySms.Describe: string;
+begin
+  Result := 'flaky';
+end;
+
+function Shipped(Id: Int64): TShipped;
+begin
+  Result := TShipped.Create;
+  Result.OrderId := Id;
+end;
+
+function Ada: TNotifiable;
+begin
+  Result := NotifiableFor('7', 'ada@example.com').WithName('Ada').WithPhone('+4791234567');
+end;
+
+function ReadAll(const Path: string): string;
+var
+  L: TStringList;
+begin
+  Result := '';
+  if not FileExists(Path) then
+    Exit;
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Path);
+    Result := L.Text;
+  finally
+    L.Free;
+  end;
+end;
+
+function SmsLogPath: string;
+begin
+  Result := GetTempDir + 'askr-sms-' + IntToStr(GetProcessID) + '.log';
+end;
+
+type
+  TKeepRendered = class(TMailTransport)
+  public
+    Last: string;
+    procedure Send(M: TMailMessage); override;
+    function Describe: string; override;
+  end;
+
+procedure TKeepRendered.Send(M: TMailMessage);
+begin
+  Last := M.Render;
+end;
+
+function TKeepRendered.Describe: string;
+begin
+  Result := 'keep';
+end;
+
+procedure TestNotifyChannels;
+var
+  Keep: TKeepRendered;
+  F: TMailFake;
+  Pool: TDbPool;
+  Notes: TDbNotifications;
+  Rows: TStoredNotifications;
+  Log, Msg: string;
+begin
+  DeleteFile(SmsLogPath);
+  Pool := TDbPool.Create('sqlite::memory:', 1);
+  F := FakeMail;
+  try
+    Notes := UseDatabaseNotifications(Pool);
+    SetSms(TLogSms.Create(SmsLogPath));
+
+    Notify(Ada, Shipped(1001));
+    AssertEqual(F.Count, 1, 'the mail went');
+    AssertEqual(F.Last.ToList, 'ada@example.com', 'to the recipient''s address');
+    AssertEqual(F.Last.Subject, 'Order 1001 has shipped', 'as ToMail wrote it');
+    AssertTrue((Copy(F.Last.Idempotency, 1, 13) = 'notification-') and
+      (Length(F.Last.Idempotency) = 13 + 32), 'with the notification''s uid as its idempotency key');
+    Rows := Notes.ListFor('7');
+    AssertEqual(Length(Rows), 1, 'a row was kept');
+    AssertEqual(Rows[0].Kind, 'TShipped', 'under the class it was sent as');
+    AssertContains(Rows[0].Data, '"OrderId":1001', 'with the published properties, unless ToDatabase says otherwise');
+    AssertEqual('notification-' + Rows[0].Id, F.Last.Idempotency, 'and the same uid as the mail');
+    Log := ReadAll(SmsLogPath);
+    AssertContains(Log, 'to +4791234567', 'the text message went to the phone');
+    AssertContains(Log, 'Order 1001 is on its way', 'as ToSms wrote it');
+
+    Notify(NotifiableFor('8', 'bo@example.com'), Shipped(1002));
+    AssertEqual(ReadAll(SmsLogPath), Log, 'Via decides per person: no phone, no text message');
+    AssertEqual(F.Count, 2, 'while the mail went');
+
+    { A channel nothing has registered raises before anything is sent. }
+    Msg := '';
+    try
+      Notify(Ada, TByPigeon.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, '"pigeon"', 'a channel nobody registered is named');
+    AssertEqual(F.Count, 2, 'and the mail before it in Via did not go');
+
+    Msg := '';
+    try
+      Notify(Ada, TNowhere.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'override Via', 'a notification that does not say where it goes raises');
+
+    { One channel failing does not stop the others. }
+    Msg := '';
+    try
+      Notify(NotifiableFor('9', 'cy@example.com').WithPhone('91234567'), Shipped(1003));
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'did not go by sms', 'a number that is not E.164 fails the text message');
+    AssertContains(Msg, 'E.164', 'and says what the number should look like');
+    AssertEqual(F.Count, 3, 'while the mail went all the same');
+    AssertEqual(Length(Notes.ListFor('9')), 1, 'and so did the row');
+
+    { Several people: one who cannot be told is no reason for the rest. }
+    Msg := '';
+    try
+      Notify([NotifiableFor('10', ''), NotifiableFor('11', 'di@example.com')], Shipped(1004));
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'user 10 has no address', 'the one without an address is named');
+    AssertEqual(F.SentTo('di@example.com'), 1, 'and the next one was told');
+    { Mail comes first in Via: the row after it went all the same. }
+    AssertEqual(Length(Notes.ListFor('10')), 1, 'and the channels after the one that failed were used');
+
+    { The language is the recipient's while it is written, and put back. }
+    Notify(Ada.WithLocale('nb'), Shipped(1005));
+    AssertContains(ReadAll(SmsLogPath), 'Order 1005 is on its way (nb)', 'written in the recipient''s locale');
+    AssertEqual(CurrentLocale, DefaultLocale, 'and the locale is put back afterwards');
+
+    { The fake keeps addresses alone; the name is in the rendered head. }
+    StopFakingMail;
+    Keep := TKeepRendered.Create;
+    SetMail(TMailer.Create(Keep));
+    try
+      Notify(NotifiableFor('12', 'eve@example.com').WithName('Eve Smith'), Shipped(1006));
+      AssertContains(Keep.Last, 'To: "Eve Smith" <eve@example.com>', 'and the name goes with the address');
+    finally
+      Mail.Free;
+      SetMail(nil);
+    end;
+  finally
+    StopFakingMail;
+    SetSms(nil);
+    { The registry frees the channel. }
+    RegisterChannel(ChannelDatabase, TDbNotifications.Create(nil));
+    Pool.Free;
+    DeleteFile(SmsLogPath);
+  end;
+end;
+
+procedure TestNotifyDatabase;
+var
+  C, Prev: TDbConnection;
+  Pool: TDbPool;
+  Notes: TDbNotifications;
+  Rows: TStoredNotifications;
+  First, Json, Msg: string;
+  N: TShipped;
+begin
+  Pool := TDbPool.Create('sqlite::memory:', 1);
+  FakeMail;
+  try
+    Notes := UseDatabaseNotifications(Pool);
+    { No phone: this test has no SMS transport. }
+    Notify(NotifiableFor('7', 'ada@example.com'), Shipped(1));
+    Sleep(2);
+    Notify(NotifiableFor('7', 'ada@example.com'), Shipped(2));
+    Notify(NotifiableFor('8', 'bo@example.com'), Shipped(3));
+
+    Rows := Notes.ListFor('7');
+    AssertEqual(Length(Rows), 2, 'a person sees their own rows');
+    AssertContains(Rows[0].Data, '"OrderId":2', 'newest first');
+    First := Rows[1].Id;
+    AssertEqual(Notes.UnreadCount('7'), 2, 'both unread');
+
+    AssertFalse(Notes.MarkRead('8', First), 'another person cannot mark it read');
+    AssertEqual(Notes.UnreadCount('7'), 2, 'and it is still unread');
+    AssertTrue(Notes.MarkRead('7', First), 'its owner can');
+    AssertFalse(Notes.MarkRead('7', First), 'and a second time says it was read already');
+    AssertEqual(Notes.UnreadCount('7'), 1, 'one left unread');
+    AssertEqual(Length(Notes.ListFor('7', True)), 1, 'and the unread list has it alone');
+    AssertTrue(Notes.ListFor('7')[1].ReadAt > 0, 'the read one has a time');
+
+    Json := NotificationsJson(Notes.ListFor('7'));
+    AssertContains(Json, '"data":{"OrderId":2', 'the data goes out as the object it is');
+    AssertContains(Json, '"read_at":null', 'an unread one has null');
+    AssertContains(Json, '"kind":"TShipped"', 'with its kind');
+    AssertContains(Json, '"created_at":"20', 'and an ISO time');
+
+    AssertEqual(Notes.MarkAllRead('7'), 1, 'MarkAllRead marks what was left');
+    AssertEqual(Notes.UnreadCount('8'), 1, 'and only that person''s');
+    AssertFalse(Notes.Delete('8', First), 'another person cannot delete it either');
+    AssertTrue(Notes.Delete('7', First), 'its owner can');
+    AssertEqual(Length(Notes.ListFor('7')), 1, 'and it is gone');
+
+    { A retry of a job whose first attempt got the row in. }
+    N := Shipped(4);
+    try
+      ChannelNamed(ChannelDatabase).Send(Ada, N, 'feedfacefeedfacefeedfacefeedface');
+      ChannelNamed(ChannelDatabase).Send(Ada, N, 'feedfacefeedfacefeedfacefeedface');
+    finally
+      N.Free;
+    end;
+    AssertEqual(Length(Notes.ListFor('7')), 2, 'the same uid twice is one row');
+
+    Msg := '';
+    try
+      Notify(Ada, TBadRow.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'did not give a JSON object', 'ToDatabase has to give an object');
+
+    Msg := '';
+    try
+      Notify(NotifiableFor('', 'x@example.com'), TBadRow.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'no id to keep it under', 'and a row needs someone to belong to');
+
+    { Inside a request the request's own connection is used: with no pool
+      at all, it works. }
+    C := OpenDbConnection('sqlite::memory:');
+    Prev := UseDb(C);
+    try
+      Notes := UseDatabaseNotifications(nil);
+      Notify(NotifiableFor('5', 'e@example.com'), Shipped(5));
+      AssertEqual(Length(Notes.ListFor('5')), 1, 'the request''s connection is used, with no pool to borrow from');
+    finally
+      UseDb(Prev);
+      RegisterChannel(ChannelDatabase, TDbNotifications.Create(nil));
+      C.Free;
+    end;
+  finally
+    StopFakingMail;
+    RegisterChannel(ChannelDatabase, TDbNotifications.Create(nil));
+    Pool.Free;
+  end;
+end;
+
+procedure TestNotifyQueued;
+var
+  Q: TQueue;
+  F: TMailFake;
+  Pool: TDbPool;
+  Notes: TDbNotifications;
+  Flaky: TFlakySms;
+  P0, P1, P2, Msg: string;
+begin
+  Pool := TDbPool.Create('sqlite::memory:', 1);
+  F := FakeMail;
+  Q := TQueue.Create(1, 3);
+  try
+    Notes := UseDatabaseNotifications(Pool);
+    Flaky := TFlakySms.Create;
+    SetSms(Flaky);
+
+    Msg := '';
+    try
+      NotifyLater(Ada, Shipped(1));
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'UseNotificationQueue', 'NotifyLater without a queue says what is missing');
+
+    UseNotificationQueue(Q);
+    Q.Fake;
+    NotifyLater(Ada, Shipped(2001));
+    AssertEqual(Q.Pushed('askr.notify'), 3, 'one job per channel');
+    P0 := Q.PushedPayload('askr.notify', 0);
+    P1 := Q.PushedPayload('askr.notify', 1);
+    P2 := Q.PushedPayload('askr.notify', 2);
+    AssertContains(P0, '"channel":"mail"', 'the mail');
+    AssertContains(P1, '"channel":"database"', 'the row');
+    AssertContains(P2, '"channel":"sms"', 'the text message');
+    AssertEqual(Copy(P0, Pos('"uid":', P0), 40), Copy(P2, Pos('"uid":', P2), 40),
+      'all with the same uid');
+    AssertEqual(F.Count, 0, 'nothing is sent while it waits');
+    Q.StopFaking;
+
+    { For real: the text message fails once and is retried, and the mail
+      does not go out again with it. }
+    Q.Start;
+    NotifyLater(Ada, Shipped(2002));
+    AssertTrue(Q.WaitUntilEmpty(10000), 'the jobs ran');
+    AssertEqual(F.Count, 1, 'the mail went once');
+    AssertEqual(F.Last.Subject, 'Order 2002 has shipped', 'built again in the worker from the fields');
+    AssertEqual(Length(Notes.ListFor('7')), 1, 'the row went once');
+    AssertEqual(Flaky.Calls, 2, 'the text message failed once and was tried again');
+    AssertContains(Flaky.Sent, '+4791234567: Order 2002 is on its way', 'and went');
+
+    Msg := '';
+    try
+      NotifyLater(Ada, TCarriesAStringList.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'TCarriesAStringList.Items', 'an object cannot cross the queue, and it says which');
+
+    Msg := '';
+    try
+      NotifyLater(Ada, TByPigeon.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, '"pigeon"', 'a channel nobody registered raises where NotifyLater is called');
+  finally
+    Q.Stop;
+    UseNotificationQueue(nil);
+    Q.Free;
+    StopFakingMail;
+    SetSms(nil);
+    RegisterChannel(ChannelDatabase, TDbNotifications.Create(nil));
+    Pool.Free;
+  end;
+end;
+
+procedure TestNotifyFake;
+var
+  F: TMailFake;
+  Msg: string;
+begin
+  F := FakeMail;
+  FakeNotifications([TShipped]);
+  try
+    Notify(Ada, Shipped(3001));
+    NotifyLater(NotifiableFor('8', 'bo@example.com'), Shipped(3002));
+    AssertEqual(NotificationsSent(TShipped), 2, 'both are recorded, the queued one too, with no queue');
+    AssertEqual(NotificationsSent(TShipped, '7'), 1, 'counted per person');
+    AssertEqual(NotificationsSent(TShipped, '12'), 0, 'and not for someone else');
+    AssertEqual(SentNotificationChannels(TShipped), 'mail,database,sms', 'with the channels Via gave');
+    AssertEqual(SentNotificationChannels(TShipped, 1), 'mail,database', 'per person');
+    AssertContains(SentNotificationJson(TShipped, 1), '"OrderId":3002', 'and its fields');
+    AssertEqual(F.Count, 0, 'and nothing went');
+    StopFakingNotifications;
+
+    FakeNotifications([]);
+    Msg := '';
+    try
+      Notify(Ada, TMailless.Create);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'has no ToMail', 'a fake builds what would be sent, and refuses what a real send would');
+  finally
+    StopFakingNotifications;
+    StopFakingMail;
+  end;
+end;
+
+{ A server that reads one whole request -- head and body -- and answers
+  with what it is given. For the bytes Slack and Twilio are sent. }
+type
+  TCaptureServer = class(TThread)
+  private
+    FLytt: TSocket;
+    FPort: Word;
+    FRequest: string;
+    FStatus: Integer;
+    FBody: string;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(AStatus: Integer; const ABody: string);
+    property Port: Word read FPort;
+    property Request: string read FRequest;
+  end;
+
+constructor TCaptureServer.Create(AStatus: Integer; const ABody: string);
+var
+  Addr: TInetSockAddr;
+  Len: TSockLen;
+  Ja: Integer;
+begin
+  FStatus := AStatus;
+  FBody := ABody;
+  FLytt := fpSocket(AF_INET, SOCK_STREAM, 0);
+  Ja := 1;
+  fpSetSockOpt(FLytt, SOL_SOCKET, SO_REUSEADDR, @Ja, SizeOf(Ja));
+  FillChar(Addr, SizeOf(Addr), 0);
+  Addr.sin_family := AF_INET;
+  Addr.sin_addr.s_addr := HToNL($7F000001);
+  Addr.sin_port := 0;
+  fpBind(FLytt, @Addr, SizeOf(Addr));
+  fpListen(FLytt, 4);
+  Len := SizeOf(Addr);
+  fpGetSockName(FLytt, @Addr, @Len);
+  FPort := NToHS(Addr.sin_port);
+  FreeOnTerminate := False;
+  inherited Create(False);
+end;
+
+procedure TCaptureServer.Execute;
+var
+  S: TSocket;
+  Reply, Head: string;
+  N: ssize_t;
+  Buf: array[0..8191] of Byte;
+  P, Want: Integer;
+begin
+  S := fpAccept(FLytt, nil, nil);
+  if S >= 0 then
+  begin
+    Want := -1;
+    repeat
+      N := fpRecv(S, @Buf[0], SizeOf(Buf), 0);
+      if N <= 0 then
+        Break;
+      P := Length(FRequest);
+      SetLength(FRequest, P + N);
+      Move(Buf[0], FRequest[P + 1], N);
+      P := Pos(#13#10#13#10, FRequest);
+      if (Want < 0) and (P > 0) then
+      begin
+        Head := LowerCase(Copy(FRequest, 1, P));
+        Want := P + 3;
+        if Pos('content-length:', Head) > 0 then
+          Want := Want + StrToIntDef(Trim(Copy(Head, Pos('content-length:', Head) + 15,
+            PosEx(#13, Head, Pos('content-length:', Head)) - Pos('content-length:', Head) - 15)), 0);
+      end;
+    until (Want >= 0) and (Length(FRequest) >= Want);
+    { Status 0: closes without a word, the way a proxy that gave up does. }
+    if FStatus = 0 then
+    begin
+      CloseSocket(S);
+      CloseSocket(FLytt);
+      Exit;
+    end;
+    Reply := 'HTTP/1.1 ' + IntToStr(FStatus) + ' X'#13#10 +
+      'Content-Type: application/json'#13#10 +
+      'Content-Length: ' + IntToStr(Length(FBody)) + #13#10 +
+      'Connection: close'#13#10#13#10 + FBody;
+    fpSend(S, PChar(Reply), Length(Reply), 0);
+    CloseSocket(S);
+  end;
+  CloseSocket(FLytt);
+end;
+
+function SlackNote(const Text: string): TToSlack;
+begin
+  Result := TToSlack.Create;
+  Result.Text := Text;
+end;
+
+procedure TestSlack;
+const
+  Secret = '/services/T000/B000/XXXXsecretXXXX';
+var
+  Srv: TCaptureServer;
+  Msg: string;
+begin
+  Srv := TCaptureServer.Create(200, 'ok');
+  try
+    Notify(NotifiableFor('', '').WithSlack('http://127.0.0.1:' + IntToStr(Srv.Port) + Secret),
+      SlackNote('Deploy of "a1b2" failed'));
+    Srv.WaitFor;
+    AssertContains(Srv.Request, 'POST ' + Secret + ' HTTP/1.1', 'posted to the webhook');
+    AssertContains(Srv.Request, 'Content-Type: application/json', 'as JSON');
+    AssertContains(Srv.Request, '{"text":"Deploy of \"a1b2\" failed"}', 'the text, escaped, as {"text": ...}');
+  finally
+    Srv.Free;
+  end;
+
+  Srv := TCaptureServer.Create(200, 'ok');
+  try
+    Notify(NotifiableFor('', '').WithSlack('http://127.0.0.1:' + IntToStr(Srv.Port) + Secret),
+      SlackNote('{"blocks":[{"type":"divider"}]}'));
+    Srv.WaitFor;
+    AssertContains(Srv.Request, #13#10#13#10'{"blocks":[{"type":"divider"}]}', 'a payload goes as it is');
+  finally
+    Srv.Free;
+  end;
+
+  Srv := TCaptureServer.Create(404, 'no_service');
+  try
+    Msg := '';
+    try
+      Notify(NotifiableFor('', '').WithSlack('http://127.0.0.1:' + IntToStr(Srv.Port) + Secret),
+        SlackNote('x'));
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    Srv.WaitFor;
+    AssertContains(Msg, '404 no_service', 'what Slack said is in the error');
+    AssertNotContains(Msg, 'XXXXsecret', 'and the webhook is not');
+  finally
+    Srv.Free;
+  end;
+
+  { Closed with no answer: the HTTP client's own error for that quotes
+    the URL it was asked for. }
+  Srv := TCaptureServer.Create(0, '');
+  try
+    Msg := '';
+    try
+      Notify(NotifiableFor('', '').WithSlack('http://127.0.0.1:' + IntToStr(Srv.Port) + Secret),
+        SlackNote('x'));
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    Srv.WaitFor;
+    AssertContains(Msg, 'Could not reach the Slack webhook', 'a webhook that does not answer raises');
+    AssertNotContains(Msg, 'XXXXsecret', 'without the webhook, which the client''s own error quoted');
+  finally
+    Srv.Free;
+  end;
+
+  Msg := '';
+  try
+    Notify(NotifiableFor('', '').WithSlack('http://hooks.example.com' + Secret), SlackNote('x'));
+  except
+    on E: ENotifyError do Msg := E.Message;
+  end;
+  AssertContains(Msg, 'hooks.example.com is not HTTPS', 'plain HTTP off this machine is refused');
+  AssertNotContains(Msg, 'XXXXsecret', 'naming the host, not the path');
+end;
+
+function RawBytesOf(const S: string): TBytes;
+begin
+  Result := nil;
+  SetLength(Result, Length(S));
+  if S <> '' then
+    Move(S[1], Result[0], Length(S));
+end;
+
+procedure TestTwilio;
+const
+  { A number written for a person, a leading zero, too short, too long,
+    and the 00 some countries dial abroad with. }
+  NotNumbers: array[0..5] of string = ('91234567', '+47 912 34 567', '+0123456789',
+    '+1234567', '+1234567890123456', '004791234567');
+var
+  I: Integer;
+  Srv: TCaptureServer;
+  T: TTwilioSms;
+  Id, Msg: string;
+  Code: Integer;
+begin
+  Srv := TCaptureServer.Create(201, '{"sid":"SM0123","status":"queued"}');
+  T := TTwilioSms.Create('AC123', 'tok-secret', '+15005550006');
+  try
+    T.BaseUrl := 'http://127.0.0.1:' + IntToStr(Srv.Port);
+    Id := T.Send('+4791234567', 'Hei på deg & mer');
+    Srv.WaitFor;
+    AssertEqual(Id, 'SM0123', 'the message SID comes back');
+    AssertContains(Srv.Request, 'POST /2010-04-01/Accounts/AC123/Messages.json HTTP/1.1',
+      'to the account''s Messages resource');
+    AssertContains(Srv.Request, 'Authorization: Basic ' + Base64Encode(RawBytesOf('AC123:tok-secret')),
+      'with the SID and token as Basic');
+    AssertContains(Srv.Request, 'Content-Type: application/x-www-form-urlencoded', 'as a form');
+    AssertContains(Srv.Request, #13#10#13#10'To=%2B4791234567&From=%2B15005550006&Body=Hei%20p%C3%A5%20deg%20%26%20mer',
+      'every field encoded, the plus and the UTF-8 too');
+    AssertNotContains(T.Describe, 'tok-secret', 'Describe does not carry the token');
+  finally
+    T.Free;
+    Srv.Free;
+  end;
+
+  Srv := TCaptureServer.Create(201, '{"sid":"SM1"}');
+  T := TTwilioSms.Create('AC123', 'tok-secret', 'MG9999');
+  try
+    T.BaseUrl := 'http://127.0.0.1:' + IntToStr(Srv.Port);
+    T.Send('+4791234567', 'x');
+    Srv.WaitFor;
+    AssertContains(Srv.Request, '&MessagingServiceSid=MG9999&', 'a Messaging Service goes as one');
+  finally
+    T.Free;
+    Srv.Free;
+  end;
+
+  Srv := TCaptureServer.Create(400,
+    '{"code":21211,"message":"The ''To'' number +4791234567 is not a valid phone number.","status":400}');
+  T := TTwilioSms.Create('AC123', 'tok-secret', '+15005550006');
+  try
+    T.BaseUrl := 'http://127.0.0.1:' + IntToStr(Srv.Port);
+    Msg := '';
+    Code := 0;
+    try
+      T.Send('+4791234567', 'x');
+    except
+      on E: ESmsError do
+      begin
+        Msg := E.Message;
+        Code := E.Code;
+      end;
+    end;
+    Srv.WaitFor;
+    AssertEqual(Code, 21211, 'Twilio''s code is read out');
+    AssertContains(Msg, 'is not a valid phone number', 'with its message');
+    AssertNotContains(Msg, 'tok-secret', 'and not the token');
+  finally
+    T.Free;
+    Srv.Free;
+  end;
+
+  CheckPhoneNumber('+4791234567');
+  CheckPhoneNumber('+12025550123');
+  for I := 0 to High(NotNumbers) do
+  begin
+    Msg := '';
+    try
+      CheckPhoneNumber(NotNumbers[I]);
+    except
+      on E: ENotifyError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'E.164', NotNumbers[I] + ' is refused');
+  end;
+end;
+
+var
+  GSlowDone: LongInt = 0;
+
+procedure SlowJob(const Ctx: TJobContext);
+begin
+  Sleep(300);
+  InterLockedExchange(GSlowDone, 1);
+end;
+
+{ The store counts a job as gone once a worker has taken it. Asking the
+  store alone, WaitUntilEmpty returned while the last job still ran -- a
+  queued event listener was seen not to have run yet, now and then. }
+procedure TestWaitForRunningJob;
+var
+  Q: TQueue;
+begin
+  GSlowDone := 0;
+  Q := TQueue.Create(1, 1);
+  try
+    Q.Handle('slow', SlowJob);
+    Q.Start;
+    Q.Push('slow', 'x');
+    AssertTrue(Q.WaitUntilEmpty(5000), 'the queue empties');
+    AssertEqual(Integer(GSlowDone), 1, 'and the job has finished when it says so');
+  finally
+    Q.Stop;
+    Q.Free;
+  end;
+end;
+
 procedure TestSigV4;
 const
   Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
@@ -10664,6 +11451,7 @@ begin
   Test('a job with no handler does not disappear', @TestDurableUnknownJob);
   Test('a delay, and binary is rejected', @TestDurableDelayAndBinary);
   Test('an abandoned reservation is released', @TestDurableAbandonedReservation);
+  Test('WaitUntilEmpty waits for the job that is running, not only the ones waiting', @TestWaitForRunningJob);
 
   Group('Sesjoner');
   Test('a round trip with a cookie', @TestSessionRoundTrip);
@@ -10859,6 +11647,14 @@ begin
   Group('Events');
   Test('listeners hear what they asked for, in order, and a failure is not quiet', @TestEventsInline);
   Test('a queued listener gets the event rebuilt in the worker, field for field', @TestEventsQueued);
+
+  Group('Notifications');
+  Test('each channel Via gives, per person, and one failing does not stop the rest', @TestNotifyChannels);
+  Test('rows in the database are their owner''s to read, mark and delete', @TestNotifyDatabase);
+  Test('queued, a job per channel: a retried text message does not send the mail again', @TestNotifyQueued);
+  Test('faked, what would be sent is built and recorded, and nothing goes', @TestNotifyFake);
+  Test('Slack is sent the payload, and the webhook stays out of every error', @TestSlack);
+  Test('Twilio is sent its form, with Basic auth, and its errors are read', @TestTwilio);
 
   Group('Storage');
   Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);

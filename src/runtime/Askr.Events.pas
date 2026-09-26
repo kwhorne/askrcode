@@ -89,6 +89,12 @@ procedure RegisterEvent(AClass: TEventClass);
 function EventToJson(E: TEvent): string;
 function EventFromJson(AClass: TEventClass; const Json: string): TEvent;
 
+{ The event class registered under Name, or nil. }
+function EventClassNamed(const Name: string): TEventClass;
+{ The first published property of AClass that cannot cross the queue, or
+  ''. Askr.Notify carries notifications the same way. }
+function UncarriedProperty(AClass: TEventClass): string;
+
 { Forgets every listener. For tests. }
 procedure ClearListeners;
 
@@ -140,7 +146,7 @@ begin
   GKnown[I] := AClass;
 end;
 
-function KnownEvent(const Name: string): TEventClass;
+function EventClassNamed(const Name: string): TEventClass;
 var
   I: Integer;
 begin
@@ -173,8 +179,7 @@ begin
   Result := SameText(N, 'TDateTime') or SameText(N, 'TDate') or SameText(N, 'TTime');
 end;
 
-{ The first published property that cannot cross the queue, or ''. }
-function Uncarried(AClass: TEventClass): string;
+function UncarriedProperty(AClass: TEventClass): string;
 var
   Props: PPropList;
   N, I: Integer;
@@ -390,7 +395,7 @@ begin
   finally
     A.Free;
   end;
-  Cls := KnownEvent(ClassName_);
+  Cls := EventClassNamed(ClassName_);
   if Cls = nil then
     raise EEventError.CreateFmt('%s is not an event this process knows. Call ' +
       'RegisterEvent(%s) at startup, where the queue''s workers run.',
@@ -425,7 +430,7 @@ begin
   for I := 0 to High(GListeners) do
     if GListeners[I].JobName = JobPrefix + Name then
       raise EEventError.CreateFmt('A queued listener is already registered as %s', [Name]);
-  Bad := Uncarried(AClass);
+  Bad := UncarriedProperty(AClass);
   if Bad <> '' then
     raise EEventError.CreateFmt('%s.%s cannot cross the queue: only strings, ' +
       'numbers, booleans, enumerations and dates can. Carry an id instead.',

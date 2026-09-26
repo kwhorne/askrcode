@@ -95,6 +95,9 @@ Queue.Stop(False);       { discards what is left }
 Queue.WaitUntilEmpty(5000);
 ```
 
+`WaitUntilEmpty` returns when no job is waiting **and none is running**, so
+what the last job did is there to be checked. It is for tests.
+
 ## Durable jobs
 
 The in-process queue loses everything on restart. A welcome email that was
