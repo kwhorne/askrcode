@@ -43,8 +43,14 @@ const
   DefaultSessionsTable = 'askr_sessions';
 
 type
+  { Called between the UPDATE that found nothing and the INSERT. For the
+    test only: it is the one way to put another request's insert into
+    that window every time rather than now and then. }
+  TSessionInsertHook = procedure(C: TDbConnection; const IdHash: string);
+
   TDbSessions = class(TSessionBackend)
   private
+    FBeforeInsert: TSessionInsertHook;
     FPool: TDbPool;
     FOwnsPool: Boolean;
     FShareRequest: Boolean;
@@ -75,6 +81,8 @@ type
     { Set it before the first request; the table is made under this
       name. }
     property Table: string read FTable write FTable;
+    { The test's way into the window above. Nothing else sets it. }
+    property BeforeInsert: TSessionInsertHook read FBeforeInsert write FBeforeInsert;
   end;
 
 { The store askr.toml asks for, under [session]:
@@ -342,6 +350,8 @@ begin
       R := C.ExecParams(A, Update_, Params);
       if (R <> nil) and (R.AffectedRows > 0) then
         Exit;
+      if Assigned(FBeforeInsert) then
+        FBeforeInsert(C, Hash);
       try
         C.ExecParams(A, 'INSERT INTO ' + Quoted(C, A, FTable) +
           ' (id_hash, payload, expires_at) VALUES (' + Ph(C, A, 1) + ', ' +

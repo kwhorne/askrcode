@@ -3867,6 +3867,26 @@ begin
   end;
 end;
 
+procedure SessionStart(const Name: string);
+begin
+end;
+
+procedure SessionOk(const What: string; Cond: Boolean);
+begin
+  AssertTrue(Cond, What);
+end;
+
+{$I session_db.inc}
+
+{ On a file: two connections to sqlite::memory: are two databases, and the
+  other request's insert would land in the wrong one. }
+procedure TestSessionRace;
+begin
+  ForceDirectories('.build');
+  DeleteFile('.build/session-race.sqlite');
+  SessionRacePart('sqlite:.build/session-race.sqlite');
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -8911,6 +8931,8 @@ begin
 
   Test('two nodes share a login through the database, hashed at rest',
     @TestDbSessions);
+  Test('a save that loses the insert to another request updates instead',
+    @TestSessionRace);
   Test('the driver comes from config, and what it refuses',
     @TestSessionsFromConfig);
 

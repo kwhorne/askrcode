@@ -467,9 +467,12 @@ og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
 * **Upserten er UPDATE og så INSERT**, fordi de tre dialektene staver
   upsert på tre måter. Taper INSERT-en på unik-indeksen — to requester fra
   samme nettleser med hver sin nye sesjon — gjøres UPDATE-en på nytt.
-  **Den grenen er ikke dekket av noen test**: vinduet mellom de to
-  setningene lar seg ikke treffe deterministisk. Den står der på
-  resonnement, og det skal stå her til noen har målt den.
+  Vinduet mellom de to setningene lar seg ikke treffe med timing, så
+  `BeforeInsert` er en krok bare testen setter: den legger den andre
+  requestens INSERT inn i vinduet hver gang. `tests/session_db.inc`
+  kjøres på alle tre, fordi grenen hviler på at hver driver melder
+  unik-brudd likt. Mutasjonssjekket begge veier: kaster den, feiler
+  testen; svelges feilen uten UPDATE, har raden den andres data.
 * **`./askr session:check` er porten.** To app-prosesser i én container mot
   samme base, på alle tre: logg inn på A, kjent på B, logg ut på B, og
   kaka fra *før* utloggingen avvises på A. Minne kjøres som kontroll og

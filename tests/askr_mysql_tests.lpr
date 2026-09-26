@@ -19,7 +19,7 @@ uses
   Askr.Urd.Driver, Askr.Urd.MySql, Askr.Urd.Pool,
   Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect,
   Askr.Queue, Askr.Queue.Db,
-  Askr.Core.Json, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
+  Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
 
 type
   { One migration that touches everything the introspection has to
@@ -211,6 +211,18 @@ begin
 end;
 
 {$I pivot.inc}
+
+procedure SessionStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure SessionOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I session_db.inc}
 
 procedure PivotDelen;
 var
@@ -649,6 +661,7 @@ begin
   PoolDelen;
   QueuePart(Dsn);
   PivotDelen;
+  SessionRacePart(Dsn);
 end;
 
 begin

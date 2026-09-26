@@ -17,7 +17,7 @@ uses
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
   Askr.Urd.Driver, Askr.Urd.Pg, Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db,
-  Askr.Core.Json, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
+  Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
 
 var
   Passed: Integer = 0;
@@ -379,6 +379,18 @@ end;
 
 {$I pivot.inc}
 
+procedure SessionStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure SessionOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I session_db.inc}
+
 procedure PivotDelen;
 var
   C: TDbConnection;
@@ -450,6 +462,7 @@ begin
     PoolDelen;
     QueuePart(Dsn);
     PivotDelen;
+    SessionRacePart(Dsn);
   except
     on E: EDbError do
       if (Pos('could not connect', LowerCase(E.Message)) > 0) or
