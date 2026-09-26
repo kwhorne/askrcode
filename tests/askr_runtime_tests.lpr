@@ -3783,6 +3783,90 @@ begin
   end;
 end;
 
+{ ---------------------------------------- models that name each other -- }
+
+type
+  TCyWife = class;
+
+  TCyHusband = class(TModel)
+  private
+    FId: Int64;
+    FWifeId: Int64;
+    FName: string;
+  published
+    Wife: TCyWife;
+    property Id: Int64 read FId write FId;
+    property WifeId: Int64 read FWifeId write FWifeId;
+    property Name: string read FName write FName;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+  TCyWife = class(TModel)
+  private
+    FId: Int64;
+    FHusbandId: Int64;
+    FName: string;
+  published
+    Husband: TCyHusband;
+    property Id: Int64 read FId write FId;
+    property HusbandId: Int64 read FHusbandId write FHusbandId;
+    property Name: string read FName write FName;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+class procedure TCyHusband.Describe(S: TSchema);
+begin
+  S.Table('cy_husbands');
+  S.BelongsTo('Wife', TCyWife, 'wife_id');
+end;
+
+class procedure TCyWife.Describe(S: TSchema);
+begin
+  S.Table('cy_wives');
+  S.BelongsTo('Husband', TCyHusband, 'husband_id');
+end;
+
+{ Two models that each belong to the other, neither naming the key it
+  points at. Describe used to ask the other model for its primary key,
+  which built its meta, which asked back -- until the stack ran out. }
+procedure TestBelongsToEachOther;
+var
+  A: TArena;
+  C: TDbConnection;
+  H: TCyHusband;
+  W: TCyWife;
+  L: TModelList<TCyHusband>;
+begin
+  AssertEqual(TCyHusband.Meta.RelationCount, 1, 'the meta is built, with the relation in it');
+  AssertEqual(OwnerKeyOf(TCyWife.Meta.Relations[0]), 'id',
+    'and the key it points at is the other''s primary key, asked for when needed');
+  A := TArena.Create(16 * 1024);
+  UseArena(A);
+  C := OpenDbConnection('sqlite::memory:');
+  UseDb(C);
+  try
+    C.Exec(A, 'CREATE TABLE cy_husbands (id INTEGER PRIMARY KEY, wife_id BIGINT, name TEXT)');
+    C.Exec(A, 'CREATE TABLE cy_wives (id INTEGER PRIMARY KEY, husband_id BIGINT, name TEXT)');
+    W := TCyWife.Create;
+    W.Name := 'Ada';
+    W.Save;
+    H := TCyHusband.Create;
+    H.Name := 'Bo';
+    H.WifeId := W.Id;
+    H.Save;
+    L := TQuery<TCyHusband>.New.Preload(['Wife']).Get;
+    AssertNotNil(L[0].Wife, 'and it loads');
+    AssertEqual(L[0].Wife.Name, 'Ada', 'the row it points at');
+  finally
+    UseDb(nil);
+    UseArena(nil);
+    C.Free;
+    A.Free;
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -8843,6 +8927,8 @@ begin
 
   Group('Relations and soft deletes');
   Test('preload leaves trashed children out and keeps a trashed parent', @TestPreloadSoftDeletes);
+
+  Test('two models that belong to each other can be described', @TestBelongsToEachOther);
 
   Group('Unique samples');
   Test('a unique number''s sample fits its column', @TestUniqueNumberSamples);

@@ -481,6 +481,11 @@ function TableNameFor(AClass: TClass): string;
 function IdsExist(Errors: TErrors; const AField, ATable: string;
   const Ids: array of Int64; const AColumn: string = 'id'): Boolean;
 
+{ The column a BelongsTo points at in the other table: the one named in
+  BelongsTo, or the other model's primary key. Asked when a relation is
+  loaded, not while the model is described. }
+function OwnerKeyOf(const Rel: TRelationInfo): string;
+
 { The name a request sends a BelongsToMany's ids under: the pivot's key
   to the other table, plural -- tag_id, so tag_ids. One rule, asked by
   the generated controllers, the OpenAPI document and the form, so the
@@ -884,15 +889,21 @@ end;
 
 procedure TSchema.BelongsTo(const AName: string; ATarget: TModelClass;
   const AForeignKey: string; const AOwnerKey: string);
-var
-  Owner: string;
 begin
   { On the owning side the foreign key points out of this model, and
-    LocalKey is the column in the target table. }
-  Owner := AOwnerKey;
-  if Owner = '' then
-    Owner := ATarget.Meta.PrimaryKey;
-  AddRelation(FMeta, rkBelongsTo, AName, ATarget, AForeignKey, Owner);
+    LocalKey is the column in the target table -- as given, or '' until
+    OwnerKeyOf asks. Not ATarget.Meta.PrimaryKey here: two models that
+    each belong to the other would build each other's meta while their
+    own was half made, round and round until the stack ran out. }
+  AddRelation(FMeta, rkBelongsTo, AName, ATarget, AForeignKey, '');
+  FMeta.FRelations[High(FMeta.FRelations)].LocalKey := AOwnerKey;
+end;
+
+function OwnerKeyOf(const Rel: TRelationInfo): string;
+begin
+  Result := Rel.LocalKey;
+  if Result = '' then
+    Result := Rel.Target.Meta.PrimaryKey;
 end;
 
 { Building the meta }

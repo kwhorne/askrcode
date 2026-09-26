@@ -1153,7 +1153,7 @@ begin
     C.AppendIdentStr(B, ChildMeta.Table);
     B.Append(' WHERE ');
     if Rel.Kind = rkBelongsTo then
-      C.AppendIdentStr(B, Rel.LocalKey)
+      C.AppendIdentStr(B, OwnerKeyOf(Rel))
     else
       C.AppendIdentStr(B, Rel.ForeignKey);
     B.Append(' IN (');
@@ -1201,7 +1201,7 @@ begin
   end;
 
   if Rel.Kind = rkBelongsTo then
-    Col := R.IndexOfField(Rel.LocalKey)
+    Col := R.IndexOfField(OwnerKeyOf(Rel))
   else
     Col := R.IndexOfField(Rel.ForeignKey);
 

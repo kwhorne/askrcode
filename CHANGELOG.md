@@ -132,6 +132,11 @@ with the zero-major caveat that minor releases may break things until
   thousand apart per millisecond now, and a unique sample takes the end of
   the number rather than the start, which was the same for every row of a
   run in a short column.
+- **Two models that each belong to the other could not be described.**
+  `BelongsTo` without the owner's key asked the other model for its
+  primary key inside `Describe`, which built that model's meta, which
+  asked back, until the stack ran out. The key is looked up when the
+  relation is loaded now.
 - **A unique number column made the generated tests fail on Postgres and
   MySQL.** Its sample was the whole running count, far past a 32-bit
   `INTEGER` and past money's `NUMERIC(12,2)`; SQLite's `INTEGER` is 64

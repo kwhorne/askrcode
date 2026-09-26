@@ -891,8 +891,10 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 
 * **`BelongsToMany` slår aldri opp målets meta i `Describe`.** Pivot og
   nøkler utledes av klassenavnene. To modeller som nevner hverandre ville
-  ellers bygget hverandres meta mens deres egen var halvferdig — og
-  `BelongsTo` har den fella fortsatt, når eierens nøkkel ikke er oppgitt.
+  ellers bygget hverandres meta mens deres egen var halvferdig. `BelongsTo`
+  hadde den fella uten oppgitt eiernøkkel; nå slås nøkkelen opp av
+  `OwnerKeyOf` når relasjonen lastes. Mutasjonen som leser målets meta i
+  `Describe` igjen, ender i exitkode 139 — stakken går tom.
 * **`LoadManyToMany` står i interface-delen av `Askr.Urd.Query`.** En
   generisk metode kan ikke kalle en rutine uniten holder for seg selv:
   `TQuery<M>` spesialiseres i kallerens unit, og derfra må kallet løses.
