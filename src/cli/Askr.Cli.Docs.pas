@@ -83,6 +83,27 @@ function DocRead(const Dir, Page, Section: string;
   there. }
 function DocSections(const Dir, Page: string): TDocPages;
 
+type
+  { One tree of docs: the framework's, with no prefix, or a plugin's, whose
+    pages are named with its name in front -- stripe/billing.md. }
+  TDocSource = record
+    Prefix: string;
+    Dir: string;
+  end;
+  TDocSources = array of TDocSource;
+
+{ Every page of every source, with its prefix. }
+function SourcePages(const Sources: TDocSources): TDocPages;
+{ DocSearch across the sources, pages named with their prefix. Limit and
+  TotalHits count across all of them. }
+function SourceSearch(const Sources: TDocSources; const Query: string;
+  Limit: Integer; out TotalHits: Integer): TDocHits;
+{ DocRead, with the page resolved to its source by prefix. The prefix is
+  matched against the sources' own, and the rest against that source's
+  listing: a page name still never builds a path. }
+function SourceRead(const Sources: TDocSources; const Page, Section: string;
+  out Text_, Err: string): Boolean;
+
 implementation
 
 function DocPages(const Dir: string): TDocPages;
@@ -259,6 +280,67 @@ begin
       Result := Result + ', ';
     Result := Result + Pages[I];
   end;
+end;
+
+function SourcePages(const Sources: TDocSources): TDocPages;
+var
+  I, J, N: Integer;
+  Pages: TDocPages;
+begin
+  Result := nil;
+  for I := 0 to High(Sources) do
+  begin
+    Pages := DocPages(Sources[I].Dir);
+    N := Length(Result);
+    SetLength(Result, N + Length(Pages));
+    for J := 0 to High(Pages) do
+      Result[N + J] := Sources[I].Prefix + Pages[J];
+  end;
+end;
+
+function SourceSearch(const Sources: TDocSources; const Query: string;
+  Limit: Integer; out TotalHits: Integer): TDocHits;
+var
+  I, J, N, Total: Integer;
+  Hits: TDocHits;
+begin
+  Result := nil;
+  TotalHits := 0;
+  for I := 0 to High(Sources) do
+  begin
+    Hits := DocSearch(Sources[I].Dir, Query, 0, Total);
+    Inc(TotalHits, Total);
+    for J := 0 to High(Hits) do
+    begin
+      if (Limit > 0) and (Length(Result) >= Limit) then
+        Break;
+      N := Length(Result);
+      SetLength(Result, N + 1);
+      Result[N] := Hits[J];
+      Result[N].Page := Sources[I].Prefix + Hits[J].Page;
+    end;
+  end;
+end;
+
+function SourceRead(const Sources: TDocSources; const Page, Section: string;
+  out Text_, Err: string): Boolean;
+var
+  I: Integer;
+  Want: string;
+begin
+  Text_ := '';
+  Err := '';
+  Want := Trim(Page);
+  for I := 0 to High(Sources) do
+    if (Sources[I].Prefix <> '') and
+       (LowerCase(Copy(Want, 1, Length(Sources[I].Prefix))) = LowerCase(Sources[I].Prefix)) then
+      Exit(DocRead(Sources[I].Dir, Copy(Want, Length(Sources[I].Prefix) + 1, MaxInt),
+        Section, Text_, Err));
+  for I := 0 to High(Sources) do
+    if (Sources[I].Prefix = '') and (Pos('/', Want) = 0) then
+      Exit(DocRead(Sources[I].Dir, Want, Section, Text_, Err));
+  Err := 'No page named "' + Page + '". The pages are: ' + JoinPages(SourcePages(Sources));
+  Result := False;
 end;
 
 function DocRead(const Dir, Page, Section: string;

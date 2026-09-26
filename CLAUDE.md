@@ -1271,6 +1271,11 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   tekstrekkefølge; den sorteres nå med samme nøkkel. Første og siste kolon
   er det samme — et pluginnavn har ingen — og mutasjonen som byttet dem
   overlevde, så nøkkelen er `Pos`.
+* **En plugins docs er en egen kilde med prefiks**, `stripe/billing.md`.
+  Prefikset matches mot pluginnavnene fra manifestene og resten mot
+  kildens egen liste — et sidenavn bygger fortsatt aldri en sti. En plugin
+  som ikke kan løses, gir en merknad i indeksen i stedet for å ta
+  rammeverkets docs med seg.
 * **En rute lagt til to ganger kaster der den legges til.** Formen bygges
   av de parsede segmentene, ikke av teksten: `Parse` hopper over tomme
   segmenter, så `/about/` er `/about`, og et kolon midt i et segment er

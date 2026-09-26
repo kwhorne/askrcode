@@ -88,8 +88,8 @@ one that did nothing.
 
 | Command | What it does
 |---|---|
-| `askr install` | Fetch the release `askr.toml` pins into `~/.askr/pkg` |
-| `askr outdated` | What is published, and what this project has |
+| `askr install` | Fetch the release `askr.toml` pins into `~/.askr/pkg`, and every plugin the lock names |
+| `askr outdated` | What is published, and what this project has — the framework and each plugin |
 | `askr update` | Move to a newer release, showing what changes first |
 | `askr update <version>` | Take that release, and move the pin to match |
 
@@ -97,6 +97,18 @@ A fresh clone needs `askr install` before it will build: the lock names
 a version, and the source for it is not in the repository. The full
 procedure, including what to do when a step refuses, is in
 [Versions](versions.md).
+
+### Plugins
+
+| Command | What it does
+|---|---|
+| `askr plugin add <git url>` | Fetch a plugin's newest release, pin it, and wire it into app.lpr |
+| `askr plugin update [name]` | Move to the newest release askr.toml allows, after its UPGRADE.md |
+| `askr plugin remove <name>` | Take it out of askr.toml and askr.lock |
+| `askr plugin list` | What this project builds with |
+
+A plugin is source compiled into the binary, and there is no sandbox.
+See [Plugins](plugins.md).
 
 These four never run through the delegated tool — they are what manages
 the pin, so they run as the `askr` you invoked.

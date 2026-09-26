@@ -8193,6 +8193,51 @@ begin
   end;
 end;
 
+{ The framework's docs and a plugin's, searched and read as one set. }
+procedure TestPluginDocs;
+var
+  Root, Text_, Err: string;
+  S: TDocSources;
+  Pages: TDocPages;
+  Hits: TDocHits;
+  Total: Integer;
+begin
+  Root := PluginScratch('docs');
+  try
+    WriteLines(Root + '/askr/queries.md', ['# Queries', '', '## Where', '', 'Where filters rows.']);
+    WriteLines(Root + '/stripe/docs/billing.md', ['# Billing', '', '## Webhooks', '',
+      'Where the webhook arrives: POST /stripe/webhook.']);
+    SetLength(S, 2);
+    S[0].Prefix := '';
+    S[0].Dir := Root + '/askr';
+    S[1].Prefix := 'stripe/';
+    S[1].Dir := Root + '/stripe/docs';
+
+    Pages := SourcePages(S);
+    AssertTrue((Length(Pages) = 2) and (Pages[0] = 'queries.md') and (Pages[1] = 'stripe/billing.md'),
+      'a plugin''s pages are listed with its name in front');
+
+    Hits := SourceSearch(S, 'Where', 40, Total);
+    AssertEqual(Total, 3, 'a search finds the framework''s two lines and the plugin''s one');
+    AssertTrue((Length(Hits) = 3) and (Hits[2].Page = 'stripe/billing.md') and (Hits[2].Heading = 'Webhooks'),
+      'the plugin''s hit is named as its page is listed, with its heading');
+    Hits := SourceSearch(S, 'Where', 1, Total);
+    AssertTrue((Length(Hits) = 1) and (Total = 3), 'the limit counts across both, and the total says what was left out');
+
+    AssertTrue(SourceRead(S, 'stripe/billing', 'Webhooks', Text_, Err), 'a plugin''s page is read by its listed name: ' + Err);
+    AssertContains(Text_, 'POST /stripe/webhook', 'the section');
+    AssertTrue(SourceRead(S, 'queries.md', '', Text_, Err), 'and the framework''s by its own');
+    AssertContains(Text_, 'Where filters rows', 'whole');
+
+    AssertFalse(SourceRead(S, 'stripe/../askr/queries', '', Text_, Err), 'a path is not a page name');
+    AssertFalse(SourceRead(S, 'search/billing', '', Text_, Err), 'a plugin that is not there is not found');
+    AssertContains(Err, 'stripe/billing.md', 'and the error lists the pages there are, all of them');
+    AssertFalse(SourceRead(S, 'billing', '', Text_, Err), 'a plugin''s page is not the framework''s');
+  finally
+    RemoveScratch(Root);
+  end;
+end;
+
 procedure TestSigV4;
 const
   Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
@@ -13023,6 +13068,7 @@ begin
   Test('an app.lpr from before plugins is wired, and a reshaped one is not guessed at', @TestWireAppLpr);
   Test('a plugin''s migrations run among the app''s by time, and roll back the same way', @TestPluginMigrations);
   Test('a route added twice is refused where it is added, naming a plugin that owns the first', @TestRouteTwice);
+  Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');
   Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);

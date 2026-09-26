@@ -44,10 +44,16 @@ with the zero-major caveat that minor releases may break things until
   `/about/` -- used to be registered twice, and one of the two never
   answered. It raises now, naming both, and when the first is a plugin's,
   naming the plugin. See UPGRADE.md.
+- **A plugin's docs are served to coding agents.** `docs_search` and
+  `docs_read` read each plugin's `docs/` for the version the project pins,
+  its pages named with its name in front — `stripe/billing.md` — beside the
+  framework's. A page name is still matched against what is listed, never
+  turned into a path. `docs/plugins.md` says how plugins work, how to write
+  one, and that there is no sandbox.
 - **A plugin's migrations are its own.** Versioned `stripe:20261001120000`,
   so a row in `askr_migrations` says whose it is and cannot collide with
   the app's. The migrator orders by the timestamp, whoever owns it, and
-  `db:rollback` takes back the latest by time.
+  `askr migrate:rollback` takes back the latest by time.
 
 ## 0.15.0 — 2026-09-26
 

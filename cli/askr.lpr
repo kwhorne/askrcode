@@ -1059,6 +1059,48 @@ begin
   end;
 end;
 
+{ The framework's docs and each plugin's, for the versions the project
+  pins. A plugin that cannot be resolved leaves its docs out, and Note
+  says why -- the framework's are still worth having. }
+function DocSourcesFor(out Version, Err, Note: string): TDocSources;
+var
+  P: TProject;
+  Dir, PErr, Docs: string;
+  Found: TPluginManifests;
+  I, N: Integer;
+begin
+  Result := nil;
+  Note := '';
+  Dir := DocsDirFor(Version, Err);
+  if Dir = '' then
+    Exit;
+  SetLength(Result, 1);
+  Result[0].Prefix := '';
+  Result[0].Dir := Dir;
+  P := TProject.Find(GetCurrentDir);
+  if P = nil then
+    Exit;
+  try
+    if not ResolvePlugins(P, Version, Found, PErr) then
+    begin
+      Note := 'The plugins'' docs are not listed: ' + PErr;
+      Exit;
+    end;
+    for I := 0 to High(Found) do
+    begin
+      Docs := Found[I].Docs;
+      if Docs = '' then
+        Docs := 'docs';
+      N := Length(Result);
+      SetLength(Result, N + 1);
+      Result[N].Prefix := Found[I].Name + '/';
+      Result[N].Dir := IncludeTrailingPathDelimiter(Found[I].Dir) + Docs;
+    end;
+  finally
+    P.Free;
+  end;
+end;
+
 { Runs the app binary and hands back everything it said.
 
   RunApp above deliberately does not do this: from a terminal the app owns
@@ -1313,7 +1355,8 @@ end;
 function McpToolDocsSearch(A: TArena; Args: PJsonValue;
   out IsError: Boolean): string;
 var
-  Dir, Version, Err, Query: string;
+  Version, Err, Query, Note: string;
+  Sources: TDocSources;
   Hits: TDocHits;
   Total, Limit, I: Integer;
   B: TStringList;
@@ -1327,8 +1370,8 @@ begin
     Exit('docs_search needs a query.');
   end;
 
-  Dir := DocsDirFor(Version, Err);
-  if Dir = '' then
+  Sources := DocSourcesFor(Version, Err, Note);
+  if Length(Sources) = 0 then
   begin
     IsError := True;
     Exit(Err);
@@ -1338,7 +1381,7 @@ begin
   if Limit <= 0 then
     Limit := 40;
 
-  Hits := DocSearch(Dir, Query, Limit, Total);
+  Hits := SourceSearch(Sources, Query, Limit, Total);
   if Total = 0 then
     { Saying why, once, in the answer itself. The rule only protects an
       agent that knows it is in force: told plainly that nothing matched
@@ -1378,14 +1421,15 @@ end;
 function McpToolDocsRead(A: TArena; Args: PJsonValue;
   out IsError: Boolean): string;
 var
-  Dir, Version, Err, Page, Section, Text_: string;
+  Version, Err, Note, Page, Section, Text_: string;
+  Sources: TDocSources;
   Pages: TDocPages;
   B: TStringList;
   I: Integer;
 begin
   IsError := False;
-  Dir := DocsDirFor(Version, Err);
-  if Dir = '' then
+  Sources := DocSourcesFor(Version, Err, Note);
+  if Length(Sources) = 0 then
   begin
     IsError := True;
     Exit(Err);
@@ -1399,12 +1443,15 @@ begin
     would be backwards. }
   if Page = '' then
   begin
-    Pages := DocPages(Dir);
+    Pages := SourcePages(Sources);
     B := TStringList.Create;
     try
       B.Add('The documentation for Askr ' + Version + ' — ' +
         IntToStr(Length(Pages)) + ' pages. Read one with docs_read, or a ' +
-        'single section of one.');
+        'single section of one. A plugin''s pages carry its name: ' +
+        'stripe/billing.md.');
+      if Note <> '' then
+        B.Add(Note);
       B.Add('');
       for I := 0 to High(Pages) do
         B.Add('  ' + Pages[I]);
@@ -1415,7 +1462,7 @@ begin
     Exit;
   end;
 
-  if not DocRead(Dir, Page, Section, Text_, Err) then
+  if not SourceRead(Sources, Page, Section, Text_, Err) then
   begin
     { A page or a section that is not there is the tool failing to run,
       not a document whose content is bad news. Same line as the build

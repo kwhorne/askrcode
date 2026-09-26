@@ -34,6 +34,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Generators](generators.md) | `make model` and `make resource`: a spec into a table, a table into pages and JSON |
 | [Configuration](configuration.md) | `.env`, `askr.toml`, and which one wins |
 | [Versions](versions.md) | Pinning a release, `askr install` and `askr update` |
+| [Plugins](plugins.md) | Source fetched from git, pinned and compiled in: using one, and writing one |
 | [The arena](arena.md) | The memory model, and the rules it imposes on your code |
 | [Coding agents](cli.md#an-mcp-server-for-agents) | `askr mcp`, and the tools it serves |
 

@@ -16,6 +16,9 @@ askr update      # move, after showing you what changes
 askr version     # what this project is actually building against
 ```
 
+Plugins are pinned the same way, each under `[plugins.<name>]` in both
+files — see [Plugins](plugins.md).
+
 ## Where the source goes
 
 `~/.askr/pkg/askrcode@0.6.0`, shared by every project on the machine.
