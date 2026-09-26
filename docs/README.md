@@ -89,6 +89,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | | |
 |---|---|
 | [Queues](queue.md) | Background jobs, in-process or durable |
+| [Events](events.md) | Saying what happened, and listeners now or in the queue |
 | [Scheduler](scheduler.md) | Recurring work |
 | [Cache](cache.md) | A sharded LRU in the process |
 | [Mail](mail.md) | Resend, SMTP with STARTTLS, or a log file |

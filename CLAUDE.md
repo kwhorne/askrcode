@@ -1230,6 +1230,27 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Hendelser
+
+* **En lytter som feiler, feiler `DispatchEvent`.** En velkomstmail som
+  stille aldri gikk ut er verre. Det som skal tåle feil, går i køen, med
+  køens forsøk og feiltabell.
+* **Jobben bærer klassen som ble sendt, ikke den lytteren ba om.** Første
+  utgave bygde lytterens klasse igjen i workeren, og en underklasses egne
+  felt forsvant. Klassen finnes igjen ved navn; en workerprosess som aldri
+  sendte den, trenger `RegisterEvent`, og en ukjent klasse feiler jobben.
+* **`FloatToStrF(ffGeneral, 17)` stopper på 15 siffer på aarch64**, der
+  `Extended` er `Double`: 0.30000000000000004 kom tilbake som 0.3.
+  `System.Str` skriver alle sifrene på begge arkitekturer — og må
+  kvalifiseres, for `Askr.Core.Text.Str` skygger for den.
+* **Testen sammenligner flyttallet eksakt, mot en `Double`-variabel.**
+  `FloatToStr` viser 15 siffer og kunne ikke se feilen; og på x86_64 er
+  konstanten `0.1 + 0.2` en 80-bits `Extended` som en `Double` aldri er lik.
+* **`V = nil` foran `JsonIsNull(V)` var død** — `JsonIsNull` tar nil som
+  null. Mutasjonen overlevde; sjekken er borte.
+* **`DispatchEvent`, ikke `Dispatch`**: inne i en klasse er det
+  `TObject.Dispatch`.
+
 ## Tofaktor i stillaset
 
 * **`BeginSignIn` er den ene veien inn etter et passord.** Både innlogging

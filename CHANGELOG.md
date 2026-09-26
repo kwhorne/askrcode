@@ -40,6 +40,12 @@ with the zero-major caveat that minor releases may break things until
   `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
   browser, an Inertia visit and a JSON client each its own way and says no
   when no check is registered. `./askr auth:check` drives it over a socket.
+- **Events and listeners.** `Askr.Events`: an event is a class with
+  published properties, `Listen` runs a listener in the dispatching code,
+  and `ListenQueued` runs it in the queue, with the event rebuilt in the
+  worker as the class that was dispatched and every field as it was sent.
+  A listener that fails fails `DispatchEvent`; a class with a property that
+  cannot cross the queue is refused, naming it.
 - **Two-factor sign-in in the scaffold.** `/settings/security` sets it up
   with a QR code and the key, turns it on when a code from the app has been
   typed, and shows eight recovery codes once. A correct password then leads

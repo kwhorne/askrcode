@@ -22,7 +22,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
-  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
@@ -6058,6 +6058,198 @@ begin
   AssertTrue(Raised, 'more than version 40 holds is an error, not a truncated code');
 end;
 
+{ ------------------------------------------------------------- events -- }
+
+type
+  TShade = (shLight, shDark);
+
+  TOrderPlaced = class(TEvent)
+  private
+    FOrderId: Int64;
+    FCustomer: string;
+    FTotal: Currency;
+    FWeight: Double;
+    FPaid: Boolean;
+    FAt: TDateTime;
+    FShade: TShade;
+    FLines: Integer;
+  published
+    property OrderId: Int64 read FOrderId write FOrderId;
+    property Customer: string read FCustomer write FCustomer;
+    property Total: Currency read FTotal write FTotal;
+    property Weight: Double read FWeight write FWeight;
+    property Paid: Boolean read FPaid write FPaid;
+    property At: TDateTime read FAt write FAt;
+    property Shade: TShade read FShade write FShade;
+    property Lines: Integer read FLines write FLines;
+  public
+    destructor Destroy; override;
+  end;
+
+  { A subclass: a listener for TOrderPlaced hears it too. }
+  TBigOrderPlaced = class(TOrderPlaced);
+
+  TSomethingElse = class(TEvent);
+
+  { An object cannot cross the queue: it would arrive empty. }
+  TCarriesAList = class(TEvent)
+  private
+    FItems: TStringList;
+  published
+    property Items: TStringList read FItems write FItems;
+  end;
+
+var
+  GEventLog: string;
+  GEventsFreed: Integer;
+  GQueued: string;
+  { In a Double, not as a constant: on x86_64 the constant 0.1 + 0.2 is an
+    80-bit Extended, and a Double never equals it -- queue or no queue. }
+  GWeightSent: Double;
+
+destructor TOrderPlaced.Destroy;
+begin
+  Inc(GEventsFreed);
+  inherited Destroy;
+end;
+
+procedure FirstListener(E: TEvent);
+begin
+  GEventLog := GEventLog + 'first:' + E.ClassName + ' ';
+end;
+
+procedure SecondListener(E: TEvent);
+begin
+  GEventLog := GEventLog + 'second:' + IntToStr(TOrderPlaced(E).OrderId) + ' ';
+end;
+
+procedure ElseListener(E: TEvent);
+begin
+  GEventLog := GEventLog + 'else ';
+end;
+
+procedure FailingListener(E: TEvent);
+begin
+  raise Exception.Create('the listener failed');
+end;
+
+procedure QueuedListener(E: TEvent);
+var
+  O: TOrderPlaced;
+begin
+  O := TOrderPlaced(E);
+  { The float compared exactly: FloatToStr shows fifteen digits, and
+    0.30000000000000004 would look like 0.3 whether or not it survived. }
+  GQueued := Format('%s|%d|%s|%s|%s|%s|%s|%d|%s', [O.ClassName, O.OrderId, O.Customer,
+    CurrToStr(O.Total), BoolToStr(O.Weight = GWeightSent, 'exact', 'rounded'), BoolToStr(O.Paid, True),
+    FormatDateTime('yyyy-mm-dd hh:nn:ss.zzz', O.At), Ord(O.Shade), IntToStr(O.Lines)]);
+end;
+
+function NewOrder(Id: Int64): TOrderPlaced;
+begin
+  Result := TOrderPlaced.Create;
+  Result.OrderId := Id;
+end;
+
+procedure TestEventsInline;
+var
+  Raised: Boolean;
+begin
+  ClearListeners;
+  GEventLog := '';
+  GEventsFreed := 0;
+  try
+    Listen(TOrderPlaced, FirstListener);
+    Listen(TOrderPlaced, SecondListener);
+    Listen(TSomethingElse, ElseListener);
+    DispatchEvent(NewOrder(7));
+    AssertEqual(GEventLog, 'first:TOrderPlaced second:7 ', 'every listener hears it, in the order they came');
+    AssertEqual(GEventsFreed, 1, 'and the event is freed afterwards');
+
+    GEventLog := '';
+    DispatchEvent(TBigOrderPlaced.Create);
+    AssertEqual(GEventLog, 'first:TBigOrderPlaced second:0 ', 'a listener for a class hears its subclasses');
+    GEventLog := '';
+    DispatchEvent(TSomethingElse.Create);
+    AssertEqual(GEventLog, 'else ', 'and nothing it did not ask for');
+
+    Listen(TOrderPlaced, FailingListener);
+    GEventsFreed := 0;
+    Raised := False;
+    try
+      DispatchEvent(NewOrder(8));
+    except
+      on E: Exception do Raised := E.Message = 'the listener failed';
+    end;
+    AssertTrue(Raised, 'a listener that fails fails the dispatch, rather than a mail never going out quietly');
+    AssertEqual(GEventsFreed, 1, 'and the event is freed all the same');
+  finally
+    ClearListeners;
+  end;
+end;
+
+procedure TestEventsQueued;
+var
+  Q: TQueue;
+  O: TOrderPlaced;
+  Raised: string;
+begin
+  ClearListeners;
+  GQueued := '';
+  Q := TQueue.Create(1, 1);
+  try
+    ListenQueued(Q, TOrderPlaced, 'invoice', QueuedListener);
+    Q.Start;
+    O := TBigOrderPlaced.Create;
+    O.OrderId := 9007199254740993;
+    O.Customer := 'Blåbær "AS" 🫐';
+    O.Total := 1234.5678;
+    GWeightSent := 0.1;
+    GWeightSent := GWeightSent + 0.2;
+    O.Weight := GWeightSent;
+    O.Paid := True;
+    O.At := EncodeDate(2026, 9, 26) + EncodeTime(13, 45, 7, 123);
+    O.Shade := shDark;
+    O.Lines := -3;
+    DispatchEvent(O);
+    AssertTrue(Q.WaitUntilEmpty(5000), 'the queued listener ran');
+    AssertEqual(GQueued, Format('TBigOrderPlaced|9007199254740993|Blåbær "AS" 🫐|%s|exact|True|2026-09-26 13:45:07.123|1|-3',
+      [CurrToStr(Currency(1234.5678))]),
+      'in the worker, as its own class, every field as it was sent');
+
+    Raised := '';
+    try
+      ListenQueued(Q, TCarriesAList, 'list', QueuedListener);
+    except
+      on E: EEventError do Raised := E.Message;
+    end;
+    AssertContains(Raised, 'TCarriesAList.Items', 'an object cannot cross the queue, and it says which');
+    Raised := '';
+    try
+      ListenQueued(Q, TOrderPlaced, 'invoice', QueuedListener);
+    except
+      on E: EEventError do Raised := E.Message;
+    end;
+    AssertContains(Raised, 'already registered as invoice', 'a name is one listener');
+
+    { An event from before a deploy that added a field: the field keeps
+      what the constructor gave it, and nothing raises. }
+    O := TOrderPlaced(EventFromJson(TOrderPlaced, '{"OrderId":5}'));
+    AssertTrue((O.OrderId = 5) and (O.Customer = '') and not O.Paid,
+      'a field the sender did not have is left as it was made');
+    O.Free;
+
+    { A job from another process: a class this one never dispatched. }
+    Q.Push('askr.event:invoice', '{"event":"TNeverHeardOf","data":{}}');
+    AssertTrue(Q.WaitUntilEmpty(5000), 'the job is taken');
+    AssertTrue(Q.Failed + Q.Dropped + Q.Retried > 0, 'and fails, rather than arriving as some other class');
+  finally
+    Q.Stop;
+    Q.Free;
+    ClearListeners;
+  end;
+end;
+
 procedure TestMailFraConfig;
 const
   Directory = 'askr-mailcfg-test.tmp';
@@ -10202,6 +10394,10 @@ begin
   Group('Signed links and verified addresses');
   Test('a signed link holds, and nothing changed about it does', @TestSignedLinks);
   Test('RequireVerified answers each client its own way, and closed by default', @TestRequireVerified);
+
+  Group('Events');
+  Test('listeners hear what they asked for, in order, and a failure is not quiet', @TestEventsInline);
+  Test('a queued listener gets the event rebuilt in the worker, field for field', @TestEventsQueued);
 
   Group('QR codes');
   Test('module for module the same as two other encoders, the mask they choose too', @TestQrAgainstPython);
