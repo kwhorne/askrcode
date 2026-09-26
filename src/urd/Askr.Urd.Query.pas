@@ -243,6 +243,13 @@ function ColFloat(const ATable, AName: string): TColFloat;
 function ColBool(const ATable, AName: string): TColBool;
 function ColDateTime(const ATable, AName: string): TColDateTime;
 
+{ Preload for a BelongsToMany. In the interface only because a generic
+  method may not call a routine the unit keeps to itself: TQuery<M> is
+  specialised in the caller's unit, and from there the call has to
+  resolve. Not meant to be called directly. }
+procedure LoadManyToMany(List: TModelListBase; Meta: TModelMeta;
+  const Rel: TRelationInfo; C: TDbConnection; A: TArena);
+
 implementation
 
 procedure TJsonHiddenHelper.Add(const C: TCol<Int64>);
@@ -948,6 +955,134 @@ begin
     LoadRelation(Result, FPreloads[J]);
 end;
 
+{ A BelongsToMany in one query for the whole list: the target's rows
+  joined to the pivot, with the pivot's key back to the owner selected
+  under a name no model column can have. Each column is selected as
+  itself -- "tags"."name" AS "name" -- so Hydrate finds it by the same
+  name whichever driver reports it.
+
+  A soft-deleted target is left out, as a query for it would. It is
+  still attached, and RelatedIds still says so. }
+procedure LoadManyToMany(List: TModelListBase; Meta: TModelMeta;
+  const Rel: TRelationInfo; C: TDbConnection; A: TArena);
+const
+  OwnerAlias = 'askr_pivot_owner';
+var
+  Target: TModelMeta;
+  Keys: TArray<Int64>;
+  Params: TArray<TDbParam>;
+  B: TStrBuilder;
+  Sql: string;
+  Mark: TArenaMark;
+  R: TDbResult;
+  I, J, Col: Integer;
+  Slot: PPointer;
+  Child: TModel;
+  OwnerKey: Int64;
+begin
+  Target := Rel.Target.Meta;
+  SetLength(Keys, List.Count);
+  SetLength(Params, List.Count);
+  for I := 0 to List.Count - 1 do
+  begin
+    Keys[I] := List.Item(I).PrimaryKeyValue;
+    Params[I] := DbParam(A, Keys[I]);
+  end;
+
+  Mark := A.Mark;
+  try
+    B.Init(A, 384);
+    B.Append('SELECT ');
+    for I := 0 to Target.ColumnCount - 1 do
+    begin
+      C.AppendIdentStr(B, Target.Table);
+      B.AppendByte(Ord('.'));
+      C.AppendIdentStr(B, Target.Columns[I].ColumnName);
+      B.Append(' AS ');
+      C.AppendIdentStr(B, Target.Columns[I].ColumnName);
+      B.Append(', ');
+    end;
+    C.AppendIdentStr(B, Rel.Pivot);
+    B.AppendByte(Ord('.'));
+    C.AppendIdentStr(B, Rel.ForeignKey);
+    B.Append(' AS ');
+    C.AppendIdentStr(B, OwnerAlias);
+    B.Append(' FROM ');
+    C.AppendIdentStr(B, Target.Table);
+    B.Append(' JOIN ');
+    C.AppendIdentStr(B, Rel.Pivot);
+    B.Append(' ON ');
+    C.AppendIdentStr(B, Rel.Pivot);
+    B.AppendByte(Ord('.'));
+    C.AppendIdentStr(B, Rel.PivotRelatedKey);
+    B.Append(' = ');
+    C.AppendIdentStr(B, Target.Table);
+    B.AppendByte(Ord('.'));
+    C.AppendIdentStr(B, Target.PrimaryKey);
+    B.Append(' WHERE ');
+    C.AppendIdentStr(B, Rel.Pivot);
+    B.AppendByte(Ord('.'));
+    C.AppendIdentStr(B, Rel.ForeignKey);
+    B.Append(' IN (');
+    for I := 0 to High(Keys) do
+    begin
+      if I > 0 then
+        B.Append(', ');
+      C.AppendPlaceholder(B, I + 1);
+    end;
+    B.AppendByte(Ord(')'));
+    if Target.SoftDeletes then
+    begin
+      B.Append(' AND ');
+      C.AppendIdentStr(B, Target.Table);
+      B.AppendByte(Ord('.'));
+      C.AppendIdentStr(B, Target.DeletedAtColumn);
+      B.Append(' IS NULL');
+    end;
+    { The target's key, so the order is the same on every database and
+      on every load. }
+    B.Append(' ORDER BY ');
+    C.AppendIdentStr(B, Target.Table);
+    B.AppendByte(Ord('.'));
+    C.AppendIdentStr(B, Target.PrimaryKey);
+    Sql := B.ToString;
+  finally
+    A.Rewind(Mark);
+  end;
+
+  R := C.ExecParams(A, Sql, Params);
+
+  { An empty list for every owner first, so one with no rows says "none"
+    rather than "not loaded". }
+  for I := 0 to List.Count - 1 do
+  begin
+    Slot := PPointer(List.Item(I).FieldAddress(Rel.Name));
+    if Slot = nil then
+      raise EQueryError.CreateFmt(
+        '%s is missing a published field "%s" to hold the relation',
+        [Meta.ModelClass.ClassName, Rel.Name]);
+    Slot^ := Pointer(TModelListBase.Create);
+  end;
+
+  Col := R.IndexOfField(OwnerAlias);
+  for J := 0 to R.RowCount - 1 do
+  begin
+    OwnerKey := R.Value(J, Col).ToIntDef(0);
+    { A new child per owner: the same tag on two posts is two objects,
+      so a change to one through its owner does not show on the other. }
+    for I := 0 to List.Count - 1 do
+    begin
+      if Keys[I] <> OwnerKey then
+        Continue;
+      Child := TModel(Rel.Target.NewInstance);
+      Child.Create;
+      Child.Hydrate(R, J);
+      Slot := PPointer(List.Item(I).FieldAddress(Rel.Name));
+      TModelListBase(Slot^).AddModel(Child);
+    end;
+  end;
+end;
+
 procedure TQuery<M>.LoadRelation(List: TModelList<M>; const RelName: string);
 var
   Rel: TRelationInfo;
@@ -972,8 +1107,13 @@ begin
   if RelIdx < 0 then
     Exit;
   Rel := FMeta.Relations[RelIdx];
-  ChildMeta := Rel.Target.Meta;
   C := Conn;
+  if Rel.Kind = rkBelongsToMany then
+  begin
+    LoadManyToMany(List, FMeta, Rel, C, Arena);
+    Exit;
+  end;
+  ChildMeta := Rel.Target.Meta;
 
   { The keys to look up on. For HasMany and HasOne it is the parent's
     primary key; for BelongsTo it is the foreign key in the parent row. }

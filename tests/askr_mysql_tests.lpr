@@ -18,7 +18,8 @@ uses
   Classes,
   Askr.Urd.Driver, Askr.Urd.MySql, Askr.Urd.Pool,
   Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect,
-  Askr.Queue, Askr.Queue.Db;
+  Askr.Queue, Askr.Queue.Db,
+  Askr.Core.Json, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
 
 type
   { One migration that touches everything the introspection has to
@@ -198,6 +199,30 @@ begin
 end;
 
 {$I queue_db_conc.inc}
+
+procedure PivotStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure PivotOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I pivot.inc}
+
+procedure PivotDelen;
+var
+  C: TDbConnection;
+begin
+  C := OpenDbConnection(Dsn);
+  try
+    PivotPart(C);
+  finally
+    C.Free;
+  end;
+end;
 
 procedure PoolDelen;
 const
@@ -623,6 +648,7 @@ begin
   end;
   PoolDelen;
   QueuePart(Dsn);
+  PivotDelen;
 end;
 
 begin

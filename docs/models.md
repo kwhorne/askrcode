@@ -229,6 +229,51 @@ Loading is explicit — see `Preload` in [Queries](queries.md). A relation
 that was not loaded is **omitted** from Inertia and JSON output, not set to
 null, so the frontend can tell "no orders" from "did not ask".
 
+### Many to many
+
+Posts have many tags, and tags have many posts. The rows between them live
+in a pivot table that holds a pair of keys and nothing else:
+
+```pascal
+S.BelongsToMany('Tags', TTag);
+```
+
+That is posts to tags through `post_tag`, where `post_id` points at the post
+and `tag_id` at the tag — the two singular names in alphabetical order, as
+in Laravel. Name them when yours differ:
+
+```pascal
+S.BelongsToMany('Tags', TTag, 'article_labels', 'article_id', 'label_id');
+```
+
+It loads with `Preload(['Tags'])` into a published `TModelList<TTag>` field,
+in **one query for the whole list** — the tags joined to the pivot — and a
+post with no tags gets an empty list, not nil. A tag that is soft-deleted is
+left out, as a query for it would; it is still attached.
+
+The rows in the pivot are changed on the model, which has to be saved first
+— the pivot row points at its id:
+
+```pascal
+Post.Attach('Tags', [3, 7]);    { adds the ones not already there }
+Post.Detach('Tags', [7]);       { removes the ones given }
+Post.DetachAll('Tags');
+Post.Sync('Tags', [3, 5]);      { exactly these, an empty list included }
+Ids := Post.RelatedIds('Tags'); { what an edit form ticks }
+```
+
+- **Attaching one that is there is not an error.** Attach reads what is
+  attached and inserts the rest, so a double submit does not become a
+  unique violation.
+- **`Detach` with an empty list removes nothing.** Emptying is `DetachAll`,
+  said on purpose, never the accident of a list that happened to be empty.
+- **`Sync` is all or nothing.** It runs in a transaction, so an id the
+  database refuses leaves the rows as they were rather than half-changed.
+  Called inside a transaction you opened, your commit decides.
+- **An id is not checked against the other table here.** The pivot's
+  foreign keys refuse a row to nothing; on a form, check the ids first so
+  the refusal lands on the field instead of as a 500.
+
 ## Lists
 
 ```pascal
@@ -299,6 +344,14 @@ at compile time, which is the stronger guarantee, not the weaker one.
 **Casts and accessors.** The types are already static: a `Currency` is a
 `Currency` the whole way. Casts exist in dynamically typed stacks because
 every value arrives from the database as a string.
+
+**Columns on the pivot.** A pivot is two keys. A link that carries its own
+data — a quantity, a role, a date — is a model of its own with two
+`BelongsTo`, and then it can be validated, timestamped and queried like one.
+
+**Polymorphic relations.** A column that names a table and another that
+names a row in it cannot have a foreign key, so the database cannot keep it
+true. Two relations, or a pivot per kind, can.
 
 **Factories and seeders-as-model-builders.** Seeders exist
 (`askr make seeder`); a factory layer without reflection would be mostly

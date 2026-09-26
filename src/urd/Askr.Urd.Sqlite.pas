@@ -443,7 +443,7 @@ begin
   end;
   if (Code = 19) and (Pos('FOREIGN KEY', Msg) > 0) then
     State := '23503';
-  raise EDbError.Create(Msg + ' — i: ' + Sql, State);
+  raise EDbError.Create(Msg + ' — in: ' + Sql, State);
 end;
 
 procedure TSqliteConnection.Pragma(const Sql: string);

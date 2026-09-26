@@ -46,8 +46,20 @@ with the zero-major caveat that minor releases may break things until
   one database, on SQLite, Postgres and MySQL, with memory as the
   control that must fail the same scenario.
 
+- **Many to many.** `S.BelongsToMany('Tags', TTag)` is posts to tags
+  through `post_tag`, with the pivot and both keys named by convention or
+  by hand. `Preload(['Tags'])` loads it for a whole list in one query --
+  the target joined to its pivot -- and leaves a soft-deleted target out.
+  `Attach`, `Detach`, `DetachAll`, `Sync` and `RelatedIds` change and read
+  the pivot on a saved model. Attaching one that is there is not an error,
+  `Detach([])` removes nothing, and `Sync` is all or nothing in a
+  transaction of its own unless the caller already opened one. The same
+  tests run against SQLite, Postgres and MySQL.
+
 ### Changed
 
+- A database error from SQLite or Postgres ends in `— in: <the SQL>`, not
+  `— i: `, which was Norwegian.
 - `Sessions.Count` counts the sessions that have not expired, rather than
   every entry the last sweep left.
 

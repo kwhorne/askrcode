@@ -3578,6 +3578,18 @@ begin
   end;
 end;
 
+procedure PivotStart(const Name: string);
+begin
+  Group(Name);
+end;
+
+procedure PivotOk(const What: string; Cond: Boolean);
+begin
+  Check(Cond, What);
+end;
+
+{$I pivot.inc}
+
 procedure TestSqlite;
 var
   A: TArena;
@@ -4200,6 +4212,8 @@ begin
     With_ := MonotonicMs - T0;
     Si2('2000 queries', Format('%d ms without the cache, %d ms with', [Without, With_]));
     Check(With_ <= Without + (Without div 4) + 2, 'the cache did not make it slower');
+
+    PivotPart(C);
   finally
     UseDb(PrevDb);
     UseArena(PrevA);

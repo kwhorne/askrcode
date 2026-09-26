@@ -16,7 +16,8 @@ uses
   SysUtils, Classes,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
   Askr.Urd.Driver, Askr.Urd.Pg, Askr.Urd.Pool,
-  Askr.Queue, Askr.Queue.Db;
+  Askr.Queue, Askr.Queue.Db,
+  Askr.Core.Json, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
 
 var
   Passed: Integer = 0;
@@ -366,6 +367,30 @@ end;
 
 {$I queue_db_conc.inc}
 
+procedure PivotStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure PivotOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I pivot.inc}
+
+procedure PivotDelen;
+var
+  C: TDbConnection;
+begin
+  C := OpenDbConnection(Dsn);
+  try
+    PivotPart(C);
+  finally
+    C.Free;
+  end;
+end;
+
 procedure PoolDelen;
 const
   Traader = 4;
@@ -424,6 +449,7 @@ begin
     Run_;
     PoolDelen;
     QueuePart(Dsn);
+    PivotDelen;
   except
     on E: EDbError do
       if (Pos('could not connect', LowerCase(E.Message)) > 0) or

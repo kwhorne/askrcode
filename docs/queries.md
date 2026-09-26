@@ -129,6 +129,9 @@ if C = nil then
 the difference between `Preload` and a loop, and the reason it is worth a
 name of its own.
 
+A `BelongsToMany` is the same one query, the target joined to its pivot —
+see [Many to many](models.md#many-to-many).
+
 > It is called `Preload`, not `With`, because `with` is a reserved word in
 > Pascal.
 

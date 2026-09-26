@@ -77,7 +77,7 @@ type
     ZeroIsNull: Boolean;
   end;
 
-  TRelationKind = (rkHasMany, rkBelongsTo, rkHasOne);
+  TRelationKind = (rkHasMany, rkBelongsTo, rkHasOne, rkBelongsToMany);
 
   TRelationInfo = record
     Name: string;
@@ -88,6 +88,11 @@ type
     { The column on the "one" side being pointed at, normally the primary
       key. }
     LocalKey: string;
+    { BelongsToMany only. The table between the two, and its column that
+      points at the target; ForeignKey is then its column that points
+      back here. }
+    Pivot: string;
+    PivotRelatedKey: string;
   end;
 
   { Columns a model never puts in JSON.
@@ -235,6 +240,21 @@ type
       const AForeignKey: string; const ALocalKey: string = '');
     procedure BelongsTo(const AName: string; ATarget: TModelClass;
       const AForeignKey: string; const AOwnerKey: string = '');
+    { Many rows on each side, joined through a pivot table that holds a
+      pair of keys and nothing else:
+
+          S.BelongsToMany('Tags', TTag);
+
+      is posts to tags through `post_tag`, where `post_id` points here and
+      `tag_id` points there. The pivot is the two singular names in
+      alphabetical order, as in Laravel; name it when yours is different.
+
+      It is loaded with Preload like any relation, into a published
+      `TModelList<TTag>` field of the same name, and the rows in it are
+      changed with Attach, Detach and Sync on the model. }
+    procedure BelongsToMany(const AName: string; ATarget: TModelClass;
+      const APivot: string = ''; const AForeignPivotKey: string = '';
+      const ARelatedPivotKey: string = '');
   end;
 
   EValidationError = class(EDbError);
@@ -384,6 +404,33 @@ type
     { True when deleted_at is set. False for a model without
       SoftDeletes. }
     function IsTrashed: Boolean;
+
+    { The rows of a BelongsToMany relation, changed through its pivot.
+      The model has to be saved: the pivot row points at its id.
+
+      Attach adds the ids that are not there already, so attaching twice
+      is not a unique violation. Detach removes the ones given, and an
+      empty list removes nothing -- DetachAll is the one that empties.
+      Sync makes the pivot exactly the ids given, an empty list included,
+      and does it in a transaction: an id the database refuses leaves the
+      rows as they were, not half-changed. Inside a transaction the
+      caller opened, the caller's commit decides.
+
+      Nothing here checks that an id is a row. The pivot's foreign keys
+      refuse one that is not; a form should check first, so the refusal
+      is a message on the field and not a 500. }
+    procedure Attach(const Relation: string; const Ids: array of Int64;
+      Conn: TDbConnection = nil);
+    procedure Detach(const Relation: string; const Ids: array of Int64;
+      Conn: TDbConnection = nil);
+    procedure DetachAll(const Relation: string; Conn: TDbConnection = nil);
+    procedure Sync(const Relation: string; const Ids: array of Int64;
+      Conn: TDbConnection = nil);
+    { The ids in the pivot for this model, in order. What an edit form
+      ticks. A row that is soft-deleted is still attached, so it is here
+      -- Preload leaves it out, because it is not a row to show. }
+    function RelatedIds(const Relation: string;
+      Conn: TDbConnection = nil): TArray<Int64>;
 
     { Events. Virtual methods, not observers registered at runtime: the
       compiler sees them, and there is no reflection to go through.
@@ -778,6 +825,44 @@ procedure TSchema.HasOne(const AName: string; ATarget: TModelClass;
   const AForeignKey: string; const ALocalKey: string);
 begin
   AddRelation(FMeta, rkHasOne, AName, ATarget, AForeignKey, ALocalKey);
+end;
+
+{ The name a model goes by in a pivot: TPostTag is post_tag. The table
+  name without the plural, from the class and not from the meta -- two
+  models that name each other in Describe would otherwise each build the
+  other's meta while their own was half made. }
+function SingularNameFor(AClass: TClass): string;
+var
+  N: string;
+begin
+  N := AClass.ClassName;
+  if (Length(N) > 1) and (N[1] = 'T') and IsUpper(N[2]) then
+    N := Copy(N, 2, Length(N) - 1);
+  Result := SnakeCase(N);
+end;
+
+procedure TSchema.BelongsToMany(const AName: string; ATarget: TModelClass;
+  const APivot, AForeignPivotKey, ARelatedPivotKey: string);
+var
+  Mine, Theirs: string;
+  N: Integer;
+begin
+  Mine := SingularNameFor(FMeta.FModelClass);
+  Theirs := SingularNameFor(ATarget);
+  AddRelation(FMeta, rkBelongsToMany, AName, ATarget, AForeignPivotKey, '');
+  N := High(FMeta.FRelations);
+  if AForeignPivotKey = '' then
+    FMeta.FRelations[N].ForeignKey := Mine + '_id';
+  if ARelatedPivotKey <> '' then
+    FMeta.FRelations[N].PivotRelatedKey := ARelatedPivotKey
+  else
+    FMeta.FRelations[N].PivotRelatedKey := Theirs + '_id';
+  if APivot <> '' then
+    FMeta.FRelations[N].Pivot := APivot
+  else if Mine < Theirs then
+    FMeta.FRelations[N].Pivot := Mine + '_' + Theirs
+  else
+    FMeta.FRelations[N].Pivot := Theirs + '_' + Mine;
 end;
 
 procedure TSchema.BelongsTo(const AName: string; ATarget: TModelClass;
@@ -1607,6 +1692,299 @@ begin
     raise EModelError.Create(
       'No database connection. Pass one in, or set the ambient one with ' +
       'UseDb — the host normally does that at the start of a request.');
+end;
+
+{ ------------------------------------------------------- the pivot -- }
+
+function ManyToManyOf(M: TModelMeta; const Relation, Caller: string):
+  TRelationInfo;
+var
+  Idx: Integer;
+begin
+  Idx := M.IndexOfRelation(Relation);
+  if Idx < 0 then
+    raise EModelError.CreateFmt('%s: %s has no relation "%s"',
+      [Caller, M.ModelClass.ClassName, Relation]);
+  Result := M.Relations[Idx];
+  if Result.Kind <> rkBelongsToMany then
+    raise EModelError.CreateFmt(
+      '%s: "%s" on %s is not a BelongsToMany relation, so it has no pivot',
+      [Caller, Relation, M.ModelClass.ClassName]);
+end;
+
+function PivotIdent(C: TDbConnection; A: TArena; const Name_: string): string;
+var
+  B: TStrBuilder;
+begin
+  B.Init(A, Length(Name_) + 4);
+  C.AppendIdentStr(B, Name_);
+  Result := B.ToString;
+end;
+
+function PivotPh(C: TDbConnection; A: TArena; Index: Integer): string;
+var
+  B: TStrBuilder;
+begin
+  B.Init(A, 8);
+  C.AppendPlaceholder(B, Index);
+  Result := B.ToString;
+end;
+
+{ Each id once, in the order first given. Zero and below are refused: no
+  table has that row, and in Pascal zero is how "none" is said -- letting
+  it through would write a pivot row to nothing. }
+function DistinctIds(const Ids: array of Int64; const Caller: string):
+  TArray<Int64>;
+var
+  I, J, N: Integer;
+  Seen: Boolean;
+  Out_: TArray<Int64>;
+begin
+  SetLength(Out_, Length(Ids));
+  N := 0;
+  for I := 0 to High(Ids) do
+  begin
+    if Ids[I] <= 0 then
+      raise EModelError.CreateFmt('%s: %d is not the id of a row', [Caller, Ids[I]]);
+    Seen := False;
+    for J := 0 to N - 1 do
+      if Out_[J] = Ids[I] then
+      begin
+        Seen := True;
+        Break;
+      end;
+    if not Seen then
+    begin
+      Out_[N] := Ids[I];
+      Inc(N);
+    end;
+  end;
+  SetLength(Out_, N);
+  Result := Out_;
+end;
+
+function HasId(const Ids: TArray<Int64>; Id: Int64): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(Ids) do
+    if Ids[I] = Id then
+      Exit(True);
+  Result := False;
+end;
+
+function PivotIdsOf(C: TDbConnection; A: TArena; const Rel: TRelationInfo;
+  OwnerId: Int64): TArray<Int64>;
+var
+  R: TDbResult;
+  I: Integer;
+  Out_: TArray<Int64>;
+begin
+  R := C.ExecParams(A, 'SELECT ' + PivotIdent(C, A, Rel.PivotRelatedKey) +
+    ' FROM ' + PivotIdent(C, A, Rel.Pivot) +
+    ' WHERE ' + PivotIdent(C, A, Rel.ForeignKey) + ' = ' + PivotPh(C, A, 1) +
+    ' ORDER BY ' + PivotIdent(C, A, Rel.PivotRelatedKey),
+    [DbParam(A, OwnerId)]);
+  SetLength(Out_, R.RowCount);
+  for I := 0 to R.RowCount - 1 do
+    Out_[I] := R.AsInt64(I, 0);
+  Result := Out_;
+end;
+
+procedure PivotInsert(C: TDbConnection; A: TArena; const Rel: TRelationInfo;
+  OwnerId, Id: Int64);
+begin
+  C.ExecParams(A, 'INSERT INTO ' + PivotIdent(C, A, Rel.Pivot) + ' (' +
+    PivotIdent(C, A, Rel.ForeignKey) + ', ' +
+    PivotIdent(C, A, Rel.PivotRelatedKey) + ') VALUES (' +
+    PivotPh(C, A, 1) + ', ' + PivotPh(C, A, 2) + ')',
+    [DbParam(A, OwnerId), DbParam(A, Id)]);
+end;
+
+{ Removes the given ids, or all of them when All. Never all by accident:
+  an empty list with All false is nothing to do. }
+procedure PivotDelete(C: TDbConnection; A: TArena; const Rel: TRelationInfo;
+  OwnerId: Int64; const Ids: TArray<Int64>; All: Boolean);
+var
+  Sql: string;
+  Params: array of TDbParam;
+  I: Integer;
+begin
+  if not All and (Length(Ids) = 0) then
+    Exit;
+  Sql := 'DELETE FROM ' + PivotIdent(C, A, Rel.Pivot) + ' WHERE ' +
+    PivotIdent(C, A, Rel.ForeignKey) + ' = ' + PivotPh(C, A, 1);
+  SetLength(Params, 1);
+  Params[0] := DbParam(A, OwnerId);
+  if not All then
+  begin
+    Sql := Sql + ' AND ' + PivotIdent(C, A, Rel.PivotRelatedKey) + ' IN (';
+    SetLength(Params, Length(Ids) + 1);
+    for I := 0 to High(Ids) do
+    begin
+      if I > 0 then
+        Sql := Sql + ', ';
+      Sql := Sql + PivotPh(C, A, I + 2);
+      Params[I + 1] := DbParam(A, Ids[I]);
+    end;
+    Sql := Sql + ')';
+  end;
+  C.ExecParams(A, Sql, Params);
+end;
+
+{ The id the pivot rows point at. A model that has never been saved has
+  none, and a pivot row to id 0 is a row to nothing. }
+function OwnerIdFor(M: TModel; const Caller: string): Int64;
+begin
+  Result := M.PrimaryKeyValue;
+  if not M.Persisted or (Result = 0) then
+    raise EModelError.CreateFmt(
+      '%s: save the %s first -- the pivot row points at its id, and it has none yet',
+      [Caller, M.ClassName]);
+end;
+
+function TModel.RelatedIds(const Relation: string;
+  Conn: TDbConnection): TArray<Int64>;
+var
+  Rel: TRelationInfo;
+  C: TDbConnection;
+  A: TArena;
+begin
+  Rel := ManyToManyOf(Meta, Relation, 'RelatedIds');
+  C := RequireDb(Conn);
+  A := TArena.Create(4 * 1024);
+  try
+    Result := PivotIdsOf(C, A, Rel, OwnerIdFor(Self, 'RelatedIds'));
+  finally
+    A.Free;
+  end;
+end;
+
+procedure TModel.Attach(const Relation: string; const Ids: array of Int64;
+  Conn: TDbConnection);
+var
+  Rel: TRelationInfo;
+  C: TDbConnection;
+  A: TArena;
+  Wanted, Have: TArray<Int64>;
+  OwnerId: Int64;
+  I: Integer;
+  Own: Boolean;
+begin
+  Rel := ManyToManyOf(Meta, Relation, 'Attach');
+  OwnerId := OwnerIdFor(Self, 'Attach');
+  Wanted := DistinctIds(Ids, 'Attach');
+  if Length(Wanted) = 0 then
+    Exit;
+  C := RequireDb(Conn);
+  A := TArena.Create(8 * 1024);
+  Own := not C.InTransaction;
+  try
+    if Own then
+      C.StartTransaction;
+    try
+      Have := PivotIdsOf(C, A, Rel, OwnerId);
+      for I := 0 to High(Wanted) do
+        if not HasId(Have, Wanted[I]) then
+          PivotInsert(C, A, Rel, OwnerId, Wanted[I]);
+      if Own then
+        C.Commit;
+    except
+      if Own then
+        C.Rollback;
+      raise;
+    end;
+  finally
+    A.Free;
+  end;
+end;
+
+procedure TModel.Detach(const Relation: string; const Ids: array of Int64;
+  Conn: TDbConnection);
+var
+  Rel: TRelationInfo;
+  A: TArena;
+  Gone: TArray<Int64>;
+  OwnerId: Int64;
+  C: TDbConnection;
+begin
+  Rel := ManyToManyOf(Meta, Relation, 'Detach');
+  OwnerId := OwnerIdFor(Self, 'Detach');
+  Gone := DistinctIds(Ids, 'Detach');
+  if Length(Gone) = 0 then
+    Exit;
+  C := RequireDb(Conn);
+  A := TArena.Create(4 * 1024);
+  try
+    PivotDelete(C, A, Rel, OwnerId, Gone, False);
+  finally
+    A.Free;
+  end;
+end;
+
+procedure TModel.DetachAll(const Relation: string; Conn: TDbConnection);
+var
+  Rel: TRelationInfo;
+  A: TArena;
+  OwnerId: Int64;
+  C: TDbConnection;
+begin
+  Rel := ManyToManyOf(Meta, Relation, 'DetachAll');
+  OwnerId := OwnerIdFor(Self, 'DetachAll');
+  C := RequireDb(Conn);
+  A := TArena.Create(4 * 1024);
+  try
+    PivotDelete(C, A, Rel, OwnerId, nil, True);
+  finally
+    A.Free;
+  end;
+end;
+
+procedure TModel.Sync(const Relation: string; const Ids: array of Int64;
+  Conn: TDbConnection);
+var
+  Rel: TRelationInfo;
+  C: TDbConnection;
+  A: TArena;
+  Wanted, Have, Gone: TArray<Int64>;
+  OwnerId: Int64;
+  I, N: Integer;
+  Own: Boolean;
+begin
+  Rel := ManyToManyOf(Meta, Relation, 'Sync');
+  OwnerId := OwnerIdFor(Self, 'Sync');
+  Wanted := DistinctIds(Ids, 'Sync');
+  C := RequireDb(Conn);
+  A := TArena.Create(8 * 1024);
+  Own := not C.InTransaction;
+  try
+    if Own then
+      C.StartTransaction;
+    try
+      Have := PivotIdsOf(C, A, Rel, OwnerId);
+      SetLength(Gone, Length(Have));
+      N := 0;
+      for I := 0 to High(Have) do
+        if not HasId(Wanted, Have[I]) then
+        begin
+          Gone[N] := Have[I];
+          Inc(N);
+        end;
+      SetLength(Gone, N);
+      PivotDelete(C, A, Rel, OwnerId, Gone, False);
+      for I := 0 to High(Wanted) do
+        if not HasId(Have, Wanted[I]) then
+          PivotInsert(C, A, Rel, OwnerId, Wanted[I]);
+      if Own then
+        C.Commit;
+    except
+      if Own then
+        C.Rollback;
+      raise;
+    end;
+  finally
+    A.Free;
+  end;
 end;
 
 procedure TModel.Save(Conn: TDbConnection);

@@ -390,7 +390,7 @@ begin
   PQclear(Res);
   if Msg = '' then
     Msg := Trim(string(PQerrorMessage(FConn)));
-  raise EDbError.Create(Msg + ' — i: ' + Sql, State);
+  raise EDbError.Create(Msg + ' — in: ' + Sql, State);
 end;
 
 function TPgConnection.Materialize(A: TArena; Res: Pointer): TDbResult;
