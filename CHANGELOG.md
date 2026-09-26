@@ -30,6 +30,20 @@ with the zero-major caveat that minor releases may break things until
   language — `welcome.nb.html` — is taken first, and `mail/layout.html`
   wraps every body at `{{content}}`. A placeholder nothing fills stops the
   mail and names it.
+- **Email verification.** `askr new --auth` and `askr make auth` send a new
+  account a link to confirm its address, and `/dashboard` sends anyone
+  without one to `/verify-email`: the address, a button to send it again
+  once a minute, and the way to fix a mistyped one. The link carries a hash
+  of the address, so changing it retires the old links, and a new address
+  is not confirmed by the old one having been. The mails — this one and the
+  password reset — are templates under `mail/`. In the framework:
+  `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
+  browser, an Inertia visit and a JSON client each its own way and says no
+  when no check is registered. `./askr auth:check` drives it over a socket.
+- **Signed links.** `SignedUrl` and `SignedPath` in `Askr.Signed` sign a
+  path, its query and an expiry under `APP_KEY`; `CheckSignature` tells a
+  valid link from an expired one and from one that was changed. Nothing is
+  stored.
 
 ### Changed
 
@@ -46,6 +60,13 @@ with the zero-major caveat that minor releases may break things until
 - **A line break in a subject or a header value started a new header.** A
   subject from a contact form could add a `Bcc:` of the visitor's choosing.
   It is a space now.
+- **An address with a line break in it went into `RCPT TO` as it was**, and
+  could add commands of its own to the SMTP conversation. An address with a
+  line break, a space or an angle bracket is refused where it is added.
+- **SMTP sent a text body's line breaks as bare LF**, which servers since
+  the SMTP smuggling fixes refuse, and doubled only a line that was a full
+  stop by itself, so a line starting `.hidden` arrived as `hidden`. Every
+  line break is CRLF now, and every leading full stop is doubled.
 
 ## 0.14.0 — 2026-09-26
 

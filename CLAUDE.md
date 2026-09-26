@@ -17,6 +17,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr run:demo   # Rún ende-til-ende mot SQLite
 ./askr check      # samme som test, med -Cr -Co -Ci
 ./askr make:check # generatorene: tre databaser, en socket og Chrome
+./askr auth:check # en --auth-app over en socket: bekreftelse via mailen
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -1154,7 +1155,31 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **Innholdstypene er én tabell**, `Askr.Core.Mime`, for både statiske filer
   og vedlegg. `Askr.Http.Static.ContentTypeForExt` delegerer dit.
 
-## Kommandolinja
+## E-postbekreftelse og signerte lenker
+
+* **Lenka er signert, ikke lagret.** `Askr.Signed` signerer sti, spørring
+  og utløp under `APP_KEY`, med et eget formål foran så en signatur fra
+  husk-meg-kaka aldri er en lenkes. Verten signeres ikke — bak en proxy
+  ser appen ikke nødvendigvis verten lenka ble laget for.
+* **En sjekk på at signaturen er siste parameter var død.** Alt etter den
+  leses som en del av den og stemmer ikke lenger. Mutasjonen som tok den
+  bort overlevde, så den er tatt ut; testen står.
+* **`RequireVerified` er et kall i handleren, ikke en middleware.** En
+  ruters middleware dekker alle ruter, og profilen der man retter en
+  feilstavet adresse kan ikke kreve en bekreftet. Uten registrert sjekk
+  svarer den nei.
+* **Adressens hash står i stien**, så en ny adresse gjør de gamle lenkene
+  til «for en tidligere adresse» i stedet for å bekrefte en adresse de
+  aldri nådde.
+* **`auth:check` fant tre feil i SMTP som var eldre enn alt dette.** En
+  tekstkropp gikk som bare LF, som Postfix avviser siden smuggle-fiksene;
+  bare en linje som *var* et punktum ble doblet, så `.hidden` kom fram som
+  `hidden`; og en adresse gikk rett inn i `RCPT TO`, der et linjeskift var
+  en kommando etter avsenderens valg. Ekkoserveren i testen kastet hver CR
+  og kunne ikke se den første — den har en rå logg nå.
+* **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
+  bekreftet adresse, og det porten sjekker er at innloggingen deles.
+
 ## Kommandolinja
 
 * **`Askr.Console` ligger i rammeverket, ikke i den genererte app.lpr.**

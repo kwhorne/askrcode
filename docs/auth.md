@@ -8,14 +8,16 @@ askr make auth              # into a project that already exists
 askr build && askr migrate
 ```
 
-That writes a `User` model, two migrations, and an `AuthController` — and
-wires it into `app.lpr`. You get eight routes:
+That writes a `User` model, the migrations, an `AuthController` and the
+mails it sends, under `mail/` — and wires it into `app.lpr`. You get these
+routes:
 
 | | |
 |---|---|
 | `/login`, `/register`, `/logout` | Signing in and out |
 | `/forgot-password`, `/reset-password/:token` | Resetting a forgotten one |
-| `/dashboard` | Where signing in lands you |
+| `/verify-email`, `/verify-email/:id/:hash` | Confirming the address |
+| `/dashboard` | Where signing in lands you, once the address is confirmed |
 | `/settings/profile` | Name and email |
 | `/settings/security` | Change password, manage passkeys |
 | `/settings/passkeys`, `/login/passkey` | The WebAuthn ceremonies |
@@ -219,6 +221,95 @@ override a gate from a library.
 
 Policy classes are a convention over reflection: names resolved at runtime.
 A gate is a function with a name, and the compiler can see it.
+
+## Email verification
+
+A new account is signed in straight away and sent a mail with a link.
+`/dashboard` wants a confirmed address and sends anyone without one to
+`/verify-email`, which names the address, has a button to send the link
+again — once a minute — and a way to fix a mistyped address. The profile
+and security pages need only the sign-in, because they are where that
+mistake is fixed.
+
+- **The link is signed, not stored** — see *Signed links* below. It lasts a
+  day, and its path carries a hash of the address it went to, so changing
+  the address retires every link sent before: the old one says it was for
+  an earlier address rather than confirming the new one it never reached.
+- **The link confirms the mailbox, and signs nobody in.** Opened in another
+  browser, it confirms the address and sends you to sign in.
+- **A changed address is not confirmed.** Saving a new one on the profile
+  clears `email_verified_at` and sends a new link.
+- The mails are `mail/auth/verify-email.html` and `.txt`, filled with
+  `Template` — see [Mail](mail.md#templates). A `verify-email.nb.html` next
+  to them is taken for a Norwegian reader.
+
+The framework does not own the user model, so the app says what verified
+means, next to its user loader — the scaffold registers it at the bottom
+of the controller:
+
+```pascal
+SetVerifiedCheck(@UserVerified);   { function(const Id: string): Boolean }
+```
+
+A handler that needs a confirmed address asks for one:
+
+```pascal
+Result := RequireVerified('/verify-email');
+if Result <> nil then Exit;
+```
+
+It gives nil when the address is confirmed, and otherwise the answer each
+client can use: a 303 to the notice for a browser, Inertia's 409 with
+`X-Inertia-Location` for an Inertia visit, a 403 problem document for JSON.
+With no check registered it says no — a page that asks for a confirmed
+address and gets a yes nobody checked has let in exactly who it meant to
+keep out.
+
+It is a call in the handler, not router middleware, because a router's
+middleware covers every route, and the pages that fix a mistyped address
+must not need a confirmed one.
+
+`./askr auth:check` drives a scaffolded app over a socket: register, read
+the link out of the mail log, see a changed id, an added parameter and a
+later expiry refused, confirm, change the address, and see the old link
+refuse to confirm the new one.
+
+## Signed links
+
+```pascal
+uses Askr.Signed;
+
+Link := SignedUrl('/unsubscribe?list=news&user=42', 7 * 24 * 60 * 60);
+```
+
+```pascal
+case CheckSignature(Req) of
+  scValid:   ...;
+  scExpired: ...;  { ours, but old: offer a new one }
+  scInvalid: ...;  { changed, cut short, or never ours }
+end;
+```
+
+A signed link carries an expiry and an HMAC under `APP_KEY` over the path,
+the query and the expiry. Nothing is stored: the link is its own proof.
+`SignedPath` gives the path alone; `SignedUrl` puts `app.url` in front and
+raises when it is not set, because a link in a mail that points nowhere is
+worse than no mail.
+
+- **The host is not signed.** Behind a proxy the app may not see the host
+  the link was made for, and the path is what says what the link does.
+- **Anything added is refused.** A parameter after the signature is read as
+  part of it, and a changed id or expiry no longer matches.
+- **The signature is kept apart from everything else `APP_KEY` signs**, so
+  a signature from the remember cookie is never one for a link.
+- **A new `APP_KEY` retires every link.** That is what rotating it is for.
+- **Sign the path as the browser will send it** — percent-encoded. A path
+  with `æ` in it is signed as `æ` and requested as `%C3%A6`, and the two do
+  not match.
+
+A signed link works as often as it is valid. Where once matters — a
+password reset — a token in the database is the tool, because only a table
+can forget a token when it has been used.
 
 ## Requiring login
 

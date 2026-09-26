@@ -1841,8 +1841,11 @@ cmd_session_check() {
       docker rm -f $cname >/dev/null 2>&1
       continue
     fi
-    c=$(status "$b/dashboard")
-    if [ "$c" = "200" ] && grep -q "Welcome back, Ada $dialect" "$work/body"; then
+    # The profile, not the dashboard: the dashboard wants a confirmed
+    # address, and a new account has none. The profile needs only the
+    # sign-in, which is what is being shared.
+    c=$(status "$b/settings/profile")
+    if [ "$c" = "200" ] && grep -q "Ada $dialect" "$work/body"; then
       ok "node B knows who it is"
     else
       bad "node B knows who it is" "got $c: $(head -c 200 "$work/body")"
@@ -1882,7 +1885,7 @@ cmd_session_check() {
     tok=$(token_in "$work/body")
     c=$(status --data-urlencode "_token=$tok" "$b/logout")
     [ "$c" = "303" ] && ok "signed out on node B" || bad "signed out on node B" "got $c"
-    c=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar.before" "$a/dashboard" || true)
+    c=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar.before" "$a/settings/profile" || true)
     [ "$c" = "303" ] && ok "and node A no longer takes the cookie it had" ||
       bad "and node A no longer takes the cookie it had" "got $c"
 
@@ -1896,10 +1899,10 @@ cmd_session_check() {
   echo "- the control: memory"
   start_nodes "sqlite:storage/sessions.sqlite" memory && {
     if sign_up_on_a control; then
-      c=$(status "$b/dashboard")
+      c=$(status "$b/settings/profile")
       [ "$c" = "303" ] && ok "with the memory driver node B does not know it" ||
         bad "with the memory driver node B does not know it" "got $c"
-      c=$(status "$a/dashboard")
+      c=$(status "$a/settings/profile")
       [ "$c" = "200" ] && ok "while node A still does" || bad "while node A still does" "got $c"
     else
       bad "signed up on node A with the memory driver" "got $c"
@@ -1921,6 +1924,219 @@ cmd_session_check() {
     return 1
   fi
   echo "session:check holds: a login is the database's, not a process's."
+}
+
+# The gate behind docs/auth.md: an app from `askr new --auth`, driven the
+# way a browser drives it, over a socket. A new account confirms its
+# address with the link in the mail it was sent -- read out of the mail
+# log, not made up by the gate -- and nothing but that link opens the
+# dashboard. SQLite only: what is checked here is the flow, and the
+# drivers have gates of their own.
+cmd_auth_check() {
+  prepare
+  fail=0
+  ok()   { echo "  ok    $1"; }
+  bad()  { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+  ensure_image
+
+  ac_bin="$BUILD/authcheck-bin"
+  ac_units="$BUILD/authcheck-units"
+  work="$BUILD/authcheck"
+  mkdir -p "$ac_bin" "$ac_units" "$work"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$ac_units|; s|-FE$BIN|-FE$ac_bin|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+  in_box() {
+    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work \
+      -e ASKR_HOME=/work -w "/work/${work#$ROOT/}${2:+/$2}" "$IMAGE" sh -c "$1"
+  }
+  askr_bin="/work/${ac_bin#$ROOT/}/askr"
+
+  echo "Building the askr tool for the container ..."
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags cli/askr.lpr >"$work/cli.log" 2>&1; then
+    bad "the tool builds" "$(grep -iE 'error|fatal' "$work/cli.log" | head -3)"
+    return 1
+  fi
+
+  out=$(in_box "rm -rf site && $askr_bin new site --auth" 2>&1) || true
+  if [ ! -f "$work/site/askr.toml" ]; then
+    bad "a project with sign-in is scaffolded" "$(echo "$out" | tail -3)"
+    return 1
+  fi
+  sed -i.bak 's|^version = .*|path = "/work"|; s|^path = .*|path = "/work"|' "$work/site/askr.toml"
+  rm -f "$work/site/askr.toml.bak"
+  if in_box "$askr_bin build" site >"$work/build.log" 2>&1; then
+    ok "a project with sign-in is scaffolded and builds"
+  else
+    bad "the project builds" "$(grep -E 'rror|Fatal' "$work/build.log" | head -6)"
+    return 1
+  fi
+  for f in layout.html layout.txt auth/verify-email.html auth/verify-email.txt \
+           auth/reset-password.html auth/reset-password.txt; do
+    [ -f "$work/site/mail/$f" ] || bad "the scaffold writes mail/$f"
+  done
+
+  port=${ASKR_AUTH_PORT:-8363}
+  base="http://127.0.0.1:$port"
+  cname=askr-authcheck
+  rm -f "$work/site/storage/auth.sqlite"* "$work/site/storage/mail.log"
+  if ! in_box "DATABASE_URL=sqlite:storage/auth.sqlite ./.build/bin/app --migrate" site >"$work/migrate.log" 2>&1; then
+    bad "migrate" "$(tail -3 "$work/migrate.log")"
+    return 1
+  fi
+  docker rm -f $cname >/dev/null 2>&1
+  docker run -d --name $cname $DOCKER_PLATFORM -p "$port:$port" \
+    -e DATABASE_URL=sqlite:storage/auth.sqlite -e APP_URL="$base" \
+    -v "$ROOT":/work -w "/work/${work#$ROOT/}/site" "$IMAGE" \
+    sh -c "./.build/bin/app $port 0.0.0.0" >/dev/null
+  n=0
+  until curl -s -o /dev/null "$base/login"; do
+    n=$((n + 1))
+    if [ $n -gt 80 ]; then
+      bad "the app answers" "$(docker logs $cname 2>&1 | tail -4)"
+      docker rm -f $cname >/dev/null 2>&1
+      return 1
+    fi
+    sleep 0.25
+  done
+
+  jar="$work/jar"
+  rm -f "$jar"
+  token_in() { grep -o 'name="_token" value="[^"]*"' "$1" | head -1 | sed 's/.*value="//; s/"$//'; }
+  # Never a non-zero exit: under set -e a refused connection would end the
+  # gate without a word. curl says 000 instead, which fails its check.
+  status() { curl -s -o "$work/body" -w '%{http_code}' -b "$jar" -c "$jar" "$@" || true; }
+  location() { curl -s -o /dev/null -w '%{redirect_url}' -b "$jar" -c "$jar" "$@" || true; }
+  # The newest verification link in the mail log, from the text part: in
+  # the html part the & is &amp;, as it should be.
+  newest_link() {
+    tr -d '\r' < "$work/site/storage/mail.log" 2>/dev/null |
+      grep -o "$base/verify-email/[^ \"<]*" | grep -v '&amp;' | tail -1
+  }
+  mails() { grep -c "^Subject: $1" "$work/site/storage/mail.log" 2>/dev/null || true; }
+
+  email="ada-$(date +%s)@example.com"
+  status "$base/register" >/dev/null
+  tok=$(token_in "$work/body")
+  c=$(status --data-urlencode "_token=$tok" --data-urlencode "name=Ada Lovelace" \
+        --data-urlencode "email=$email" \
+        --data-urlencode "password=correct-horse-battery" \
+        --data-urlencode "password_confirmation=correct-horse-battery" \
+        "$base/register")
+  [ "$c" = "303" ] && ok "registered, and signed in" || bad "registered" "got $c: $(head -c 300 "$work/body")"
+
+  r=$(location "$base/dashboard")
+  case $r in
+    */verify-email) ok "the dashboard sends an unconfirmed address to the notice" ;;
+    *) bad "the dashboard sends an unconfirmed address to the notice" "went to: $r" ;;
+  esac
+  c=$(status "$base/verify-email")
+  if [ "$c" = "200" ] && grep -q "$email" "$work/body"; then
+    ok "which names the address the link went to"
+  else
+    bad "which names the address the link went to" "got $c"
+  fi
+  c=$(status "$base/settings/profile")
+  [ "$c" = "200" ] && ok "the profile opens without a confirmed address, to fix a mistyped one" ||
+    bad "the profile opens without a confirmed address" "got $c"
+
+  link=$(newest_link)
+  if [ -n "$link" ] && [ "$(mails 'Confirm your email address')" = "1" ]; then
+    ok "one mail went out, with a link in it"
+  else
+    bad "one mail went out, with a link in it" "$(tail -20 "$work/site/storage/mail.log" 2>/dev/null)"
+  fi
+  if grep -q "multipart/alternative" "$work/site/storage/mail.log" &&
+     grep -q "Confirm my address" "$work/site/storage/mail.log" &&
+     tr -d '\r' < "$work/site/storage/mail.log" | grep -q "^site$"; then
+    ok "from the templates, in both parts, inside the layout"
+  else
+    bad "from the templates, in both parts, inside the layout"
+  fi
+
+  # The resend button: once, and then not again for a minute.
+  status "$base/verify-email" >/dev/null
+  tok=$(token_in "$work/body")
+  status --data-urlencode "_token=$tok" "$base/verify-email" >/dev/null
+  status "$base/verify-email" >/dev/null
+  tok=$(token_in "$work/body")
+  status --data-urlencode "_token=$tok" "$base/verify-email" >/dev/null
+  c=$(status "$base/verify-email")
+  if [ "$(mails 'Confirm your email address')" = "2" ] && grep -q "a moment ago" "$work/body"; then
+    ok "asking again sends one more, and a third ask within the minute sends none"
+  else
+    bad "asking again sends one more, and no more" "mails: $(mails 'Confirm your email address')"
+  fi
+  link=$(newest_link)
+
+  forged=$(echo "$link" | sed 's|/verify-email/\([0-9]*\)/|/verify-email/9\1/|')
+  c=$(status "$forged")
+  [ "$c" = "403" ] && ok "a link with another id is refused" || bad "a link with another id is refused" "got $c"
+  c=$(status "$link&x=1")
+  [ "$c" = "403" ] && ok "and one with anything added" || bad "and one with anything added" "got $c"
+  c=$(status "$(echo "$link" | sed 's|expires=|expires=9|')")
+  [ "$c" = "403" ] && ok "and one with a later expiry" || bad "and one with a later expiry" "got $c"
+  r=$(location "$base/dashboard")
+  case $r in
+    */verify-email) ok "none of them confirmed anything" ;;
+    *) bad "none of them confirmed anything" "dashboard went to: $r" ;;
+  esac
+
+  # The link itself, from another browser: it proves the mailbox, and
+  # signs nobody in.
+  c=$(curl -s -o /dev/null -w '%{http_code}' "$link" || true)
+  [ "$c" = "303" ] && ok "the link from the mail confirms the address" || bad "the link from the mail confirms" "got $c"
+  c=$(status "$base/dashboard")
+  if [ "$c" = "200" ] && grep -q "Welcome back, Ada Lovelace" "$work/body"; then
+    ok "and the dashboard opens"
+  else
+    bad "and the dashboard opens" "got $c"
+  fi
+  c=$(status "$base/verify-email")
+  [ "$c" = "303" ] && ok "the notice is out of the way once it is done" || bad "the notice is out of the way once it is done" "got $c"
+
+  # A new address is not confirmed by the old one having been, and the
+  # old link does not confirm the new one.
+  old_link=$link
+  status "$base/settings/profile" >/dev/null
+  tok=$(token_in "$work/body")
+  status --data-urlencode "_token=$tok" --data-urlencode "name=Ada Lovelace" \
+    --data-urlencode "email=new-$email" "$base/settings/profile" >/dev/null
+  r=$(location "$base/dashboard")
+  case $r in
+    */verify-email) ok "a changed address has to be confirmed again" ;;
+    *) bad "a changed address has to be confirmed again" "dashboard went to: $r" ;;
+  esac
+  c=$(status "$old_link")
+  if [ "$c" = "403" ] && grep -q "earlier address" "$work/body"; then
+    ok "and the link to the old one does not do it"
+  else
+    bad "and the link to the old one does not do it" "got $c"
+  fi
+  c=$(curl -s -o /dev/null -w '%{http_code}' "$(newest_link)" || true)
+  r=$(location "$base/dashboard")
+  [ "$c" = "303" ] && [ -z "$r" ] && ok "the link sent to the new one does" ||
+    bad "the link sent to the new one does" "got $c, dashboard went to: $r"
+
+  # The reset mail is a template now too.
+  status "$base/forgot-password" >/dev/null
+  tok=$(token_in "$work/body")
+  status --data-urlencode "_token=$tok" --data-urlencode "email=new-$email" "$base/forgot-password" >/dev/null
+  if grep -q "Choose a new password" "$work/site/storage/mail.log" &&
+     grep -q "$base/reset-password/" "$work/site/storage/mail.log"; then
+    ok "the reset mail comes from its template, with its link"
+  else
+    bad "the reset mail comes from its template"
+  fi
+
+  docker rm -f $cname >/dev/null 2>&1
+
+  echo
+  if [ "$fail" -ne 0 ]; then
+    echo "auth:check failed."
+    return 1
+  fi
+  echo "auth:check holds: an address is confirmed by the mail it was sent, and by nothing else."
 }
 
 cmd_seo_check() {
@@ -2691,6 +2907,7 @@ case "${1:-}" in
   make:check) shift; cmd_make_check "$@" ;;
   seo:check) shift; cmd_seo_check "$@" ;;
   session:check) shift; cmd_session_check "$@" ;;
+  auth:check) shift; cmd_auth_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -2728,6 +2945,10 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   logg inn på den ene, bli kjent på den andre, logg ut på
                   den andre og vær ute på den første — på SQLite, Postgres
                   og MySQL, med minne som kontroll. Krever ./askr db:up
+  ./askr auth:check
+                  en app fra askr new --auth over en socket: registrer,
+                  bekreft adressen med lenka fra mailen i loggen, og ingen
+                  annen lenke åpner dashbordet. Bare SQLite
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,

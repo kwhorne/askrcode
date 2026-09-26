@@ -22,7 +22,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
-  Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
@@ -5836,6 +5836,123 @@ begin
   end;
 end;
 
+{ ------------------------------------------------ signed links, verified -- }
+
+const
+  SignedCheckNames: array[TSignatureCheck] of string = ('valid', 'expired', 'invalid');
+
+function SignedEcho(Req: TRequest): TResponse;
+begin
+  Result := RespondText(SignedCheckNames[CheckSignature(Req)]);
+end;
+
+{ The id a test signs in as, for this request only. }
+function SignInFromHeader(Req: TRequest): TResponse;
+begin
+  Result := nil;
+  if Req.Header('X-As').Len > 0 then
+    LoginForRequest(Req.Header('X-As').ToString);
+end;
+
+function VerifiedOnly(Req: TRequest): TResponse;
+begin
+  Result := RequireVerified('/verify-email');
+  if Result = nil then
+    Result := RespondText('ok');
+end;
+
+function OnlyFiveIsVerified(const UserId: string): Boolean;
+begin
+  Result := UserId = '5';
+end;
+
+procedure TestSignedLinks;
+var
+  R: TRouter;
+  K: TTestClient;
+  P, Forged: string;
+
+  function Asked(const Path: string): string;
+  begin
+    Result := K.Get(Path).Body.ToString;
+  end;
+
+begin
+  SetAppKey('Zm9vYmFyYmF6cXV1eGZvb2JhcmJhenF1dXhhYmM9');
+  R := TRouter.Create;
+  R.Get('/verify-email/:id', SignedEcho);
+  R.Get('/unsubscribe', SignedEcho);
+  K := TTestClient.Create(R);
+  try
+    P := SignedPath('/verify-email/7', 3600);
+    AssertEqual(Asked(P), 'valid', 'a link it signed is valid');
+    AssertEqual(Asked(StringReplace(P, '/7?', '/8?', [])), 'invalid',
+      'another id under the same signature is not');
+    AssertEqual(Asked(StringReplace(P, 'expires=', 'expires=9', [])), 'invalid',
+      'nor a later expiry');
+    AssertEqual(Asked(P + '&admin=1'), 'invalid', 'nor a parameter after the signature');
+    AssertEqual(Asked('/verify-email/7'), 'invalid', 'nor no signature at all');
+    AssertEqual(Asked(SignedPath('/verify-email/7', -10)), 'expired',
+      'one past its expiry says so, rather than that it is forged');
+
+    AssertEqual(Asked(SignedPath('/unsubscribe?list=news', 3600)), 'valid',
+      'a path with a query of its own is signed with it');
+    AssertEqual(Asked(StringReplace(SignedPath('/unsubscribe?list=news', 3600),
+      'list=news', 'list=all', [])), 'invalid', 'and cannot be changed');
+    AssertEqual(Asked(SignedPath('/unsubscribe?expires=99999999999', -10)), 'expired',
+      'an expiry of the caller''s own in the query is not the one that counts');
+
+    { A signature made for something else APP_KEY signs is not one for a
+      link. }
+    Forged := Copy(P, 1, Pos('&signature=', P) - 1);
+    Forged := Forged + '&signature=' + Copy(Sign(Forged), LastDelimiter('.', Sign(Forged)) + 1, MaxInt);
+    AssertEqual(Asked(Forged), 'invalid', 'a signature from Sign itself is not a link''s');
+
+    SetAppKey('YW5vdGhlcmtleWFub3RoZXJrZXlhbm90aGVya2V5MTI=');
+    AssertEqual(Asked(P), 'invalid', 'and a new APP_KEY retires every link');
+  finally
+    K.Free;
+    R.Free;
+    SetAppKey('');
+  end;
+end;
+
+procedure TestRequireVerified;
+var
+  R: TRouter;
+  K: TTestClient;
+  Res: TResponse;
+begin
+  R := TRouter.Create;
+  R.Use(SignInFromHeader);
+  R.Get('/secret', VerifiedOnly);
+  K := TTestClient.Create(R);
+  try
+    SetVerifiedCheck(nil);
+    AssertEqual(K.Get('/secret').Body.ToString, 'ok',
+      'nobody signed in is not its business');
+    Res := K.WithHeader('X-As', '5').Get('/secret');
+    AssertStatus(Res, 303, 'with no check set, a signed-in user is not taken as verified');
+
+    SetVerifiedCheck(OnlyFiveIsVerified);
+    AssertEqual(K.WithHeader('X-As', '5').Get('/secret').Body.ToString, 'ok',
+      'a verified user gets through');
+    Res := K.WithHeader('X-As', '6').Get('/secret');
+    AssertStatus(Res, 303, 'an unverified one is sent on');
+    AssertEqual(Res.HeaderValue('Location'), '/verify-email', 'to the notice');
+    Res := K.WithHeader('X-As', '6').WithHeader('Accept', 'application/json').Get('/secret');
+    AssertStatus(Res, 403, 'a JSON client gets a 403');
+    AssertContains(Res.Body.ToString, 'not verified', 'that says why');
+    Res := K.WithHeader('X-As', '6').AsInertia.Get('/secret');
+    AssertStatus(Res, 409, 'an Inertia visit gets the 409 its client turns into a page load');
+    AssertEqual(Res.HeaderValue('X-Inertia-Location'), '/verify-email', 'to the notice');
+  finally
+    SetVerifiedCheck(nil);
+    K.Free;
+    R.Free;
+  end;
+end;
+
 procedure TestMailFraConfig;
 const
   Directory = 'askr-mailcfg-test.tmp';
@@ -6009,6 +6126,7 @@ type
     FLytt: TSocket;
     FPort: Word;
     FTranscript: string;
+    FRaw: string;
     FAuthLine: string;
   protected
     procedure Execute; override;
@@ -6016,6 +6134,8 @@ type
     constructor Create(const AAuthLine: string);
     property Port: Word read FPort;
     property Transcript: string read FTranscript;
+    { Every byte as it came, CR included -- the transcript drops them. }
+    property Raw: string read FRaw;
   end;
 
 constructor TSmtpEkkoServer.Create(const AAuthLine: string);
@@ -6073,6 +6193,7 @@ begin
     N := fpRecv(S, @C, 1, 0);
     if N <= 0 then
       Break;
+    FRaw := FRaw + C;
     if C = #13 then
       Continue;
     if C <> #10 then
@@ -6152,6 +6273,63 @@ begin
   finally
     Msg.Free;
     T.Free;
+  end;
+end;
+
+procedure TestSmtpDataIsCrLfAndStuffed;
+var
+  Srv: TSmtpEkkoServer;
+  T: TSmtpTransport;
+  Msg: TMailMessage;
+  Data_: string;
+  I: Integer;
+  Raised: Boolean;
+begin
+  Srv := TSmtpEkkoServer.Create('');
+  try
+    T := TSmtpTransport.Create('127.0.0.1', Srv.Port, smtpPlain);
+    Msg := TMailMessage.Create;
+    try
+      Msg.From('a@example.com').AddTo('b@example.com').Subject('s')
+         .Text('first' + #10 + '.hidden' + #10 + '.' + #10 + 'last line');
+      T.Send(Msg);
+    finally
+      Msg.Free;
+      T.Free;
+    end;
+    Srv.WaitFor;
+    Data_ := Copy(Srv.Raw, Pos('DATA'#13#10, Srv.Raw), MaxInt);
+    for I := 2 to Length(Data_) do
+      if (Data_[I] = #10) and (Data_[I - 1] <> #13) then
+      begin
+        Fail('a bare LF at ' + IntToStr(I) + ' of DATA');
+        Break;
+      end;
+    AssertContains(Data_, #13#10'..hidden'#13#10, 'a line starting with a full stop gets a second one');
+    AssertContains(Data_, #13#10'..'#13#10'last line', 'a line that is only one does too, and the mail goes on');
+    AssertContains(Srv.Transcript, 'last line', 'so the server saw all of it');
+  finally
+    Srv.Free;
+  end;
+
+  Msg := TMailMessage.Create;
+  try
+    Raised := False;
+    try
+      Msg.AddTo('b@example.com' + #13#10 + 'RCPT TO:<everyone@example.com>');
+    except
+      on E: EMailError do Raised := True;
+    end;
+    AssertTrue(Raised, 'an address with a line break in it is refused where it is added');
+    Raised := False;
+    try
+      Msg.From('a@example.com> SIZE=1');
+    except
+      on E: EMailError do Raised := True;
+    end;
+    AssertTrue(Raised, 'and so is one with an angle bracket');
+  finally
+    Msg.Free;
   end;
 end;
 
@@ -9895,6 +10073,8 @@ begin
     @TestSmtpAuthKreverKryptering);
   Test('a mechanism we cannot do is an error', @TestSmtpAuthUkjentMekanisme);
   Test('with no username no AUTH is sent', @TestSmtpWithoutUser);
+  Test('DATA is CRLF throughout, every leading full stop doubled, and an address cannot break a command',
+    @TestSmtpDataIsCrLfAndStuffed);
 
   Group('Resend');
   Test('the request has the right shape', @TestResendForm);
@@ -9913,6 +10093,10 @@ begin
   Test('the key is not in Describe', @TestResendLekkerIkkeNoekkel);
   Test('the headers are in the bytes on the wire', @TestResendPaaLufta);
   Test('a file goes as base64 with its type', @TestResendAttachments);
+
+  Group('Signed links and verified addresses');
+  Test('a signed link holds, and nothing changed about it does', @TestSignedLinks);
+  Test('RequireVerified answers each client its own way, and closed by default', @TestRequireVerified);
 
   Group('Mail attachments and templates');
   Test('files go as multipart/mixed, and read back byte for byte', @TestMailAttachments);

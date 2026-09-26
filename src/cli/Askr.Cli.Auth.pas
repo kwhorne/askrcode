@@ -40,6 +40,33 @@ uses
 const
   Q = '''';
 
+  { Every route auth adds, in one list: InstallRoutes writes them into
+    app.lpr and WriteHelp prints them when it cannot. Two lists of the
+    same routes would be two lists. }
+  AuthRoutes: array[0..21] of string = (
+    'R.Get(''/login'', Auth_.ShowLogin);',
+    'R.Post(''/login'', Auth_.DoLogin);',
+    'R.Get(''/register'', Auth_.ShowRegister);',
+    'R.Post(''/register'', Auth_.DoRegister);',
+    'R.Post(''/logout'', Auth_.DoLogout);',
+    'R.Get(''/forgot-password'', Auth_.ShowForgot);',
+    'R.Post(''/forgot-password'', Auth_.SendReset);',
+    'R.Get(''/reset-password/:token'', Auth_.ShowReset);',
+    'R.Post(''/reset-password'', Auth_.DoReset);',
+    'R.Get(''/verify-email'', Auth_.ShowVerifyNotice);',
+    'R.Post(''/verify-email'', Auth_.ResendVerification);',
+    'R.Get(''/verify-email/:id/:hash'', Auth_.VerifyEmail);',
+    'R.Get(''/dashboard'', Auth_.Dashboard);',
+    'R.Get(''/settings/profile'', Auth_.ShowProfile);',
+    'R.Post(''/settings/profile'', Auth_.SaveProfile);',
+    'R.Get(''/settings/security'', Auth_.ShowSecurity);',
+    'R.Post(''/settings/security'', Auth_.ChangePassword);',
+    'R.Get(''/settings/passkeys/challenge'', Auth_.PasskeyChallenge);',
+    'R.Post(''/settings/passkeys'', Auth_.PasskeyRegister);',
+    'R.Post(''/settings/passkeys/:id/delete'', Auth_.PasskeyDelete);',
+    'R.Get(''/login/passkey/challenge'', Auth_.LoginChallenge);',
+    'R.Post(''/login/passkey'', Auth_.LoginPasskey);');
+
 { ------------------------------------------------------------- modellen -- }
 
 procedure WriteUser(const Root: string);
@@ -58,6 +85,7 @@ begin
     '    FName: string;' + #10 +
     '    FEmail: string;' + #10 +
     '    FPasswordHash: string;' + #10 +
+    '    FEmailVerifiedAt: TDateTime;' + #10 +
     '    FCreatedAt: TDateTime;' + #10 +
     '    FUpdatedAt: TDateTime;' + #10 +
     '  published' + #10 +
@@ -69,6 +97,9 @@ begin
     '      that is what lets the parameters change without a' + #10 +
     '      migration. }' + #10 +
     '    property PasswordHash: string read FPasswordHash write FPasswordHash;' + #10 +
+    '    { 0 until the address is confirmed. A TDateTime of 0 is' + #10 +
+    '      written as NULL, so the column says not yet, not 1899. }' + #10 +
+    '    property EmailVerifiedAt: TDateTime read FEmailVerifiedAt write FEmailVerifiedAt;' + #10 +
     '    property CreatedAt: TDateTime read FCreatedAt write FCreatedAt;' + #10 +
     '    property UpdatedAt: TDateTime read FUpdatedAt write FUpdatedAt;' + #10 +
     '  public' + #10 +
@@ -150,7 +181,7 @@ begin
     A('  Askr.Http.Request, Askr.Http.Response,');
     A('  Askr.Urd.Driver, Askr.Urd.Model, Askr.Urd.Query,');
     A('  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Mail, Askr.Cache,');
-    A('  Askr.Core.Json, Askr.WebAuthn,');
+    A('  Askr.Core.Json, Askr.WebAuthn, Askr.Signed,');
     A('  App.Models.Credential,');
     A('  App.Models.User;');
     A('');
@@ -166,6 +197,12 @@ begin
     A('    function SendReset(Req: TRequest): TResponse;');
     A('    function ShowReset(Req: TRequest): TResponse;');
     A('    function DoReset(Req: TRequest): TResponse;');
+    A('');
+    A('    { Confirming the address. The link in the mail is signed, not');
+    A('      stored; the notice is where an unconfirmed user is sent. }');
+    A('    function ShowVerifyNotice(Req: TRequest): TResponse;');
+    A('    function ResendVerification(Req: TRequest): TResponse;');
+    A('    function VerifyEmail(Req: TRequest): TResponse;');
     A('');
     A('    { After signing in. Plain HTML pages, like the rest of auth: a');
     A('      new project has to be able to sign in AND get somewhere');
@@ -261,6 +298,10 @@ begin
     A('{ The JavaScript for passkeys is further down, but is used by the');
     A('  security page above. }');
     A('function PasskeyJs: string; forward;');
+    A('');
+    A('{ Registration and a changed address send it; it is further down,');
+    A('  with the rest of email verification. }');
+    A('procedure SendVerification(U: TUser); forward;');
     A('');
     A('{ ---------------------------------------- shell for app pages -- }');
     A('');
@@ -600,7 +641,11 @@ begin
     A('  { The plaintext goes no further than this. }');
     A('  U.PasswordHash := HashPassword(Password);');
     A('  U.Save;');
+    A('  SendVerification(U);');
     A('');
+    A('  { Signed in straight away, and the dashboard sends an');
+    A('    unconfirmed address on to the notice. The pages that let you');
+    A('    fix a mistyped address need only the sign-in. }');
     A('  Askr.Auth.Login(IntToStr(U.Id));');
     A('  LogInfo(''registered'', [''user'', U.Id]);');
     A('  Result := Redirect(''/dashboard'', 303);');
@@ -663,8 +708,7 @@ begin
     A('      that the link can actually be tried without an SMTP server. }');
     A('    M := Mail.Message_;');
     A('    M.AddTo(Email).Subject(''Reset your password'')');
-    A('     .Text(''Open this link to choose a new password:'' + #10 + #10 +');
-    A('           Link_ + #10 + #10 + ''It expires in one hour.'');');
+    A('     .Template(''auth/reset-password'', [''url'', Link_]);');
     A('    Mail.Send(M);');
     A('    LogInfo(''password reset requested'', [''user'', U.Id]);');
     A('  end;');
@@ -758,6 +802,143 @@ begin
     A('  Result := TUser(Askr.Auth.User);');
     A('end;');
     A('');
+    A('{ ------------------------------------------ email verification -- }');
+    A('');
+    A('const');
+    A('  { A day. Long enough for a mail that waits until tomorrow, and a');
+    A('    stale one is replaced with the button on the notice. }');
+    A('  VerifyLifetimeSec = 24 * 60 * 60;');
+    A('  { One mail a minute. The button is there for a mail that did not');
+    A('    come, not for filling somebody else''s inbox. }');
+    A('  ResendWindowSec = 60;');
+    A('');
+    A('{ Registered with SetVerifiedCheck at the bottom of this file, so');
+    A('  Askr.Auth.RequireVerified asks this and nothing else. }');
+    A('function UserVerified(const Id: string): Boolean;');
+    A('var');
+    A('  U: TUser;');
+    A('begin');
+    A('  U := TQuery<TUser>.New.Find(StrToInt64Def(Id, 0));');
+    A('  Result := (U <> nil) and (U.EmailVerifiedAt <> 0);');
+    A('end;');
+    A('');
+    A('{ The address the link was sent to, in the link. A link sent to an');
+    A('  old address stops working when the address is changed, rather than');
+    A('  verifying the new one it never reached. }');
+    A('function EmailHash(const Email: string): string;');
+    A('begin');
+    A('  Result := Copy(Sha256Hex(LowerCase(Email)), 1, 16);');
+    A('end;');
+    A('');
+    A('procedure SendVerification(U: TUser);');
+    A('var');
+    A('  Link_: string;');
+    A('begin');
+    A('  { Signed, not stored: the link is its own proof, and nothing has to');
+    A('    be cleaned up after it. OrFail inside SignedUrl, for the same');
+    A('    reason as the reset link -- a mail without a working link is worse');
+    A('    than no mail. }');
+    A('  Link_ := SignedUrl(''/verify-email/'' + IntToStr(U.Id) + ''/'' +');
+    A('    EmailHash(U.Email), VerifyLifetimeSec);');
+    A('  Mail.Send(Mail.Message_');
+    A('    .AddTo(U.Email, U.Name)');
+    A('    .Subject(''Confirm your email address'')');
+    A('    .Template(''auth/verify-email'', [''name'', U.Name, ''url'', Link_]));');
+    A('  LogInfo(''verification sent'', [''user'', U.Id]);');
+    A('end;');
+    A('');
+    A('function VerifyPage(const Title, Text_: string): string;');
+    A('begin');
+    A('  Result := Page(Title, ''<h1>'' + Esc(Title) + ''</h1><p>'' + Esc(Text_) + ''</p>'' +');
+    A('    ''<p class="alt"><a href="/dashboard">Continue</a></p>'');');
+    A('end;');
+    A('');
+    A('function TAuthController.ShowVerifyNotice(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if U.EmailVerifiedAt <> 0 then');
+    A('    Exit(Redirect(''/dashboard'', 303));');
+    A('  Result := RespondHtml(Page(''Confirm your email address'',');
+    A('    ''<h1>Confirm your email address</h1>'' +');
+    A('    Message_(CurrentSession.GetFlash(''notice''), ''ok'') +');
+    A('    ''<p>We sent a link to <strong>'' + Esc(U.Email) + ''</strong>. '' +');
+    A('    ''Open it to finish setting up your account.</p>'' +');
+    A('    ''<form method="post" action="/verify-email">'' + CsrfField +');
+    A('    ''<button type="submit">Send the link again</button></form>'' +');
+    A('    ''<p class="alt"><a href="/settings/profile">Wrong address?</a> &middot; '' +');
+    A('    ''<form method="post" action="/logout" style="display:inline">'' + CsrfField +');
+    A('    ''<button type="submit" style="width:auto;padding:0;background:none;'' +');
+    A('    ''color:inherit;font-weight:400;text-decoration:underline">Sign out</button>'' +');
+    A('    ''</form></p>''));');
+    A('end;');
+    A('');
+    A('function TAuthController.ResendVerification(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('  Key, V: string;');
+    A('  Recent: Boolean;');
+    A('begin');
+    A('  U := CurrentUser;');
+    A('  if U = nil then');
+    A('    Exit(Redirect(''/login'', 303));');
+    A('  if U.EmailVerifiedAt <> 0 then');
+    A('    Exit(Redirect(''/dashboard'', 303));');
+    A('  Key := ''verify-resend:'' + IntToStr(U.Id);');
+    A('  Recent := False;');
+    A('  try');
+    A('    Recent := Cache.Get(Key, V);');
+    A('    if not Recent then');
+    A('      Cache.Put(Key, ''1'', ResendWindowSec);');
+    A('  except');
+    A('    { No cache set up: send anyway, as sign-in throttling does. }');
+    A('    on Exception do Recent := False;');
+    A('  end;');
+    A('  if Recent then');
+    A('    CurrentSession.Flash(''notice'', ''A link went out a moment ago. Give it a minute.'')');
+    A('  else');
+    A('  begin');
+    A('    SendVerification(U);');
+    A('    CurrentSession.Flash(''notice'', ''A new link is on its way.'');');
+    A('  end;');
+    A('  Result := Redirect(''/verify-email'', 303);');
+    A('end;');
+    A('');
+    A('function TAuthController.VerifyEmail(Req: TRequest): TResponse;');
+    A('var');
+    A('  U: TUser;');
+    A('begin');
+    A('  case CheckSignature(Req) of');
+    A('    scExpired:');
+    A('      Exit(RespondHtml(VerifyPage(''This link has expired'',');
+    A('        ''Links in these mails last a day. Sign in and ask for a new one.''), 410));');
+    A('    scInvalid:');
+    A('      Exit(RespondHtml(VerifyPage(''This link is not valid'',');
+    A('        ''It may have been cut short when it was copied. Open it from the mail again.''), 403));');
+    A('    scValid: ;');
+    A('  end;');
+    A('  U := TQuery<TUser>.New.Find(StrToInt64Def(Req.Param(''id'').ToString, 0));');
+    A('  if (U = nil) or (EmailHash(U.Email) <> Req.Param(''hash'').ToString) then');
+    A('    Exit(RespondHtml(VerifyPage(''This link is for an earlier address'',');
+    A('      ''The address on the account has changed since it was sent. Use the link in the newest mail.''), 403));');
+    A('  if U.EmailVerifiedAt = 0 then');
+    A('  begin');
+    A('    U.EmailVerifiedAt := Now;');
+    A('    U.Save;');
+    A('    LogInfo(''email verified'', [''user'', U.Id]);');
+    A('  end;');
+    A('  { The link proves the mailbox, not who holds the browser: it signs');
+    A('    nobody in. }');
+    A('  CurrentSession.Flash(''notice'', ''Your email address is confirmed.'');');
+    A('  if Askr.Auth.Check then');
+    A('    Result := Redirect(''/dashboard'', 303)');
+    A('  else');
+    A('    Result := Redirect(''/login'', 303);');
+    A('end;');
+
     A('function TAuthController.Dashboard(Req: TRequest): TResponse;');
     A('var');
     A('  U: TUser;');
@@ -766,6 +947,11 @@ begin
     A('  U := CurrentUser;');
     A('  if U = nil then');
     A('    Exit(Redirect(''/login'', 303));');
+    A('  { The pages that need a confirmed address ask for one. Profile and');
+    A('    security do not: they are where a mistyped address is fixed. }');
+    A('  Result := RequireVerified(''/verify-email'');');
+    A('  if Result <> nil then');
+    A('    Exit;');
     A('');
     A('  B :=');
     A('    ''<h1>Welcome back, '' + Esc(U.Name) + ''</h1>'' +');
@@ -850,10 +1036,21 @@ begin
     A('  end;');
     A('');
     A('  U.Name := Name_;');
-    A('  U.Email := Email;');
-    A('  U.Save;');
+    A('  if Email <> LowerCase(U.Email) then');
+    A('  begin');
+    A('    { A new address is not confirmed by the old one having been. }');
+    A('    U.Email := Email;');
+    A('    U.EmailVerifiedAt := 0;');
+    A('    U.Save;');
+    A('    SendVerification(U);');
+    A('    CurrentSession.Flash(''profile_ok'', ''Saved. Check your inbox to confirm the new address.'');');
+    A('  end');
+    A('  else');
+    A('  begin');
+    A('    U.Save;');
+    A('    CurrentSession.Flash(''profile_ok'', ''Saved.'');');
+    A('  end;');
     A('  LogInfo(''profile updated'', [''user'', U.Id]);');
-    A('  CurrentSession.Flash(''profile_ok'', ''Saved.'');');
     A('  Result := Redirect(''/settings/profile'', 303);');
     A('end;');
     A('');
@@ -1369,6 +1566,8 @@ begin
     A('  Result := JsonSvar(' + Q + '{"ok":true}' + Q + ');');
     A('end;');
     A('');
+    A('initialization');
+    A('  SetVerifiedCheck(@UserVerified);');
     A('end.');
 
     Emit(IncludeTrailingPathDelimiter(Root) +
@@ -1410,6 +1609,7 @@ begin
     '    Text(' + Q + 'email' + Q + ', 255).Unique;' + #10 +
     '    { 255 characters covers the PHC string with room to spare. }' + #10 +
     '    Text(' + Q + 'password_hash' + Q + ', 255);' + #10 +
+    '    Timestamp(' + Q + 'email_verified_at' + Q + ').Nullable;' + #10 +
     '    Timestamps;' + #10 +
     '  end;' + #10 +
     'end;' + #10 + #10 +
@@ -1485,7 +1685,7 @@ function InstallRoutes(const Root: string): Boolean;
 var
   L: TStringList;
   Path_: string;
-  I, IdxUses, IdxVar, IdxCreate, IdxRoutes, IdxFree: Integer;
+  I, K, IdxUses, IdxVar, IdxCreate, IdxRoutes, IdxFree: Integer;
 begin
   Result := False;
   Path_ := IncludeTrailingPathDelimiter(Root) + 'app.lpr';
@@ -1541,25 +1741,11 @@ begin
 
     { The pages after sign-in. The router sorts on specificity, not order,
       so the placement here only affects how app.lpr reads. }
-    L.Insert(IdxRoutes + 1, '  R.Post(''/login/passkey'', Auth_.LoginPasskey);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/login/passkey/challenge'', Auth_.LoginChallenge);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/passkeys/:id/delete'', Auth_.PasskeyDelete);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/passkeys'', Auth_.PasskeyRegister);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/settings/passkeys/challenge'', Auth_.PasskeyChallenge);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/security'', Auth_.ChangePassword);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/settings/security'', Auth_.ShowSecurity);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/settings/profile'', Auth_.SaveProfile);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/settings/profile'', Auth_.ShowProfile);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/dashboard'', Auth_.Dashboard);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/reset-password'', Auth_.DoReset);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/reset-password/:token'', Auth_.ShowReset);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/forgot-password'', Auth_.SendReset);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/forgot-password'', Auth_.ShowForgot);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/logout'', Auth_.DoLogout);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/register'', Auth_.DoRegister);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/register'', Auth_.ShowRegister);');
-    L.Insert(IdxRoutes + 1, '  R.Post(''/login'', Auth_.DoLogin);');
-    L.Insert(IdxRoutes + 1, '  R.Get(''/login'', Auth_.ShowLogin);');
+    { From the back, so the lines land in the order AuthRoutes has them.
+      The router sorts on specificity, so the order only affects how
+      app.lpr reads. }
+    for K := High(AuthRoutes) downto 0 do
+      L.Insert(IdxRoutes + 1, '  ' + AuthRoutes[K]);
     L.Insert(IdxRoutes + 1, '');
     L.Insert(IdxRoutes + 1, '  { Sign-in, registration and password reset. }');
 
@@ -1596,6 +1782,8 @@ begin
 end;
 
 procedure WriteHelp;
+var
+  I: Integer;
 begin
   WriteLn;
   WriteLn('Could not find the markers in app.lpr. Add this yourself:');
@@ -1612,25 +1800,8 @@ begin
   WriteLn('  SetCache(TCache.Create);');
   WriteLn('  Auth_ := TAuthController.Create;');
   WriteLn;
-  WriteLn('  R.Get(''/login'', Auth_.ShowLogin);');
-  WriteLn('  R.Post(''/login'', Auth_.DoLogin);');
-  WriteLn('  R.Get(''/register'', Auth_.ShowRegister);');
-  WriteLn('  R.Post(''/register'', Auth_.DoRegister);');
-  WriteLn('  R.Post(''/logout'', Auth_.DoLogout);');
-  WriteLn('  R.Get(''/forgot-password'', Auth_.ShowForgot);');
-  WriteLn('  R.Post(''/forgot-password'', Auth_.SendReset);');
-  WriteLn('  R.Get(''/reset-password/:token'', Auth_.ShowReset);');
-  WriteLn('  R.Post(''/reset-password'', Auth_.DoReset);');
-  WriteLn('  R.Get(''/dashboard'', Auth_.Dashboard);');
-  WriteLn('  R.Get(''/settings/profile'', Auth_.ShowProfile);');
-  WriteLn('  R.Post(''/settings/profile'', Auth_.SaveProfile);');
-  WriteLn('  R.Get(''/settings/security'', Auth_.ShowSecurity);');
-  WriteLn('  R.Post(''/settings/security'', Auth_.ChangePassword);');
-  WriteLn('  R.Get(''/settings/passkeys/challenge'', Auth_.PasskeyChallenge);');
-  WriteLn('  R.Post(''/settings/passkeys'', Auth_.PasskeyRegister);');
-  WriteLn('  R.Post(''/settings/passkeys/:id/delete'', Auth_.PasskeyDelete);');
-  WriteLn('  R.Get(''/login/passkey/challenge'', Auth_.LoginChallenge);');
-  WriteLn('  R.Post(''/login/passkey'', Auth_.LoginPasskey);');
+  for I := 0 to High(AuthRoutes) do
+    WriteLn('  ' + AuthRoutes[I]);
 end;
 
 
@@ -1740,6 +1911,103 @@ begin
     'end.' + #10);
 end;
 
+{ -------------------------------------------------------- mail templates -- }
+
+(* The name in askr.toml, for the layout's footer. Written into the file
+   rather than passed as a value: a layout with a {{placeholder}} would
+   make every template an app writes later pass it too, or fail. *)
+function ProjectNameAt(const Root: string): string;
+var
+  L: TStringList;
+  I: Integer;
+  S: string;
+begin
+  Result := ExtractFileName(ExcludeTrailingPathDelimiter(ExpandFileName(Root)));
+  if not FileExists(IncludeTrailingPathDelimiter(Root) + 'askr.toml') then
+    Exit;
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(IncludeTrailingPathDelimiter(Root) + 'askr.toml');
+    for I := 0 to L.Count - 1 do
+    begin
+      S := Trim(L[I]);
+      if (Copy(S, 1, 4) = 'name') and (Pos('=', S) > 0) and (Pos('"', S) > 0) then
+      begin
+        S := Copy(S, Pos('"', S) + 1, MaxInt);
+        if Pos('"', S) > 0 then
+          Exit(Copy(S, 1, Pos('"', S) - 1));
+      end;
+    end;
+  finally
+    L.Free;
+  end;
+end;
+
+function HtmlText(const S: string): string;
+begin
+  Result := StringReplace(StringReplace(StringReplace(S, '&', '&amp;', [rfReplaceAll]),
+    '<', '&lt;', [rfReplaceAll]), '>', '&gt;', [rfReplaceAll]);
+end;
+
+{ The mails auth sends, as templates under mail/ -- yours to change, and
+  mail/auth/verify-email.nb.html beside them for another language. A file
+  that is already there is left alone: somebody may have written it. }
+procedure WriteMailTemplates(const Root: string);
+var
+  Dir, App: string;
+
+  procedure Put(const Name, Text_: string);
+  begin
+    if not FileExists(Dir + Name) then
+      Emit(Dir + Name, Text_);
+  end;
+
+begin
+  Dir := IncludeTrailingPathDelimiter(Root) + 'mail' + PathDelim;
+  App := ProjectNameAt(Root);
+  Put('layout.html',
+    '<!doctype html>' + #10 +
+    '<html lang="en">' + #10 +
+    '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width">' + #10 +
+    '<title>' + HtmlText(App) + '</title></head>' + #10 +
+    '<body style="margin:0;padding:24px;background:#f4f5f6;font:16px/1.5 system-ui,-apple-system,''Segoe UI'',sans-serif;color:#111">' + #10 +
+    '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:6px;padding:32px">' + #10 +
+    '{{content}}' + #10 +
+    '</div>' + #10 +
+    '<p style="max-width:560px;margin:16px auto 0;font-size:13px;color:#667">' + HtmlText(App) + '</p>' + #10 +
+    '</body>' + #10 +
+    '</html>' + #10);
+  Put('layout.txt',
+    '{{content}}' + #10 +
+    #10 +
+    '-- ' + #10 +
+    App + #10);
+  Put('auth/verify-email.html',
+    '<h1 style="font-size:20px;margin:0 0 16px">Confirm your email address</h1>' + #10 +
+    '<p>Hi {{name}}, open this link to confirm that this address is yours:</p>' + #10 +
+    '<p><a href="{{url}}" style="display:inline-block;padding:10px 16px;background:#1a7f4b;color:#fff;border-radius:4px;text-decoration:none">Confirm my address</a></p>' + #10 +
+    '<p style="font-size:13px;color:#667">The link lasts a day. If you did not make an account, you can ignore this mail.</p>' + #10);
+  Put('auth/verify-email.txt',
+    'Hi {{name}},' + #10 +
+    #10 +
+    'Open this link to confirm that this address is yours:' + #10 +
+    #10 +
+    '{{url}}' + #10 +
+    #10 +
+    'The link lasts a day. If you did not make an account, you can ignore this mail.' + #10);
+  Put('auth/reset-password.html',
+    '<h1 style="font-size:20px;margin:0 0 16px">Reset your password</h1>' + #10 +
+    '<p>Open this link to choose a new password:</p>' + #10 +
+    '<p><a href="{{url}}" style="display:inline-block;padding:10px 16px;background:#1a7f4b;color:#fff;border-radius:4px;text-decoration:none">Choose a new password</a></p>' + #10 +
+    '<p style="font-size:13px;color:#667">It expires in one hour. If you did not ask for it, nothing has changed.</p>' + #10);
+  Put('auth/reset-password.txt',
+    'Open this link to choose a new password:' + #10 +
+    #10 +
+    '{{url}}' + #10 +
+    #10 +
+    'It expires in one hour. If you did not ask for it, nothing has changed.' + #10);
+end;
+
 procedure MakeAuth(const Root: string; Force: Boolean);
 var
   Path_, Base_: string;
@@ -1764,6 +2032,7 @@ begin
     answered 500. }
   WritePasskeyMigration(Root, IntToStr(StrToInt64(Base_) + 2));
   WriteControllers(Root);
+  WriteMailTemplates(Root);
   UpdateIndex(Root, 'database', 'App.Migrations', 'App.Migrations.');
 
   if not InstallRoutes(Root) then
@@ -1775,9 +2044,11 @@ begin
   WriteLn('  askr build');
   WriteLn('  askr migrate');
   WriteLn;
-  WriteLn('Then /login, /register and /forgot-password are there.');
+  WriteLn('Then /login, /register and /forgot-password are there, and');
+  WriteLn('a new account confirms its address before /dashboard opens.');
   WriteLn('Mail goes through whatever transport you configured; in');
-  WriteLn('development a TLogTransport writes the reset link to a file.');
+  WriteLn('development a TLogTransport writes the links to a file. The');
+  WriteLn('mails themselves are templates under mail/, yours to change.');
 end;
 
 end.

@@ -429,8 +429,23 @@ begin
   inherited Destroy;
 end;
 
+{ An address goes into MAIL FROM and RCPT TO as it is. A line break in
+  one would end the command and start one of the sender's choosing --
+  another RCPT TO, or a whole second message -- so it is refused where it
+  is added, with the angle brackets and spaces no address has. }
+procedure CheckAddress(const A: string);
+var
+  I: Integer;
+begin
+  for I := 1 to Length(A) do
+    if (Ord(A[I]) <= 32) or (A[I] = '<') or (A[I] = '>') then
+      raise EMailError.Create('"' + OneLine(A) + '" is not an address: it has ' +
+        'a line break, a space or an angle bracket in it');
+end;
+
 function TMailMessage.From(const AAddress, AName: string): TMailMessage;
 begin
+  CheckAddress(AAddress);
   FFrom.Address := AAddress;
   FFrom.Name_ := AName;
   Result := Self;
@@ -440,6 +455,7 @@ function TMailMessage.AddTo(const AAddress, AName: string): TMailMessage;
 var
   I: Integer;
 begin
+  CheckAddress(AAddress);
   I := Length(FTo);
   SetLength(FTo, I + 1);
   FTo[I].Address := AAddress;
@@ -451,6 +467,7 @@ function TMailMessage.Cc(const AAddress, AName: string): TMailMessage;
 var
   I: Integer;
 begin
+  CheckAddress(AAddress);
   I := Length(FCc);
   SetLength(FCc, I + 1);
   FCc[I].Address := AAddress;
@@ -462,6 +479,7 @@ function TMailMessage.Bcc(const AAddress, AName: string): TMailMessage;
 var
   I: Integer;
 begin
+  CheckAddress(AAddress);
   I := Length(FBcc);
   SetLength(FBcc, I + 1);
   FBcc[I].Address := AAddress;
@@ -765,6 +783,16 @@ begin
   for I := 0 to High(FBcc) do begin Result[N] := FBcc[I].Address; Inc(N); end;
 end;
 
+{ Every line break as CRLF. SMTP says so, and a server that refuses a
+  bare LF -- Postfix since the smuggling fixes of 2023 -- refuses the
+  whole mail; a text body written in Pascal has #10 in it. }
+function CrLf(const S: string): string;
+begin
+  Result := StringReplace(S, #13#10, #10, [rfReplaceAll]);
+  Result := StringReplace(Result, #13, #10, [rfReplaceAll]);
+  Result := StringReplace(Result, #10, #13#10, [rfReplaceAll]);
+end;
+
 function Base64Lines(const Data: TBytes): string;
 var
   S: string;
@@ -852,24 +880,24 @@ var
       B.Append('--' + Boundary + #13#10);
       B.Append('Content-Type: text/plain; charset=utf-8'#13#10);
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
-      B.Append(FText + #13#10#13#10);
+      B.Append(CrLf(FText) + #13#10#13#10);
       B.Append('--' + Boundary + #13#10);
       B.Append('Content-Type: text/html; charset=utf-8'#13#10);
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
-      B.Append(FHtml + #13#10#13#10);
+      B.Append(CrLf(FHtml) + #13#10#13#10);
       B.Append('--' + Boundary + '--'#13#10);
     end
     else if FHtml <> '' then
     begin
       B.Append('Content-Type: text/html; charset=utf-8'#13#10);
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
-      B.Append(FHtml);
+      B.Append(CrLf(FHtml));
     end
     else
     begin
       B.Append('Content-Type: text/plain; charset=utf-8'#13#10);
       B.Append('Content-Transfer-Encoding: 8bit'#13#10#13#10);
-      B.Append(FText);
+      B.Append(CrLf(FText));
     end;
   end;
 
@@ -1285,10 +1313,12 @@ begin
     SendLine('DATA');
     Expect('354');
     Body := M.Render;
-    { A line that is only a full stop ends DATA. Such a line in the
-      content has to be doubled, or the message is cut off there. }
-    Body := StringReplace(Body, #13#10'.'#13#10, #13#10'..'#13#10,
-      [rfReplaceAll]);
+    { RFC 5321: every line that starts with a full stop gets a second one,
+      which the server takes off again. Not only a line that is only a
+      full stop -- that one ends DATA and cuts the mail short -- but any:
+      a line starting .hidden would otherwise arrive as hidden. Render
+      has made every line break CRLF, so this finds them all. }
+    Body := StringReplace(Body, #13#10'.', #13#10'..', [rfReplaceAll]);
     SendLine(Body);
     SendLine('.');
     Expect('250');

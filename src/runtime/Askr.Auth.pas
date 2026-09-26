@@ -79,6 +79,11 @@ type
     "view-dashboard"). }
   TGateFunc = function(const UserId: string; Resource: TObject): Boolean;
 
+  { Whether this user has shown the address is theirs. The app answers,
+    because the column is the app's: the framework does not own the user
+    model. }
+  TVerifiedCheck = function(const UserId: string): Boolean;
+
 const
   { The key the user's id lives under in the session. }
   AuthSessionKey = '_user';
@@ -146,6 +151,31 @@ function Denies(const Name: string; Resource: TObject = nil): Boolean;
 { The same, but raises EForbidden. For code that must not carry on. }
 procedure Authorize(const Name: string; Resource: TObject = nil);
 function GateExists(const Name: string): Boolean;
+
+{ ------------------------------------------------- email verification -- }
+
+{ The app's answer to "is this user's address verified". Set once at
+  startup, next to SetUserLoader. }
+procedure SetVerifiedCheck(F: TVerifiedCheck);
+{ Signed in, and the check says the address is verified. False when
+  nobody is signed in, and False when no check is set: a page that asks
+  for a verified address and gets a yes it never checked has let in
+  exactly who it meant to keep out. }
+function IsVerified: Boolean;
+{ For a handler that needs a verified address. nil when it has one, and
+  otherwise the answer to give: a 403 problem document to a JSON client,
+  Inertia's own 409 with X-Inertia-Location to an Inertia visit -- a
+  redirect it would follow as data -- and a 303 to NoticePath for a
+  browser. Nobody signed in is not this function's business: RequireAuth
+  or the page's own check comes first.
+
+      R := RequireVerified;
+      if R <> nil then Exit(R);
+
+  A handler, not a middleware, because a router's middleware covers every
+  route, and the pages that let a user fix a mistyped address must not
+  need a verified one. }
+function RequireVerified(const NoticePath: string = '/verify-email'): TResponse;
 
 { ---------------------------------------------------------- middleware -- }
 
@@ -436,6 +466,39 @@ begin
   { The message names the gate, not the user or the resource. It ends up
     in a log, and a 403 should not tell anybody what they nearly got. }
   raise EForbidden.CreateFmt('Not authorized: %s', [Name]);
+end;
+
+{ ------------------------------------------------- email verification -- }
+
+var
+  GVerified: TVerifiedCheck = nil;
+
+procedure SetVerifiedCheck(F: TVerifiedCheck);
+begin
+  GVerified := F;
+end;
+
+function IsVerified: Boolean;
+begin
+  Result := Check and Assigned(GVerified) and GVerified(Id);
+end;
+
+function RequireVerified(const NoticePath: string): TResponse;
+var
+  Req: TRequest;
+begin
+  if (not Check) or IsVerified then
+    Exit(nil);
+  Req := CurrentRequest;
+  if (Req <> nil) and Req.AcceptsJson then
+    Exit(Problem(403, 'Your email address is not verified.'));
+  if (Req <> nil) and (Req.Header('X-Inertia').Len > 0) then
+  begin
+    Result := RespondText('', 409);
+    Result.WithHeader('X-Inertia-Location', NoticePath);
+    Exit;
+  end;
+  Result := Redirect(NoticePath, 303);
 end;
 
 { ---------------------------------------------------------- middleware -- }

@@ -8,6 +8,13 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## Unreleased
+
+**An address with a space, a line break or an angle bracket in it raises
+`EMailError` where it is added.** `AddTo('"Ada" <ada@example.com>')` used to
+be written into the envelope as it was; the name goes in the second
+argument, `AddTo('ada@example.com', 'Ada')`.
+
 ## 0.14.0
 
 **Worth reading if a script checks `askr`'s exit code, a page lists
