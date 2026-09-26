@@ -22,7 +22,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
-  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Factory, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
@@ -6491,6 +6491,147 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------------- storage -- }
+
+{ Signature V4, held to botocore's for the same requests at the same
+  time. }
+procedure TestSigV4;
+const
+  Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
+  When = '20260926T123045Z';
+var
+  L, F: TStringList;
+  I, Good, Total: Integer;
+begin
+  L := TStringList.Create;
+  F := TStringList.Create;
+  try
+    L.LoadFromFile('tests/vectors/sigv4.txt');
+    F.Delimiter := '|';
+    F.StrictDelimiter := True;
+    Good := 0;
+    Total := 0;
+    for I := 0 to L.Count - 1 do
+    begin
+      if (L[I] = '') or (L[I][1] = '#') then
+        Continue;
+      F.DelimitedText := L[I];
+      Inc(Total);
+      if F[0] = 'presign' then
+      begin
+        if S3PresignedUrl(F[1], F[2], 'AKIDEXAMPLE', Secret, When, StrToInt(F[3])) = F[4] then
+          Inc(Good)
+        else
+          WriteLn('        differs: ', Copy(L[I], 1, 120));
+      end
+      else
+      begin
+        if (Sha256Hex(BytesAsText(F[3])) = F[4]) and
+           (S3Authorization(F[0], F[1], F[2], 'AKIDEXAMPLE', Secret, F[4], When) = F[5]) then
+          Inc(Good)
+        else
+          WriteLn('        differs: ', Copy(L[I], 1, 120));
+      end;
+    end;
+    { The keys as the URL carries them, which the vectors take ready-made
+      from botocore and so do not check. }
+    AssertEqual(EncodeKey('photos/2026/ferie på Ås.jpg'), 'photos/2026/ferie%20p%C3%A5%20%C3%85s.jpg',
+      'a key outside ASCII is percent-encoded byte for byte, the slashes kept');
+    AssertEqual(EncodeKey('a+b=c&d e.txt'), 'a%2Bb%3Dc%26d%20e.txt', 'and + = & and a space too');
+    AssertTrue(Total >= 18, 'the vectors are there');
+    AssertEqual(Good, Total, 'every signature and presigned URL the same as botocore''s');
+  finally
+    F.Free;
+    L.Free;
+  end;
+end;
+
+procedure TestLocalDisk;
+var
+  Dir: string;
+  Disk: TLocalDisk;
+  Data, P, Link: string;
+  Up: TUploadedFile;
+  A: TArena;
+  R: TRouter;
+  K: TTestClient;
+  Res: TResponse;
+  Bad: string;
+  Refused: Integer;
+begin
+  Dir := GetTempDir + 'askr-storage-' + IntToStr(GetProcessID);
+  ForceDirectories(Dir);
+  with TStringList.Create do
+  try
+    Text := '[app]' + LineEnding + 'url = "https://shop.example"';
+    SaveToFile(Dir + '/askr.toml');
+  finally
+    Free;
+  end;
+  LoadConfig(Dir);
+  SetAppKey('Zm9vYmFyYmF6cXV1eGZvb2JhcmJhenF1dXhhYmM9');
+  Disk := TLocalDisk.Create(Dir + '/files', '/storage');
+  A := TArena.Create(64 * 1024);
+  R := TRouter.Create;
+  UseStoredFiles(R, Disk);
+  K := TTestClient.Create(R);
+  try
+    Disk.Put('reports/2026/q3.pdf', 'bytes ' + #0#255 + ' end');
+    AssertTrue(Disk.Get('reports/2026/q3.pdf', Data) and (Data = 'bytes ' + #0#255 + ' end'),
+      'what is put comes back, byte for byte');
+    AssertTrue(Disk.Exists('reports/2026/q3.pdf'), 'it exists');
+    AssertFalse(Disk.Get('reports/2026/q4.pdf', Data), 'a file that is not there is False, not an error');
+    AssertEqual(Disk.Url('reports/2026/q3.pdf'), '/storage/reports/2026/q3.pdf', 'a public file has its URL');
+
+    Refused := 0;
+    for Bad in ['../escape.txt', 'a/../../b', '/etc/passwd', 'a//b', 'a\b', 'a/./b', ''] do
+      try
+        Disk.Put(Bad, 'x');
+      except
+        on EStorageError do Inc(Refused);
+      end;
+    AssertEqual(Refused, 7, 'a path that climbs, starts at /, or has an empty, . or .. segment is refused');
+    AssertFalse(FileExists(GetTempDir + 'escape.txt'), 'and nothing was written outside');
+
+    UseArena(A);
+    Up.ClientName := StrDup(A, '../../My Photo.JPG');
+    Up.ContentType := StrDup(A, 'text/html');
+    Up.Content := StrDup(A, 'fake image');
+    P := Disk.PutUpload('avatars', Up);
+    UseArena(nil);
+    AssertTrue((Pos('avatars/', P) = 1) and (Pos('.jpg', P) = Length(P) - 3) and (Length(P) = 8 + 32 + 4),
+      'an upload goes in under a random name with its extension, never the client''s');
+    AssertTrue(Disk.Get(P, Data) and (Data = 'fake image'), 'and is stored');
+
+    Link := Disk.TemporaryUrl('reports/2026/q3.pdf', 600);
+    AssertTrue(Pos('https://shop.example/files/reports/2026/q3.pdf?expires=', Link) = 1,
+      'a private file''s temporary URL is a signed link');
+    Res := K.Get(Copy(Link, Length('https://shop.example') + 1, MaxInt));
+    AssertStatus(Res, 200, 'which serves the file');
+    AssertEqual(Res.Body.ToString, 'bytes ' + #0#255 + ' end', 'as it is');
+    AssertEqual(Res.HeaderValue('Content-Type'), 'application/pdf', 'with its type');
+    AssertContains(Res.HeaderValue('Cache-Control'), 'no-store', 'and not for a shared cache');
+    Res := K.Get(StringReplace(Copy(Link, Length('https://shop.example') + 1, MaxInt), 'q3', 'q4', []));
+    AssertStatus(Res, 403, 'another file under the same signature is refused');
+    Link := Disk.TemporaryUrl('reports/2026/q3.pdf', -10);
+    Res := K.Get(Copy(Link, Length('https://shop.example') + 1, MaxInt));
+    AssertStatus(Res, 410, 'and an expired one says so');
+
+    Disk.Delete('reports/2026/q3.pdf');
+    AssertFalse(Disk.Exists('reports/2026/q3.pdf'), 'a deleted file is gone');
+    Disk.Delete('reports/2026/q3.pdf');
+    AssertTrue(True, 'and deleting it again is not an error');
+  finally
+    K.Free;
+    R.Free;
+    A.Free;
+    Disk.Free;
+    SetAppKey('');
+    ClearConfig;
+    RemoveTree(Dir);
+  end;
+end;
+
 procedure TestMailFraConfig;
 const
   Directory = 'askr-mailcfg-test.tmp';
@@ -8855,6 +8996,84 @@ begin
   CloseSocket(FLytt);
 end;
 
+{ A server that answers a HEAD with the length the GET would have had,
+  and then keeps the connection open, as a server may. A client that read
+  a body for it waited until the connection went. }
+type
+  THeadServer = class(TThread)
+  private
+    FLytt: TSocket;
+    FPort: Word;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create;
+    property Port: Word read FPort;
+  end;
+
+constructor THeadServer.Create;
+var
+  Addr: TInetSockAddr;
+  Len: TSockLen;
+  Ja: Integer;
+begin
+  FLytt := fpSocket(AF_INET, SOCK_STREAM, 0);
+  Ja := 1;
+  fpSetSockOpt(FLytt, SOL_SOCKET, SO_REUSEADDR, @Ja, SizeOf(Ja));
+  FillChar(Addr, SizeOf(Addr), 0);
+  Addr.sin_family := AF_INET;
+  Addr.sin_addr.s_addr := HToNL($7F000001);
+  Addr.sin_port := 0;
+  fpBind(FLytt, @Addr, SizeOf(Addr));
+  fpListen(FLytt, 4);
+  Len := SizeOf(Addr);
+  fpGetSockName(FLytt, @Addr, @Len);
+  FPort := NToHS(Addr.sin_port);
+  FreeOnTerminate := False;
+  inherited Create(False);
+end;
+
+procedure THeadServer.Execute;
+var
+  S: TSocket;
+  Reply: string;
+  Buf: array[0..1023] of Byte;
+begin
+  S := fpAccept(FLytt, nil, nil);
+  if S >= 0 then
+  begin
+    fpRecv(S, @Buf[0], SizeOf(Buf), 0);
+    Reply := 'HTTP/1.1 200 OK'#13#10'Content-Type: text/plain'#13#10 +
+      'Content-Length: 5'#13#10#13#10;
+    fpSend(S, PChar(Reply), Length(Reply), 0);
+    Sleep(3000);
+    CloseSocket(S);
+  end;
+  CloseSocket(FLytt);
+end;
+
+procedure TestClientHead;
+var
+  Srv: THeadServer;
+  K: THttpClient;
+  R: THttpResponse;
+  T0: Int64;
+begin
+  Srv := THeadServer.Create;
+  K := THttpClient.Create;
+  try
+    T0 := MonotonicMs;
+    R := K.Head(Format('http://127.0.0.1:%d/', [Srv.Port]));
+    AssertEqual(R.Status, 200, 'a HEAD has a status');
+    AssertEqual(R.Body, '', 'and no body, whatever Content-Length says');
+    AssertTrue(MonotonicMs - T0 < 1500, 'and does not wait for one that never comes');
+  finally
+    K.Free;
+    Srv.WaitFor;
+    Srv.Free;
+  end;
+end;
+
 procedure TestClientChunked;
 var
   Srv: TChunkedServer;
@@ -10587,6 +10806,7 @@ begin
   Test('a redirect is followed, and stopped', @TestClientRedirect);
   Test('streaming, and the callback can say stop', @TestClientStreaming);
   Test('chunked is put back together', @TestClientChunked);
+  Test('a HEAD reads no body, and waits for none', @TestClientHead);
   Test('localhost resolves through /etc/hosts', @TestClientLocalhost);
   Test('the errors say what was wrong', @TestClientErrors);
 
@@ -10639,6 +10859,10 @@ begin
   Group('Events');
   Test('listeners hear what they asked for, in order, and a failure is not quiet', @TestEventsInline);
   Test('a queued listener gets the event rebuilt in the worker, field for field', @TestEventsQueued);
+
+  Group('Storage');
+  Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);
+  Test('the local disk keeps paths inside it, and serves a private file by a signed link', @TestLocalDisk);
 
   Group('Factories and fakes');
   Test('a factory fills what a row needs, makes its parents, and keeps to the rules', @TestFactories);

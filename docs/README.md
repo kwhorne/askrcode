@@ -46,6 +46,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Responses](responses.md) | Status, headers, cookies, redirects, JSON |
 | [File uploads](uploads.md) | `multipart/form-data`, and why the client's filename is not to be trusted |
 | [Images](images.md) | What a file really is, and resizing it |
+| [File storage](storage.md) | A directory or S3, the same way, and a link to a private file |
 | [Inertia and Svelte](inertia.md) | Server-driven pages without an API |
 | [Lauf](lauf.md) | The frontend layer: components, forms, the data grid |
 

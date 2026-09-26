@@ -111,6 +111,8 @@ type
 
     function Get(const Url: string): THttpResponse;
     function Delete(const Url: string): THttpResponse;
+    { The headers alone. }
+    function Head(const Url: string): THttpResponse;
     function Post(const Url, Body: string;
       const ContentType: string = 'application/json'): THttpResponse;
     function Put(const Url, Body: string;
@@ -714,6 +716,17 @@ begin
       end;
     end;
 
+    { A HEAD, a 204, a 304 and a 1xx have no body, whatever the headers
+      say: a HEAD's Content-Length is the length the GET would have had.
+      Reading it waited for bytes that never come, until the timeout. }
+    if SameText(Method, 'HEAD') or (Result.Status = 204) or
+       (Result.Status = 304) or (Result.Status < 200) then
+    begin
+      ContentLength := 0;
+      Chunked := False;
+      Buf := '';
+    end;
+
     { --- kroppen --- }
     if (ContentLength < 0) and not Chunked then
       { Neither a length nor chunked: the body lasts until the connection
@@ -823,6 +836,11 @@ end;
 function THttpClient.Get(const Url: string): THttpResponse;
 begin
   Result := Request('GET', Url, '', '');
+end;
+
+function THttpClient.Head(const Url: string): THttpResponse;
+begin
+  Result := Request('HEAD', Url, '', '');
 end;
 
 function THttpClient.Delete(const Url: string): THttpResponse;

@@ -96,6 +96,17 @@ with the zero-major caveat that minor releases may break things until
   path, its query and an expiry under `APP_KEY`; `CheckSignature` tells a
   valid link from an expired one and from one that was changed. Nothing is
   stored.
+- **File storage.** `Askr.Storage` puts, reads, finds and deletes files on
+  a disk the app does not have to know: `TLocalDisk`, a directory, or
+  `TS3Disk`, S3 and anything that speaks it, chosen by `storage.disk`.
+  `PutUpload` stores an upload under a random name, never the client's. A
+  path that is empty, absolute, or climbs with `..` is refused before a
+  disk is touched. `TemporaryUrl` hands out a private file: a presigned
+  URL on S3, and on the local disk a signed link that `UseStoredFiles`
+  serves after checking it. S3 is signed with Signature V4 in Pascal, no
+  SDK, held to botocore's signatures and run against an S3 gateway that
+  checks every one (`./askr storage:check`). **No request has gone to AWS
+  itself.**
 
 ### Changed
 
@@ -106,6 +117,12 @@ with the zero-major caveat that minor releases may break things until
 
 ### Fixed
 
+- **A `HEAD` request through the HTTP client waited for a body.** The
+  answer to a `HEAD` carries the length the `GET` would have had, and no
+  body; the client read for one, and against a server that kept the
+  connection open it waited until the server gave up. A `HEAD`, a `204`,
+  a `304` and a `1xx` now have no body, whatever their headers say.
+  `THttpClient.Head` is new.
 - **A mail's subject and names outside ASCII went out raw.** A header is
   ASCII; they are RFC 2047 encoded words now, cut so no word ends halfway
   through a character.

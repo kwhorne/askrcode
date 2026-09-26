@@ -20,6 +20,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr auth:check # en --auth-app over en socket: bekreftelse via mailen
 ./askr qr:check   # QR-kodene lest tilbake av Chromes egen strekkodeleser
 ./askr ws:check   # Autobahn-testsuiten mot websocketene
+./askr storage:check # S3-disken mot versitygw, som sjekker hver signatur
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -1230,6 +1231,36 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   og kunne ikke se den første — den har en rå logg nå.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
+
+## Fillagring
+
+* **Signature V4 er holdt mot botocore, og mot en server som sjekker
+  signaturer — ikke mot AWS.** Vektorene er AWS' egen signer;
+  `./askr storage:check` kjører versitygw, som avviser en feil signatur med
+  `SignatureDoesNotMatch`. Ingen request har gått til AWS herfra, og det
+  står i docs, i changeloggen og i unitens overskrift til noen har gjort
+  det. MinIO-imagene krever konto nå; versitygw med posix-backend gjør
+  ikke det.
+* **En sti sjekkes før en disk røres, på begge.** `..` er ikke farlig for
+  S3 på samme måte som for et filsystem, men en app som tar stien fra en
+  request skal ikke oppføre seg forskjellig etter hvilken disk den står på.
+* **`EncodeKey` er ikke dekket av vektorene.** De tar URL-en ferdig fra
+  botocore, så en `+` eller et mellomrom som slapp ukodet gjennom var
+  grønt. Mutasjonen overlevde; testen sjekker nå hva nøklene blir.
+* **HTTP-klienten ventet på en kropp etter HEAD.** Svaret har
+  `Content-Length` for det GET ville gitt, og ingen kropp. Mot en server
+  som holder forbindelsen åpen, hang `Exists` til serveren ga opp. Ingen
+  av de to serverne i testene holdt den åpen — begge lukket — så
+  rettelsen overlevde mutasjon til det kom en rå testserver som svarer
+  HEAD og så venter. HEAD, 204, 304 og 1xx har ingen kropp.
+* **Den lokale diskens midlertidige lenke er en `SignedUrl`**, samme
+  mekanisme som e-postbekreftelsen, og `UseStoredFiles` sjekker den før
+  den leser noe. `Cache-Control: private, no-store`, for lenken er
+  tillatelsen.
+* **`Describe` og feilmeldingene har aldri hemmeligheten.** Porten sender
+  en feil hemmelighet og sjekker at den ikke står i meldingen.
+* **Tiden til signaturen er UTC**, `LocalTimeToUniversal(Now)`. Proben
+  brukte først lokaltid, og i en container som står i UTC merkes det ikke.
 
 ## WebSockets
 
