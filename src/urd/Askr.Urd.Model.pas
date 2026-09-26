@@ -1235,7 +1235,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if Length(AsStr) < N then
-    Fail(Trans('validation.min_length', ['attribute', AttributeName(FColumn), 'min', N]));
+    Fail(TransCount('validation.min_length', N, ['attribute', AttributeName(FColumn), 'min', N]));
 end;
 
 function TFieldRules.MaxLen(N: Integer): TFieldRules;
@@ -1244,7 +1244,7 @@ begin
   if FFailed or not FFound then
     Exit;
   if Length(AsStr) > N then
-    Fail(Trans('validation.max_length', ['attribute', AttributeName(FColumn), 'max', N]));
+    Fail(TransCount('validation.max_length', N, ['attribute', AttributeName(FColumn), 'max', N]));
 end;
 
 { Deliberately loose. A strict email validation refuses valid

@@ -11,6 +11,13 @@
     * a :placeholder in a translation that nothing passes, which would be
       shown to the reader as it is written.
 
+  A plural -- a key whose forms are CLDR categories, app.items.one and
+  app.items.other -- is held against the language's own rules instead of
+  the base's keys: Polish needs few and many, which English does not have,
+  and Norwegian never picks few, so a few in nb.toml is dead text. The
+  base is held against its own rules the same way: an English one that is
+  missing makes "1 items".
+
   One direction alone lets the other half rot: a check for missing keys
   passes a file full of misspelled ones. }
 unit Askr.Cli.Lang;
@@ -54,6 +61,9 @@ begin
   Result := '';
   Mine := PlaceholdersOf(Text_);
   Theirs := PlaceholdersOf(Known);
+  { :count comes with every plural, whether or not the base's text uses it. }
+  SetLength(Theirs, Length(Theirs) + 1);
+  Theirs[High(Theirs)] := 'count';
   for I := 0 to High(Mine) do
     if not Has(Theirs, Mine[I]) then
     begin
@@ -63,10 +73,156 @@ begin
     end;
 end;
 
+{ app.items.few -> app.items and few, when the last part is a category. }
+function SplitForm(const Key: string; out Group, Form: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  I := LastDelimiter('.', Key);
+  if I <= 1 then
+    Exit;
+  Group := Copy(Key, 1, I - 1);
+  Form := Copy(Key, I + 1, MaxInt);
+  Result := IsPluralCategory(Form);
+end;
+
+{ The plurals in Known: groups with an 'other', every key under which is a
+  category. }
+function PluralGroups(Known: TStringList): TStringList;
+var
+  I, J: Integer;
+  Group, Form: string;
+  AllForms: Boolean;
+begin
+  Result := TStringList.Create;
+  Result.Sorted := True;
+  Result.Duplicates := dupIgnore;
+  for I := 0 to Known.Count - 1 do
+    if SplitForm(Known.Names[I], Group, Form) and (Form = 'other') then
+    begin
+      AllForms := True;
+      for J := 0 to Known.Count - 1 do
+        if (Copy(Known.Names[J], 1, Length(Group) + 1) = Group + '.') and
+           not IsPluralCategory(Copy(Known.Names[J], Length(Group) + 2, MaxInt)) then
+          AllForms := False;
+      if AllForms then
+        Result.Add(Group);
+    end;
+end;
+
+function InGroup(Groups: TStringList; const Key: string): Boolean;
+var
+  Group, Form: string;
+begin
+  Result := (SplitForm(Key, Group, Form) and (Groups.IndexOf(Group) >= 0)) or
+    (Groups.IndexOf(Key) >= 0);
+end;
+
+function Joined(const L: TStringArray): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(L) do
+  begin
+    if I > 0 then
+      Result := Result + ', ';
+    Result := Result + L[I];
+  end;
+end;
+
+{ Whether T has the plural G at all, as forms or as one text. }
+function Mentions(T: TStringList; const G: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to T.Count - 1 do
+    if (T.Names[I] = G) or (Copy(T.Names[I], 1, Length(G) + 1) = G + '.') then
+      Exit(True);
+  Result := False;
+end;
+
+{ One file's plurals against its language's rules. OnlyItsOwn for the
+  base: the framework's forms are compiled in, and the base file answers
+  only for the plurals it writes itself. }
+procedure CheckForms(T: TStringList; const Locale, Path_: string;
+  Groups, Known: TStringList; OnlyItsOwn: Boolean; var Report: TStringArray;
+  var Bad: Integer);
+var
+  G, C, Flat, BaseOther: string;
+  Cats: TStringArray;
+  I, J, K: Integer;
+  Group, Form: string;
+begin
+  Cats := PluralCategories(Locale);
+  if not HasPluralRules(Locale) then
+    for I := 0 to Groups.Count - 1 do
+      if T.IndexOfName(Groups[I] + '.other') >= 0 then
+      begin
+        Say(Report, Format('%s: there are no plural rules here for %s, so its ' +
+          'plurals follow English: one for 1, other for the rest', [Path_, Locale]));
+        Break;
+      end;
+  for I := 0 to Groups.Count - 1 do
+  begin
+    G := Groups[I];
+    if OnlyItsOwn and not Mentions(T, G) then
+      Continue;
+    K := Known.IndexOfName(G + '.other');
+    BaseOther := '';
+    if K >= 0 then
+      BaseOther := Known.ValueFromIndex[K];
+    Flat := '';
+    J := T.IndexOfName(G);
+    if J >= 0 then
+      Flat := T.ValueFromIndex[J];
+    { A language with one form may give it as the key itself. }
+    if (Flat <> '') and (Length(Cats) = 1) then
+      Continue;
+    if Flat <> '' then
+    begin
+      Say(Report, Format('%s: %s is one text for every count, and %s picks %s',
+        [Path_, G, Locale, Joined(Cats)]));
+      Inc(Bad);
+      Continue;
+    end;
+    for J := 0 to High(Cats) do
+    begin
+      C := Cats[J];
+      if T.IndexOfName(G + '.' + C) >= 0 then
+        Continue;
+      if C = 'other' then
+        Say(Report, Format('%s lacks %s.other, the form every language falls back to',
+          [Path_, G]))
+      else
+        Say(Report, Format('%s lacks %s.%s -- %s picks %s for %s',
+          [Path_, G, C, Locale, C, PluralExamples(Locale, C)]));
+      Inc(Bad);
+    end;
+    for J := 0 to T.Count - 1 do
+      if SplitForm(T.Names[J], Group, Form) and (Group = G) then
+      begin
+        if not Has(Cats, Form) then
+        begin
+          Say(Report, Format('%s has %s, which %s never picks for a whole number, ' +
+            'so nothing shows it', [Path_, T.Names[J], Locale]));
+          Inc(Bad);
+        end
+        else if (BaseOther <> '') and (Unknown(T.ValueFromIndex[J], BaseOther) <> '') then
+        begin
+          Say(Report, Format('%s: %s uses %s, which nothing passes, so it would ' +
+            'be shown as written', [Path_, T.Names[J], Unknown(T.ValueFromIndex[J], BaseOther)]));
+          Inc(Bad);
+        end;
+      end;
+  end;
+end;
+
 function LangCheck(const Root: string; out Report: TStringArray): Boolean;
 var
-  Dir, Base, BasePath, Path_, Locale, Key, Text_, Extra: string;
-  Found, Known, T: TStringList;
+  Dir, Base, BasePath, Path_, Key, Text_, Extra: string;
+  Found, Known, T, Groups: TStringList;
   Files: array of TStringList;
   Problems: TLangProblems;
   SR: TSearchRec;
@@ -86,6 +242,7 @@ begin
   Base := FallbackLocale;
   Found := TStringList.Create;
   Known := TStringList.Create;
+  Groups := nil;
   Files := nil;
   try
     Found.Sorted := True;
@@ -115,9 +272,7 @@ begin
       Inc(Bad);
     end;
 
-    { The base: the framework's English, and the base file over it. A
-      placeholder the base file uses where the framework passes none is
-      a problem there too. }
+    { The base: the framework's English, and the base file over it. }
     BuiltIn := BuiltInTexts;
     for I := 0 to High(BuiltIn) do
       Known.Add(BuiltIn[I]);
@@ -144,16 +299,19 @@ begin
         Known.Add(Key + '=' + Text_);
       end;
     end;
+    Groups := PluralGroups(Known);
+    if BaseIdx >= 0 then
+      CheckForms(Files[BaseIdx], Base, BasePath, Groups, Known, True, Report, Bad);
 
     for I := 0 to Found.Count - 1 do
     begin
       if I = BaseIdx then
         Continue;
-      Locale := ChangeFileExt(Found[I], '');
       Path_ := 'lang/' + Found[I];
       T := Files[I];
       for J := 0 to Known.Count - 1 do
-        if T.IndexOfName(Known.Names[J]) < 0 then
+        if not InGroup(Groups, Known.Names[J]) and
+           (T.IndexOfName(Known.Names[J]) < 0) then
         begin
           Say(Report, Format('%s lacks %s -- in %s: %s',
             [Path_, Known.Names[J], Base, Known.ValueFromIndex[J]]));
@@ -162,6 +320,8 @@ begin
       for J := 0 to T.Count - 1 do
       begin
         Key := T.Names[J];
+        if InGroup(Groups, Key) then
+          Continue;
         K := Known.IndexOfName(Key);
         if K < 0 then
         begin
@@ -178,6 +338,7 @@ begin
           Inc(Bad);
         end;
       end;
+      CheckForms(T, ChangeFileExt(Found[I], ''), Path_, Groups, Known, False, Report, Bad);
     end;
 
     if Bad = 0 then
@@ -189,6 +350,7 @@ begin
   finally
     for I := 0 to High(Files) do
       Files[I].Free;
+    Groups.Free;
     Known.Free;
     Found.Free;
   end;

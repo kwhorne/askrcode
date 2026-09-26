@@ -949,7 +949,7 @@ make_check_socket() {
     > "$work/shop/lang/nb.toml"
   code_lc=0
   in_box "$askr_bin lang:check" shop >"$work/sock-langcheck.log" 2>&1 || code_lc=$?
-  if [ "$code_lc" = "1" ] && grep -q "lang/nb.toml lacks validation.min_length" "$work/sock-langcheck.log"; then
+  if [ "$code_lc" = "1" ] && grep -q "lang/nb.toml lacks validation.min_length.one -- nb picks one for 1" "$work/sock-langcheck.log"; then
     ok "askr lang:check says what nb lacks, and exits 1"
   else
     bad "askr lang:check says what nb lacks" "exit $code_lc: $(head -4 "$work/sock-langcheck.log")"

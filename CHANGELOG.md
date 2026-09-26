@@ -108,6 +108,12 @@ with the zero-major caveat that minor releases may break things until
   `provideStrings` in the layout `askr new` writes hands them to Lauf. The
   keys and the English are one list in two places, held equal by a test.
 
+  Plurals are a form per CLDR category -- `[app.items] one = ...`,
+  `other = ...` -- and `TransCount('app.items', N)` picks the one the
+  language uses, with CLDR's rules for whole numbers in some thirty
+  languages. `validation.min_length` and `max_length` are plurals, so
+  `MinLen(1)` says "at least 1 character".
+
   `askr lang:check` holds every locale against the base both ways: the
   keys it lacks, the keys it has that nothing looks up, and placeholders
   nothing passes. It exits 1 when there is something to fix.

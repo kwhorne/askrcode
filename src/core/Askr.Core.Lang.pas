@@ -81,6 +81,38 @@ function UseLocale(const Locale: string): string;
 function Trans(const Key: string): string; overload;
 function Trans(const Key: string; const Args: array of const): string; overload;
 
+{ The text for Key in the form the language uses for Count:
+
+      [app.items]
+      one = ":count item"
+      other = ":count items"
+
+      TransCount('app.items', N)
+
+  The forms are CLDR's categories -- zero, one, two, few, many, other --
+  and PluralCategory says which one a language picks for a number. In each
+  locale the form is looked up, then its 'other', then Key on its own for
+  a language with one form for every count; the fallback locale is asked
+  by its own rules, and the framework's English last. :count is filled in
+  without being passed. }
+function TransCount(const Key: string; Count: Int64): string; overload;
+function TransCount(const Key: string; Count: Int64;
+  const Args: array of const): string; overload;
+
+{ Which of CLDR's categories Locale's language picks for Count, for whole
+  numbers. A language without rules here gets English's: one for 1, other
+  for the rest -- HasPluralRules says whether there were rules. }
+function PluralCategory(const Locale: string; Count: Int64): string;
+{ The categories Locale's language can pick for a whole number, and
+  'other', which every language has as the last resort. }
+function PluralCategories(const Locale: string): TStringArray;
+function HasPluralRules(const Locale: string): Boolean;
+{ A few whole numbers Locale's language puts in Category, for a message:
+  '2, 3, 4, 22'. }
+function PluralExamples(const Locale, Category: string): string;
+{ Whether Name is one of CLDR's six categories. }
+function IsPluralCategory(const Name: string): Boolean;
+
 { Whether Locale's file has Key -- the file, not the built-in English. }
 function HasTrans(const Locale, Key: string): Boolean;
 
@@ -120,10 +152,12 @@ const
   { The framework's own words. English, and the text every message had
     before there were keys: an app with no lang directory must not notice
     that there are. }
-  BuiltIn: array[0..61] of string = (
+  BuiltIn: array[0..63] of string = (
     'validation.required=:attribute is required',
-    'validation.min_length=:attribute must be at least :min characters',
-    'validation.max_length=:attribute can be at most :max characters',
+    'validation.min_length.one=:attribute must be at least :min character',
+    'validation.min_length.other=:attribute must be at least :min characters',
+    'validation.max_length.one=:attribute can be at most :max character',
+    'validation.max_length.other=:attribute can be at most :max characters',
     'validation.email=:attribute is not a valid email address',
     'validation.min=:attribute cannot be less than :min',
     'validation.max=:attribute cannot be greater than :max',
@@ -500,26 +534,40 @@ begin
   Result := RawText(Key);
 end;
 
-function Trans(const Key: string; const Args: array of const): string;
+{ Text_ with each :name in Args replaced, longest name first so :min never
+  takes the front off :minimum. Extra is a name to fill in too, unless
+  Args gives it -- :count, for TransCount. }
+function Fill(const Text_: string; const Args: array of const;
+  const ExtraName, ExtraValue: string): string;
 var
   Names, Values: array of string;
   I, J, N, Best: Integer;
   Taken: array of Boolean;
+  Given: Boolean;
 begin
-  Result := RawText(Key);
+  Result := Text_;
   N := Length(Args) div 2;
-  if N = 0 then
-    Exit;
   SetLength(Names, N);
   SetLength(Values, N);
-  SetLength(Taken, N);
+  Given := False;
   for I := 0 to N - 1 do
   begin
     Names[I] := ArgText(Args[I * 2]);
     Values[I] := ArgText(Args[I * 2 + 1]);
-    Taken[I] := False;
+    if Names[I] = ExtraName then
+      Given := True;
   end;
-  { Longest first: :min must not take the front off :minimum. }
+  if (ExtraName <> '') and not Given then
+  begin
+    SetLength(Names, N + 1);
+    SetLength(Values, N + 1);
+    Names[N] := ExtraName;
+    Values[N] := ExtraValue;
+    Inc(N);
+  end;
+  SetLength(Taken, N);
+  for I := 0 to N - 1 do
+    Taken[I] := False;
   for J := 0 to N - 1 do
   begin
     Best := -1;
@@ -530,6 +578,11 @@ begin
     if Names[Best] <> '' then
       Result := StringReplace(Result, ':' + Names[Best], Values[Best], [rfReplaceAll]);
   end;
+end;
+
+function Trans(const Key: string; const Args: array of const): string;
+begin
+  Result := Fill(RawText(Key), Args, '', '');
 end;
 
 function HasTrans(const Locale, Key: string): Boolean;
@@ -549,6 +602,291 @@ begin
   if LookUp(FallbackLocale, Key, Result) then
     Exit;
   Result := Column;
+end;
+
+{ ------------------------------------------------------------ plurals -- }
+
+const
+  PluralNames: array[0..5] of string = ('zero', 'one', 'two', 'few', 'many', 'other');
+
+function IsPluralCategory(const Name: string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(PluralNames) do
+    if PluralNames[I] = Name then
+      Exit(True);
+  Result := False;
+end;
+
+{ The language a locale's rules follow: nb-NO is nb. Portugal's
+  Portuguese keeps its region: it counts differently from Brazil's. }
+function PluralLanguage(const Locale: string): string;
+var
+  L: string;
+  I: Integer;
+begin
+  L := LowerCase(StringReplace(Locale, '_', '-', [rfReplaceAll]));
+  if L = 'pt-pt' then
+    Exit(L);
+  I := Pos('-', L);
+  if I > 0 then
+    L := Copy(L, 1, I - 1);
+  Result := L;
+end;
+
+function InList(const S: string; const L: array of string): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(L) do
+    if L[I] = S then
+      Exit(True);
+  Result := False;
+end;
+
+const
+  { One form for every count. }
+  OtherOnly: array[0..11] of string = ('ja', 'zh', 'ko', 'th', 'vi', 'id',
+    'ms', 'km', 'lo', 'my', 'jv', 'yo');
+  { one for 1, other for the rest: English's rule, and the default. }
+  OneOther: array[0..22] of string = ('en', 'nb', 'nn', 'no', 'da', 'sv',
+    'de', 'nl', 'fi', 'et', 'el', 'hu', 'tr', 'bg', 'af', 'sq', 'eu', 'gl',
+    'ka', 'az', 'kk', 'ur', 'sw');
+
+function HasPluralRules(const Locale: string): Boolean;
+var
+  L: string;
+begin
+  L := PluralLanguage(Locale);
+  Result := InList(L, OtherOnly) or InList(L, OneOther) or
+    InList(L, ['fr', 'pt', 'pt-pt', 'es', 'it', 'ca', 'pl', 'ru', 'uk', 'be',
+      'cs', 'sk', 'hr', 'sr', 'bs', 'ro', 'lt', 'lv', 'ar', 'he', 'is']);
+end;
+
+function PluralCategory(const Locale: string; Count: Int64): string;
+var
+  L: string;
+  n, n10, n100: Int64;
+begin
+  L := PluralLanguage(Locale);
+  n := Abs(Count);
+  n10 := n mod 10;
+  n100 := n mod 100;
+  if InList(L, OtherOnly) then
+    Result := 'other'
+  { French and Brazilian Portuguese: one for 0 and 1. The others in the
+    group: one for 1. All of them: many for a whole million -- "un million
+    de", not "un million". }
+  else if InList(L, ['fr', 'pt']) then
+  begin
+    if n <= 1 then
+      Result := 'one'
+    else if n mod 1000000 = 0 then
+      Result := 'many'
+    else
+      Result := 'other';
+  end
+  else if InList(L, ['pt-pt', 'es', 'it', 'ca']) then
+  begin
+    if n = 1 then
+      Result := 'one'
+    else if (n <> 0) and (n mod 1000000 = 0) then
+      Result := 'many'
+    else
+      Result := 'other';
+  end
+  else if L = 'pl' then
+  begin
+    if n = 1 then
+      Result := 'one'
+    else if (n10 >= 2) and (n10 <= 4) and not ((n100 >= 12) and (n100 <= 14)) then
+      Result := 'few'
+    else
+      Result := 'many';
+  end
+  else if InList(L, ['ru', 'uk', 'be']) then
+  begin
+    if (n10 = 1) and (n100 <> 11) then
+      Result := 'one'
+    else if (n10 >= 2) and (n10 <= 4) and not ((n100 >= 12) and (n100 <= 14)) then
+      Result := 'few'
+    else
+      Result := 'many';
+  end
+  else if InList(L, ['cs', 'sk']) then
+  begin
+    if n = 1 then
+      Result := 'one'
+    else if (n >= 2) and (n <= 4) then
+      Result := 'few'
+    else
+      Result := 'other';
+  end
+  else if InList(L, ['hr', 'sr', 'bs']) then
+  begin
+    if (n10 = 1) and (n100 <> 11) then
+      Result := 'one'
+    else if (n10 >= 2) and (n10 <= 4) and not ((n100 >= 12) and (n100 <= 14)) then
+      Result := 'few'
+    else
+      Result := 'other';
+  end
+  else if L = 'ro' then
+  begin
+    if n = 1 then
+      Result := 'one'
+    { 101 is few: CLDR says n != 1 and n % 100 = 1..19. }
+    else if (n = 0) or ((n100 >= 1) and (n100 <= 19)) then
+      Result := 'few'
+    else
+      Result := 'other';
+  end
+  else if L = 'lt' then
+  begin
+    if (n10 = 1) and not ((n100 >= 11) and (n100 <= 19)) then
+      Result := 'one'
+    else if (n10 >= 2) and not ((n100 >= 11) and (n100 <= 19)) then
+      Result := 'few'
+    else
+      Result := 'other';
+  end
+  else if L = 'lv' then
+  begin
+    if (n10 = 0) or ((n100 >= 11) and (n100 <= 19)) then
+      Result := 'zero'
+    else if (n10 = 1) and (n100 <> 11) then
+      Result := 'one'
+    else
+      Result := 'other';
+  end
+  else if L = 'ar' then
+  begin
+    if n = 0 then
+      Result := 'zero'
+    else if n = 1 then
+      Result := 'one'
+    else if n = 2 then
+      Result := 'two'
+    else if (n100 >= 3) and (n100 <= 10) then
+      Result := 'few'
+    else if (n100 >= 11) and (n100 <= 99) then
+      Result := 'many'
+    else
+      Result := 'other';
+  end
+  else if L = 'he' then
+  begin
+    if n = 1 then
+      Result := 'one'
+    else if n = 2 then
+      Result := 'two'
+    else
+      Result := 'other';
+  end
+  else if L = 'is' then
+  begin
+    if (n10 = 1) and (n100 <> 11) then
+      Result := 'one'
+    else
+      Result := 'other';
+  end
+  else if n = 1 then
+    Result := 'one'
+  else
+    Result := 'other';
+end;
+
+{ The categories a language reaches, found by asking it -- the rules above
+  are the one place they are written. Whole millions are asked about too,
+  for the languages with a form for them. }
+function PluralCategories(const Locale: string): TStringArray;
+var
+  Seen: array[0..5] of Boolean;
+  I: Integer;
+  N: Int64;
+  C: string;
+begin
+  for I := 0 to High(Seen) do
+    Seen[I] := False;
+  Seen[5] := True;
+  for N := 0 to 1100 do
+  begin
+    C := PluralCategory(Locale, N);
+    for I := 0 to High(PluralNames) do
+      if PluralNames[I] = C then
+        Seen[I] := True;
+  end;
+  C := PluralCategory(Locale, 1000000);
+  for I := 0 to High(PluralNames) do
+    if PluralNames[I] = C then
+      Seen[I] := True;
+  Result := nil;
+  for I := 0 to High(PluralNames) do
+    if Seen[I] then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := PluralNames[I];
+    end;
+end;
+
+function PluralExamples(const Locale, Category: string): string;
+var
+  N: Int64;
+  Count: Integer;
+begin
+  Result := '';
+  Count := 0;
+  N := 0;
+  while (N <= 1100) and (Count < 4) do
+  begin
+    if PluralCategory(Locale, N) = Category then
+    begin
+      if Result <> '' then
+        Result := Result + ', ';
+      Result := Result + IntToStr(N);
+      Inc(Count);
+    end;
+    Inc(N);
+  end;
+  if (Count = 0) and (PluralCategory(Locale, 1000000) = Category) then
+    Result := '1000000';
+end;
+
+{ The form for Count in Locale's file: the category, then 'other', then
+  Key on its own. }
+function LookUpCount(const Locale, Key: string; Count: Int64;
+  out Text_: string): Boolean;
+begin
+  Result := LookUp(Locale, Key + '.' + PluralCategory(Locale, Count), Text_) or
+    LookUp(Locale, Key + '.other', Text_) or LookUp(Locale, Key, Text_);
+end;
+
+function TransCount(const Key: string; Count: Int64): string;
+begin
+  Result := TransCount(Key, Count, []);
+end;
+
+function TransCount(const Key: string; Count: Int64;
+  const Args: array of const): string;
+var
+  Text_: string;
+  I: Integer;
+begin
+  if not LookUpCount(CurrentLocale, Key, Count, Text_) and
+     not LookUpCount(FallbackLocale, Key, Count, Text_) then
+  begin
+    I := GBuiltIn.IndexOfName(Key + '.' + PluralCategory('en', Count));
+    if I < 0 then
+      I := GBuiltIn.IndexOfName(Key + '.other');
+    if I < 0 then
+      I := GBuiltIn.IndexOfName(Key);
+    if I >= 0 then
+      Text_ := GBuiltIn.ValueFromIndex[I]
+    else
+      Text_ := Key;
+  end;
+  Result := Fill(Text_, Args, 'count', IntToStr(Count));
 end;
 
 function BuiltInTexts: TStringArray;

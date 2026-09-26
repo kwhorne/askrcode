@@ -1006,6 +1006,18 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   om et ord med én gang. Skjemaene virket; listene med DataGrid og toasten
   etter en lagring gjorde det ikke. `pages.mjs` så ingenting, for det
   kompilerer; det var nettleserdelen av `make:check` som fant det.
+* **Flertall er CLDR-kategorier som underøkler**, `app.items.one` og
+  `app.items.other`, og `PluralCategory` er det ene stedet reglene står.
+  `PluralCategories` finner kategoriene ved å spørre reglene over tallene
+  0–1100 og en million, i stedet for en liste til som kunne drevet fra.
+  Oppslaget i et lokale: kategorien, så `other`, så nøkkelen alene — det
+  siste er for språk med én form. Reglene er holdt mot CLDRs egne
+  eksempeltall, og hver språkgren er mutasjonssjekket.
+* **`lang:check` holder flertall mot språkets egne regler, ikke mot
+  basens nøkler.** Ellers ville en polsk `few` vært en skrivefeil, og en
+  norsk `few` — som norsk aldri velger — sett ut som en oversettelse.
+  Basen holdes mot sine egne regler bare for flertallene den skriver selv:
+  rammeverkets former er kompilert inn.
 * **`askr lang:check` sjekker begge veier**, som porten for MCP-verktøyene:
   nøkler et lokale mangler, og nøkler det har som ingenting slår opp —
   én retning alene slipper en fil full av skrivefeil gjennom.

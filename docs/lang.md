@@ -88,6 +88,53 @@ The arguments are pairs. A placeholder is `:name`, and they are replaced
 longest name first, so `:min` never takes the front off `:minimum`. One that
 is not given is left in the text, where it is seen.
 
+## Plurals
+
+A text that depends on a number has a form per plural category, CLDR's
+names for them:
+
+```toml
+# lang/en.toml
+[app.items]
+one = ":count item"
+other = ":count items"
+
+# lang/pl.toml
+[app.items]
+one = ":count plik"
+few = ":count pliki"
+many = ":count plików"
+other = ":count pliku"
+```
+
+```pascal
+TransCount('app.items', N)
+TransCount('app.left', N, ['name', U.Name])
+```
+
+`:count` is filled in without being passed. The language decides the form:
+English picks `one` for 1 and `other` for the rest; Polish `few` for 2, 3, 4
+and 22 but `many` for 12 and 25; Arabic has six. Within a locale the form is
+looked up, then its `other`, then the key on its own — so a language with one
+form for every count, Japanese or Chinese, can write `items = ":count 件"`.
+A locale without the text at all falls back to `app.fallback_locale`, asked by
+that language's own rules.
+
+The rules are CLDR's for whole numbers, for: English and the other one/other
+languages (Norwegian, Danish, Swedish, German, Dutch, Finnish, Estonian,
+Greek, Hungarian, Turkish, Bulgarian and more); French, Portuguese, Spanish,
+Italian and Catalan, which have a form for a whole million; Polish, Russian,
+Ukrainian and Belarusian; Czech and Slovak; Croatian, Serbian and Bosnian;
+Romanian; Lithuanian; Latvian; Arabic; Hebrew; Icelandic; and Japanese,
+Chinese, Korean, Thai, Vietnamese, Indonesian and Malay, which have one form.
+A language that is not on the list counts as English does, and
+`askr lang:check` says so.
+
+`askr lang:check` holds each locale's plurals to its own language: a form it
+needs and lacks, with numbers that need it, and a form it never picks — a
+`few` in `nb.toml` is text nobody can see. The base is held to its own rules
+too, because an English file with only `other` says "1 items".
+
 ## Lauf's own words
 
 Lauf writes a few words itself — `close`, `no_results`, `range_of`,
@@ -139,8 +186,10 @@ files and not the app, and answers whether or not the app builds.
 | Key | English |
 |---|---|
 | `validation.required` | `:attribute is required` |
-| `validation.min_length` | `:attribute must be at least :min characters` |
-| `validation.max_length` | `:attribute can be at most :max characters` |
+| `validation.min_length.one` | `:attribute must be at least :min character` |
+| `validation.min_length.other` | `:attribute must be at least :min characters` |
+| `validation.max_length.one` | `:attribute can be at most :max character` |
+| `validation.max_length.other` | `:attribute can be at most :max characters` |
 | `validation.email` | `:attribute is not a valid email address` |
 | `validation.min` | `:attribute cannot be less than :min` |
 | `validation.max` | `:attribute cannot be greater than :max` |
@@ -163,9 +212,8 @@ English — not broken, but not what you wrote.
 
 ## What is not here
 
-**Plurals.** `:count item(s)` is as far as it goes. Plural rules differ by
-language in ways a key and a placeholder cannot carry — Polish has three
-forms, Arabic six — and doing it properly is a library of its own.
+**Plurals of fractions.** The rules are for whole numbers. "1.5 items" takes
+a form of its own in some languages, and a count in a message is a count.
 
 **Translated exceptions.** The messages a developer reads — a missing
 connection, a relation that does not exist — stay English. They go to a log

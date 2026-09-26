@@ -3887,6 +3887,165 @@ begin
   SessionRacePart('sqlite:.build/session-race.sqlite');
 end;
 
+{ ------------------------------------------------------------ plurals -- }
+
+procedure Cat(const Locale: string; N: Int64; const Want: string);
+begin
+  AssertEqual(PluralCategory(Locale, N), Want, Locale + ' ' + IntToStr(N) + ' is ' + Want);
+end;
+
+{ The rules, held against CLDR's own sample numbers for whole numbers.
+  A plural rule that is wrong is a sentence that is wrong in one language
+  for some numbers, and nobody who does not read it will notice. }
+procedure TestPluralRules;
+var
+  C: TStringArray;
+begin
+  Cat('en', 0, 'other'); Cat('en', 1, 'one'); Cat('en', 2, 'other'); Cat('en', 11, 'other');
+  Cat('nb-NO', 1, 'one'); Cat('nb-NO', 21, 'other');
+  Cat('fr', 0, 'one'); Cat('fr', 1, 'one'); Cat('fr', 2, 'other');
+  Cat('fr', 1000000, 'many'); Cat('fr', 2000000, 'many'); Cat('fr', 1000001, 'other');
+  Cat('pt', 0, 'one'); Cat('pt-PT', 0, 'other'); Cat('pt_PT', 1, 'one');
+  Cat('es', 0, 'other'); Cat('es', 1, 'one'); Cat('es', 1000000, 'many');
+  Cat('pl', 0, 'many'); Cat('pl', 1, 'one'); Cat('pl', 2, 'few'); Cat('pl', 5, 'many');
+  Cat('pl', 12, 'many'); Cat('pl', 21, 'many'); Cat('pl', 22, 'few'); Cat('pl', 112, 'many');
+  Cat('ru', 1, 'one'); Cat('ru', 21, 'one'); Cat('ru', 101, 'one'); Cat('ru', 11, 'many');
+  Cat('ru', 111, 'many'); Cat('ru', 2, 'few'); Cat('ru', 12, 'many'); Cat('ru', 0, 'many');
+  Cat('uk', 3, 'few');
+  Cat('cs', 1, 'one'); Cat('cs', 3, 'few'); Cat('cs', 5, 'other'); Cat('cs', 22, 'other');
+  Cat('hr', 21, 'one'); Cat('hr', 11, 'other'); Cat('hr', 22, 'few'); Cat('hr', 12, 'other');
+  Cat('ro', 0, 'few'); Cat('ro', 1, 'one'); Cat('ro', 19, 'few'); Cat('ro', 20, 'other');
+  Cat('ro', 101, 'few'); Cat('ro', 120, 'other');
+  Cat('lt', 1, 'one'); Cat('lt', 21, 'one'); Cat('lt', 11, 'other'); Cat('lt', 2, 'few');
+  Cat('lt', 12, 'other'); Cat('lt', 10, 'other'); Cat('lt', 22, 'few');
+  Cat('lv', 0, 'zero'); Cat('lv', 10, 'zero'); Cat('lv', 11, 'zero'); Cat('lv', 1, 'one');
+  Cat('lv', 21, 'one'); Cat('lv', 2, 'other');
+  Cat('ar', 0, 'zero'); Cat('ar', 1, 'one'); Cat('ar', 2, 'two'); Cat('ar', 3, 'few');
+  Cat('ar', 10, 'few'); Cat('ar', 11, 'many'); Cat('ar', 99, 'many'); Cat('ar', 100, 'other');
+  Cat('ar', 103, 'few'); Cat('ar', 111, 'many');
+  Cat('he', 1, 'one'); Cat('he', 2, 'two'); Cat('he', 3, 'other'); Cat('he', 20, 'other');
+  Cat('is', 1, 'one'); Cat('is', 21, 'one'); Cat('is', 11, 'other');
+  Cat('ja', 1, 'other'); Cat('zh-Hant', 2, 'other');
+  Cat('en', -1, 'one');
+  AssertFalse(HasPluralRules('xx'), 'a language without rules says so');
+  Cat('xx', 1, 'one');
+  AssertTrue(HasPluralRules('nb-NO'), 'and one with them does');
+
+  C := PluralCategories('pl');
+  AssertEqual(Length(C), 4, 'Polish has four forms');
+  AssertEqual(C[0] + ' ' + C[1] + ' ' + C[2] + ' ' + C[3], 'one few many other', 'in order');
+  AssertEqual(Length(PluralCategories('ar')), 6, 'Arabic all six');
+  AssertEqual(Length(PluralCategories('ja')), 1, 'Japanese one');
+  C := PluralCategories('fr');
+  AssertEqual(C[0] + ' ' + C[1] + ' ' + C[2], 'one many other', 'French has many, for a million');
+  AssertEqual(PluralExamples('pl', 'few'), '2, 3, 4, 22', 'examples for a message');
+  AssertEqual(PluralExamples('fr', 'many'), '1000000', 'and one for a form only a million reaches');
+end;
+
+{ The form for a number, in the reader's language, and where it comes
+  from when the file does not have it. }
+procedure TestTransCount;
+const
+  Dir = '.build/plural-test';
+var
+  A: TArena;
+  Prev: string;
+  M: TLangCustomer;
+begin
+  RemoveTree(Dir);
+  ForceDirectories(Dir);
+  A := TArena.Create(16 * 1024);
+  UseArena(A);
+  Prev := UseLocale('');
+  try
+    ClearLang;
+    AssertEqual(TransCount('validation.min_length', 1, ['attribute', 'name', 'min', 1]),
+      'name must be at least 1 character', 'the framework''s English says one character');
+    AssertEqual(TransCount('validation.min_length', 3, ['attribute', 'name', 'min', 3]),
+      'name must be at least 3 characters', 'and three characters');
+    M := TLangCustomer.Create;
+    M.Name := 'Al';
+    M.Validate;
+    AssertEqual(M.Errors.First('name'), 'name must be at least 3 characters',
+      'as the rule says it');
+
+    WriteText(Dir + '/en.toml', '[app.items]' + LineEnding + 'one = ":count item"' + LineEnding +
+      'other = ":count items"');
+    WriteText(Dir + '/pl.toml', '[app.items]' + LineEnding + 'one = ":count plik"' + LineEnding +
+      'few = ":count pliki"' + LineEnding + 'many = ":count plików"' + LineEnding +
+      'other = ":count pliku"');
+    WriteText(Dir + '/ja.toml', '[app]' + LineEnding + 'items = ":count 件"');
+    WriteText(Dir + '/nb.toml', '[app]' + LineEnding + 'other = "x"');
+    LoadLang(Dir);
+
+    AssertEqual(TransCount('app.items', 1), '1 item', ':count is filled in by itself');
+    AssertEqual(TransCount('app.items', 5), '5 items', 'and the other form for five');
+    UseLocale('pl');
+    AssertEqual(TransCount('app.items', 1), '1 plik', 'Polish one');
+    AssertEqual(TransCount('app.items', 22), '22 pliki', 'Polish few, for 22');
+    AssertEqual(TransCount('app.items', 25), '25 plików', 'Polish many, for 25');
+    AssertEqual(TransCount('app.items', 12), '12 plików', 'and for 12, which is not few');
+    UseLocale('ja');
+    AssertEqual(TransCount('app.items', 3), '3 件', 'one text for every count, as the key itself');
+    UseLocale('nb');
+    AssertEqual(TransCount('app.items', 1), '1 item',
+      'a locale without the plural falls back to the fallback''s, by its rules');
+    AssertEqual(TransCount('app.items', 7, ['count', 'seven']), 'seven items',
+      'and a count given in the arguments wins');
+  finally
+    UseLocale(Prev);
+    ClearLang;
+    UseArena(nil);
+    A.Free;
+    RemoveTree(Dir);
+  end;
+end;
+
+{ lang:check with plurals: each locale against its own language's forms,
+  the base against its own too, and a form the language never picks is
+  dead text rather than a typo. }
+procedure TestLangCheckPlurals;
+const
+  Root = '.build/langcheck-plurals';
+var
+  Rep: TStringArray;
+  All: string;
+  Ok: Boolean;
+  I: Integer;
+begin
+  RemoveTree(Root);
+  ForceDirectories(Root + '/lang');
+  try
+    WriteText(Root + '/lang/en.toml', '[app.items]' + LineEnding + 'other = ":count items"');
+    WriteText(Root + '/lang/pl.toml', '[app.items]' + LineEnding + 'one = ":count plik"' +
+      LineEnding + 'other = ":count pliku"');
+    WriteText(Root + '/lang/nb.toml', '[app.items]' + LineEnding + 'one = ":count ting"' +
+      LineEnding + 'few = ":count ting"' + LineEnding + 'other = ":count ting"');
+    WriteText(Root + '/lang/ja.toml', '[app]' + LineEnding + 'items = ":count 件"');
+    WriteText(Root + '/lang/de.toml', '[app]' + LineEnding + 'items = ":count Dinge"');
+    Ok := LangCheck(Root, Rep);
+    All := '';
+    for I := 0 to High(Rep) do
+      All := All + Rep[I] + LineEnding;
+    AssertFalse(Ok, 'plurals that do not fit their language have something to fix');
+    AssertContains(All, 'lang/en.toml lacks app.items.one -- en picks one for 1',
+      'the base against its own rules: no "1 items"');
+    AssertContains(All, 'lang/pl.toml lacks app.items.few -- pl picks few for 2, 3, 4, 22',
+      'a form Polish needs, with numbers that need it');
+    AssertContains(All, 'lang/pl.toml lacks app.items.many', 'and the other one');
+    AssertContains(All, 'lang/nb.toml has app.items.few, which nb never picks',
+      'a form the language never picks is dead text');
+    AssertNotContains(All, 'lang/ja.toml: app.items', 'one text is right for a language with one form');
+    AssertNotContains(All, 'lang/ja.toml lacks app.items', 'and nothing is missing from it');
+    AssertContains(All, 'lang/de.toml: app.items is one text for every count, and de picks one, other',
+      'and wrong for one with two');
+    AssertNotContains(All, 'nothing looks it up', 'no form is taken for a typo');
+    AssertNotContains(All, 'lacks validation.min_length --', 'the framework''s plurals are checked as forms, not as keys');
+  finally
+    RemoveTree(Root);
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -8945,6 +9104,9 @@ begin
     @TestLang);
   Test('the visitor''s choice, then the header, then app.locale', @TestLocales);
   Test('askr lang:check, both ways', @TestLangCheck);
+  Test('plural rules against CLDR''s own numbers', @TestPluralRules);
+  Test('the form for a number, and where it comes from', @TestTransCount);
+  Test('askr lang:check holds plurals to each language''s forms', @TestLangCheckPlurals);
   Test('Lauf''s words: one list in two places, and sent only when they differ', @TestLaufStrings);
 
   Group('Relations and soft deletes');
