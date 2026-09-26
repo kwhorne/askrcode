@@ -63,6 +63,14 @@ procedure SetMaxStreams(N: Integer);
   Last-Event-ID. 500 unless set. }
 procedure SetStreamReplay(N: Integer);
 
+type
+  { Something else Broadcast reaches: Askr.Http.WebSocket registers one,
+    so a websocket on a channel hears what a stream on it hears, without
+    this unit knowing what a websocket is. }
+  TBroadcastSink = procedure(Id: Int64; const Channel, Event, Data: string);
+
+procedure AddBroadcastSink(Sink: TBroadcastSink);
+
 { The server's side. }
 function StreamSlotFree: Boolean;
 { Takes over the socket and the TLS connection, if there is one: the
@@ -104,12 +112,22 @@ type
 var
   GLock: TCriticalSection;
   GStreams: TList;
+  GSinks: array of TBroadcastSink;
   GHistory: array of THistoryEntry;
   GNextId: Int64 = 0;
   GStopping: Boolean = False;
   GHeartbeatMs: Integer = 15000;
   GMaxStreams: Integer = 1000;
   GReplay: Integer = 500;
+
+procedure AddBroadcastSink(Sink: TBroadcastSink);
+var
+  I: Integer;
+begin
+  I := Length(GSinks);
+  SetLength(GSinks, I + 1);
+  GSinks[I] := Sink;
+end;
 
 procedure SetStreamHeartbeat(Ms: Integer);
 begin
@@ -229,6 +247,9 @@ begin
   finally
     GLock.Release;
   end;
+  { Outside the lock: a sink takes locks of its own. }
+  for I := 0 to High(GSinks) do
+    GSinks[I](Id, Channel, Event, Data);
 end;
 
 function OpenStreams: Integer;

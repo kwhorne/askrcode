@@ -1,4 +1,11 @@
-# Server-sent events
+# Real time
+
+Two ways for the server to talk to a browser without being asked: a
+**server-sent event stream**, one way, for notifications, progress and live
+lists; and a **websocket**, both ways, for what the browser has to say often
+and fast. Both are fed by the same `Broadcast`.
+
+## Server-sent events
 
 ```pascal
 uses Askr.Http.Stream;
@@ -74,20 +81,81 @@ The head carries `Cache-Control: no-cache, no-transform` and
 `X-Accel-Buffering: no`. The second is for nginx, which otherwise holds the
 events back to fill a buffer.
 
+## WebSockets
+
+```pascal
+uses Askr.Http.WebSocket;
+
+type
+  TChat = class(TWsHandler)
+    procedure Text(C: TWsConnection; const Msg: string); override;
+  end;
+
+procedure TChat.Text(C: TWsConnection; const Msg: string);
+begin
+  Broadcast(C.Tag, 'said', Msg);
+end;
+
+function TRooms.Join(Req: TRequest): TResponse;
+begin
+  Result := AcceptWebSocket(Req, Chat, ['room.1'], Askr.Auth.Id);
+end;
+```
+
+```js
+const ws = new WebSocket(`wss://${location.host}/rooms/1`)
+ws.onmessage = (e) => { const m = JSON.parse(e.data); ... }
+ws.send('hello')
+```
+
+`AcceptWebSocket` answers the handshake — `101`, or `400` for a request that
+is not one, `426` for another protocol version — and the worker hands the
+connection to a thread of its own, as it does a stream. Bytes the client
+sent right behind the handshake go with it.
+
+- **The handler** is a `TWsHandler` with `Opened`, `Text`, `Binary` and
+  `Closed`. It runs in the connection's thread, one message at a time, with
+  an arena reset between messages. One handler object serves every
+  connection, from as many threads, so it keeps no unguarded state of its
+  own. An exception closes the connection with `1011` and is logged.
+- **The session is not there.** The route passes what the connection needs
+  — the user id above all, which it keeps as `UserId` — and `Tag` holds
+  anything else.
+- **The origin is checked.** A browser sends its cookies with a websocket
+  handshake from any site, so a server that took it would let any page open
+  a socket as the signed-in user. A handshake whose `Origin` is not
+  `app.url`'s is refused `403`; `AddWebSocketOrigin` allows another. A
+  client with no `Origin` is not a browser and has nobody else's cookies.
+- **`Broadcast` reaches it** on the channels it was given or has `Join`ed, as
+  a text message: `{"id":..,"event":..,"data":..}` with the data as the
+  string it was broadcast as.
+- `SendText`, `SendBinary` and `Close` are safe from any thread. A quiet
+  connection gets a ping every 30 seconds (`SetWebSocketPing`), and one that
+  stays silent through two is closed. A message over 1 MB
+  (`SetWebSocketMaxMessage`) closes it with `1009`.
+
+`./askr ws:check` runs the **Autobahn test suite** — the conformance suite
+for websocket servers — against an echo server built on Askr: 247 cases of
+framing, fragmentation, UTF-8, control frames and closing: 240 OK, three
+informational ones that have no pass or fail, and four "non-strict", where
+Autobahn would rather see invalid UTF-8 caught halfway through a fragmented
+message than at its end. Compression and the
+performance runs are left out, because Askr does not do them. What Autobahn
+cannot send — an unmasked frame, a foreign origin — is in the socket test.
+
 ## The process's, not the server's
 
-Streams belong to the process: `Broadcast` reaches every stream, whichever
-server opened it, and stopping a server closes them all. A process runs one
-server.
+Streams and websockets belong to the process: `Broadcast` reaches every one,
+whichever server opened it, and stopping a server closes them all. A process
+runs one server.
 
 ## What is not here
 
-**Broadcasting across processes.** `Broadcast` reaches the streams of this
-process. Behind a load balancer with several processes, a browser connected
-to one does not hear what the other broadcast — send events through the
+**Broadcasting across processes.** `Broadcast` reaches the streams and
+websockets of this process. Behind a load balancer with several processes,
+a browser connected to one does not hear what the other broadcast — send events through the
 durable queue to every process, or run one process.
 
-**WebSockets.** A stream goes one way, server to browser, which is what
-notifications, progress and live lists need, and it is plain HTTP that
-proxies and `EventSource` already understand. What the browser sends goes
-in an ordinary request.
+**Compression.** `permessage-deflate` is not offered, so a websocket
+message goes as it is. Nothing is lost by it but bandwidth, and it keeps
+zlib out of the binary.

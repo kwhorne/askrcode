@@ -25,6 +25,7 @@ type
     FHeaderCap: Integer;
     FBody: TStr;
     FStreamChannels: TStr;
+    FUpgrade: TObject;
     procedure GrowHeaders;
     function IndexOfHeader(const AName: string): Integer;
   public
@@ -106,6 +107,16 @@ type
       Connection: close, which says so. }
     procedure WriteStreamHead(var B: TStrBuilder);
     property StreamChannels: TStr read FStreamChannels;
+
+    { A connection that becomes something else after this response -- a
+      websocket. The object says what; Askr.Http.WebSocket makes it and
+      the server hands the connection to it. Heap, not arena: it outlives
+      the request. }
+    procedure MarkUpgrade(AUpgrade: TObject);
+    property Upgrade: TObject read FUpgrade;
+    { The status line and headers only, as a 101 needs: the headers say
+      what the connection is now, and there is no body. }
+    procedure WriteUpgradeHead(var B: TStrBuilder);
 
     property StatusCode: Integer read FStatus;
     property Body: TStr read FBody;
@@ -475,6 +486,30 @@ end;
 procedure TResponse.MarkEventStream(const Channels: TStr);
 begin
   FStreamChannels := Channels;
+end;
+
+procedure TResponse.MarkUpgrade(AUpgrade: TObject);
+begin
+  FUpgrade := AUpgrade;
+end;
+
+procedure TResponse.WriteUpgradeHead(var B: TStrBuilder);
+var
+  I: Integer;
+begin
+  B.Append('HTTP/1.1 ');
+  B.AppendInt(FStatus);
+  B.AppendByte(Ord(' '));
+  B.Append(StatusText(FStatus));
+  B.AppendCRLF;
+  for I := 0 to FHeaderCount - 1 do
+  begin
+    B.Append(FHeaders[I].Name);
+    B.Append(': ');
+    B.Append(FHeaders[I].Value);
+    B.AppendCRLF;
+  end;
+  B.AppendCRLF;
 end;
 
 function TResponse.IsEventStream: Boolean;

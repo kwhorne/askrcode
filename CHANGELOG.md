@@ -40,6 +40,14 @@ with the zero-major caveat that minor releases may break things until
   `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
   browser, an Inertia visit and a JSON client each its own way and says no
   when no check is registered. `./askr auth:check` drives it over a socket.
+- **WebSockets.** `AcceptWebSocket(Req, Handler, Channels, UserId)` answers
+  the handshake and hands the connection to a thread of its own, with any
+  bytes sent behind the handshake; a `TWsHandler` gets `Opened`, `Text`,
+  `Binary` and `Closed`, one message at a time with an arena per message.
+  A handshake from another origin is refused, since the browser sends the
+  user's cookies with it. `Broadcast` reaches websockets on its channel as
+  well as streams. `./askr ws:check` runs the Autobahn test suite against
+  it: 247 cases, 240 OK, three informational and four non-strict.
 - **Server-sent events.** A route returns `StreamEvents(['orders'])` and
   `Broadcast('orders', 'placed', Json)` from anywhere reaches every open
   stream on that channel. The worker hands the connection to a thread of

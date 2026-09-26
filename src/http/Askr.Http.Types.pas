@@ -117,6 +117,7 @@ end;
 function StatusText(Code: Integer): string;
 begin
   case Code of
+    101: Result := 'Switching Protocols';
     200: Result := 'OK';
     201: Result := 'Created';
     202: Result := 'Accepted';

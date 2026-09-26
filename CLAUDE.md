@@ -19,6 +19,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr make:check # generatorene: tre databaser, en socket og Chrome
 ./askr auth:check # en --auth-app over en socket: bekreftelse via mailen
 ./askr qr:check   # QR-kodene lest tilbake av Chromes egen strekkodeleser
+./askr ws:check   # Autobahn-testsuiten mot websocketene
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -1229,6 +1230,25 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   og kunne ikke se den første — den har en rå logg nå.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
+
+## WebSockets
+
+* **Autobahn er porten.** `./askr ws:check` kjører testsuiten mot en
+  ekkoserver på Askr: 247 caser, 240 OK, fire NON-STRICT (6.4.x — UTF-8
+  sjekkes ved slutten av meldingen, ikke midt i fragmentene) og tre
+  INFORMATIONAL. Hver protokollmutasjon ble fanget av gruppa som tester
+  regelen. Komprimering (12, 13) og ytelse (9) er utelatt.
+* **Det Autobahn ikke kan sende, står i sokkeltesten:** en umaskert ramme
+  (klienten deres maskerer alltid), en fremmed origin, og en ramme sendt i
+  samme skriving som håndtrykket — den ligger i workerens buffer når den gir
+  fra seg forbindelsen, og må følge med.
+* **Origin sjekkes mot `app.url`.** Nettleseren sender cookies med
+  håndtrykket fra hvilken som helst side; uten sjekken kan en annen side
+  åpne en socket som den innloggede.
+* **En broadcast sendes under låsen**, fordi en forbindelse frigjør seg selv
+  når tråden slutter, og tar seg ut av lista under samme lås først.
+* **`Broadcast` når websockets gjennom en sink** registrert fra
+  `Askr.Http.WebSocket`, så strømmeuniten ikke vet hva en websocket er.
 
 ## Server-sent events
 

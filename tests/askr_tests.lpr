@@ -13,7 +13,7 @@ uses
 {$ENDIF}
   SysUtils, StrUtils, Classes, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
-  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Server, Askr.Http.Stream,
+  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Server, Askr.Http.Stream, Askr.Http.WebSocket,
   Askr.Http.Multipart, Askr.Http.Static, Askr.Core.Log,
   Askr.Core.Json, Askr.Http.Router, Askr.Urd.Driver, Askr.Urd.Model,
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
@@ -5027,6 +5027,167 @@ begin
   E.Close;
 end;
 
+{ ------------------------------------------------------------ websockets -- }
+
+type
+  TWsTestHandler = class(TWsHandler)
+    Log: string;
+    procedure Opened(C: TWsConnection); override;
+    procedure Text(C: TWsConnection; const Msg: string); override;
+    procedure Closed(C: TWsConnection; Code: Word); override;
+  end;
+
+  TWsHost = class
+    Handler: TWsTestHandler;
+    function Handle(Req: TRequest): TResponse;
+  end;
+
+procedure TWsTestHandler.Opened(C: TWsConnection);
+begin
+  Log := Log + 'open:' + C.UserId + ' ';
+end;
+
+procedure TWsTestHandler.Text(C: TWsConnection; const Msg: string);
+begin
+  C.SendText('echo:' + Msg);
+end;
+
+procedure TWsTestHandler.Closed(C: TWsConnection; Code: Word);
+begin
+  Log := Log + 'closed:' + IntToStr(Code) + ' ';
+end;
+
+function TWsHost.Handle(Req: TRequest): TResponse;
+begin
+  if Req.Path.EqualsStr('/ws') then
+    Result := AcceptWebSocket(Req, Handler, ['room'], 'user-7')
+  else
+    Result := RespondText('pong');
+end;
+
+{ A client's frame: masked, as a client's has to be, unless told not to. }
+function ClientFrame(Opcode: Byte; const Payload: string; Masked: Boolean = True): string;
+const
+  Key: array[0..3] of Byte = ($12, $34, $56, $78);
+var
+  I: Integer;
+begin
+  Result := Chr($80 or Opcode);
+  if Masked then
+    Result := Result + Chr($80 or Length(Payload)) + Chr(Key[0]) + Chr(Key[1]) +
+      Chr(Key[2]) + Chr(Key[3])
+  else
+    Result := Result + Chr(Length(Payload));
+  for I := 1 to Length(Payload) do
+    if Masked then
+      Result := Result + Chr(Ord(Payload[I]) xor Key[(I - 1) mod 4])
+    else
+      Result := Result + Payload[I];
+end;
+
+const
+  WsHandshake = 'GET /ws HTTP/1.1'#13#10'Host: test'#13#10'Upgrade: websocket'#13#10 +
+    'Connection: Upgrade'#13#10'Sec-WebSocket-Version: 13'#13#10 +
+    'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='#13#10;
+
+function WaitForSockets(N, Ms: Integer): Boolean;
+var
+  Deadline: Int64;
+begin
+  Deadline := MonotonicMs + Ms;
+  while OpenWebSockets <> N do
+  begin
+    if MonotonicMs > Deadline then
+      Exit(False);
+    Sleep(10);
+  end;
+  Result := True;
+end;
+
+procedure TestWebSockets;
+var
+  Opts: TServerOptions;
+  Server: TAskrServer;
+  Host: TWsHost;
+  A, B, C, D, E: TClient;
+  Head, Body: string;
+begin
+  WriteLn;
+  WriteLn('websockets');
+  CheckEqS(WebSocketAccept('dGhlIHNhbXBsZSBub25jZQ=='), 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=',
+    'the accept value is RFC 6455''s own example');
+
+  Opts := DefaultServerOptions;
+  Opts.Port := 0;
+  Opts.Workers := 1;
+  Host := TWsHost.Create;
+  Host.Handler := TWsTestHandler.Create;
+  Server := TAskrServer.Create(Opts);
+  try
+    Server.SetHandler(Host.Handle);
+    Server.Start;
+
+    { The handshake and the first frame in one write: the frame is in the
+      worker's buffer when it hands over, and has to go with it. }
+    Check(A.Connect(Server.BoundPort), 'a client connects');
+    A.SendRaw(WsHandshake + #13#10 + ClientFrame($1, 'first'));
+    Check(ReadUntil(A, 'echo:first', 2000), 'a frame sent with the handshake is not lost');
+    Check(Pos('HTTP/1.1 101 Switching Protocols', A.Buf) = 1, 'the answer is 101');
+    Check(Pos('Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=', A.Buf) > 0, 'with the accept value');
+    Check(Pos('open:user-7', Host.Handler.Log) > 0, 'the handler hears it open, with the user the route gave');
+
+    Check(B.Connect(Server.BoundPort), 'another client connects');
+    B.SendRaw('GET /ping HTTP/1.1'#13#10'Host: test'#13#10#13#10);
+    Check(B.ReadResponse(Head, Body) and (Body = 'pong'),
+      'and the one worker answers it, with the websocket open');
+    B.Close;
+
+    A.SendRaw(ClientFrame($1, 'again'));
+    Check(ReadUntil(A, 'echo:again', 2000), 'a message and its answer');
+    Broadcast('elsewhere', 'said', 'not for this one');
+    Broadcast('room', 'said', 'hello');
+    Check(ReadUntil(A, '"data":"hello"', 2000), 'a broadcast on its channel reaches it');
+    Check(Pos('not for this one', A.Buf) = 0, 'and one on another channel does not');
+    Check(Pos('{"id":', A.Buf) > 0, 'as JSON with the id and the event');
+
+    Check(C.Connect(Server.BoundPort), 'a client that does not mask connects');
+    C.SendRaw(WsHandshake + #13#10 + ClientFrame($1, 'bare', False));
+    Check(ReadUntil(C, #$88#$02#$03#$EA, 2000), 'and is closed with 1002, as the RFC says');
+    C.Close;
+
+    Check(D.Connect(Server.BoundPort), 'a page from another site tries');
+    D.SendRaw(WsHandshake + 'Origin: https://evil.example'#13#10#13#10);
+    Check(D.ReadResponse(Head, Body) and (Pos('HTTP/1.1 403', Head) = 1),
+      'and is refused: its cookies are the signed-in user''s');
+    D.Close;
+
+    Check(E.Connect(Server.BoundPort), 'an old client connects');
+    E.SendRaw(StringReplace(WsHandshake, 'Version: 13', 'Version: 8', []) + #13#10);
+    Check(E.ReadResponse(Head, Body) and (Pos('HTTP/1.1 426', Head) = 1) and
+      (Pos('Sec-WebSocket-Version: 13', Head) > 0), 'another version is 426, saying which it takes');
+    E.Close;
+
+    A.SendRaw(ClientFrame($8, #$03#$E8));
+    Check(ReadUntil(A, #$88#$02#$03#$E8, 2000), 'a close is answered with the same code');
+    Check(WaitForSockets(0, 2000) and (Pos('closed:1000', Host.Handler.Log) > 0),
+      'the connection goes, and the handler hears the code');
+    A.Close;
+
+    { One left open for the server to close. }
+    Check(A.Connect(Server.BoundPort), 'a last client connects');
+    A.Buf := '';
+    A.SendRaw(WsHandshake + #13#10);
+    Check(ReadUntil(A, #13#10#13#10, 2000) and WaitForSockets(1, 2000), 'and is open');
+  finally
+    Server.Stop;
+    Server.Free;
+    Host.Handler.Free;
+    Host.Free;
+  end;
+  Check(OpenWebSockets = 0, 'stopping the server closes its websockets');
+  A.Close;
+end;
+
 begin
   { This suite does not test the log, and the end-to-end part raises in
     /boom on purpose. Without this an ERROR line lands in the middle of the
@@ -5061,6 +5222,7 @@ begin
   TestSchemaDrift;
   TestEndToEnd;
   TestEventStreams;
+  TestWebSockets;
 
   WriteLn;
   WriteLn(Format('%d ok, %d failed', [Passed, Failed]));

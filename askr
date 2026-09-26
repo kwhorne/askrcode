@@ -2366,6 +2366,78 @@ cmd_qr_check() {
   esac
 }
 
+# The gate behind Askr.Http.WebSocket: the Autobahn test suite -- the
+# conformance suite for websocket servers -- against an echo server built
+# on Askr. Every case but compression and the performance runs (9, 12 and
+# 13), which Askr does not do. A case is held when Autobahn says OK,
+# NON-STRICT or INFORMATIONAL; anything else fails the gate, by name.
+cmd_ws_check() {
+  prepare
+  ensure_image
+  if ! docker image inspect crossbario/autobahn-testsuite >/dev/null 2>&1; then
+    echo "ws:check needs the Autobahn image: docker pull crossbario/autobahn-testsuite. Skipped, not passed."
+    return 0
+  fi
+  work="$BUILD/wscheck"
+  mkdir -p "$work"
+  rm -rf "$work/reports"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$work|; s|-FE$BIN|-FE$work|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags tools/ws/wsecho.lpr >"$work/build.log" 2>&1; then
+    echo "  FAIL  the echo server builds"
+    grep -iE 'error|fatal' "$work/build.log" | head -5
+    return 1
+  fi
+  net=askr-wscheck
+  docker network create $net >/dev/null 2>&1 || true
+  docker rm -f askr-wsecho >/dev/null 2>&1
+  docker run -d --name askr-wsecho --network $net $DOCKER_PLATFORM \
+    -v "$ROOT":/work -w /work "$IMAGE" "/work/${work#$ROOT/}/wsecho" 9001 >/dev/null
+  cat > "$work/fuzzingclient.json" <<'JSON'
+{
+  "outdir": "/work/reports",
+  "servers": [{ "agent": "askr", "url": "ws://askr-wsecho:9001" }],
+  "cases": ["*"],
+  "exclude-cases": ["9.*", "12.*", "13.*"],
+  "exclude-agent-cases": {}
+}
+JSON
+  sleep 1
+  code=0
+  docker run --rm --network $net -v "$work":/work crossbario/autobahn-testsuite \
+    wstest -m fuzzingclient -s /work/fuzzingclient.json >"$work/wstest.log" 2>&1 || code=$?
+  docker rm -f askr-wsecho >/dev/null 2>&1
+  docker network rm $net >/dev/null 2>&1 || true
+  if [ ! -f "$work/reports/index.json" ]; then
+    echo "  FAIL  Autobahn ran and wrote its report (exit $code)"
+    tail -8 "$work/wstest.log"
+    return 1
+  fi
+  python3 - "$work/reports/index.json" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1]))['askr']
+good = ('OK', 'NON-STRICT', 'INFORMATIONAL')
+bad = sorted(((k, v['behavior'], v['behaviorClose']) for k, v in r.items()
+              if v['behavior'] not in good or v['behaviorClose'] not in good + ('UNCLEAN',)),
+             key=lambda t: [int(x) for x in t[0].split('.')])
+counts = {}
+for v in r.values():
+    counts[v['behavior']] = counts.get(v['behavior'], 0) + 1
+print('  cases: %d  %s' % (len(r), '  '.join('%s %d' % kv for kv in sorted(counts.items()))))
+for k, b, c in bad:
+    print('  FAIL  %s: %s, close %s' % (k, b, c))
+sys.exit(1 if bad else 0)
+PY
+  if [ $? -ne 0 ]; then
+    echo
+    echo "ws:check failed. The report is in $work/reports/index.html."
+    return 1
+  fi
+  echo
+  echo "ws:check holds: every Autobahn case it runs is OK, NON-STRICT or INFORMATIONAL."
+}
+
 cmd_seo_check() {
   prepare
 
@@ -3136,6 +3208,7 @@ case "${1:-}" in
   session:check) shift; cmd_session_check "$@" ;;
   auth:check) shift; cmd_auth_check "$@" ;;
   qr:check) shift; cmd_qr_check "$@" ;;
+  ws:check) shift; cmd_ws_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -3181,6 +3254,10 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   QR-koder på alle nivåer, fra noen få byte til det
                   versjon 40 rommer, lest tilbake av Chromes egen
                   strekkodeleser. Krever node og Chrome på macOS
+  ./askr ws:check
+                  Autobahn-testsuiten mot en ekkoserver bygget på Askr:
+                  hver case unntatt komprimering og ytelse. Krever
+                  crossbario/autobahn-testsuite
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,

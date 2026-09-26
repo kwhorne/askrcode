@@ -26,7 +26,8 @@ interface
 uses
   SysUtils, Classes, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Log,
-  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Stream, Askr.Tls;
+  Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Stream,
+  Askr.Http.WebSocket, Askr.Tls;
 
 type
   EServerError = class(Exception);
@@ -496,6 +497,32 @@ begin
         Close_ := True;
       end;
 
+      { A websocket: 101, and the connection -- with whatever the client
+        sent right behind the handshake -- goes to a thread of its own. }
+      if Res.Upgrade <> nil then
+      begin
+        if WebSocketSlotFree then
+        begin
+          Out_.Init(FArena, 512);
+          Res.WriteUpgradeHead(Out_);
+          if not SendAll(Sock, Out_.ToStr) then
+          begin
+            Res.Upgrade.Free;
+            Exit;
+          end;
+          if FServer.Options.LogRequests then
+            LogInfo('websocket', ['path', Req.Path.ToString]);
+          StartWebSocket(Res.Upgrade, Sock, FTls,
+            StrRef(FBuf + FBufPos, FBufLen - FBufPos).ToString);
+          FTls := nil;
+          FHandedOff := True;
+          Exit;
+        end;
+        Res.Upgrade.Free;
+        Res := ErrorResponse(503).WithHeader('Retry-After', '5');
+        Close_ := True;
+      end;
+
       if (Req.Method = hmGet) or (Req.Method = hmHead) then
         Res.NotModifiedIfMatches(Req.Header('if-none-match').ToString);
 
@@ -768,6 +795,7 @@ begin
     process runs one server, and a test that runs several stops them in
     turn. }
   StopStreams;
+  StopWebSockets;
 end;
 
 function TAskrServer.TotalRequests: QWord;
