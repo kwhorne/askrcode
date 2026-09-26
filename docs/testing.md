@@ -98,7 +98,91 @@ In memory, so nothing to clean up and nothing to collide with.
 For a test that needs durability across connections — a durable queue, for
 instance — use a file under `.build/` and delete it in the teardown.
 
+## Factories
+
+```pascal
+uses Askr.Factory;
+
+G := TFactory<TOrder>.Create;
+try
+  O := G.Insert;                                   { and its customer }
+  Big := G.Values(['total', 5000]).Insert;
+  Lots := G.InsertMany(20);
+  Draft := G.Make;                                 { not saved }
+finally
+  G.Free;
+end;
+```
+
+A factory fills every column a row needs from the model's own mapping, with
+a value that fits and is different from every other model any factory has
+made — so a unique column stays unique across factories and tests.
+
+- **What goes in.** A string is its column's name and a number, except where
+  the name says more: an address for `email`, a link for `url`, a UUID for
+  `uuid`, and for `password_hash` the hash of `password` — computed once,
+  because a real one costs a noticeable fraction of a second each. Integers
+  count, money and floats count by a quarter, a boolean is false, a date is
+  today and a datetime now.
+- **What stays out.** The primary key and the columns the model manages —
+  timestamps, `deleted_at`. A column marked `EmptyIsNull` or `ZeroIsNull` is
+  nullable and stays null. A key to a parent is left for `Insert`.
+- **Parents are made.** `Insert` makes a row for each `BelongsTo` whose key
+  was not given, the same way, so orders need no customer first. `Make`
+  saves nothing and makes no parents.
+- **`Insert` validates.** A row the model's own `Rules` refuse is an error
+  that names the column, rather than a row no request could have made.
+  `Values(['column', value])` sets one; `State(@Proc)` runs
+  `procedure(M: TModel; N: Int64)` on each model for what a name cannot
+  tell.
+- **The rows live as long as their arena** — the one around the factory, or
+  the factory's own when there is none, which goes when the factory is
+  freed.
+
 ## Fakes
+
+For the three things a test should not do for real:
+
+```pascal
+Queue.Fake;
+PlaceOrder;
+AssertEqual(Queue.Pushed('send-invoice'), 1, 'the invoice is queued');
+Queue.RunPushed;                       { through the real handler, now }
+Queue.StopFaking;
+```
+
+```pascal
+F := FakeMail;
+try
+  PlaceOrder;
+  AssertEqual(F.SentTo('ada@example.com'), 1, 'a receipt');
+  AssertEqual(F.Last.Subject, 'Your order', '');
+  AssertEqual(F.Last.Attachments[0], 'receipt.pdf', '');
+finally
+  StopFakingMail;
+end;
+```
+
+```pascal
+FakeEvents([TOrderPlaced]);            { none given: every class }
+try
+  PlaceOrder;
+  AssertEqual(EventsDispatched(TOrderPlaced), 1, '');
+  AssertContains(DispatchedEventJson(TOrderPlaced), '"Total":"12.5"', '');
+finally
+  StopFakingEvents;
+end;
+```
+
+- **The queue** records what is pushed and runs nothing, so a test can ask
+  without a worker racing it; `RunPushed` then runs the record through the
+  real handlers, in order, with an arena as a worker would, and lets an
+  exception out.
+- **The mail fake renders each message first**, and refuses one a real
+  transport would refuse — no sender, no recipient. A fake that took it
+  would be a test that passes on mail that never goes.
+- **Faked events** are recorded instead of delivered: no listener runs and
+  nothing is queued. The fields are kept as they were when dispatched.
 
 | | |
 |---|---|

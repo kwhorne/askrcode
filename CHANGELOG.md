@@ -40,6 +40,13 @@ with the zero-major caveat that minor releases may break things until
   `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
   browser, an Inertia visit and a JSON client each its own way and says no
   when no check is registered. `./askr auth:check` drives it over a socket.
+- **Factories and fakes for tests.** `TFactory<TOrder>` in `Askr.Factory`
+  fills every column a row needs from the model's mapping, different for
+  every model so a unique column holds, makes the parents a `BelongsTo`
+  needs, and validates before it inserts; `Values` and `State` say the
+  rest. `Queue.Fake` records pushes and `RunPushed` runs them through the
+  real handlers; `FakeMail` keeps every message and refuses one a real
+  transport would; `FakeEvents` records instead of delivering.
 - **Events and listeners.** `Askr.Events`: an event is a class with
   published properties, `Listen` runs a listener in the dispatching code,
   and `ListenQueued` runs it in the queue, with the event rebuilt in the

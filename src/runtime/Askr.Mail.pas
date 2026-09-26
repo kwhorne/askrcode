@@ -180,6 +180,28 @@ type
     property LastMessage: string read FLast;
   end;
 
+  { What a TMailFake kept of one message: the addresses joined with ', ',
+    and the attachments by name. }
+  TSentMail = record
+    From, ToList, Cc, Bcc, Subject, Text, Html: string;
+    Attachments: TStringArray;
+  end;
+
+  { For a test: keeps every message instead of sending it. FakeMail puts
+    one in the mailer; StopFakingMail puts the real transport back. }
+  TMailFake = class(TMailTransport)
+  private
+    FSent: array of TSentMail;
+  public
+    procedure Send(M: TMailMessage); override;
+    function Describe: string; override;
+    function Count: Integer;
+    { How many were sent to Address, in To, Cc or Bcc. }
+    function SentTo(const Address: string): Integer;
+    function Sent(Index: Integer): TSentMail;
+    function Last: TSentMail;
+  end;
+
   { How the connection is secured.
 
     smtpStartTls is the default because it is the right answer in nearly
@@ -263,6 +285,12 @@ type
 
 function Mail: TMailer;
 procedure SetMail(AMailer: TMailer);
+
+{ For a test: every mail from here on goes to the returned fake -- which
+  renders it first, so one a real transport would refuse is refused --
+  until StopFakingMail. With no mailer set, it makes one for the fake. }
+function FakeMail: TMailFake;
+procedure StopFakingMail;
 
 { The address as it should appear in a header: "Name" <address>, or just
   the address. Exported because transports outside this unit need exactly
@@ -986,6 +1014,127 @@ end;
 function TMailMessage.RenderSummary: string;
 begin
   Result := RenderWith(False);
+end;
+
+{ TMailFake }
+
+function JoinAddresses(const L: TMailAddressArray): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(L) do
+  begin
+    if I > 0 then
+      Result := Result + ', ';
+    Result := Result + L[I].Address;
+  end;
+end;
+
+procedure TMailFake.Send(M: TMailMessage);
+var
+  I: Integer;
+  S: TSentMail;
+begin
+  { Rendered first, and thrown away: a message a real transport would
+    refuse -- no sender, no recipient -- is refused here too. A fake that
+    took it would be a test that passes on mail that never goes. }
+  M.Render;
+  S.From := M.Sender.Address;
+  S.ToList := JoinAddresses(M.ToList);
+  S.Cc := JoinAddresses(M.CcList);
+  S.Bcc := JoinAddresses(M.BccList);
+  S.Subject := M.SubjectLine;
+  S.Text := M.TextBody;
+  S.Html := M.HtmlBody;
+  S.Attachments := nil;
+  SetLength(S.Attachments, Length(M.Attachments));
+  for I := 0 to High(M.Attachments) do
+    S.Attachments[I] := M.Attachments[I].FileName;
+  I := Length(FSent);
+  SetLength(FSent, I + 1);
+  FSent[I] := S;
+end;
+
+function TMailFake.Describe: string;
+begin
+  Result := 'fake (' + IntToStr(Length(FSent)) + ' sent)';
+end;
+
+function TMailFake.Count: Integer;
+begin
+  Result := Length(FSent);
+end;
+
+function TMailFake.SentTo(const Address: string): Integer;
+var
+  I: Integer;
+  All: string;
+begin
+  Result := 0;
+  for I := 0 to High(FSent) do
+  begin
+    All := ', ' + LowerCase(FSent[I].ToList + ', ' + FSent[I].Cc + ', ' + FSent[I].Bcc) + ',';
+    if Pos(', ' + LowerCase(Address) + ',', All) > 0 then
+      Inc(Result);
+  end;
+end;
+
+function TMailFake.Sent(Index: Integer): TSentMail;
+begin
+  if (Index < 0) or (Index > High(FSent)) then
+    raise EMailError.CreateFmt('No mail number %d was sent; %d were', [Index, Length(FSent)]);
+  Result := FSent[Index];
+end;
+
+function TMailFake.Last: TSentMail;
+begin
+  Result := Sent(High(FSent));
+end;
+
+var
+  GFake: TMailFake = nil;
+  GFakeMadeMailer: Boolean = False;
+  GRealTransport: TMailTransport = nil;
+  GRealOwns: Boolean = False;
+
+function FakeMail: TMailFake;
+begin
+  if GFake <> nil then
+    StopFakingMail;
+  GFake := TMailFake.Create;
+  if GMailer = nil then
+  begin
+    GMailer := TMailer.Create(GFake, False);
+    GFakeMadeMailer := True;
+  end
+  else
+  begin
+    GRealTransport := GMailer.FTransport;
+    GRealOwns := GMailer.FOwnsTransport;
+    GMailer.FTransport := GFake;
+    GMailer.FOwnsTransport := False;
+    GFakeMadeMailer := False;
+  end;
+  Result := GFake;
+end;
+
+procedure StopFakingMail;
+begin
+  if GFake = nil then
+    Exit;
+  if GFakeMadeMailer then
+  begin
+    GMailer.Free;
+    GMailer := nil;
+  end
+  else
+  begin
+    GMailer.FTransport := GRealTransport;
+    GMailer.FOwnsTransport := GRealOwns;
+  end;
+  FreeAndNil(GFake);
+  GRealTransport := nil;
 end;
 
 { TLogTransport }

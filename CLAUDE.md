@@ -1230,6 +1230,24 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Fabrikker og falske tjenester
+
+* **En fabrikk uten arena rundt seg lager sin egen.** Første utgave la
+  modellene på heapen og frigjorde dem selv; `Validate` krever arena og
+  sa nei. Nå lever radene så lenge arenaen de ble laget i.
+* **Nøkkelen til en forelder telles ikke opp.** `Make` satte først et
+  løpenummer i `maker_id`, som pekte på en rad som ikke fantes. `Insert`
+  lager forelderen; `Make` lar nøkkelen stå.
+* **En sjekk på om nøkkelen var gitt med `Values` var død**: den er da
+  satt og ikke null, og det spørres om uansett. Mutasjonen overlevde.
+* **Nummeret er felles for alle fabrikker i prosessen**, så to fabrikker i
+  samme test ikke lager samme unike navn.
+* **Falsk mail rendrer meldingen først.** En falsk transport som tok imot
+  det en ekte avviser, er en test som er grønn på mail som aldri går.
+* **`Queue.Fake` og `FakeEvents` ligger i sine egne units**, fordi de må
+  nå `HandlerFor` og lytterlista. `RunPushed` kjører gjennom de ekte
+  handlerne.
+
 ## Hendelser
 
 * **En lytter som feiler, feiler `DispatchEvent`.** En velkomstmail som

@@ -22,7 +22,7 @@ uses
   Askr.Core.Crypto,
   Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
-  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
+  Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Factory, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
@@ -6250,6 +6250,247 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------- factories, fakes -- }
+
+type
+  TFacMaker = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FPasswordHash: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property PasswordHash: string read FPasswordHash write FPasswordHash;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+  TFacGadget = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FWebsite: string;
+    FNotes: string;
+    FQty: Integer;
+    FPrice: Currency;
+    FActive: Boolean;
+    FSeenAt: TDateTime;
+    FMakerId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Website: string read FWebsite write FWebsite;
+    property Notes: string read FNotes write FNotes;
+    property Qty: Integer read FQty write FQty;
+    property Price: Currency read FPrice write FPrice;
+    property Active: Boolean read FActive write FActive;
+    property SeenAt: TDateTime read FSeenAt write FSeenAt;
+    property MakerId: Int64 read FMakerId write FMakerId;
+  public
+    class procedure Describe(S: TSchema); override;
+    procedure Rules(V: TValidator); override;
+  end;
+
+class procedure TFacMaker.Describe(S: TSchema);
+begin
+  S.Table('fac_makers');
+end;
+
+class procedure TFacGadget.Describe(S: TSchema);
+begin
+  S.Table('fac_gadgets');
+  S.EmptyIsNull('Notes');
+  S.BelongsTo('Maker', TFacMaker, 'maker_id');
+end;
+
+procedure TFacGadget.Rules(V: TValidator);
+begin
+  V.Field('Name').Required.MaxLen(60);
+  V.Field('Email').Required.Email;
+end;
+
+procedure TenTimes(M: TModel; N: Int64);
+begin
+  TFacGadget(M).Qty := N * 10;
+end;
+
+function CountOf(C: TDbConnection; const Table: string): Int64;
+var
+  A: TArena;
+  R: TDbResult;
+begin
+  A := TArena.Create(4096);
+  try
+    R := C.Exec(A, 'SELECT count(*) FROM ' + Table);
+    Result := R.AsInt64(0, 0);
+  finally
+    A.Free;
+  end;
+end;
+
+procedure TestFactories;
+var
+  C: TDbConnection;
+  A: TArena;
+  G: TFactory<TFacGadget>;
+  G2: TFactory<TFacGadget>;
+  M: TFactory<TFacMaker>;
+  One, Two: TFacGadget;
+  Maker: TFacMaker;
+  Many: TFactory<TFacGadget>.TItems;
+  Raised: string;
+begin
+  C := UseTestDatabase;
+  A := TArena.Create(4096);
+  try
+    C.Exec(A, 'CREATE TABLE fac_makers (id INTEGER PRIMARY KEY, name VARCHAR(80) NOT NULL UNIQUE, ' +
+      'password_hash VARCHAR(255) NOT NULL)');
+    C.Exec(A, 'CREATE TABLE fac_gadgets (id INTEGER PRIMARY KEY, name VARCHAR(60) NOT NULL UNIQUE, ' +
+      'email VARCHAR(120) NOT NULL, website VARCHAR(200) NOT NULL, notes TEXT, ' +
+      'qty INTEGER NOT NULL, price NUMERIC(12,2) NOT NULL, active BOOLEAN NOT NULL, ' +
+      'seen_at DATETIME NOT NULL, maker_id INTEGER NOT NULL REFERENCES fac_makers(id))');
+  finally
+    A.Free;
+  end;
+  G := TFactory<TFacGadget>.Create;
+  G2 := TFactory<TFacGadget>.Create;
+  M := TFactory<TFacMaker>.Create;
+  try
+    One := G.Make;
+    AssertTrue(Pos('name ', One.Name) = 1, 'a string is its column and a number');
+    AssertTrue((Pos('@example.test', One.Email) > 0) and (Pos('user', One.Email) = 1),
+      'an email column gets an address');
+    AssertTrue(Pos('https://example.test/', One.Website) = 1, 'a url column a link');
+    AssertEqual(One.Notes, '', 'a nullable column stays null');
+    AssertTrue(One.Qty > 0, 'an integer counts');
+    AssertTrue(Frac(One.Price * 100) = 0, 'money fits two decimals');
+    AssertTrue(Abs(One.SeenAt - Now) < 1 / 24, 'a datetime is now');
+    AssertEqual(One.MakerId, Int64(0), 'Make saves nothing and makes no parent');
+    AssertEqual(CountOf(C, 'fac_gadgets'), 0, 'nothing is in the table');
+
+    Two := G.Insert;
+    AssertTrue(Two.Id > 0, 'Insert saves');
+    AssertTrue(Two.MakerId > 0, 'and makes the parent it belongs to');
+    AssertEqual(CountOf(C, 'fac_makers'), 1, 'one maker');
+
+    Maker := M.Values(['name', 'Acme']).Insert;
+    AssertEqual(Maker.Name, 'Acme', 'a value given is the value');
+    AssertTrue(VerifyPassword('password', Maker.PasswordHash), 'password_hash is the hash of password');
+    Two := G2.Values(['maker_id', Maker.Id, 'name', 'Sprocket']).State(TenTimes).Insert;
+    AssertEqual(Two.MakerId, Maker.Id, 'a foreign key given makes no parent');
+    AssertEqual(CountOf(C, 'fac_makers'), 2, 'so still two makers');
+    AssertTrue((Two.Qty > 0) and (Two.Qty mod 10 = 0), 'a state runs on each model');
+
+    Many := G.InsertMany(3);
+    AssertTrue((Length(Many) = 3) and (Many[0].Name <> Many[1].Name) and (Many[1].Name <> Many[2].Name),
+      'many, each different, so a unique column holds');
+    AssertTrue(G2.Make.Name <> G.Make.Name, 'across factories too');
+
+    Raised := '';
+    try
+      G2.Values(['email', 'not an address', 'name', 'Other']).Insert;
+    except
+      on E: EFactoryError do Raised := E.Message;
+    end;
+    AssertContains(Raised, 'email', 'a row its own rules refuse is an error that says which column');
+    Raised := '';
+    try
+      G.Values(['colour', 'red']);
+    except
+      on E: EFactoryError do Raised := E.Message;
+    end;
+    AssertContains(Raised, 'no column colour', 'and so is a column it does not have');
+  finally
+    M.Free;
+    G2.Free;
+    G.Free;
+    CloseTestDatabase;
+  end;
+end;
+
+var
+  GRan: string;
+
+procedure RecordJob(const Ctx: TJobContext);
+begin
+  GRan := GRan + Ctx.Name + ':' + Ctx.Payload.ToString + ' ';
+end;
+
+procedure TestFakes;
+var
+  Q: TQueue;
+  F: TMailFake;
+  Raised: Boolean;
+  E: TOrderPlaced;
+begin
+  { The queue: recorded, nothing runs, and RunPushed runs it through the
+    real handler. }
+  Q := TQueue.Create(1, 1);
+  try
+    Q.Handle('report', RecordJob);
+    Q.Fake;
+    Q.Start;
+    Q.Push('report', 'march');
+    Q.Push('report', 'april');
+    Sleep(50);
+    AssertEqual(Q.Pushed('report'), 2, 'the queue records what was pushed');
+    AssertEqual(Q.PushedPayload('report', 1), 'april', 'with its payload');
+    AssertEqual(GRan, '', 'and nothing ran it');
+    Q.RunPushed;
+    AssertEqual(GRan, 'report:march report:april ', 'until RunPushed, through the real handler, in order');
+    Q.StopFaking;
+    Q.Push('report', 'may');
+    AssertTrue(Q.WaitUntilEmpty(5000), 'after StopFaking it queues for real');
+    AssertContains(GRan, 'report:may', 'and a worker runs it');
+  finally
+    Q.Stop;
+    Q.Free;
+  end;
+
+  { Mail. }
+  F := FakeMail;
+  try
+    Mail.Send(Mail.Message_.From('shop@example.com').AddTo('ada@example.com')
+      .Subject('Receipt').Text('Thanks.').AttachData('receipt.pdf', AllBytes));
+    AssertEqual(F.Count, 1, 'the fake keeps what was sent');
+    AssertEqual(F.SentTo('ada@example.com'), 1, 'to whom');
+    AssertEqual(F.Last.Subject, 'Receipt', 'with its subject');
+    AssertTrue((Length(F.Last.Attachments) = 1) and (F.Last.Attachments[0] = 'receipt.pdf'),
+      'and its attachments');
+    Raised := False;
+    try
+      Mail.Send(Mail.Message_.From('shop@example.com').Subject('To nobody').Text('x'));
+    except
+      on EMailError do Raised := True;
+    end;
+    AssertTrue(Raised, 'a mail a real transport would refuse is refused by the fake too');
+  finally
+    StopFakingMail;
+  end;
+
+  { Events. }
+  ClearListeners;
+  GEventLog := '';
+  Listen(TOrderPlaced, FirstListener);
+  FakeEvents([TOrderPlaced]);
+  try
+    E := NewOrder(42);
+    E.Customer := 'Ada';
+    DispatchEvent(E);
+    AssertEqual(EventsDispatched(TOrderPlaced), 1, 'a faked event is recorded');
+    AssertEqual(GEventLog, '', 'and no listener hears it');
+    AssertContains(DispatchedEventJson(TOrderPlaced), '"Customer":"Ada"', 'with its fields as dispatched');
+    DispatchEvent(TSomethingElse.Create);
+    AssertEqual(EventsDispatched(TSomethingElse), 0, 'an event not faked is not recorded');
+  finally
+    StopFakingEvents;
+    ClearListeners;
+  end;
+end;
+
 procedure TestMailFraConfig;
 const
   Directory = 'askr-mailcfg-test.tmp';
@@ -10398,6 +10639,10 @@ begin
   Group('Events');
   Test('listeners hear what they asked for, in order, and a failure is not quiet', @TestEventsInline);
   Test('a queued listener gets the event rebuilt in the worker, field for field', @TestEventsQueued);
+
+  Group('Factories and fakes');
+  Test('a factory fills what a row needs, makes its parents, and keeps to the rules', @TestFactories);
+  Test('the queue, mail and events can be faked, and a fake refuses what the real one would', @TestFakes);
 
   Group('QR codes');
   Test('module for module the same as two other encoders, the mask they choose too', @TestQrAgainstPython);

@@ -157,6 +157,9 @@ type
     FBindings: array of TJobBinding;
     FProcessed, FFailed, FRetried, FDropped: QWord;
     FOnError: TQueueErrorHandler;
+    FFaking: Boolean;
+    FFakeNames: array of string;
+    FFakePayloads: array of string;
     function HandlerFor(const JobName: string): TJobHandler;
     function IsRunning: Boolean;
   public
@@ -187,6 +190,18 @@ type
     function WaitUntilEmpty(TimeoutMs: Integer): Boolean;
 
     function Pending: Integer;
+
+    { For a test. From Fake on, Push records the job and nothing runs it,
+      so a test can ask what was queued without a worker racing it:
+      Pushed counts a name, PushedPayload gives one, and RunPushed runs
+      what was recorded through the real handlers, here and now, in order
+      -- with an arena, as a worker would -- and lets an exception out.
+      StopFaking forgets the record and queues for real again. }
+    procedure Fake;
+    procedure StopFaking;
+    function Pushed(const JobName: string): Integer;
+    function PushedPayload(const JobName: string; Index: Integer = 0): string;
+    procedure RunPushed;
     property Processed: QWord read FProcessed;
     property Failed: QWord read FFailed;
     property Retried: QWord read FRetried;
@@ -487,7 +502,23 @@ end;
 
 procedure TQueue.Push(const JobName: string; const Payload: TStr;
   DelaySeconds: Integer);
+var
+  I: Integer;
 begin
+  if FFaking then
+  begin
+    FLock.Acquire;
+    try
+      I := Length(FFakeNames);
+      SetLength(FFakeNames, I + 1);
+      SetLength(FFakePayloads, I + 1);
+      FFakeNames[I] := JobName;
+      FFakePayloads[I] := Payload.ToString;
+    finally
+      FLock.Release;
+    end;
+    Exit;
+  end;
   { The store copies the bytes while the caller still owns them. The
     boundary is there and cannot be skipped: in a millisecond the request
     arena is reset and the memory handed out again. }
@@ -502,6 +533,102 @@ begin
 end;
 
 
+
+procedure TQueue.Fake;
+begin
+  FLock.Acquire;
+  try
+    FFaking := True;
+    FFakeNames := nil;
+    FFakePayloads := nil;
+  finally
+    FLock.Release;
+  end;
+end;
+
+procedure TQueue.StopFaking;
+begin
+  FLock.Acquire;
+  try
+    FFaking := False;
+    FFakeNames := nil;
+    FFakePayloads := nil;
+  finally
+    FLock.Release;
+  end;
+end;
+
+function TQueue.Pushed(const JobName: string): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  FLock.Acquire;
+  try
+    for I := 0 to High(FFakeNames) do
+      if FFakeNames[I] = JobName then
+        Inc(Result);
+  finally
+    FLock.Release;
+  end;
+end;
+
+function TQueue.PushedPayload(const JobName: string; Index: Integer): string;
+var
+  I, N: Integer;
+begin
+  N := 0;
+  FLock.Acquire;
+  try
+    for I := 0 to High(FFakeNames) do
+      if FFakeNames[I] = JobName then
+      begin
+        if N = Index then
+          Exit(FFakePayloads[I]);
+        Inc(N);
+      end;
+  finally
+    FLock.Release;
+  end;
+  raise EQueueError.CreateFmt('No job %s number %d was pushed', [JobName, Index]);
+end;
+
+procedure TQueue.RunPushed;
+var
+  Names, Payloads: array of string;
+  I: Integer;
+  H: TJobHandler;
+  Ctx: TJobContext;
+  A, Prev: TArena;
+begin
+  FLock.Acquire;
+  try
+    Names := Copy(FFakeNames);
+    Payloads := Copy(FFakePayloads);
+    FFakeNames := nil;
+    FFakePayloads := nil;
+  finally
+    FLock.Release;
+  end;
+  for I := 0 to High(Names) do
+  begin
+    H := HandlerFor(Names[I]);
+    if not Assigned(H) then
+      raise EQueueError.CreateFmt('No handler for the job %s', [Names[I]]);
+    A := TArena.Create(64 * 1024);
+    Prev := UseArena(A);
+    try
+      Ctx.Name := Names[I];
+      Ctx.Payload := StrDup(A, Payloads[I]);
+      Ctx.Attempt := 1;
+      Ctx.Arena := A;
+      H(Ctx);
+    finally
+      UseArena(Prev);
+      A.Free;
+    end;
+  end;
+end;
 
 procedure TQueue.Start;
 var

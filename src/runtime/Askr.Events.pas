@@ -92,6 +92,17 @@ function EventFromJson(AClass: TEventClass; const Json: string): TEvent;
 { Forgets every listener. For tests. }
 procedure ClearListeners;
 
+{ For a test. From here on an event of one of these classes -- of any
+  class, when none are given -- is recorded instead of delivered: no
+  listener runs and nothing is queued. EventsDispatched counts those of a
+  class and its subclasses; DispatchedEventJson gives one's fields as they
+  were when it was dispatched. StopFakingEvents forgets the record and
+  delivers again. }
+procedure FakeEvents(const Classes: array of TEventClass);
+procedure StopFakingEvents;
+function EventsDispatched(AClass: TEventClass): Integer;
+function DispatchedEventJson(AClass: TEventClass; Index: Integer = 0): string;
+
 implementation
 
 uses
@@ -109,6 +120,10 @@ type
 var
   GListeners: array of TListenerEntry;
   GKnown: array of TEventClass;
+  GFaking: Boolean = False;
+  GFakeClasses: array of TEventClass;
+  GRecordedClasses: array of TEventClass;
+  GRecordedJson: array of string;
 
 procedure RegisterEvent(AClass: TEventClass);
 var
@@ -425,6 +440,20 @@ begin
   Q.Handle(JobPrefix + Name, RunQueued);
 end;
 
+function Faked(E: TEvent): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  if not GFaking then
+    Exit;
+  if Length(GFakeClasses) = 0 then
+    Exit(True);
+  for I := 0 to High(GFakeClasses) do
+    if E.InheritsFrom(GFakeClasses[I]) then
+      Exit(True);
+end;
+
 procedure DispatchEvent(E: TEvent);
 var
   I: Integer;
@@ -432,6 +461,19 @@ var
 begin
   if E = nil then
     Exit;
+  if Faked(E) then
+  begin
+    try
+      I := Length(GRecordedClasses);
+      SetLength(GRecordedClasses, I + 1);
+      SetLength(GRecordedJson, I + 1);
+      GRecordedClasses[I] := TEventClass(E.ClassType);
+      GRecordedJson[I] := EventToJson(E);
+    finally
+      E.Free;
+    end;
+    Exit;
+  end;
   try
     Json := '';
     for I := 0 to High(GListeners) do
@@ -461,6 +503,52 @@ procedure ClearListeners;
 begin
   GListeners := nil;
   GKnown := nil;
+end;
+
+procedure FakeEvents(const Classes: array of TEventClass);
+var
+  I: Integer;
+begin
+  GFaking := True;
+  GFakeClasses := nil;
+  SetLength(GFakeClasses, Length(Classes));
+  for I := 0 to High(Classes) do
+    GFakeClasses[I] := Classes[I];
+  GRecordedClasses := nil;
+  GRecordedJson := nil;
+end;
+
+procedure StopFakingEvents;
+begin
+  GFaking := False;
+  GFakeClasses := nil;
+  GRecordedClasses := nil;
+  GRecordedJson := nil;
+end;
+
+function EventsDispatched(AClass: TEventClass): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  for I := 0 to High(GRecordedClasses) do
+    if GRecordedClasses[I].InheritsFrom(AClass) then
+      Inc(Result);
+end;
+
+function DispatchedEventJson(AClass: TEventClass; Index: Integer): string;
+var
+  I, N: Integer;
+begin
+  N := 0;
+  for I := 0 to High(GRecordedClasses) do
+    if GRecordedClasses[I].InheritsFrom(AClass) then
+    begin
+      if N = Index then
+        Exit(GRecordedJson[I]);
+      Inc(N);
+    end;
+  raise EEventError.CreateFmt('No %s number %d was dispatched', [AClass.ClassName, Index]);
 end;
 
 end.
