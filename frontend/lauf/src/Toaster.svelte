@@ -16,6 +16,9 @@
   import Icon from './Icon.svelte'
   import { XMark } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let { class: klass, ...rest } = $props()
 
   const liste = $derived(toasts())
@@ -39,7 +42,7 @@
         class={cn('pointer-events-auto flex max-w-md items-center gap-3 rounded-full border px-4 py-2 text-sm shadow-lg', variants[t.variant] ?? variants.info)}
       >
         <span>{t.message}</span>
-        <Button variant="ghost" size="sm" icon={XMark} label="Dismiss"
+        <Button variant="ghost" size="sm" icon={XMark} label={word('dismiss')}
                 class="-mr-2 text-current" onclick={() => dismiss(t.id)} />
       </div>
     {/each}
@@ -51,7 +54,7 @@
         class={cn('pointer-events-auto flex max-w-md items-center gap-3 rounded-full border px-4 py-2 text-sm shadow-lg', variants.danger)}
       >
         <span>{t.message}</span>
-        <Button variant="ghost" size="sm" icon={XMark} label="Dismiss"
+        <Button variant="ghost" size="sm" icon={XMark} label={word('dismiss')}
                 class="-mr-2 text-current" onclick={() => dismiss(t.id)} />
       </div>
     {/each}

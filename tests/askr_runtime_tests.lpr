@@ -3549,6 +3549,82 @@ begin
   end;
 end;
 
+{ Lauf's own words: the same keys and English in strings.js and in the
+  framework, both ways -- two lists of the same words drift, and the
+  first sign would be a button that stays English -- and sent to a page
+  only when the request's locale says something else. }
+procedure TestLaufStrings;
+const
+  Dir = '.build/lauf-strings';
+var
+  L: TStringList;
+  I, K, Seen, At: Integer;
+  Line, Key, Text_: string;
+  BuiltIn: TStringArray;
+  Body: string;
+  A: TArena;
+  Prev: string;
+begin
+  L := TStringList.Create;
+  try
+    L.LoadFromFile('frontend/lauf/src/strings.js');
+    BuiltIn := BuiltInTexts;
+    Seen := 0;
+    for I := 0 to L.Count - 1 do
+    begin
+      Line := L[I];
+      { `  close: 'Close',` -- the table's lines, and nothing else. }
+      if (Copy(Line, 1, 2) <> '  ') or (Pos(': ''', Line) = 0) or
+         (Copy(Line, Length(Line) - 1, 2) <> ''',') or (Line[3] = ' ') then
+        Continue;
+      Key := 'lauf.' + Trim(Copy(Line, 1, Pos(':', Line) - 1));
+      Text_ := Copy(Line, Pos(': ''', Line) + 3, MaxInt);
+      Text_ := Copy(Text_, 1, Length(Text_) - 2);
+      Inc(Seen);
+      At := -1;
+      for K := 0 to High(BuiltIn) do
+        if Copy(BuiltIn[K], 1, Pos('=', BuiltIn[K]) - 1) = Key then
+          At := K;
+      AssertTrue(At >= 0, Key + ' is in strings.js and in the framework');
+      if At >= 0 then
+        AssertEqual(Copy(BuiltIn[At], Pos('=', BuiltIn[At]) + 1, MaxInt), Text_,
+          Key + ' says the same in both');
+    end;
+    K := 0;
+    for I := 0 to High(BuiltIn) do
+      if Copy(BuiltIn[I], 1, 5) = 'lauf.' then
+        Inc(K);
+    AssertEqual(Seen, K, 'and the framework has no Lauf word strings.js does not');
+    AssertTrue(Seen > 40, 'every one of them, not a handful');
+  finally
+    L.Free;
+  end;
+
+  RemoveTree(Dir);
+  ForceDirectories(Dir);
+  A := TArena.Create(16 * 1024);
+  UseArena(A);
+  Prev := UseLocale('');
+  try
+    WriteText(Dir + '/nb.toml', '[lauf]' + LineEnding + 'close = "Lukk"' + LineEnding +
+      'select_row = "Velg rad :n"');
+    LoadLang(Dir);
+    TInertia.SetVersion('t');
+    Body := Inertia('X', []).Body.ToString;
+    AssertNotContains(Body, '"lauf"', 'a page in English carries none of it');
+    UseLocale('nb');
+    Body := Inertia('X', []).Body.ToString;
+    AssertContains(Body, '"lauf":{"close":"Lukk","select_row":"Velg rad :n"}',
+      'a page in Norwegian carries the words that differ, and only those');
+  finally
+    UseLocale(Prev);
+    ClearLang;
+    UseArena(nil);
+    A.Free;
+    RemoveTree(Dir);
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -8605,6 +8681,7 @@ begin
     @TestLang);
   Test('the visitor''s choice, then the header, then app.locale', @TestLocales);
   Test('askr lang:check, both ways', @TestLangCheck);
+  Test('Lauf''s words: one list in two places, and sent only when they differ', @TestLaufStrings);
 
   Group('make pivot');
   Test('the table between two models, named as BelongsToMany expects',

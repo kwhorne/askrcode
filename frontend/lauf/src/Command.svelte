@@ -13,15 +13,18 @@
   // oppførselen, vi eier at den er komplett.
   const listId = uid('lauf-command-list')
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     /** Det uthevede valget. Kontrollert, ikke bundet: Bits har en egen
         fallback på value, og bind:value mot undefined er en feil i Svelte
         5 når mottakeren har det. */
     value = $bindable(undefined),
-    placeholder = 'Type a command…',
-    empty = 'No results',
+    placeholder = word('type_a_command'),
+    empty = word('no_results'),
     /** Navnet på lista, for den som ikke ser den. */
-    label = 'Commands',
+    label = word('commands'),
     children,
     class: klass,
     ...rest

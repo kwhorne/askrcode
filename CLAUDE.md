@@ -977,6 +977,24 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   `\\`, `\n` og `\t`, og en linje som ikke er noe er et problem med
   linjenummer. Å endre hvordan `askr.toml` leses for å få det, ville vært
   å flytte en risiko inn i konfigurasjonen.
+* **Laufs ord er én liste på to steder**: `frontend/lauf/src/strings.js`
+  og `lauf.*` i `Askr.Core.Lang`. En test i `askr_runtime_tests` leser
+  JS-fila og krever samme nøkler og samme engelsk begge veier — samme
+  grep som versjonstesten. Plassholderne er `:navn` også i Lauf, så en
+  oversettelse går fra lang-fila til knappen uendret.
+* **`lauf`-propen sendes bare når lokalet sier noe annet enn engelsk.** En
+  side på engelsk bærer ingenting av det. `provideStrings` tar en funksjon,
+  så et språkbytte vises på neste side uten omlasting.
+* **Porten beviser hele kjeden, ikke endene**: `[lauf] search = "Søk"` i
+  nb.toml, Accept-Language nb i Chrome, og søkefeltet i det genererte
+  gridet skal si «Søk». Hvert ledd — lang-fil, Inertia-prop, layouten
+  stillaset skrev, DataGrid — må holde for at det skal skje.
+* **Inertia 3s `page` er et `$state`-objekt, ikke en store.** Første
+  utkast av layouten skrev `$page.props.lauf`, og Svelte kastet
+  `store_invalid_shape` — men bare på sider der en Lauf-komponent spurte
+  om et ord med én gang. Skjemaene virket; listene med DataGrid og toasten
+  etter en lagring gjorde det ikke. `pages.mjs` så ingenting, for det
+  kompilerer; det var nettleserdelen av `make:check` som fant det.
 * **`askr lang:check` sjekker begge veier**, som porten for MCP-verktøyene:
   nøkler et lokale mangler, og nøkler det har som ingenting slår opp —
   én retning alene slipper en fil full av skrivefeil gjennom.

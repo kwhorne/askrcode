@@ -34,6 +34,9 @@
     Link as LinkIcon, CodeBracket, ArrowUturnLeft, ArrowUturnRight, Eye, EyeSlash,
   } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     /** The markdown source. */
     value = $bindable(),
@@ -174,25 +177,25 @@
   }
 
   const buttons = {
-    heading: { icon: H1, label: 'Heading 1', run: () => prefixLines((l) => `# ${l}`, /^#{1,6}\s+/) },
-    h2: { icon: H2, label: 'Heading 2', run: () => prefixLines((l) => `## ${l}`, /^#{1,6}\s+/) },
-    h3: { icon: H3, label: 'Heading 3', run: () => prefixLines((l) => `### ${l}`, /^#{1,6}\s+/) },
-    bold: { icon: Bold, label: 'Bold', key: '⌘B', run: () => wrap('**', '**', 'bold text') },
-    italic: { icon: Italic, label: 'Italic', key: '⌘I', run: () => wrap('*', '*', 'italic text') },
-    strike: { icon: Strikethrough, label: 'Strikethrough', run: () => wrap('~~', '~~', 'struck out') },
-    code: { icon: CodeBracket, label: 'Code', key: '⌘E', run: () => wrap('`', '`', 'code') },
-    quote: { glyph: '”', label: 'Quote', run: () => prefixLines((l) => `> ${l}`, /^>\s?/) },
+    heading: { icon: H1, label: word('heading_1'), run: () => prefixLines((l) => `# ${l}`, /^#{1,6}\s+/) },
+    h2: { icon: H2, label: word('heading_2'), run: () => prefixLines((l) => `## ${l}`, /^#{1,6}\s+/) },
+    h3: { icon: H3, label: word('heading_3'), run: () => prefixLines((l) => `### ${l}`, /^#{1,6}\s+/) },
+    bold: { icon: Bold, label: word('bold'), key: '⌘B', run: () => wrap('**', '**', word('bold_text')) },
+    italic: { icon: Italic, label: word('italic'), key: '⌘I', run: () => wrap('*', '*', word('italic_text')) },
+    strike: { icon: Strikethrough, label: word('strikethrough'), run: () => wrap('~~', '~~', word('struck_text')) },
+    code: { icon: CodeBracket, label: word('code'), key: '⌘E', run: () => wrap('`', '`', word('code_text')) },
+    quote: { glyph: '”', label: word('quote'), run: () => prefixLines((l) => `> ${l}`, /^>\s?/) },
     bullet: {
-      icon: ListBullet, label: 'Bulleted list',
+      icon: ListBullet, label: word('bulleted_list'),
       run: () => prefixLines((l) => `- ${l}`, /^\s*(?:[-*+]|\d+[.)])\s+/),
     },
     ordered: {
-      icon: NumberedList, label: 'Numbered list',
+      icon: NumberedList, label: word('numbered_list'),
       run: () => prefixLines((l, i) => `${i + 1}. ${l}`, /^\s*(?:[-*+]|\d+[.)])\s+/),
     },
-    link: { icon: LinkIcon, label: 'Link', key: '⌘K', run: link },
-    undo: { icon: ArrowUturnLeft, label: 'Undo', run: () => history('undo') },
-    redo: { icon: ArrowUturnRight, label: 'Redo', run: () => history('redo') },
+    link: { icon: LinkIcon, label: word('link'), key: '⌘K', run: link },
+    undo: { icon: ArrowUturnLeft, label: word('undo'), run: () => history('undo') },
+    redo: { icon: ArrowUturnRight, label: word('redo'), run: () => history('redo') },
   }
 
   // The toolbar string is read once. `~` becomes an element that grows,
@@ -297,7 +300,7 @@
        same. -->
   <div
     role="toolbar"
-    aria-label="Formatting"
+    aria-label={word('formatting')}
     aria-controls={field?.id ?? undefined}
     onkeydown={onToolbarKey}
     class="flex items-center gap-0.5 border-b border-line bg-raised/40 px-1.5 py-1"
@@ -315,8 +318,8 @@
           {disabled}
           aria-expanded={preview}
           aria-controls={preview ? previewId : undefined}
-          aria-label={preview ? 'Hide preview' : 'Show preview'}
-          title={preview ? 'Hide preview' : 'Show preview'}
+          aria-label={preview ? word('hide_preview') : word('show_preview')}
+          title={preview ? word('hide_preview') : word('show_preview')}
           onclick={() => (preview = !preview)}
           onfocus={() => (focused = i)}
           class={cn(buttonClasses, preview && 'bg-line/60 text-fg')}
@@ -373,14 +376,14 @@
            instead, so it can be navigated to. -->
       <div
         id={previewId}
-        aria-label="Preview"
+        aria-label={word('preview')}
         class={cn(
           'flex-1 overflow-y-auto border-t border-line px-3 py-2 md:w-1/2 md:border-t-0',
           proseClasses
         )}
       >
         {#if current.trim() === ''}
-          <p class="text-muted/70">Nothing to preview yet.</p>
+          <p class="text-muted/70">{word('nothing_to_preview')}</p>
         {:else}
           <!-- renderMarkdown escapes everything and never lets raw HTML
                through. That is the precondition for this line. -->

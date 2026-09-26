@@ -102,6 +102,12 @@ with the zero-major caveat that minor releases may break things until
   words. `askr new` writes `LoadLang`, `UseLocales` and an empty
   `lang/en.toml`.
 
+  Lauf's own words -- a close button, an empty list, the editor's buttons
+  -- are keys too, under `[lauf]`. Askr sends them in a `lauf` prop when
+  the request's locale says something other than English, and
+  `provideStrings` in the layout `askr new` writes hands them to Lauf. The
+  keys and the English are one list in two places, held equal by a test.
+
   `askr lang:check` holds every locale against the base both ways: the
   keys it lacks, the keys it has that nothing looks up, and placeholders
   nothing passes. It exits 1 when there is something to fix.

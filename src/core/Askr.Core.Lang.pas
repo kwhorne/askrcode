@@ -93,6 +93,12 @@ function AttributeName(const Column: string): string;
   lacks. }
 function BuiltInTexts: TStringArray;
 
+{ The texts under Prefix -- 'lauf' -- in the current locale, as
+  key=value without the prefix, where they say something other than the
+  framework's English. Empty when nothing does, which is the common case:
+  a page in English carries none of it. }
+function ChangedTextsUnder(const Prefix: string): TStringArray;
+
 { Every key of Locale's file, in the order it was written. }
 function KeysOf(const Locale: string): TStringArray;
 
@@ -114,7 +120,7 @@ const
   { The framework's own words. English, and the text every message had
     before there were keys: an app with no lang directory must not notice
     that there are. }
-  BuiltIn: array[0..12] of string = (
+  BuiltIn: array[0..61] of string = (
     'validation.required=:attribute is required',
     'validation.min_length=:attribute must be at least :min characters',
     'validation.max_length=:attribute can be at most :max characters',
@@ -127,7 +133,59 @@ const
     'validation.unique=:attribute is already taken',
     'validation.exists=:attribute does not match a row in :table',
     'validation.ids_exist=:attribute contains :ids, which does not match a row in :table',
-    'validation.ids_list=:attribute must be a list of ids, and :value is not one'
+    'validation.ids_list=:attribute must be a list of ids, and :value is not one',
+    { Lauf's own words -- the same keys and English as
+      frontend/lauf/src/strings.js, held equal by a test, so a lang file's
+      [lauf] section is checked by lang:check like the rest. }
+    'lauf.close=Close',
+    'lauf.dismiss=Dismiss',
+    'lauf.breadcrumb=Breadcrumb',
+    'lauf.main_navigation=Main',
+    'lauf.sidebar=Sidebar',
+    'lauf.pagination=Pagination',
+    'lauf.previous_page=Previous page',
+    'lauf.next_page=Next page',
+    'lauf.no_results=No results',
+    'lauf.range_of=:from–:to of :total',
+    'lauf.show_suggestions=Show suggestions',
+    'lauf.type_a_command=Type a command…',
+    'lauf.commands=Commands',
+    'lauf.choose_date=Choose date',
+    'lauf.previous_month=Previous month',
+    'lauf.next_month=Next month',
+    'lauf.nothing_here=Nothing here',
+    'lauf.search=Search',
+    'lauf.search_in=Search :caption',
+    'lauf.columns=Columns',
+    'lauf.select_all_rows=Select all rows on this page',
+    'lauf.select_row=Select row :n',
+    'lauf.formatting=Formatting',
+    'lauf.heading_1=Heading 1',
+    'lauf.heading_2=Heading 2',
+    'lauf.heading_3=Heading 3',
+    'lauf.bold=Bold',
+    'lauf.italic=Italic',
+    'lauf.strikethrough=Strikethrough',
+    'lauf.code=Code',
+    'lauf.quote=Quote',
+    'lauf.bulleted_list=Bulleted list',
+    'lauf.numbered_list=Numbered list',
+    'lauf.link=Link',
+    'lauf.undo=Undo',
+    'lauf.redo=Redo',
+    'lauf.show_preview=Show preview',
+    'lauf.hide_preview=Hide preview',
+    'lauf.preview=Preview',
+    'lauf.nothing_to_preview=Nothing to preview yet.',
+    'lauf.bold_text=bold text',
+    'lauf.italic_text=italic text',
+    'lauf.struck_text=struck out',
+    'lauf.code_text=code',
+    'lauf.choose_file=Choose a file',
+    'lauf.choose_files=Choose files',
+    'lauf.or_drag=or drag them here',
+    'lauf.too_large=Too large, not added: :names',
+    'lauf.remove_file=Remove :name'
   );
 
 type
@@ -501,6 +559,27 @@ begin
   SetLength(Result, Length(BuiltIn));
   for I := 0 to High(BuiltIn) do
     Result[I] := BuiltIn[I];
+end;
+
+function ChangedTextsUnder(const Prefix: string): TStringArray;
+var
+  I: Integer;
+  Key, Text_, Head: string;
+begin
+  Result := nil;
+  Head := Prefix + '.';
+  for I := 0 to GBuiltIn.Count - 1 do
+  begin
+    Key := GBuiltIn.Names[I];
+    if Copy(Key, 1, Length(Head)) <> Head then
+      Continue;
+    Text_ := RawText(Key);
+    if Text_ <> GBuiltIn.ValueFromIndex[I] then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := Copy(Key, Length(Head) + 1, MaxInt) + '=' + Text_;
+    end;
+  end;
 end;
 
 function KeysOf(const Locale: string): TStringArray;

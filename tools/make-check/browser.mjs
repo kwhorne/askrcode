@@ -266,6 +266,20 @@ await fill('Maker', makerId)
 await submit()
 await until(`/^\\/gadgets\\/\\d+$/.test(location.pathname)`, 'the kept gadget')
 
+// ---- Lauf in the visitor's language ----
+// The [lauf] section of lang/nb.toml, sent as a prop, given to Lauf by the
+// layout the scaffold wrote: the grid's search box is the proof that the
+// whole chain holds, not just its ends.
+console.log('- Lauf in Norwegian')
+await send('Network.setExtraHTTPHeaders', { headers: { 'Accept-Language': 'nb-NO,nb;q=0.9' } })
+await go('/gadgets')
+check((await js(`document.querySelector('input[type=search]')?.placeholder`)) === 'Søk',
+  'asked for in Norwegian, the grid searches in Norwegian', await js(`document.querySelector('input[type=search]')?.placeholder`))
+await send('Network.setExtraHTTPHeaders', { headers: {} })
+await go('/gadgets')
+check((await js(`document.querySelector('input[type=search]')?.placeholder`)) === 'Search',
+  'and in English again when nothing asks for it')
+
 console.log()
 if (errors.length) {
   console.log('Browser errors:')

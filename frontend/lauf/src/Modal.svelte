@@ -17,6 +17,9 @@
   import Button from './Button.svelte'
   import { XMark } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     open = $bindable(false),
     /** Navnet på dialogen. Påkrevd. */
@@ -63,7 +66,7 @@
         </div>
         <Dialog.Close>
           {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="sm" icon={XMark} label="Close" />
+            <Button {...props} variant="ghost" size="sm" icon={XMark} label={word('close')} />
           {/snippet}
         </Dialog.Close>
       </div>

@@ -88,6 +88,25 @@ The arguments are pairs. A placeholder is `:name`, and they are replaced
 longest name first, so `:min` never takes the front off `:minimum`. One that
 is not given is left in the text, where it is seen.
 
+## Lauf's own words
+
+Lauf writes a few words itself — `close`, `no_results`, `range_of`,
+`select_row` and the editor's buttons. They are keys too, under `[lauf]`:
+
+```toml
+# lang/nb.toml
+[lauf]
+close = "Lukk"
+range_of = ":from–:to av :total"
+select_row = "Velg rad :n"
+```
+
+Askr puts them in a `lauf` prop on every Inertia page whose locale says
+something other than English, and leaves the prop out when it does not. The
+layout `askr new` writes hands it to Lauf with `provideStrings`. The keys and
+the English are the same in Lauf and in the framework — a test holds the two
+lists equal — so `askr lang:check` checks a `[lauf]` section like the rest.
+
 ## The file
 
 Plain TOML, the part of it a lang file needs: `[sections]`, `key = "value"`

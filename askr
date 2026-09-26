@@ -945,7 +945,7 @@ make_check_socket() {
   # A second language, read at start-up: the refusals below are asked for
   # in it, and lang:check has to say what it lacks.
   mkdir -p "$work/shop/lang"
-  printf '[validation]\nrequired = ":attribute m\303\245 fylles ut"\n\n[validation.attributes]\nname = "navn"\n' \
+  printf '[validation]\nrequired = ":attribute m\303\245 fylles ut"\n\n[validation.attributes]\nname = "navn"\n\n[lauf]\nsearch = "S\303\270k"\n' \
     > "$work/shop/lang/nb.toml"
   code_lc=0
   in_box "$askr_bin lang:check" shop >"$work/sock-langcheck.log" 2>&1 || code_lc=$?

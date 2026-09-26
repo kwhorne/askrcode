@@ -30,6 +30,7 @@ import CommandGroup from './CommandGroup.svelte'
 import CommandItem from './CommandItem.svelte'
 
 export { cn } from './utils.js'
+export { provideStrings, strings, defaults as laufDefaults } from './strings.js'
 export { FORM, FIELD } from './context.js'
 
 export { default as Icon } from './Icon.svelte'

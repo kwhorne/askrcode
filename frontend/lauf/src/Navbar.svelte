@@ -2,7 +2,10 @@
      det den som navigerer med skjermleser hopper mellom. -->
 <script>
   import { cn } from './utils.js'
-  let { label = 'Main', brand, children, class: klass, ...rest } = $props()
+  import { strings } from './strings.js'
+  const word = strings()
+
+  let { label = word('main_navigation'), brand, children, class: klass, ...rest } = $props()
 </script>
 
 <header

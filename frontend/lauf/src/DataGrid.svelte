@@ -43,6 +43,9 @@
     ChevronUp, ChevronDown, MagnifyingGlass, ViewColumns,
   } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     /** Radene som skal vises. I tjenermodus er dette allerede én side. */
     rows = [],
@@ -74,7 +77,7 @@
     /** Viser skjelett i stedet for rader. */
     loading = false,
     /** Teksten når ingenting finnes. */
-    empty = 'Nothing here',
+    empty = word('nothing_here'),
     /** Navnet på tabellen, for den som ikke ser den. Påkrevd. */
     caption,
     /** Skjuler søkefeltet. */
@@ -278,8 +281,8 @@
             icon={MagnifyingGlass}
             type="search"
             value={q}
-            placeholder="Search"
-            aria-label="Search {caption}"
+            placeholder={word('search')}
+            aria-label={word('search_in', { caption })}
             oninput={(e) => sokEndret(e.currentTarget.value)}
           />
         </div>
@@ -287,7 +290,7 @@
       <div class="flex-1"></div>
       <Dropdown>
         {#snippet trigger(props)}
-          <Button {...props} size="sm" icon={ViewColumns} label="Columns" />
+          <Button {...props} size="sm" icon={ViewColumns} label={word('columns')} />
         {/snippet}
         {#each columns.filter((c) => c.hideable !== false) as col (col.key)}
           <DropdownItem
@@ -335,7 +338,7 @@
               <span id={cellId(-1, 0)} tabindex={tabIndex(-1, 0)} class="inline-flex">
                 <Checkbox
                   label=""
-                  aria-label="Select all rows on this page"
+                  aria-label={word('select_all_rows')}
                   checked={valgTilstand === 'all'}
                   indeterminate={valgTilstand === 'some'}
                   onchange={velgAlle}
@@ -423,7 +426,7 @@
                   <span id={cellId(r, 0)} tabindex={tabIndex(r, 0)} class="inline-flex">
                     <Checkbox
                       label=""
-                      aria-label="Select row {forsteIndeks + r + 1}"
+                      aria-label={word('select_row', { n: forsteIndeks + r + 1 })}
                       checked={selected.has(key)}
                       onchange={() => velg(key)}
                     />

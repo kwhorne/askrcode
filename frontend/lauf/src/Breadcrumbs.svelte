@@ -5,10 +5,13 @@
 <script>
   import { cn } from './utils.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     /** [{ label, href }] — siste uten href. */
     items = [],
-    label = 'Breadcrumb',
+    label = word('breadcrumb'),
     class: klass,
     ...rest
   } = $props()

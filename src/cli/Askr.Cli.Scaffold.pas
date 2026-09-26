@@ -844,8 +844,15 @@ begin
 
   Emit(Root + '/frontend/src/Layout.svelte',
     '<script>' + #10 +
+    '  import { page } from ' + Q + '@inertiajs/svelte' + Q + #10 +
+    '  import { provideStrings } from ' + Q + '@askrcode/lauf' + Q + #10 +
     '  import { Flash } from ' + Q + '@askrcode/lauf/inertia' + Q + #10 +
-    '  let { children } = $props()' + #10 +
+    '  let { children } = $props()' + #10 + #10 +
+    '  // Lauf''s own words -- a close button, an empty list -- in the' + #10 +
+    '  // request''s language: the [lauf] section of lang/<locale>.toml,' + #10 +
+    '  // which Askr sends when it says something other than English.' + #10 +
+    '  // page is Inertia 3''s state object, not a store: no $ in front.' + #10 +
+    '  provideStrings(() => page.props.lauf)' + #10 +
     '</script>' + #10 + #10 +
     '<!-- Flash sets up the live regions once and turns flash from Askr' + #10 +
     '     into toasts. It has to sit outside the pages, or the region is' + #10 +

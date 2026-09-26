@@ -22,6 +22,9 @@
   import Button from './Button.svelte'
   import { ArrowUpTray, XMark, Document } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     /** File eller File[] — settes i <Form> når komponenten står i et Field. */
     files = $bindable([]),
@@ -106,7 +109,7 @@
         'focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-accent'
       )}
     >
-      Choose {multiple ? 'files' : 'a file'}
+      {multiple ? word('choose_files') : word('choose_file')}
       <input
         {id}
         type="file"
@@ -119,12 +122,12 @@
         class="sr-only"
       />
     </label>
-    <p class="text-xs text-muted">or drag them here</p>
+    <p class="text-xs text-muted">{word('or_drag')}</p>
   </div>
 
   {#if avvist.length}
     <p role="alert" class="text-xs text-danger">
-      Too large, not added: {avvist.join(', ')}
+      {word('too_large', { names: avvist.join(', ') })}
     </p>
   {/if}
 
@@ -139,7 +142,7 @@
             size="sm"
             variant="ghost"
             icon={XMark}
-            label="Remove {f.name}"
+            label={word('remove_file', { name: f.name })}
             onclick={() => fjern(i)}
           />
         </li>

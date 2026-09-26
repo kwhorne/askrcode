@@ -15,6 +15,9 @@
   import Button from './Button.svelte'
   import { ChevronLeft, ChevronRight } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     page = 1,
     perPage = 25,
@@ -25,7 +28,7 @@
     onnavigate,
     /** Aria-etikett på navigasjonen. Flere pagineringer på samme side må
         skilles fra hverandre for den som hopper mellom landemerker. */
-    label = 'Pagination',
+    label = word('pagination'),
     class: klass,
     ...rest
   } = $props()
@@ -49,9 +52,9 @@
 >
   <p class="text-xs text-muted tabular-nums">
     {#if total === 0}
-      No results
+      {word('no_results')}
     {:else}
-      {from}–{to} of {total}
+      {word('range_of', { from, to, total })}
     {/if}
   </p>
 
@@ -59,7 +62,7 @@
     <Button
       size="sm"
       icon={ChevronLeft}
-      label="Previous page"
+      label={word('previous_page')}
       href={href && current > 1 ? href(current - 1) : undefined}
       disabled={current <= 1}
       onclick={href ? undefined : () => go(current - 1)}
@@ -73,7 +76,7 @@
     <Button
       size="sm"
       icon={ChevronRight}
-      label="Next page"
+      label={word('next_page')}
       href={href && current < pages ? href(current + 1) : undefined}
       disabled={current >= pages}
       onclick={href ? undefined : () => go(current + 1)}

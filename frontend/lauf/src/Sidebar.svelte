@@ -2,7 +2,10 @@
      «sidemeny» kan skilles av den som hopper mellom dem. -->
 <script>
   import { cn } from './utils.js'
-  let { label = 'Sidebar', children, class: klass, ...rest } = $props()
+  import { strings } from './strings.js'
+  const word = strings()
+
+  let { label = word('sidebar'), children, class: klass, ...rest } = $props()
 </script>
 
 <nav

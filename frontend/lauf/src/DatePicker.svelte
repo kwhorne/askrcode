@@ -22,6 +22,9 @@
   import Icon from './Icon.svelte'
   import { CalendarDays, ChevronLeft, ChevronRight } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     /** ISO-dato, 'YYYY-MM-DD', eller '' for tom. */
     value = $bindable(''),
@@ -87,7 +90,7 @@
     </B.Input>
     <B.Trigger class="absolute right-2 text-muted">
       {#snippet child({ props })}
-        <button {...props} type="button" aria-label="Choose date">
+        <button {...props} type="button" aria-label={word('choose_date')}>
           <Icon icon={CalendarDays} size="sm" />
         </button>
       {/snippet}
@@ -99,11 +102,11 @@
       {#snippet children({ months, weekdays })}
         <B.Header class="mb-2 flex items-center justify-between">
           <B.PrevButton class="rounded-control p-1 hover:bg-line/50">
-            <Icon icon={ChevronLeft} size="sm" label="Previous month" />
+            <Icon icon={ChevronLeft} size="sm" label={word('previous_month')} />
           </B.PrevButton>
           <B.Heading class="text-sm font-medium text-fg" />
           <B.NextButton class="rounded-control p-1 hover:bg-line/50">
-            <Icon icon={ChevronRight} size="sm" label="Next month" />
+            <Icon icon={ChevronRight} size="sm" label={word('next_month')} />
           </B.NextButton>
         </B.Header>
         {#each months as month (month.value)}

@@ -234,6 +234,26 @@ errors are assertive so they do. Both are in the document before any message
 arrives — add the region and the text at the same time and a screen reader
 never notices the change.
 
+## Its own words, in your language
+
+The few words Lauf writes itself — a close button, an empty list, the
+editor's buttons, "11–20 of 35" — are English until the app says otherwise,
+once, in its layout:
+
+```svelte
+<script>
+  import { page } from '@inertiajs/svelte'
+  import { provideStrings } from '@askrcode/lauf'
+  provideStrings(() => page.props.lauf)
+</script>
+```
+
+`askr new` writes that line. The words come from the `[lauf]` section of
+`lang/<locale>.toml`, and Askr sends them only when the request's locale says
+something other than English — see [Languages](lang.md#laufs-own-words). A
+function rather than an object, so a change of language on the next page is
+seen without a reload. A key the app leaves out stays English.
+
 ## What is missing
 
 No colour picker, no WYSIWYG editor, no kanban board, no charts, no

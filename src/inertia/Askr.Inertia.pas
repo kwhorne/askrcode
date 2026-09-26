@@ -49,7 +49,7 @@ uses
   SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Json,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response,
   Askr.Urd.Model, Askr.Urd.Json, Askr.Urd.Bind, Askr.Session, Askr.Core.Url,
-  Askr.Csrf;
+  Askr.Csrf, Askr.Core.Lang;
 
 type
   EInertiaError = class(Exception);
@@ -527,6 +527,7 @@ var
   Url: TStr;
   AnyDeferred: Boolean;
   Sess: TSession;
+  Lauf: TStringArray;
 begin
   if Odd(Length(Props)) then
     raise EInertiaError.Create(
@@ -547,6 +548,20 @@ begin
 
   if Assigned(GShare) then
     GShare(W);
+  { Lauf's own words in the request's language, when it says something
+    other than English: the [lauf] section of the lang files, for
+    provideStrings in the app's layout. Left out otherwise, so a page in
+    English carries none of it. }
+  Lauf := ChangedTextsUnder('lauf');
+  if Length(Lauf) > 0 then
+  begin
+    W.Key('lauf');
+    W.BeginObject;
+    for I := 0 to High(Lauf) do
+      W.Field(Copy(Lauf[I], 1, Pos('=', Lauf[I]) - 1),
+        Copy(Lauf[I], Pos('=', Lauf[I]) + 1, MaxInt));
+    W.EndObject;
+  end;
   I := 0;
   while I < Length(Props) do
   begin

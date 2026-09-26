@@ -13,13 +13,16 @@
   import Icon from './Icon.svelte'
   import { ChevronUpDown, Check } from './icons/micro/index.js'
 
+  import { strings } from './strings.js'
+  const word = strings()
+
   let {
     value = $bindable(''),
     /** [{ value, label }] — filtreres av kalleren, ikke av oss. */
     items = [],
     placeholder,
     /** Vises når items er tom. */
-    empty = 'No results',
+    empty = word('no_results'),
     /** Kalles når søketeksten endres, slik at appen kan filtrere. */
     onsearch,
     disabled = false,
@@ -60,7 +63,7 @@
     />
     <Combobox.Trigger class="absolute right-2 text-muted">
       {#snippet child({ props })}
-        <button {...props} type="button" tabindex="-1" aria-label="Show suggestions">
+        <button {...props} type="button" tabindex="-1" aria-label={word('show_suggestions')}>
           <Icon icon={ChevronUpDown} size="sm" />
         </button>
       {/snippet}
