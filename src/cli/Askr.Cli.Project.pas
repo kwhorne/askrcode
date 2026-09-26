@@ -50,6 +50,10 @@ type
     function AskrSource: string;
     function UnitPaths: TStringArray;
     function WatchDirs: TStringArray;
+    { The names under [plugins.<name>], in the order askr.toml has them. }
+    function PluginNames: TStringArray;
+    { A key under [plugins.<name>]: git, version or path. }
+    function PluginSetting(const PluginName, Key: string): string;
     property Root: string read FRoot;
   end;
 
@@ -204,6 +208,44 @@ end;
 function TProject.WatchDirs: TStringArray;
 begin
   Result := SplitList(Get('watch', 'app,src,config,resources'));
+end;
+
+function TProject.PluginNames: TStringArray;
+var
+  I, J, Dot: Integer;
+  Key: string;
+  Seen: Boolean;
+begin
+  Result := nil;
+  for I := 0 to FValues.Count - 1 do
+  begin
+    Key := FValues.Names[I];
+    if Copy(Key, 1, 8) <> 'plugins.' then
+      Continue;
+    Key := Copy(Key, 9, MaxInt);
+    Dot := Pos('.', Key);
+    { plugins.stripe = "^0.1.0" -- the form Cargo uses -- is a plugin
+      with no git and no path, so the build can say what a plugin looks
+      like here instead of seeing none. }
+    if Dot = 1 then
+      Continue;
+    if Dot > 0 then
+      Key := Copy(Key, 1, Dot - 1);
+    Seen := False;
+    for J := 0 to High(Result) do
+      if Result[J] = Key then
+        Seen := True;
+    if not Seen then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := Key;
+    end;
+  end;
+end;
+
+function TProject.PluginSetting(const PluginName, Key: string): string;
+begin
+  Result := Get('plugins.' + PluginName + '.' + Key, '');
 end;
 
 end.

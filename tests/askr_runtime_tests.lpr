@@ -24,7 +24,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
 
 { -------------------------------------------------------------- versjon -- }
@@ -7372,6 +7372,431 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------------ plugins -- }
+
+function PluginScratch(const Name: string): string;
+begin
+  Result := IncludeTrailingPathDelimiter(GetTempDir) + 'askr-plugins-' +
+    IntToStr(GetProcessID) + '-' + Name;
+end;
+
+procedure WriteLines(const Path_: string; const Lines: array of string);
+var
+  L: TStringList;
+  I: Integer;
+begin
+  ForceDirectories(ExtractFilePath(Path_));
+  L := TStringList.Create;
+  try
+    for I := 0 to High(Lines) do
+      L.Add(Lines[I]);
+    L.SaveToFile(Path_);
+  finally
+    L.Free;
+  end;
+end;
+
+procedure RemoveScratch(const Dir: string);
+var
+  Out_: string;
+begin
+  RunCommand('/bin/rm', ['-rf', Dir], Out_);
+end;
+
+{ A plugin at Dir with this manifest. }
+procedure MakePlugin(const Dir: string; const Manifest: array of string);
+begin
+  WriteLines(IncludeTrailingPathDelimiter(Dir) + 'askr-plugin.toml', Manifest);
+end;
+
+procedure TestPluginManifest;
+var
+  D, Err: string;
+  M: TPluginManifest;
+begin
+  D := PluginScratch('manifest');
+  try
+    MakePlugin(D, ['name = "stripe"', 'version = "0.1.0"', 'askr = "^0.16.0"',
+      'entry = "Askr.Plugin.Stripe"', 'units = "src,src/billing"',
+      'migrations = "database"', 'tables = "stripe_customers, stripe_events"']);
+    AssertTrue(ReadManifest(D, M, Err), 'a manifest that says what it has to is read: ' + Err);
+    AssertEqual(M.Name, 'stripe', 'its name');
+    AssertEqual(M.Entry, 'Askr.Plugin.Stripe', 'its entry unit');
+    AssertEqual(Length(M.Units), 2, 'its unit directories');
+    AssertEqual(M.Config, 'stripe', 'the configuration prefix is its name unless it says otherwise');
+    AssertTrue((Length(M.Tables) = 2) and (M.Tables[1] = 'stripe_events'), 'and the tables it owns');
+
+    MakePlugin(D, ['name = "Stripe"', 'version = "0.1.0"', 'askr = "^0.16.0"', 'entry = "X"']);
+    AssertFalse(ReadManifest(D, M, Err), 'a name with a capital is refused');
+    AssertContains(Err, 'lower case', 'saying what a name is');
+
+    MakePlugin(D, ['name = "stripe"', 'version = "0.1.0"', 'entry = "X"']);
+    AssertFalse(ReadManifest(D, M, Err), 'a plugin that does not say which Askr it builds against is refused');
+    AssertContains(Err, 'askr = "^', 'and the line to add is shown');
+
+    MakePlugin(D, ['name = "stripe"', 'version = "0.1.0"', 'askr = "^0.16.0"',
+      'entry = "X"', 'units = "../elsewhere"']);
+    AssertFalse(ReadManifest(D, M, Err), 'a unit directory outside the plugin is refused');
+
+    MakePlugin(D, ['name = "stripe"', 'version = "0.1.0"', 'askr = "^0.16.0"']);
+    AssertFalse(ReadManifest(D, M, Err), 'a plugin with no entry unit is refused');
+
+    RemoveScratch(D);
+    AssertFalse(ReadManifest(D, M, Err), 'a directory without askr-plugin.toml is not a plugin');
+    AssertContains(Err, 'askr-plugin.toml', 'and it says what is missing');
+  finally
+    RemoveScratch(D);
+  end;
+end;
+
+procedure TestPluginTomlEdits;
+const
+  Base = '# my app' + LineEnding + 'name = "shop"' + LineEnding + LineEnding +
+    '[askr]' + LineEnding + 'version = "0.16.0"' + LineEnding;
+var
+  T, R: string;
+  Found: Boolean;
+begin
+  T := AddPluginSection(Base, 'stripe', 'https://example.com/askr-stripe.git', '^0.1.0');
+  AssertTrue(Copy(T, 1, Length(Base)) = Base, 'adding leaves the file before it as it was, comments and all');
+  AssertContains(T, '[plugins.stripe]' + LineEnding + 'git = "https://example.com/askr-stripe.git"' +
+    LineEnding + 'version = "^0.1.0"', 'and appends the section');
+
+  R := RemovePluginSection(T, 'stripe', Found);
+  AssertTrue(Found, 'the section askr wrote is found');
+  AssertEqual(R, Base, 'and removing it gives the file back as it was');
+
+  { The longer name first: a match on the start of the line would take it. }
+  T := AddPluginSection(AddPluginSection(Base, 'stripe-tax', 'b', '^2.0.0'), 'stripe', 'a', '^1.0.0');
+  R := RemovePluginSection(T, 'stripe', Found);
+  AssertContains(R, '[plugins.stripe-tax]' + LineEnding + 'git = "b"', 'a plugin whose name starts the same is left alone');
+  AssertNotContains(R, 'git = "a"', 'while the one named goes, with its keys');
+
+  R := RemovePluginSection(Base, 'stripe', Found);
+  AssertFalse(Found, 'a section that is not there is not found');
+  AssertEqual(R, Base, 'and nothing is changed');
+end;
+
+procedure TestPluginLock;
+var
+  D: string;
+  L, Back: TLock;
+begin
+  D := PluginScratch('lock');
+  try
+    ForceDirectories(D);
+    L.Version := '0.16.0';
+    L.Commit := 'abc123';
+    L.Lauf := '0.16.0';
+    L.Found := True;
+    SetLength(L.Plugins, 2);
+    L.Plugins[0].Name := 'stripe';
+    L.Plugins[0].Git := 'https://example.com/askr-stripe.git';
+    L.Plugins[0].Version := '0.1.0';
+    L.Plugins[0].Commit := 'def456';
+    L.Plugins[1].Name := 'search';
+    L.Plugins[1].Git := 'file:///tmp/search';
+    L.Plugins[1].Version := '2.0.0';
+    L.Plugins[1].Commit := '789aaa';
+    WriteLock(D, L);
+    Back := ReadLock(D);
+    AssertTrue((Back.Version = '0.16.0') and (Back.Commit = 'abc123') and (Back.Lauf = '0.16.0'),
+      'the framework''s lines read back as they were, with plugin sections below them');
+    AssertEqual(Length(Back.Plugins), 2, 'both plugins read back');
+    AssertTrue((Back.Plugins[0].Name = 'stripe') and (Back.Plugins[0].Commit = 'def456') and
+      (Back.Plugins[0].Git = 'https://example.com/askr-stripe.git'), 'the first, every field');
+    AssertTrue((Back.Plugins[1].Name = 'search') and (Back.Plugins[1].Version = '2.0.0'), 'and the second, in order');
+
+    WriteLines(IncludeTrailingPathDelimiter(D) + 'askr.lock',
+      ['version = "0.15.0"', 'commit = "aaa"', 'lauf = "0.15.0"']);
+    Back := ReadLock(D);
+    AssertTrue((Back.Version = '0.15.0') and (Length(Back.Plugins) = 0),
+      'a lock from before plugins reads as it did, with none');
+  finally
+    RemoveScratch(D);
+  end;
+end;
+
+procedure TestPluginResolve;
+var
+  D, Err, Flags, Index_: string;
+  P: TProject;
+  Found: TPluginManifests;
+  Names: TStringArray;
+begin
+  D := PluginScratch('resolve');
+  try
+    WriteLines(D + '/askr.toml', ['name = "shop"', '', '[askr]', 'version = "0.16.0"', '',
+      '[plugins.billing]', 'path = "plugins/billing"', '',
+      '[plugins.search]', 'path = "plugins/search"']);
+    MakePlugin(D + '/plugins/billing', ['name = "billing"', 'version = "0.1.0"',
+      'askr = "^0.16.0"', 'entry = "Billing.Plugin"', 'migrations = "database"',
+      'tables = "invoices"']);
+    WriteLines(D + '/plugins/billing/database/Billing.Migrations.B.pas', ['unit Billing.Migrations.B;']);
+    WriteLines(D + '/plugins/billing/database/Billing.Migrations.A.pas', ['unit Billing.Migrations.A;']);
+    MakePlugin(D + '/plugins/search', ['name = "search"', 'version = "1.2.0"',
+      'askr = "^0.16.0"', 'entry = "Search.Plugin"', 'tables = "search_index"']);
+
+    P := TProject.Create(D);
+    try
+      Names := P.PluginNames;
+      AssertTrue((Length(Names) = 2) and (Names[0] = 'billing') and (Names[1] = 'search'),
+        'askr.toml names both, in its order');
+      AssertEqual(P.PluginSetting('search', 'path'), 'plugins/search', 'with their settings');
+
+      AssertTrue(ResolvePlugins(P, '0.16.2', Found, Err), 'both resolve against a framework they allow: ' + Err);
+      AssertEqual(Length(Found), 2, 'and both are found');
+      Index_ := PluginIndexSource(Found);
+      AssertContains(Index_, 'uses' + LineEnding + '  Billing.Plugin,' + LineEnding +
+        '  Billing.Migrations.A,' + LineEnding + '  Billing.Migrations.B,' + LineEnding +
+        '  Search.Plugin;', 'App.Plugins uses each entry unit and each migration, which nothing else refers to');
+      AssertContains(PluginIndexSource(nil), 'unit App.Plugins;', 'and with no plugins it is still a unit to use');
+      AssertNotContains(PluginIndexSource(nil), LineEnding + 'uses' + LineEnding, 'with no uses section in it');
+
+      Flags := PluginBuildFlags(P, '0.16.2', Err);
+      AssertContains(Flags, '-Fu' + ExpandFileName(D) + '/.build/plugins', 'the build gets the directory App.Plugins is in');
+      AssertTrue(FileExists(D + '/.build/plugins/App.Plugins.pas'), 'which is written there');
+      AssertContains(Flags, '/plugins/billing/src', 'and each plugin''s units');
+      AssertContains(Flags, '/plugins/billing/database', 'and its migrations');
+
+      AssertFalse(ResolvePlugins(P, '0.17.0', Found, Err), 'a framework the plugins do not allow stops the build');
+      AssertContains(Err, 'billing 0.1.0 builds against Askr ^0.16.0, and this project builds against 0.17.0',
+        'and says which plugin wants what');
+    finally
+      P.Free;
+    end;
+
+    MakePlugin(D + '/plugins/search', ['name = "search"', 'version = "1.2.0"',
+      'askr = "^0.16.0"', 'entry = "Search.Plugin"', 'tables = "Invoices"']);
+    P := TProject.Create(D);
+    try
+      AssertFalse(ResolvePlugins(P, '0.16.0', Found, Err), 'two plugins claiming one table stop the build');
+      AssertContains(Err, 'billing and search both claim the table invoices', 'naming both, whatever the case');
+    finally
+      P.Free;
+    end;
+
+    MakePlugin(D + '/plugins/search', ['name = "search"', 'version = "1.2.0"',
+      'askr = "^0.16.0"', 'entry = "Search.Plugin"', 'config = "billing"']);
+    P := TProject.Create(D);
+    try
+      AssertFalse(ResolvePlugins(P, '0.16.0', Found, Err), 'and so do two claiming one configuration prefix');
+      AssertContains(Err, 'both claim the configuration prefix billing', 'naming it');
+    finally
+      P.Free;
+    end;
+
+    MakePlugin(D + '/plugins/search', ['name = "finder"', 'version = "1.2.0"',
+      'askr = "^0.16.0"', 'entry = "Search.Plugin"']);
+    P := TProject.Create(D);
+    try
+      AssertFalse(ResolvePlugins(P, '0.16.0', Found, Err), 'a plugin that calls itself something else is refused');
+      AssertContains(Err, 'it calls itself "finder"', 'with both names');
+    finally
+      P.Free;
+    end;
+
+    WriteLines(D + '/askr.toml', ['name = "shop"', '', '[askr]', 'version = "0.16.0"', '',
+      '[plugins.stripe]', 'git = "https://example.com/askr-stripe.git"', 'version = "^0.1.0"']);
+    P := TProject.Create(D);
+    try
+      AssertFalse(ResolvePlugins(P, '0.16.0', Found, Err), 'a plugin askr.lock does not have stops the build');
+      AssertContains(Err, 'askr install', 'and says what to run');
+    finally
+      P.Free;
+    end;
+
+    WriteLines(D + '/askr.toml', ['name = "shop"', '', '[plugins]', 'stripe = "^0.1.0"']);
+    P := TProject.Create(D);
+    try
+      AssertEqual(Length(P.PluginNames), 1, 'plugins.stripe = "..." is taken as a plugin, not as none');
+      AssertFalse(ResolvePlugins(P, '0.16.0', Found, Err), 'and stops the build');
+      AssertContains(Err, '[plugins.stripe]' + LineEnding + '    git = ', 'showing the form a plugin takes');
+    finally
+      P.Free;
+    end;
+  finally
+    RemoveScratch(D);
+  end;
+end;
+
+{ Runs git in Dir. }
+function Git(const Dir: string; const Args: array of string): Boolean;
+var
+  Out_: string;
+  All: array of string;
+  I: Integer;
+begin
+  SetLength(All, Length(Args) + 6);
+  All[0] := '-C';
+  All[1] := Dir;
+  All[2] := '-c';
+  All[3] := 'user.email=test@example.com';
+  All[4] := '-c';
+  All[5] := 'user.name=test';
+  for I := 0 to High(Args) do
+    All[6 + I] := Args[I];
+  Result := RunCommand('git', All, Out_);
+end;
+
+function GitHead(const Dir: string): string;
+var
+  Out_: string;
+begin
+  RunCommand('git', ['-C', Dir, 'rev-parse', 'HEAD'], Out_);
+  Result := Trim(Out_);
+end;
+
+{ The fixture plugin at version V, committed and tagged vTag. }
+procedure ReleaseFixture(const Repo, V, Tag: string);
+begin
+  MakePlugin(Repo, ['name = "hello"', 'version = "' + V + '"', 'askr = "^0.1.0"',
+    'entry = "Hello.Plugin"']);
+  WriteLines(Repo + '/UPGRADE.md', ['# Upgrading hello', '', '## ' + V, '',
+    'Something in ' + V + '.']);
+  Git(Repo, ['add', '-A']);
+  Git(Repo, ['commit', '-q', '-m', 'release ' + V]);
+  Git(Repo, ['tag', 'v' + Tag]);
+end;
+
+{ add, update, install and remove against a local repository with tags:
+  the whole of the path that touches git. }
+procedure TestPluginGit;
+var
+  Found: TPluginManifests;
+  Err: string;
+  Root, Repo, App, Toml0, Url: string;
+  P: TProject;
+  L: TLock;
+  Out_: string;
+begin
+  if not RunCommand('git', ['--version'], Out_) then
+  begin
+    { Not a skip: without git there are no plugins at all. }
+    Fail('git is not on this machine, and plugins are fetched with it');
+    Exit;
+  end;
+  Root := PluginScratch('git');
+  Repo := Root + '/hello';
+  App := Root + '/app';
+  Url := 'file://' + Repo;
+  PluginOutput := False;
+  SetCacheRoot(Root + '/cache');
+  try
+    ForceDirectories(Repo);
+    Git(Repo, ['init', '-q']);
+    ReleaseFixture(Repo, '0.1.0', '0.1.0');
+    WriteLines(App + '/askr.toml', ['name = "shop"']);
+    Toml0 := ReadAll(App + '/askr.toml');
+
+    P := TProject.Create(App);
+    try
+      AssertEqual(PluginAdd(P, Url), 0, 'a plugin is added from its git url');
+    finally
+      P.Free;
+    end;
+    AssertContains(ReadAll(App + '/askr.toml'), '[plugins.hello]' + LineEnding +
+      'git = "' + Url + '"' + LineEnding + 'version = "^0.1.0"', 'under the name it gives itself, pinned with a caret');
+    L := ReadLock(App);
+    AssertTrue((Length(L.Plugins) = 1) and (L.Plugins[0].Version = '0.1.0') and
+      (L.Plugins[0].Commit = GitHead(Repo)), 'and the lock holds the commit the tag stands on');
+    AssertTrue(FileExists(PluginCacheDir('hello', '0.1.0') + '/askr-plugin.toml'), 'in the cache, under its name');
+
+    P := TProject.Create(App);
+    try
+      AssertEqual(PluginAdd(P, Url), 1, 'adding it twice is refused');
+
+      { ^0.1.0 on a zero major is npm's rule: 0.1.x, not 0.2.0. }
+      ReleaseFixture(Repo, '0.2.0', '0.2.0');
+      AssertEqual(PluginUpdate(P, ''), 0, 'update runs');
+      AssertEqual(ReadLock(App).Plugins[0].Version, '0.1.0', 'and does not step over the caret to 0.2.0');
+
+      ReleaseFixture(Repo, '0.1.1', '0.1.1');
+      AssertEqual(PluginUpdate(P, 'hello'), 0, 'update to what the caret allows');
+      AssertEqual(ReadLock(App).Plugins[0].Version, '0.1.1', 'moves the lock to 0.1.1');
+      AssertEqual(ReadLock(App).Plugins[0].Commit, GitHead(Repo), 'with that commit');
+      AssertTrue(ResolvePlugins(P, '0.1.5', Found, Err), 'the build resolves it from the cache: ' + Err);
+      AssertEqual(Found[0].Version, '0.1.1', 'at the locked version');
+    finally
+      P.Free;
+    end;
+
+    { askr.toml and the lock disagreeing stops the build, each way. }
+    WriteLines(App + '/askr.toml', ['name = "shop"', '', '[plugins.hello]',
+      'git = "file:///elsewhere/hello"', 'version = "^0.1.0"']);
+    P := TProject.Create(App);
+    try
+      AssertFalse(ResolvePlugins(P, '0.1.5', Found, Err), 'a git url askr.toml changed without install stops the build');
+      AssertContains(Err, 'and askr.lock from ' + Url, 'saying both');
+    finally
+      P.Free;
+    end;
+    WriteLines(App + '/askr.toml', ['name = "shop"', '', '[plugins.hello]',
+      'git = "' + Url + '"', 'version = "^0.2.0"']);
+    P := TProject.Create(App);
+    try
+      AssertFalse(ResolvePlugins(P, '0.1.5', Found, Err), 'a pin the locked version no longer meets stops the build');
+      AssertContains(Err, 'askr plugin update hello', 'and says what to run');
+    finally
+      P.Free;
+    end;
+    WriteLines(App + '/askr.toml', ['name = "shop"', '', '[plugins.hello]',
+      'git = "' + Url + '"', 'version = "^0.1.0"']);
+    P := TProject.Create(App);
+    try
+
+      { A tag that says it is something else is refused, and the lock stays. }
+      ReleaseFixture(Repo, '0.1.3', '0.1.2');
+      AssertEqual(PluginUpdate(P, 'hello'), 1, 'a tag whose manifest says another version is refused');
+      AssertEqual(ReadLock(App).Plugins[0].Version, '0.1.1', 'and the lock does not move');
+      AssertFalse(DirectoryExists(PluginCacheDir('hello', '0.1.2')), 'nor is it left in the cache');
+      { Withdrawn: it would otherwise be the newest the caret allows, and
+        every install after this would refuse it too -- which is right. }
+      Git(Repo, ['tag', '-d', 'v0.1.2']);
+    finally
+      P.Free;
+    end;
+
+    { The lock and the copy in the cache have to agree. }
+    L := ReadLock(App);
+    L.Plugins[0].Commit := '0000000000000000000000000000000000000000';
+    WriteLock(App, L);
+    P := TProject.Create(App);
+    try
+      AssertEqual(InstallPlugins(P), 1, 'install refuses a lock whose commit is not the cached copy''s');
+    finally
+      P.Free;
+    end;
+
+    { A plugin in askr.toml the lock does not have is fetched by install,
+      and one the lock has that askr.toml no longer names leaves it. }
+    L := ReadLock(App);
+    L.Plugins := nil;
+    SetLength(L.Plugins, 1);
+    L.Plugins[0].Name := 'gone';
+    L.Plugins[0].Git := 'file:///nowhere';
+    L.Plugins[0].Version := '1.0.0';
+    L.Plugins[0].Commit := 'abc';
+    WriteLock(App, L);
+    P := TProject.Create(App);
+    try
+      AssertEqual(InstallPlugins(P), 0, 'install fetches a plugin the lock lacks');
+      AssertEqual(ReadLock(App).Plugins[0].Version, '0.1.1', 'at the newest the caret allows');
+      AssertEqual(Length(ReadLock(App).Plugins), 1, 'and the plugin askr.toml no longer names left the lock');
+
+      AssertEqual(PluginRemove(P, 'hello'), 0, 'remove');
+    finally
+      P.Free;
+    end;
+    AssertEqual(ReadAll(App + '/askr.toml'), Toml0, 'gives askr.toml back as it was before add');
+    AssertEqual(Length(ReadLock(App).Plugins), 0, 'and the lock loses it');
+  finally
+    SetCacheRoot('');
+    PluginOutput := True;
+    RemoveScratch(Root);
+  end;
+end;
+
 procedure TestSigV4;
 const
   Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
@@ -12191,6 +12616,13 @@ begin
   Test('faked, what would be sent is built and recorded, and nothing goes', @TestNotifyFake);
   Test('Slack is sent the payload, and the webhook stays out of every error', @TestSlack);
   Test('Twilio is sent its form, with Basic auth, and its errors are read', @TestTwilio);
+
+  Group('Plugins');
+  Test('a manifest says what the plugin is, and one that does not is refused', @TestPluginManifest);
+  Test('askr.toml gains and loses a plugin section with nothing else touched', @TestPluginTomlEdits);
+  Test('askr.lock carries each plugin''s commit below the framework''s', @TestPluginLock);
+  Test('the build finds the plugins, checks what they build against, and stops a clash', @TestPluginResolve);
+  Test('add, update, install and remove fetch from git, pin the commit and check it', @TestPluginGit);
 
   Group('Storage');
   Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);

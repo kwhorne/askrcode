@@ -12,6 +12,25 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **Plugins, fetched from git and pinned.** `askr plugin add <git url>`
+  fetches a plugin's newest release, writes `[plugins.<name>]` into
+  askr.toml and its commit into askr.lock; `plugin update`, `remove` and
+  `list` do the rest, and `askr install` and `askr outdated` take plugins
+  along. A plugin says what it is in `askr-plugin.toml`: its name and
+  version, the Askr versions it builds against, its units, its entry unit,
+  and the configuration prefix and tables it owns. The build puts its units
+  on the search path and writes `App.Plugins`, which uses each entry unit
+  and each migration -- a unit nothing refers to is never linked. It stops
+  on a plugin that builds against another Askr, on two plugins claiming
+  the same table or prefix, on a lock that disagrees with askr.toml, and
+  on `plugins.stripe = "..."`, which is not how a plugin is written here.
+  Install refuses a cached copy that stands on another commit than the
+  lock. Git only: the version lives in the tag.
+
 ## 0.15.0 — 2026-09-26
 
 What an app does once it has users. A new account confirms its address,

@@ -1232,6 +1232,35 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **`session:check` spør profilen, ikke dashbordet.** Dashbordet vil ha en
   bekreftet adresse, og det porten sjekker er at innloggingen deles.
 
+## Plugins
+
+* **En plugin er kilde, som rammeverket.** Ingenting lastes i kjøretid:
+  `.ppu` er bundet til én kompilator, og alt kompileres inn i én binær.
+  Hentes med git til `~/.askr/pkg/plugins/<navn>@<versjon>`, commit i
+  låsefila, units på søkestien i `BuildFlags`.
+* **`App.Plugins` skrives ved hver bygging**, under `.build/plugins`, og
+  «uses» inngangsuniten og hver migrasjon. Samme felle som
+  migrasjonsindeksen: en unit ingen refererer, blir aldri linket, og dens
+  `initialization` kjører aldri. Skrives bare når den endret seg.
+* **Git først, uten register** — besluttet med brukeren. Versjonen bor i
+  taggen, som Lauf.
+* **`const`-streng fra samme record som et `out`-parameter nullstiller.**
+  `CachedManifest(M.Name, Version, M)` tømte navnet før det ble
+  sammenlignet, og `plugin add` skrev `[plugins.]` i askr.toml. En
+  `const`-streng sendes som referanse. Git-testen fant det.
+* **`plugins.stripe = "..."` (Cargo-formen) er en feil, ikke ingen
+  plugins.** Mutasjonen på vakten i `PluginNames` overlevde og viste at
+  formen ellers ville gitt null plugins i stillhet.
+* **Test-imaget bygges på nytt når `tools/Dockerfile.fpc` endres.**
+  `ensure_image` bygget bare når imaget manglet, så git — som pluginene
+  trenger — ville aldri nådd et image som fantes. Imaget merkes nå med en
+  hash av Dockerfile-en. Byggeloggen går til stderr.
+* **Git-testen kjører mot et lokalt repo med tagger**, med en cache testen
+  eier (`SetCacheRoot`), så den aldri skriver i noens `~/.askr`. Uten git
+  feiler den i stedet for å hoppe over: uten git finnes ingen plugins.
+* **`^0.1.0` slipper ikke gjennom 0.2.0**, samme nullmajor-regel som for
+  rammeverket. Testen holder det.
+
 ## Kjeder og batcher
 
 * **En kjede er én jobb om gangen**: første steg, med resten i seg. Lykkes

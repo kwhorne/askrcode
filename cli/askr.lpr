@@ -16,7 +16,7 @@ uses
   SysUtils, Classes, Process, TermIO,
   Askr.Core.Crypto, Askr.Core.Config, Askr.Core.Version,
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
-  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
+  Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
   Askr.Console.Commands, Askr.Cli.Fields, Askr.Cli.Resource, Askr.Cli.Lang,
   Askr.Urd.Driver, Askr.Norn.Introspect,
   Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
@@ -212,6 +212,8 @@ begin
   Si('  askr install             fetch the pinned framework version');
   Si('  askr update [version]    move to a newer release');
   Si('  askr outdated            what is published, what you have');
+  Si('  askr plugin add <git url> fetch a plugin and pin it');
+  Si('  askr plugin remove|list|update');
   Si('  askr key:generate        print a new APP_KEY');
   Si('  askr lang:check          what each lang file lacks, and has that it should not');
   Si('  askr config [--values]   show the effective configuration');
@@ -293,7 +295,7 @@ const
 var
   Paths_: TStringArray;
   I: Integer;
-  Frame, Cfg, Err: string;
+  Frame, Cfg, Err, PluginFlags: string;
   Origin: TPkgOrigin;
 begin
   Result := P.CompilerFlags;
@@ -312,6 +314,17 @@ begin
     for I := Low(AskrUnits) to High(AskrUnits) do
       Result := Result + ' -Fu' + IncludeTrailingPathDelimiter(Frame) +
         'src' + PathDelim + AskrUnits[I];
+
+  { The plugins' units, and App.Plugins, which uses them. Resolved
+    against the framework actually being built -- a plugin says which
+    Askr it builds against, and the build is where that is checked. }
+  if Frame <> '' then
+  begin
+    PluginFlags := PluginBuildFlags(P, TreeVersion(Frame), Err);
+    if Err <> '' then
+      Fatal(['askr: ' + Err]);
+    Result := Result + PluginFlags;
+  end;
 
   Paths_ := P.UnitPaths;
   for I := 0 to High(Paths_) do
@@ -1768,7 +1781,8 @@ begin
     { Kommandoene som styrer selve pinnen må kjøres av verktøyet man
       startet. De andre skal kjøres av versjonen prosjektet peker på. }
     if (Kommando <> 'install') and (Kommando <> 'update') and
-       (Kommando <> 'outdated') and (Kommando <> 'new') then
+       (Kommando <> 'outdated') and (Kommando <> 'new') and
+       (Kommando <> 'plugin') then
       if DelegateIfNeeded(P, Delegert) then
         Halt(Delegert);
 
@@ -1784,11 +1798,23 @@ begin
         sendes med, slik at --step og --seed virker. }
       Halt(RunApp(P, '--' + Kommando))
     else if Kommando = 'install' then
-      Halt(CmdInstall(P))
+    begin
+      { The framework first: a plugin says which Askr it builds against. }
+      Delegert := CmdInstall(P);
+      if Delegert = 0 then
+        Delegert := InstallPlugins(P);
+      Halt(Delegert);
+    end
     else if Kommando = 'update' then
       Halt(CmdUpdate(P, ParamStr(2)))
     else if Kommando = 'outdated' then
-      Halt(CmdOutdated(P))
+    begin
+      Delegert := CmdOutdated(P);
+      OutdatedPlugins(P);
+      Halt(Delegert);
+    end
+    else if Kommando = 'plugin' then
+      Halt(CmdPlugin(P))
     else if Kommando = 'make' then
       CmdMake(P)
     else if Kommando = 'test' then

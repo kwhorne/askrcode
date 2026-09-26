@@ -34,11 +34,23 @@ const
   DefaultSource = 'https://github.com/kwhorne/askrcode.git';
 
 type
+  { A plugin as the lock holds it: where it came from and the commit it
+    stands on. Written after the framework's own lines, each under its own
+    [plugins.<name>] -- a section covers everything below it. }
+  TLockedPlugin = record
+    Name: string;
+    Git: string;
+    Version: string;
+    Commit: string;
+  end;
+  TLockedPlugins = array of TLockedPlugin;
+
   TLock = record
     Version: string;
     Commit: string;
     Lauf: string;
     Found: Boolean;
+    Plugins: TLockedPlugins;
   end;
 
   { Where the framework came from. Used in output, so that "askr version"
@@ -54,6 +66,9 @@ type
   everybody who followed the instruction would have had the packages
   written into their own checkout. }
 function CacheRoot: string;
+{ For a test: the cache in a directory of its own, so it never writes into
+  anyone's ~/.askr. '' puts it back. }
+procedure SetCacheRoot(const Dir: string);
 function CacheDirFor(const Version: string): string;
 
 function LockPath(const Root: string): string;
@@ -76,6 +91,16 @@ function InstalledVersions: TStringArray;
 function RemoteVersions(const Source: string): TStringArray;
 
 function Fetch(const Source, Version: string; out Commit, Err: string): Boolean;
+
+{ For the plugin unit, which fetches the same way. }
+function HasGit: Boolean;
+function CommitOf(const Dir: string): string;
+function RunCapture(const Exe: string; const Args: array of string;
+  const WorkDir: string; out Ut: string): Integer;
+
+{ The sections of Dir/UPGRADE.md that cover From_..To_. A plugin keeps
+  its own UPGRADE.md, read the same way. }
+function UpgradeNotes(const Dir, From_, To_: string): string;
 
 function CmdInstall(P: TProject): Integer;
 function CmdUpdate(P: TProject; const Target: string): Integer;
@@ -207,10 +232,20 @@ end;
 
 { ---------------------------------------------------------- cache-sti -- }
 
+var
+  GCacheRoot: string = '';
+
+procedure SetCacheRoot(const Dir: string);
+begin
+  GCacheRoot := Dir;
+end;
+
 function CacheRoot: string;
 var
   H: string;
 begin
+  if GCacheRoot <> '' then
+    Exit(ExcludeTrailingPathDelimiter(GCacheRoot));
   H := GetEnvironmentVariable('ASKR_CACHE');
   if H <> '' then
     Exit(ExcludeTrailingPathDelimiter(H));
@@ -230,6 +265,46 @@ begin
   Result := IncludeTrailingPathDelimiter(Root) + 'askr.lock';
 end;
 
+{ The [plugins.<name>] entries, in the order the file has them. The name
+  is what stands between the two dots; a key the reader does not know is
+  left alone, so a newer tool's lock does not break an older one. }
+procedure ReadLockedPlugins(L: TStringList; out Plugins: TLockedPlugins);
+var
+  I, J, Dot: Integer;
+  Key, Name_, Field: string;
+begin
+  Plugins := nil;
+  for I := 0 to L.Count - 1 do
+  begin
+    Key := L.Names[I];
+    if Copy(Key, 1, 8) <> 'plugins.' then
+      Continue;
+    Key := Copy(Key, 9, MaxInt);
+    Dot := Pos('.', Key);
+    if Dot = 0 then
+      Continue;
+    Name_ := Copy(Key, 1, Dot - 1);
+    Field := Copy(Key, Dot + 1, MaxInt);
+    J := 0;
+    while (J <= High(Plugins)) and (Plugins[J].Name <> Name_) do
+      Inc(J);
+    if J > High(Plugins) then
+    begin
+      SetLength(Plugins, J + 1);
+      Plugins[J].Name := Name_;
+      Plugins[J].Git := '';
+      Plugins[J].Version := '';
+      Plugins[J].Commit := '';
+    end;
+    if Field = 'git' then
+      Plugins[J].Git := L.ValueFromIndex[I]
+    else if Field = 'version' then
+      Plugins[J].Version := L.ValueFromIndex[I]
+    else if Field = 'commit' then
+      Plugins[J].Commit := L.ValueFromIndex[I];
+  end;
+end;
+
 function ReadLock(const Root: string): TLock;
 var
   L: TStringList;
@@ -238,6 +313,7 @@ begin
   Result.Commit := '';
   Result.Lauf := '';
   Result.Found := False;
+  Result.Plugins := nil;
   if not FileExists(LockPath(Root)) then
     Exit;
   L := TStringList.Create;
@@ -250,6 +326,7 @@ begin
     Result.Commit := L.Values['commit'];
     Result.Lauf := L.Values['lauf'];
     Result.Found := Result.Version <> '';
+    ReadLockedPlugins(L, Result.Plugins);
   finally
     L.Free;
   end;
@@ -258,6 +335,7 @@ end;
 procedure WriteLock(const Root: string; const L: TLock);
 var
   F: TStringList;
+  I: Integer;
 begin
   F := TStringList.Create;
   try
@@ -271,6 +349,14 @@ begin
     F.Add('version = "' + L.Version + '"');
     F.Add('commit = "' + L.Commit + '"');
     F.Add('lauf = "' + L.Lauf + '"');
+    for I := 0 to High(L.Plugins) do
+    begin
+      F.Add('');
+      F.Add('[plugins.' + L.Plugins[I].Name + ']');
+      F.Add('git = "' + L.Plugins[I].Git + '"');
+      F.Add('version = "' + L.Plugins[I].Version + '"');
+      F.Add('commit = "' + L.Plugins[I].Commit + '"');
+    end;
     F.SaveToFile(LockPath(Root));
   finally
     F.Free;

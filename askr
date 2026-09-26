@@ -69,11 +69,30 @@ have_local_fpc() {
 # -vewn : feil, advarsler og notiser — resten er støy
 FPCFLAGS="-B -Sh -O2 -gl -vewn $DARWIN_FLAGS -Fu$ROOT/src/cli -Fu$ROOT/src/core -Fu$ROOT/src/http -Fu$ROOT/src/urd -Fu$ROOT/src/norn -Fu$ROOT/src/inertia -Fu$ROOT/src/desktop -Fu$ROOT/src/runtime -Fu$ROOT/src/run -FU$UNITS -FE$BIN"
 
+# Imaget merkes med en hash av Dockerfile-en, og bygges på nytt når den
+# ikke stemmer. Før ble det bare bygget når det manglet, og da nådde en
+# endring i verktøykjeden aldri et image som fantes fra før -- git kom inn
+# for pluginene, og ingen maskin med et gammelt image ville fått det.
+dockerfile_hash() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$ROOT/tools/Dockerfile.fpc" | cut -c1-16
+  else
+    sha256sum "$ROOT/tools/Dockerfile.fpc" | cut -c1-16
+  fi
+}
+
 ensure_image() {
-  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "Bygger $IMAGE (én gang) ..."
-    docker build $DOCKER_PLATFORM -f "$ROOT/tools/Dockerfile.fpc" \
-      -t "$IMAGE" "$ROOT/tools"
+  want=$(dockerfile_hash)
+  have=$(docker image inspect -f '{{ index .Config.Labels "askr.dockerfile" }}' \
+    "$IMAGE" 2>/dev/null || true)
+  if [ "$have" != "$want" ]; then
+    if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+      echo "Bygger $IMAGE på nytt: tools/Dockerfile.fpc er endret ..."
+    else
+      echo "Bygger $IMAGE (én gang) ..."
+    fi
+    docker build $DOCKER_PLATFORM --label "askr.dockerfile=$want" \
+      -f "$ROOT/tools/Dockerfile.fpc" -t "$IMAGE" "$ROOT/tools" >&2
   fi
 }
 

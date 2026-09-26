@@ -48,3 +48,10 @@ RUN apt-get update \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libvips42 \
  && rm -rf /var/lib/apt/lists/*
+
+# git for the plugins: askr fetches a plugin by cloning its tag, and the
+# suite fetches a fixture plugin from a local repository to prove it. In a
+# layer of its own, so the ones above keep their cache.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
