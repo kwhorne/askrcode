@@ -481,7 +481,7 @@ begin
     '  Askr.Http.Request, Askr.Http.Response,' + #10 +
     '  Askr.Http.Server, Askr.Http.Router, Askr.Http.Static,' + #10 +
     '  Askr.Http.Robots, Askr.Http.Sitemap,' + #10 +
-    '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Auth.Token,' + #10 +
+    '  Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Auth, Askr.Auth.Token,' + #10 +
     '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
@@ -613,8 +613,12 @@ begin
     '  { Sessions, CSRF and login. The order is not optional: the CSRF' + #10 +
     '    token lives in the session, and "remember me" writes to it. A' + #10 +
     '    session nobody writes to costs nothing — it gets neither a slot' + #10 +
-    '    nor a cookie. }' + #10 +
-    '  SetSessions(TSessionStore.Create);' + #10 +
+    '    nor a cookie.' + #10 +
+    '' + #10 +
+    '    In memory unless SESSION_DRIVER=database, which keeps them in' + #10 +
+    '    the database above so a second node and a restart see the' + #10 +
+    '    same logins. SESSION_LIFETIME is in seconds. }' + #10 +
+    '  SetSessions(SessionsFromConfig(DbPool));' + #10 +
     '  UseSessions(R);' + #10 +
     '  { API tokens, for callers that are not browsers:' + #10 +
     '' + #10 +
@@ -889,6 +893,11 @@ begin
     'DATABASE_URL=sqlite:' + Name + '.db' + #10 +
     '# DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/' + Name + #10 +
     #10 +
+    '# memory | database. memory is gone on a restart and not shared' + #10 +
+    '# between two nodes; database keeps them in DATABASE_URL.' + #10 +
+    '# SESSION_DRIVER=memory' + #10 +
+    '# SESSION_LIFETIME=7200' + #10 +
+    #10 +
     '# log | resend | smtp | null. log writes to a file instead of' + #10 +
     '# sending, which is what you want in development.' + #10 +
     'MAIL_TRANSPORT=log' + #10 +
@@ -916,6 +925,8 @@ begin
     'APP_KEY=' + #10 +
     'LOG_LEVEL=info' + #10 +
     'DATABASE_URL=' + #10 +
+    '# memory | database' + #10 +
+    'SESSION_DRIVER=memory' + #10 +
     #10 +
     '# log | resend | smtp | null' + #10 +
     'MAIL_TRANSPORT=log' + #10 +

@@ -76,7 +76,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 
 | | |
 |---|---|
-| [Sessions](sessions.md) | Cookies, flash, and what a session costs |
+| [Sessions](sessions.md) | Cookies, flash, and memory or the database |
 | [CSRF](csrf.md) | On by default in a new project |
 | [Authentication](auth.md) | Login, "remember me", gates |
 | [Cryptography](crypto.md) | Hashing, password storage, signing, the app key |

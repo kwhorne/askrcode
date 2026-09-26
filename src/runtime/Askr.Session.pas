@@ -8,10 +8,12 @@
   and both assume something survives a redirect. Without sessions it did
   not, and validation had to re-render the page instead.
 
-  The store lives in the process, like the queue and the cache. That is a
-  deliberate limit and not an oversight: one binary, no sidecar. If the
-  app scales to several nodes the store has to be replaced — the interface
-  is separated out so that is one class, not a pervasive change.
+  The store lives in the process by default, like the queue and the
+  cache: one binary, no sidecar. Where it is kept is a TSessionBackend,
+  and an app on more than one node gives the store another one —
+  TDbSessions in Askr.Session.Db keeps them in the app's database. The
+  cookie, the id, the flash rotation and fixation all stay here, so they
+  are the same whichever backend holds the data.
 
   Flash has the classic semantics: what is written in one request can be
   read in the next, and is gone after that. That is why there are two maps
@@ -40,14 +42,15 @@ type
     Key: string;
     Value: string;
   end;
+  TSessionPairs = array of TSessionPair;
 
   { The session as a request sees it. Lives in the request arena. }
   TSession = class(TArenaObject)
   private
     FId: string;
-    FData: array of TSessionPair;
-    FFlashIn: array of TSessionPair;    { readable now }
-    FFlashOut: array of TSessionPair;   { written for next request }
+    FData: TSessionPairs;
+    FFlashIn: TSessionPairs;    { readable now }
+    FFlashOut: TSessionPairs;   { written for next request }
     FDirty: Boolean;
     FNew: Boolean;
     function IndexIn(const Arr: array of TSessionPair;
@@ -84,26 +87,69 @@ type
     property Dirty: Boolean read FDirty;
   end;
 
-  TSessionStore = class
+  { Where the sessions are kept. The store asks it for four things and
+    decides everything else itself, so a backend has nothing to get wrong
+    about cookies or flash.
+
+    Times are unix milliseconds, passed in rather than read: a backend
+    compares, it does not keep a clock. Load answers False for an id that
+    is missing and for one that has expired — to the store they are the
+    same thing, a session that has to start over. }
+  TSessionBackend = class
+  public
+    function Load(const Id: string; NowMs: Int64;
+      out Data, Flash: TSessionPairs): Boolean; virtual; abstract;
+    procedure Save(const Id: string; const Data, Flash: TSessionPairs;
+      ExpiresAtMs: Int64); virtual; abstract;
+    procedure Delete(const Id: string); virtual; abstract;
+    { The sessions that have not expired. }
+    function Count(NowMs: Int64): Integer; virtual; abstract;
+    { Removes what has expired, and says how many. }
+    function Sweep(NowMs: Int64): Integer; virtual; abstract;
+  end;
+
+  { The sessions in this process. Gone on a restart, and not shared with
+    a second node — which is the whole reason there is a choice. }
+  TMemorySessions = class(TSessionBackend)
   private
     FLock: TCriticalSection;
-    FKeys: TStringList;          { id -> indeks i FSlots }
+    FKeys: TStringList;          { id -> index in FSlots }
     FSlots: array of record
       Id: string;
-      Data: array of TSessionPair;
-      Flash: array of TSessionPair;
+      Data: TSessionPairs;
+      Flash: TSessionPairs;
       ExpiresAt: Int64;
       InUse: Boolean;
     end;
     FFree: array of Integer;
+    function SlotFor(const Id: string): Integer;
+    procedure FreeSlot(Slot: Integer);
+  public
+    constructor Create;
+    destructor Destroy; override;
+    function Load(const Id: string; NowMs: Int64;
+      out Data, Flash: TSessionPairs): Boolean; override;
+    procedure Save(const Id: string; const Data, Flash: TSessionPairs;
+      ExpiresAtMs: Int64); override;
+    procedure Delete(const Id: string); override;
+    function Count(NowMs: Int64): Integer; override;
+    function Sweep(NowMs: Int64): Integer; override;
+  end;
+
+  TSessionStore = class
+  private
+    FBackend: TSessionBackend;
+    FLock: TCriticalSection;     { the counters only }
     FLifetime: Integer;
     FCookieName: string;
     FSecure: Boolean;
     FCreated, FResumed, FExpired: QWord;
-    procedure Sweep;
-    function SlotFor(const Id: string): Integer;
   public
-    constructor Create(ALifetimeSeconds: Integer = 7200);
+    { In memory, as before there was a choice. }
+    constructor Create(ALifetimeSeconds: Integer = 7200); overload;
+    { Kept by ABackend, which the store owns from here on. }
+    constructor Create(ABackend: TSessionBackend;
+      ALifetimeSeconds: Integer = 7200); overload;
     destructor Destroy; override;
 
     { Reads the session cookie and fetches the state into the arena.
@@ -134,6 +180,7 @@ type
     property Created: QWord read FCreated;
     property Resumed: QWord read FResumed;
     property Expired: QWord read FExpired;
+    property Backend: TSessionBackend read FBackend;
   end;
 
 function Sessions: TSessionStore;
@@ -369,27 +416,25 @@ begin
       W.Field(FFlashIn[I].Key, FFlashIn[I].Value);
 end;
 
-{ TSessionStore }
+{ TMemorySessions }
 
-constructor TSessionStore.Create(ALifetimeSeconds: Integer);
+constructor TMemorySessions.Create;
 begin
   inherited Create;
   FLock := TCriticalSection.Create;
   FKeys := TStringList.Create;
   FKeys.Sorted := True;
   FKeys.Duplicates := dupIgnore;
-  FLifetime := ALifetimeSeconds;
-  FCookieName := 'askr_session';
 end;
 
-destructor TSessionStore.Destroy;
+destructor TMemorySessions.Destroy;
 begin
   FKeys.Free;
   FLock.Free;
   inherited Destroy;
 end;
 
-function TSessionStore.SlotFor(const Id: string): Integer;
+function TMemorySessions.SlotFor(const Id: string): Integer;
 var
   I: Integer;
 begin
@@ -399,93 +444,56 @@ begin
   Result := PtrInt(FKeys.Objects[I]);
 end;
 
-procedure TSessionStore.Sweep;
+{ Called with the lock held. Takes the slot out of FKeys too. }
+procedure TMemorySessions.FreeSlot(Slot: Integer);
 var
-  I, Slot: Integer;
-  Now_: Int64;
+  I: Integer;
 begin
-  Now_ := UnixNow;
-  I := 0;
-  while I < FKeys.Count do
-  begin
-    Slot := PtrInt(FKeys.Objects[I]);
-    if FSlots[Slot].ExpiresAt <= Now_ then
-    begin
-      FSlots[Slot].InUse := False;
-      SetLength(FSlots[Slot].Data, 0);
-      SetLength(FSlots[Slot].Flash, 0);
-      FSlots[Slot].Id := '';
-      SetLength(FFree, Length(FFree) + 1);
-      FFree[High(FFree)] := Slot;
-      FKeys.Delete(I);
-      Inc(FExpired);
-    end
-    else
-      Inc(I);
-  end;
+  I := FKeys.IndexOf(FSlots[Slot].Id);
+  if I >= 0 then
+    FKeys.Delete(I);
+  FSlots[Slot].InUse := False;
+  SetLength(FSlots[Slot].Data, 0);
+  SetLength(FSlots[Slot].Flash, 0);
+  FSlots[Slot].Id := '';
+  SetLength(FFree, Length(FFree) + 1);
+  FFree[High(FFree)] := Slot;
 end;
 
-function TSessionStore.Start(Req: TRequest): TSession;
+function TMemorySessions.Load(const Id: string; NowMs: Int64;
+  out Data, Flash: TSessionPairs): Boolean;
 var
-  Id: string;
   Slot, I: Integer;
-  Prev: TArena;
 begin
-  Prev := UseArena(Req.Arena);
-  try
-    Result := TSession.Create;
-  finally
-    UseArena(Prev);
-  end;
-
-  Id := CookieValue(Req, FCookieName);
-
+  Data := nil;
+  Flash := nil;
   FLock.Acquire;
   try
-    { Sweeping here, not in a thread of its own: a session store that needs
-      its own thread to tidy up is more machinery than the problem
-      deserves. }
-    if (FKeys.Count > 0) and (Random(64) = 0) then
-      Sweep;
-
-    Slot := -1;
-    if Length(Id) = 32 then
-      Slot := SlotFor(Id);
-
-    if (Slot >= 0) and (FSlots[Slot].ExpiresAt > UnixNow) then
-    begin
-      Result.FId := Id;
-      Result.FNew := False;
-      { Kopieres ut i request-arenaen. Lageret beholder sitt eget. }
-      SetLength(Result.FData, Length(FSlots[Slot].Data));
-      for I := 0 to High(FSlots[Slot].Data) do
-        Result.FData[I] := FSlots[Slot].Data[I];
-      SetLength(Result.FFlashIn, Length(FSlots[Slot].Flash));
-      for I := 0 to High(FSlots[Slot].Flash) do
-        Result.FFlashIn[I] := FSlots[Slot].Flash[I];
-      Inc(FResumed);
-    end
-    else
-    begin
-      Result.FId := NewSessionId;
-      Result.FNew := True;
-      Inc(FCreated);
-    end;
+    Slot := SlotFor(Id);
+    Result := (Slot >= 0) and (FSlots[Slot].ExpiresAt > NowMs);
+    if not Result then
+      Exit;
+    { Copied, element by element. The caller puts them in a request
+      arena; the store keeps its own. }
+    SetLength(Data, Length(FSlots[Slot].Data));
+    for I := 0 to High(Data) do
+      Data[I] := FSlots[Slot].Data[I];
+    SetLength(Flash, Length(FSlots[Slot].Flash));
+    for I := 0 to High(Flash) do
+      Flash[I] := FSlots[Slot].Flash[I];
   finally
     FLock.Release;
   end;
 end;
 
-procedure TSessionStore.Commit(S: TSession; Res: TResponse);
+procedure TMemorySessions.Save(const Id: string;
+  const Data, Flash: TSessionPairs; ExpiresAtMs: Int64);
 var
   Slot, I: Integer;
 begin
-  if S = nil then
-    Exit;
-
   FLock.Acquire;
   try
-    Slot := SlotFor(S.Id);
+    Slot := SlotFor(Id);
     if Slot < 0 then
     begin
       if Length(FFree) > 0 then
@@ -498,25 +506,170 @@ begin
         Slot := Length(FSlots);
         SetLength(FSlots, Slot + 1);
       end;
-      FSlots[Slot].Id := S.Id;
+      FSlots[Slot].Id := Id;
       FSlots[Slot].InUse := True;
-      FKeys.AddObject(S.Id, TObject(PtrInt(Slot)));
+      FKeys.AddObject(Id, TObject(PtrInt(Slot)));
     end;
-
-    SetLength(FSlots[Slot].Data, Length(S.FData));
-    for I := 0 to High(S.FData) do
-      FSlots[Slot].Data[I] := S.FData[I];
-
-    { The flash rotates: what was read this time is gone, what was written
-      becomes readable next time. }
-    SetLength(FSlots[Slot].Flash, Length(S.FFlashOut));
-    for I := 0 to High(S.FFlashOut) do
-      FSlots[Slot].Flash[I] := S.FFlashOut[I];
-
-    FSlots[Slot].ExpiresAt := UnixNow + FLifetime;
+    SetLength(FSlots[Slot].Data, Length(Data));
+    for I := 0 to High(Data) do
+      FSlots[Slot].Data[I] := Data[I];
+    SetLength(FSlots[Slot].Flash, Length(Flash));
+    for I := 0 to High(Flash) do
+      FSlots[Slot].Flash[I] := Flash[I];
+    FSlots[Slot].ExpiresAt := ExpiresAtMs;
   finally
     FLock.Release;
   end;
+end;
+
+procedure TMemorySessions.Delete(const Id: string);
+var
+  Slot: Integer;
+begin
+  FLock.Acquire;
+  try
+    Slot := SlotFor(Id);
+    if Slot >= 0 then
+      FreeSlot(Slot);
+  finally
+    FLock.Release;
+  end;
+end;
+
+function TMemorySessions.Count(NowMs: Int64): Integer;
+var
+  I: Integer;
+begin
+  Result := 0;
+  FLock.Acquire;
+  try
+    for I := 0 to FKeys.Count - 1 do
+      if FSlots[PtrInt(FKeys.Objects[I])].ExpiresAt > NowMs then
+        Inc(Result);
+  finally
+    FLock.Release;
+  end;
+end;
+
+function TMemorySessions.Sweep(NowMs: Int64): Integer;
+var
+  I, Slot: Integer;
+begin
+  Result := 0;
+  FLock.Acquire;
+  try
+    I := FKeys.Count - 1;
+    while I >= 0 do
+    begin
+      Slot := PtrInt(FKeys.Objects[I]);
+      if FSlots[Slot].ExpiresAt <= NowMs then
+      begin
+        FreeSlot(Slot);
+        Inc(Result);
+      end;
+      Dec(I);
+    end;
+  finally
+    FLock.Release;
+  end;
+end;
+
+{ TSessionStore }
+
+constructor TSessionStore.Create(ALifetimeSeconds: Integer);
+begin
+  Create(TMemorySessions.Create, ALifetimeSeconds);
+end;
+
+constructor TSessionStore.Create(ABackend: TSessionBackend;
+  ALifetimeSeconds: Integer);
+begin
+  inherited Create;
+  if ABackend = nil then
+    raise ESessionError.Create('A session store needs a backend.');
+  FBackend := ABackend;
+  FLock := TCriticalSection.Create;
+  FLifetime := ALifetimeSeconds;
+  FCookieName := 'askr_session';
+end;
+
+destructor TSessionStore.Destroy;
+begin
+  FBackend.Free;
+  FLock.Free;
+  inherited Destroy;
+end;
+
+function TSessionStore.Start(Req: TRequest): TSession;
+var
+  Id: string;
+  Data, Flash: TSessionPairs;
+  Found: Boolean;
+  Swept, I: Integer;
+  Prev: TArena;
+  NowMs: Int64;
+begin
+  Prev := UseArena(Req.Arena);
+  try
+    Result := TSession.Create;
+  finally
+    UseArena(Prev);
+  end;
+
+  Id := CookieValue(Req, FCookieName);
+  NowMs := UnixNowMs;
+
+  { Sweeping here, not in a thread of its own: a session store that needs
+    its own thread to tidy up is more machinery than the problem
+    deserves. }
+  Swept := 0;
+  if Random(64) = 0 then
+    Swept := FBackend.Sweep(NowMs);
+
+  { Only an id of the shape we hand out is looked up. Anything else is a
+    cookie we did not write, and asking a database about it is work done
+    for whoever sent it. }
+  Found := (Length(Id) = 32) and FBackend.Load(Id, NowMs, Data, Flash);
+
+  if Found then
+  begin
+    Result.FId := Id;
+    Result.FNew := False;
+    { Into the request arena. The backend keeps its own. }
+    SetLength(Result.FData, Length(Data));
+    for I := 0 to High(Data) do
+      Result.FData[I] := Data[I];
+    SetLength(Result.FFlashIn, Length(Flash));
+    for I := 0 to High(Flash) do
+      Result.FFlashIn[I] := Flash[I];
+  end
+  else
+  begin
+    Result.FId := NewSessionId;
+    Result.FNew := True;
+  end;
+
+  FLock.Acquire;
+  try
+    Inc(FExpired, Swept);
+    if Found then
+      Inc(FResumed)
+    else
+      Inc(FCreated);
+  finally
+    FLock.Release;
+  end;
+end;
+
+procedure TSessionStore.Commit(S: TSession; Res: TResponse);
+begin
+  if S = nil then
+    Exit;
+
+  { The flash rotates: what was read this time is gone, what was written
+    becomes readable next time. }
+  FBackend.Save(S.Id, S.FData, S.FFlashOut,
+    UnixNowMs + Int64(FLifetime) * 1000);
 
   { WithCookie, not WithHeader: the latter lets the last value win per
     header name, and then the CSRF cookie and the session cookie would
@@ -536,43 +689,20 @@ begin
   S.FId := NewSessionId;
   S.FNew := True;
   S.FDirty := True;
-  { The old slot is deleted, not merely abandoned. An id that still works
+  { The old one is deleted, not merely abandoned. An id that still works
     after being replaced is exactly the attack we are stopping. }
   if Old <> '' then
     Destroy_(Old);
 end;
 
 procedure TSessionStore.Destroy_(const Id: string);
-var
-  Slot, I: Integer;
 begin
-  FLock.Acquire;
-  try
-    Slot := SlotFor(Id);
-    if Slot < 0 then
-      Exit;
-    FSlots[Slot].InUse := False;
-    SetLength(FSlots[Slot].Data, 0);
-    SetLength(FSlots[Slot].Flash, 0);
-    FSlots[Slot].Id := '';
-    SetLength(FFree, Length(FFree) + 1);
-    FFree[High(FFree)] := Slot;
-    I := FKeys.IndexOf(Id);
-    if I >= 0 then
-      FKeys.Delete(I);
-  finally
-    FLock.Release;
-  end;
+  FBackend.Delete(Id);
 end;
 
 function TSessionStore.Count: Integer;
 begin
-  FLock.Acquire;
-  try
-    Result := FKeys.Count;
-  finally
-    FLock.Release;
-  end;
+  Result := FBackend.Count(UnixNowMs);
 end;
 
 type

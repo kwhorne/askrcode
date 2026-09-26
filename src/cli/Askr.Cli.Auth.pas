@@ -1471,6 +1471,9 @@ end;
 const
   MarkerUses = '  App.Http.HomeController;';
   MarkerRoutes = '  R.Get(''/demo'', Home.Demo);';
+  MarkerVar = '  Home: THomeController;';
+  MarkerCreate = '  Home := THomeController.Create;';
+  MarkerFree = '    Home.Free;';
 
 { Inserts the uses line and the routes where `askr new` left them.
 
@@ -1482,7 +1485,7 @@ function InstallRoutes(const Root: string): Boolean;
 var
   L: TStringList;
   Path_: string;
-  I, IdxUses, IdxRoutes: Integer;
+  I, IdxUses, IdxVar, IdxCreate, IdxRoutes, IdxFree: Integer;
 begin
   Result := False;
   Path_ := IncludeTrailingPathDelimiter(Root) + 'app.lpr';
@@ -1499,20 +1502,43 @@ begin
       if Pos('App.Http.AuthController', L[I]) > 0 then
         Exit(True);
 
+    { Every place is found before anything is written. The uses line
+      used to be matched on its own, after the rest was inserted, and when
+      the API tokens changed that line the match missed in silence: every
+      `askr new --auth` from 0.12.0 wrote an app.lpr that called SetCache
+      and SetMail without the units that declare them, and said it had
+      edited it. A place that is not there means the whole edit is left
+      to the person, not half of it. }
     IdxUses := -1;
+    IdxVar := -1;
+    IdxCreate := -1;
     IdxRoutes := -1;
+    IdxFree := -1;
     for I := 0 to L.Count - 1 do
     begin
       if L[I] = MarkerUses then
-        IdxUses := I;
-      if L[I] = MarkerRoutes then
-        IdxRoutes := I;
+        IdxUses := I
+      else if L[I] = MarkerVar then
+        IdxVar := I
+      else if L[I] = MarkerCreate then
+        IdxCreate := I
+      else if L[I] = MarkerRoutes then
+        IdxRoutes := I
+      else if L[I] = MarkerFree then
+        IdxFree := I;
     end;
-    if (IdxUses < 0) or (IdxRoutes < 0) then
+    if (IdxUses < 0) or (IdxVar < 0) or (IdxCreate < 0) or
+       (IdxRoutes < 0) or (IdxFree < 0) then
+      Exit(False);
+    { And in the order askr new writes them: the insertions go from the
+      back, and each one moves only what comes after it. }
+    if not ((IdxUses < IdxVar) and (IdxVar < IdxCreate) and
+            (IdxCreate < IdxRoutes) and (IdxRoutes < IdxFree)) then
       Exit(False);
 
-    { From the back, so that the first insertion does not move the
-      second. }
+    { The controller is freed where the others are. }
+    L.Insert(IdxFree + 1, '    Auth_.Free;');
+
     { The pages after sign-in. The router sorts on specificity, not order,
       so the placement here only affects how app.lpr reads. }
     L.Insert(IdxRoutes + 1, '  R.Post(''/login/passkey'', Auth_.LoginPasskey);');
@@ -1535,56 +1561,31 @@ begin
     L.Insert(IdxRoutes + 1, '  R.Post(''/login'', Auth_.DoLogin);');
     L.Insert(IdxRoutes + 1, '  R.Get(''/login'', Auth_.ShowLogin);');
     L.Insert(IdxRoutes + 1, '');
-    L.Insert(IdxRoutes + 1, '  { Innlogging, registrering og passordtilbakestilling. }');
-
-    L.Insert(IdxUses, '  App.Http.AuthController,');
-    L.Insert(IdxUses, '  App.Models.User,');
+    L.Insert(IdxRoutes + 1, '  { Sign-in, registration and password reset. }');
 
     { The controller has to be made, the user loader registered, and the
       cache set up for the throttle on sign-in. All three right before the
       routes. }
-    for I := 0 to L.Count - 1 do
-      if L[I] = '  Home := THomeController.Create;' then
-      begin
-        L.Insert(I + 1, '  { Askr stores only the user''s id; this gives back the rest. }');
-        L.Insert(I + 2, '  SetUserLoader(@LoadUser);');
-        L.Insert(I + 3, '  { Used by the throttle on the sign-in form. }');
-        L.Insert(I + 4, '  SetCache(TCache.Create);');
-        L.Insert(I + 5, '  { Password reset sends email. MAIL_TRANSPORT decides');
-        L.Insert(I + 6, '    where it ends up: log writes to a file so the link can');
-        L.Insert(I + 7, '    be tried without any server, resend and smtp send for');
-        L.Insert(I + 8, '    real. See docs/mail.md. }');
-        L.Insert(I + 9, '  SetMail(TMailer.Create(MailFromConfig));');
-        L.Insert(I + 10, '  Mail.SetDefaultFrom(Cfg(''mail.from'', ''noreply@localhost''), '''');');
-        L.Insert(I + 11, '  Auth_ := TAuthController.Create;');
-        Break;
-      end;
+    L.Insert(IdxCreate + 1, '  Auth_ := TAuthController.Create;');
+    L.Insert(IdxCreate + 1, '  Mail.SetDefaultFrom(Cfg(''mail.from'', ''noreply@localhost''), '''');');
+    L.Insert(IdxCreate + 1, '  SetMail(TMailer.Create(MailFromConfig));');
+    L.Insert(IdxCreate + 1, '    real. See docs/mail.md. }');
+    L.Insert(IdxCreate + 1, '    be tried without any server, resend and smtp send for');
+    L.Insert(IdxCreate + 1, '    where it ends up: log writes to a file so the link can');
+    L.Insert(IdxCreate + 1, '  { Password reset sends email. MAIL_TRANSPORT decides');
+    L.Insert(IdxCreate + 1, '  SetCache(TCache.Create);');
+    L.Insert(IdxCreate + 1, '  { Used by the throttle on the sign-in form. }');
+    L.Insert(IdxCreate + 1, '  SetUserLoader(@LoadUser);');
+    L.Insert(IdxCreate + 1, '  { Askr stores only the user''s id; this gives back the rest. }');
 
-    for I := 0 to L.Count - 1 do
-      if L[I] = '  Home: THomeController;' then
-      begin
-        L.Insert(I + 1, '  Auth_: TAuthController;');
-        Break;
-      end;
+    L.Insert(IdxVar + 1, '  Auth_: TAuthController;');
 
-    for I := 0 to L.Count - 1 do
-      if L[I] = '  Askr.Session, Askr.Csrf, Askr.Auth,' then
-      begin
-        { Askr.Mail.Resend has to be linked in for MAIL_TRANSPORT=resend to
-          exist as a name. It costs no run-time dependency: OpenSSL is not
-          loaded until something actually sends. }
-        L[I] := '  Askr.Session, Askr.Csrf, Askr.Auth, Askr.Cache,';
-        L.Insert(I + 1, '  Askr.Mail, Askr.Mail.Resend,');
-        Break;
-      end;
-
-    { The controller is freed where the others are. }
-    for I := L.Count - 1 downto 0 do
-      if L[I] = '    Home.Free;' then
-      begin
-        L.Insert(I + 1, '    Auth_.Free;');
-        Break;
-      end;
+    { Askr.Mail.Resend has to be linked in for MAIL_TRANSPORT=resend to
+      exist as a name. It costs no run-time dependency: OpenSSL is not
+      loaded until something actually sends. }
+    L.Insert(IdxUses, '  App.Models.User,');
+    L.Insert(IdxUses, '  App.Http.AuthController,');
+    L.Insert(IdxUses, '  Askr.Cache, Askr.Mail, Askr.Mail.Resend,');
 
     L.SaveToFile(Path_);
     WriteLn('  edited app.lpr');

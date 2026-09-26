@@ -220,9 +220,14 @@ binary does it:
 
 The cache and the in-process queue are **per process**. Several app
 processes behind a load balancer each have their own. For the queue, use the
-[durable store](queue.md); for sessions, note that there is no shared store
-and you need sticky sessions. Both are real limits, written down rather than
-discovered.
+[durable store](queue.md). For sessions, set `SESSION_DRIVER=database`: they
+are then kept in the app's database, a login on one process is a login on
+all of them, and a deploy does not sign anybody out — see
+[Sessions](sessions.md). With the default memory driver you need sticky
+sessions, and a restart signs everyone out.
+
+The cache has no shared store. That is a real limit, written down rather
+than discovered.
 
 ## Health
 

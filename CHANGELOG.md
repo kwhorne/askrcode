@@ -29,6 +29,38 @@ with the zero-major caveat that minor releases may break things until
   sentence rather than never running. A word nothing answers is exit 64
   now, from the tool and the app alike, so a script can tell it from a
   command that failed.
+- **Sessions in the database.** `SESSION_DRIVER=database` keeps them in
+  the app's own database, in `askr_sessions`, so a login on one process
+  is a login on all of them and a deploy signs nobody out. The id is
+  stored as its SHA-256, never as itself; the table is made on first use,
+  not at startup; the request's own connection is used, so a small pool
+  cannot deadlock on a second one; and `Regenerate` deletes the old row,
+  so fixation protection holds across processes. Memory stays the
+  default. `SessionsFromConfig` reads the driver and `SESSION_LIFETIME`
+  and refuses a driver it does not know rather than falling back.
+
+  Under it, `TSessionStore` now sits on a `TSessionBackend` — `Load`,
+  `Save`, `Delete`, `Count`, `Sweep` — with `TMemorySessions` and
+  `TDbSessions` as the two there are. `TSessionStore.Create(Lifetime)`
+  is memory, as before. `./askr session:check` runs two app processes on
+  one database, on SQLite, Postgres and MySQL, with memory as the
+  control that must fail the same scenario.
+
+### Changed
+
+- `Sessions.Count` counts the sessions that have not expired, rather than
+  every entry the last sweep left.
+
+### Fixed
+
+- **`askr new --auth` wrote an app that did not compile**, from 0.12.0 to
+  0.13.1. The installer matched the scaffold's uses line exactly, the API
+  tokens changed that line, and the match missed without a word: app.lpr
+  called `SetCache` and `SetMail` with no unit declaring them, and the
+  tool said it had edited it. Every place the installer writes to is now
+  found before anything is written, and a missing one leaves the whole
+  edit to the person, with the lines printed. Found by the first gate that
+  built an `--auth` app at all.
 
 ## 0.13.1 — 2026-09-26
 

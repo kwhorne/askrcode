@@ -21,10 +21,10 @@ uses
   Askr.Urd.Bind, Askr.Urd.Json,
   Askr.Core.Crypto,
   Askr.Urd.Pool,
-  Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Csrf,
+  Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf,
   Askr.Auth, Askr.Auth.Token, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead;
 
 { -------------------------------------------------------------- versjon -- }
@@ -995,6 +995,323 @@ begin
     UseDb(nil);
     if C <> nil then
       C.Free;
+  end;
+end;
+
+{ ------------------------------------------------- sessions in a database -- }
+
+{ Two stores on one file are two nodes. What a login on one is worth on
+  the other is the whole reason the backend exists, so that is what is
+  measured -- not that rows appear in a table.
+
+  A file, not sqlite::memory:, for the same reason as the token gate: one
+  claim is about what is on disk, and the sweep for the id is paired with
+  a sweep for its hash so an empty or misnamed file cannot pass it. }
+procedure TestDbSessions;
+const
+  Folder = '.build/session-test';
+  DbFile = '.build/session-test/sessions.sqlite';
+var
+  NodeA, NodeB: TSessionStore;
+  A, Prev: TArena;
+  Sess: TSession;
+  R: TResponse;
+  Cookie_, Old, OnDisk: string;
+  C: TDbConnection;
+  Schema_: TDbSchema;
+  Data, Flash: TSessionPairs;
+  Backend: TDbSessions;
+  Pool: TDbPool;
+  Shared: TSessionStore;
+  PrevDb: TDbConnection;
+begin
+  ForceDirectories(Folder);
+  DeleteFile(DbFile);
+  DeleteFile(DbFile + '-wal');
+  DeleteFile(DbFile + '-shm');
+
+  NodeA := TSessionStore.Create(TDbSessions.Create('sqlite:' + DbFile, 1), 3600);
+  NodeB := TSessionStore.Create(TDbSessions.Create('sqlite:' + DbFile, 1), 3600);
+  A := TArena.Create(32 * 1024);
+  Prev := UseArena(A);
+  try
+    { Nothing is made until something is asked. An app has to start with
+      the database down. }
+    C := OpenDbConnection('sqlite:' + DbFile);
+    try
+      Schema_ := IntrospectSchema(C);
+      AssertTrue(Schema_.Table('askr_sessions') = nil,
+        'no table before the first request');
+      Schema_.Free;
+    finally
+      C.Free;
+    end;
+
+    { Signed in on A. }
+    Sess := NodeA.Start(MakeReq(A, ''));
+    AssertTrue(Sess.IsNew, 'no cookie is a new session');
+    Sess.Put('user', '42');
+    Sess.Flash('status', 'Welcome back.');
+    R := Respond(200);
+    NodeA.Commit(Sess, R);
+    Cookie_ := CookieFrom(R, A);
+    AssertEqual(Length(Cookie_), 32, 'the cookie was set');
+
+    { And on B, which has never seen it. }
+    A.Reset;
+    Sess := NodeB.Start(MakeReq(A, Cookie_));
+    AssertFalse(Sess.IsNew, 'the other node resumes it');
+    AssertEqual(Sess.Get('user'), '42', 'with the data');
+    AssertEqual(Sess.GetFlash('status'), 'Welcome back.',
+      'and the flash written on the first node');
+    AssertEqual(NodeB.Resumed, 1, 'counted as resumed there');
+    R := Respond(200);
+    NodeB.Commit(Sess, R);
+
+    { The flash rotated on B, and A sees that too. }
+    A.Reset;
+    Sess := NodeA.Start(MakeReq(A, Cookie_));
+    AssertFalse(Sess.HasFlash('status'), 'a flash read on one node is gone on the other');
+    AssertEqual(Sess.Get('user'), '42', 'while the data stays');
+    AssertEqual(NodeA.Count, 1, 'one session in the table');
+
+    { A second start on a table that is there. The check comes first, so
+      this is not a second CREATE INDEX -- which MySQL would refuse. }
+    AssertEqual(NodeB.Count, 1, 'the other node counts the same one');
+
+    { Characters that have to survive JSON on the way in and out. }
+    Sess.Put('note', 'a "quote", a \ and æøå — 日本');
+    R := Respond(200);
+    NodeA.Commit(Sess, R);
+    A.Reset;
+    Sess := NodeB.Start(MakeReq(A, Cookie_));
+    AssertEqual(Sess.Get('note'), 'a "quote", a \ and æøå — 日本',
+      'a value survives the payload whatever is in it');
+
+    { What is on disk: the hash, never the id. }
+    NodeA.Free;
+    NodeA := nil;
+    NodeB.Free;
+    NodeB := nil;
+    OnDisk := FileBytes(DbFile);
+    if FileExists(DbFile + '-wal') then
+      OnDisk := OnDisk + FileBytes(DbFile + '-wal');
+    AssertTrue(Pos(Sha256Hex(Cookie_), OnDisk) > 0,
+      'the hash of the id is in the file');
+    AssertEqual(Pos(Cookie_, OnDisk), 0, 'the id itself is not');
+
+    { Regenerate on one node closes the old id on the other. This is the
+      fixation defence, and with two nodes it only holds if the old row
+      is deleted rather than left to expire. }
+    NodeA := TSessionStore.Create(TDbSessions.Create('sqlite:' + DbFile, 1), 3600);
+    NodeB := TSessionStore.Create(TDbSessions.Create('sqlite:' + DbFile, 1), 3600);
+    A.Reset;
+    Sess := NodeB.Start(MakeReq(A, Cookie_));
+    Old := Sess.Id;
+    NodeB.Regenerate(Sess);
+    AssertTrue(Sess.Id <> Old, 'a new id');
+    R := Respond(200);
+    NodeB.Commit(Sess, R);
+    A.Reset;
+    Sess := NodeA.Start(MakeReq(A, Old));
+    AssertTrue(Sess.IsNew, 'the old id is a stranger on the other node');
+    AssertEqual(Sess.Get('user'), '', 'and carries nothing');
+    A.Reset;
+    Sess := NodeA.Start(MakeReq(A, CookieFrom(R, A)));
+    AssertEqual(Sess.Get('user'), '42', 'the new id carries the login');
+
+    { Expiry is the row's, not the cookie's: a browser that keeps the
+      cookie too long does not get back in. }
+    Backend := TDbSessions(NodeA.Backend);
+    AssertTrue(Backend.Load(Cookie_, UnixNowMs, Data, Flash) = False,
+      'the regenerated id loads nothing');
+    Backend.Save('ffffffffffffffffffffffffffffffff', nil, nil, UnixNowMs - 1);
+    AssertFalse(Backend.Load('ffffffffffffffffffffffffffffffff', UnixNowMs,
+      Data, Flash), 'an expired row is not a session');
+    AssertEqual(NodeA.Count, 1, 'and it is not counted');
+    AssertEqual(Backend.Sweep(UnixNowMs), 1, 'the sweep takes exactly that one');
+    AssertEqual(NodeA.Count, 1, 'the live one is left');
+    { Saving twice under a new id is an update the second time. }
+    Backend.Save('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', nil, nil, UnixNowMs + 60000);
+    Backend.Save('eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', nil, nil, UnixNowMs + 60000);
+    AssertEqual(NodeA.Count, 2, 'one row per id');
+
+    { Built on the app's pool, the store uses the connection the request
+      already holds. With a pool of one that is the difference between
+      answering and waiting for a connection that is never given back --
+      every worker holding one and asking for a second is a deadlock. }
+    Pool := TDbPool.Create('sqlite:' + DbFile, 1);
+    Shared := TSessionStore.Create(TDbSessions.Create(Pool), 3600);
+    PrevDb := UseDb(Pool.Acquire);
+    try
+      A.Reset;
+      Sess := Shared.Start(MakeReq(A, CookieFrom(R, A)));
+      AssertEqual(Sess.Get('user'), '42',
+        'a pool of one is enough when the request holds the connection');
+    finally
+      C := UseDb(PrevDb);
+      Pool.Release(C);
+      Shared.Free;
+      Pool.Free;
+    end;
+  finally
+    UseArena(Prev);
+    A.Free;
+    NodeA.Free;
+    NodeB.Free;
+  end;
+end;
+
+{ The driver is chosen in config, and what it refuses is refused at
+  startup rather than on the second node. }
+procedure TestSessionsFromConfig;
+const
+  Folder = '.build/session-config';
+var
+  L: TStringList;
+  S: TSessionStore;
+  Pool: TDbPool;
+
+  procedure WriteEnv(const Lines: array of string);
+  var
+    I: Integer;
+  begin
+    L.Clear;
+    for I := 0 to High(Lines) do
+      L.Add(Lines[I]);
+    L.SaveToFile(Folder + '/.env');
+    ClearConfig;
+    LoadConfig(Folder);
+  end;
+
+  function Refused(APool: TDbPool; const Needle: string): Boolean;
+  var
+    Got: TSessionStore;
+  begin
+    Result := False;
+    try
+      Got := SessionsFromConfig(APool);
+      Got.Free;
+    except
+      on E: ESessionError do
+        Result := Pos(Needle, E.Message) > 0;
+    end;
+  end;
+
+begin
+  ForceDirectories(Folder);
+  L := TStringList.Create;
+  Pool := TDbPool.Create('sqlite::memory:', 1);
+  try
+    WriteEnv(['APP_ENV=local']);
+    S := SessionsFromConfig(nil);
+    try
+      AssertTrue(S.Backend is TMemorySessions, 'memory when nothing is said');
+      AssertEqual(S.Lifetime, 7200, 'two hours when nothing is said');
+    finally
+      S.Free;
+    end;
+
+    WriteEnv(['SESSION_DRIVER=database', 'SESSION_LIFETIME=900']);
+    S := SessionsFromConfig(Pool);
+    try
+      AssertTrue(S.Backend is TDbSessions, 'database when asked for');
+      AssertEqual(S.Lifetime, 900, 'with the lifetime from config');
+    finally
+      S.Free;
+    end;
+
+    AssertTrue(Refused(nil, 'DATABASE_URL'),
+      'database without a database is refused, and says what to set');
+    WriteEnv(['SESSION_DRIVER=redis']);
+    AssertTrue(Refused(Pool, '"redis"'),
+      'an unknown driver is refused rather than falling back to memory');
+    WriteEnv(['SESSION_LIFETIME=0']);
+    AssertTrue(Refused(Pool, 'session.lifetime'), 'a lifetime of zero is refused');
+  finally
+    ClearConfig;
+    Pool.Free;
+    L.Free;
+    DeleteFile(Folder + '/.env');
+    RemoveDir(Folder);
+  end;
+end;
+
+{ ------------------------------------------------ make auth in app.lpr -- }
+
+procedure RemoveTree(const Dir: string);
+var
+  SR: TSearchRec;
+begin
+  if FindFirst(IncludeTrailingPathDelimiter(Dir) + '*', faAnyFile, SR) = 0 then
+  try
+    repeat
+      if (SR.Name = '.') or (SR.Name = '..') then
+        Continue;
+      if (SR.Attr and faDirectory) <> 0 then
+        RemoveTree(IncludeTrailingPathDelimiter(Dir) + SR.Name)
+      else
+        DeleteFile(IncludeTrailingPathDelimiter(Dir) + SR.Name);
+    until FindNext(SR) <> 0;
+  finally
+    FindClose(SR);
+  end;
+  RemoveDir(Dir);
+end;
+
+{ The installer edits a file askr new wrote and the user may since have
+  changed. Every edit it makes needs its anchor; 0.12.0 to 0.13.1 missed
+  one in silence and wrote an app.lpr that did not compile. What is held
+  here: on a fresh app.lpr it lands every piece, and with one anchor gone
+  it writes nothing at all. The build of a real --auth app is in
+  ./askr session:check. }
+procedure TestAuthInstall;
+const
+  Folder = '.build/auth-install';
+var
+  Root, Before, After: string;
+  L: TStringList;
+  I: Integer;
+begin
+  RemoveTree(Folder + '/shop');
+  ForceDirectories(Folder);
+  NewProject(Folder, 'shop', False);
+  Root := Folder + '/shop';
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Root + '/app.lpr');
+    Before := L.Text;
+
+    AssertTrue(InstallRoutes(Root), 'the installer finds its places in a fresh app.lpr');
+    L.LoadFromFile(Root + '/app.lpr');
+    After := L.Text;
+    AssertContains(After, '  Askr.Cache, Askr.Mail, Askr.Mail.Resend,',
+      'the units SetCache and SetMail come from');
+    AssertContains(After, '  SetMail(TMailer.Create(MailFromConfig));', 'mail is set up');
+    AssertContains(After, '  Auth_: TAuthController;', 'the controller is declared');
+    AssertContains(After, '  Auth_ := TAuthController.Create;', 'and made');
+    AssertContains(After, '    Auth_.Free;', 'and freed');
+    AssertContains(After, '  R.Get(''/dashboard'', Auth_.Dashboard);', 'the routes are in');
+    AssertTrue(Pos('  Askr.Cache, Askr.Mail', After) < Pos('  App.Http.HomeController;', After),
+      'the units stand inside the uses clause');
+    AssertTrue(InstallRoutes(Root), 'a second run is a no-op, not an error');
+    L.LoadFromFile(Root + '/app.lpr');
+    AssertEqual(L.Text, After, 'and changes nothing');
+
+    { One anchor gone, as when somebody has written their own shutdown:
+      nothing is written, so no half of it is left behind. }
+    L.Text := Before;
+    for I := L.Count - 1 downto 0 do
+      if L[I] = '    Home.Free;' then
+        L.Delete(I);
+    L.SaveToFile(Root + '/app.lpr');
+    Before := L.Text;
+    AssertFalse(InstallRoutes(Root), 'a missing place is refused');
+    L.LoadFromFile(Root + '/app.lpr');
+    AssertEqual(L.Text, Before, 'and the file is left exactly as it was');
+  finally
+    L.Free;
+    RemoveTree(Root);
   end;
 end;
 
@@ -7549,6 +7866,15 @@ begin
   Test('Inertia carries flash whatever the key', @TestInertiaFlashUansettNokkel);
   Test('the session does not leak out of the request',
     @TestSesjonenLekkerIkkeUtAvRequesten);
+
+  Test('two nodes share a login through the database, hashed at rest',
+    @TestDbSessions);
+  Test('the driver comes from config, and what it refuses',
+    @TestSessionsFromConfig);
+
+  Group('make auth');
+  Test('every place in app.lpr is found before anything is written',
+    @TestAuthInstall);
 
   Group('API tokens');
   Test('hashed at rest, scoped, revocable, and never from a URL',

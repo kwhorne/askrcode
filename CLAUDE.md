@@ -439,7 +439,44 @@ og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
 * `askr new` skrur på sesjoner, CSRF og auth. Statiske filer registreres
   **før** dem, slik at de kortslutter uten å røre noe av det.
 
-## Filopplasting
+## Sesjoner i databasen
+
+* **`TSessionStore` eier kaka, id-en, flash-rotasjonen og fixation;
+  `TSessionBackend` eier bare lagringen.** Fem metoder, og ingen av dem
+  vet noe om cookies. Et lager to steder ville hatt to regler for når en
+  flash forsvinner, og de ville drevet fra hverandre — samme grunn som at
+  køen har ett worker-løp for begge lagrene.
+* **`TDbSessions` ligger i `Askr.Session.Db`**, som `Askr.Queue.Db`, så
+  `Askr.Session` ikke trenger å kjenne datalaget. `SessionsFromConfig` står
+  der også, fordi den må kunne lage en `TDbSessions`.
+* **Id-en lagres ikke, SHA-256 av den gjør.** En tabell med id-er er en
+  tabell med innlogginger. Gaten sjekker begge veier — hashen er der,
+  id-en er ikke — for en sveip etter noe fraværende beviser ingenting
+  alene.
+* **Forespørselens egen forbindelse brukes når lageret er bygget på appens
+  pool.** En andre `Acquire` fra samme pool låser seg når alle workerne
+  holder én og vil ha én til. Testen med en pool på én forbindelse er
+  beviset: muteres delingen bort, venter den fem sekunder og kaster
+  `EDbPoolError`. Bygget med `Create(Dsn)` rører den aldri
+  forespørselens forbindelse, for den kan gå til en annen database.
+* **Tabellen lages ved første bruk, ikke ved oppstart.** Appen skal starte
+  med databasen nede — samme regel som `api_tokens`.
+* **Utløpet sjekkes ved hver lesing, ikke bare av sveipen.** Sveipen går
+  på omtrent én av 64 requester; en utløpt rad skal ikke være en sesjon i
+  mellomtiden. Mutasjonssjekket.
+* **Upserten er UPDATE og så INSERT**, fordi de tre dialektene staver
+  upsert på tre måter. Taper INSERT-en på unik-indeksen — to requester fra
+  samme nettleser med hver sin nye sesjon — gjøres UPDATE-en på nytt.
+  **Den grenen er ikke dekket av noen test**: vinduet mellom de to
+  setningene lar seg ikke treffe deterministisk. Den står der på
+  resonnement, og det skal stå her til noen har målt den.
+* **`./askr session:check` er porten.** To app-prosesser i én container mot
+  samme base, på alle tre: logg inn på A, kjent på B, logg ut på B, og
+  kaka fra *før* utloggingen avvises på A. Minne kjøres som kontroll og
+  skal feile samme scenario — uten den kunne en grønn kjøring vært en port
+  som ikke ser forskjell. Begge prosessene i én container, så en
+  SQLite-fil ligger på én kjerne.
+
 
 * **Parseren kopierer ingenting.** Kroppen ligger allerede sammenhengende i
   workerens lesebuffer — ikke i arenaen — og hver del blir et `TStr`-utsnitt
@@ -1567,6 +1604,16 @@ serveren. Slutter de å holde, er det arena-modellen som svikter, ikke testen.
   har endret fila, som de skal kunne — skriver den filene og skriver ut
   linjene som må inn. Å gjette på hvor kode skal inn i en fil noen har
   skrevet selv, er verre enn å spørre.
+* **`askr new --auth` bygde ikke fra 0.12.0 til 0.13.1, og ingenting sa
+  fra.** Installeren matchet uses-linja eksakt, API-tokenene endret den,
+  og matchen bommet i stillhet etter at resten allerede var satt inn —
+  app.lpr kalte `SetCache` og `SetMail` uten unitene, og verktøyet meldte
+  «edited app.lpr». Ingen port bygde en `--auth`-app; `make:check` bruker
+  `--no-auth`. `session:check` var den første, og fant det før den kom til
+  sesjonene. Nå finnes **alle** stedene før noe skrives, i riktig
+  rekkefølge, og mangler ett, skrives ingenting. Samme regel som
+  mutasjonssjekkens `assert old in s`: en redigering som ikke finner
+  ankeret sitt skal si fra, ikke fortsette.
 * **Stillaset lager også sidene ETTER innlogging.** `/dashboard`,
   `/settings/profile` og `/settings/security`. Grunnen er den samme som at
   innloggingen finnes: `askr new shop --auth` skal gi noe man kan logge

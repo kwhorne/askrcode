@@ -1,11 +1,23 @@
 # Sessions
 
 ```pascal
-uses Askr.Session;
+uses Askr.Session, Askr.Session.Db;
 
-SetSessions(TSessionStore.Create);    { 7200 s lifetime by default }
+SetSessions(SessionsFromConfig(DbPool));
 UseSessions(R);
 ```
+
+That is what `askr new` writes. `SessionsFromConfig` reads two keys:
+
+```toml
+[session]
+driver = "memory"      # or "database"
+lifetime = 7200        # seconds
+```
+
+or `SESSION_DRIVER` and `SESSION_LIFETIME` in the environment. Memory is
+the default. See [Where sessions are kept](#where-sessions-are-kept) for
+when to choose the database.
 
 `UseSessions` registers a middleware that starts the session before your
 handler and a response filter that writes it back after. Before that
@@ -59,8 +71,8 @@ S.HasErrors;
 
 **A new session nobody wrote to is not stored and gets no cookie.** Without
 that, every anonymous visitor — every bot, every health check — would get a
-slot in the store and a cookie to send back. The store lives in the process,
-so that is memory growing with traffic rather than with users.
+slot in the store and a cookie to send back: memory growing with traffic
+rather than with users, or with the database driver, a row per robot.
 
 `Sessions.Commit` called directly still does what it is told. Only the
 automatic path is reticent.
@@ -90,9 +102,59 @@ session, and they are logged in as you.
 [`Login`](auth.md) does it for you. If you build your own login, it is one
 line, and there is a test that fails if it is removed.
 
-## The store
+## Where sessions are kept
 
-In-process, swept periodically for expired entries.
+The store handles the cookie, the id, the flash rotation and fixation. Where
+the data lives is a **backend** under it, and there are two:
+
+| driver | backend | survives a restart | shared between processes |
+|---|---|---|---|
+| `memory` | `TMemorySessions` | no | no |
+| `database` | `TDbSessions` | yes | yes |
+
+**Memory** is right for one process. It costs nothing and needs nothing,
+but a restart signs everybody out, and with two processes behind a load
+balancer a login on one is a stranger on the other unless the balancer is
+sticky.
+
+**Database** keeps them in the database the app already has, in a table
+called `askr_sessions`. Any process can answer any request, and a deploy
+keeps people signed in. No Redis, for the same reason the
+[durable queue](queue.md) has none.
+
+```sh
+SESSION_DRIVER=database
+```
+
+What to know about it:
+
+* **The id is not stored; its SHA-256 is.** The id is what proves who a
+  request is, so a table of ids is a table of logins — one backup, read
+  replica or SQL injection away from someone else. The hash still finds
+  the row, and nothing in the table can be sent back as a cookie.
+* **The table is made on first use, not at startup.** An app has to start
+  whether or not the database is up. Put it in a migration yourself if you
+  would rather control when it appears; the store checks before it
+  creates anything.
+* **It uses the request's own connection.** Built with
+  `TDbSessions.Create(Pool)` on the app's pool, the store reads and writes
+  through the connection `LeaseDb` already took. Taking a second one from
+  the same pool would deadlock the moment every worker held one and wanted
+  another. `TDbSessions.Create(Dsn)` gives it a pool of its own instead,
+  for sessions in a different database.
+* **Expired rows are swept** on roughly one request in 64, with a single
+  `DELETE`. An expired row is never read as a session in between — the
+  expiry is checked on every load, not left to the sweep.
+* **`Regenerate` deletes the old row.** With several processes, fixation
+  protection only holds if the old id stops working everywhere at once.
+
+`SessionsFromConfig` refuses rather than guesses. `database` without a
+`DATABASE_URL` raises at startup, and so does a driver it does not know —
+falling back to memory would look like working until the second process.
+
+A backend of your own is a class with five methods — `Load`, `Save`,
+`Delete`, `Count` and `Sweep` — passed to `TSessionStore.Create(Backend)`.
+The store owns it from then on.
 
 ```pascal
 Sessions.Count;
@@ -100,10 +162,11 @@ Sessions.Created;  Sessions.Resumed;  Sessions.Expired;
 Sessions.Destroy_(Id);
 ```
 
-There is **no database-backed session store**. One process means one store;
-several processes behind a load balancer would need sticky sessions or a
-shared store, and the second of those is not built. That is a real limit and
-it is written down rather than discovered.
+### What there is not
+
+There is no Redis or Memcached backend. The database is already there and
+already backed up; a second service for sessions would be the first thing
+in Askr that needed one.
 
 ## Doing it by hand
 

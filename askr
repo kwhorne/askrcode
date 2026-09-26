@@ -1604,6 +1604,216 @@ EOF
   fi
 }
 
+# The gate for sessions in the database. Written in English like
+# cmd_mcp_check.
+#
+# Two app processes on one database are two nodes. A login on one has
+# to be a login on the other, and a logout on the other has to end it on
+# the first. The same scenario runs once with the memory driver, where
+# the second node must NOT know the visitor -- without that control, a
+# green run could be a gate that cannot see the difference.
+cmd_session_check() {
+  prepare
+  fail=0
+  ok()   { echo "  ok    $1"; }
+  bad()  { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+
+  if ! docker ps --format '{{.Names}}' | grep -qx askr-postgres ||
+     ! docker ps --format '{{.Names}}' | grep -qx askr-mysql; then
+    echo "session:check needs Postgres and MySQL. Run: ./askr db:up" >&2
+    return 1
+  fi
+  ensure_image
+
+  sc_bin="$BUILD/sessioncheck-bin"
+  sc_units="$BUILD/sessioncheck-units"
+  work="$BUILD/sessioncheck"
+  mkdir -p "$sc_bin" "$sc_units" "$work"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$sc_units|; s|-FE$BIN|-FE$sc_bin|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+  in_box() {
+    docker run --rm --network "$DB_NET" $DOCKER_PLATFORM -v "$ROOT":/work \
+      -e ASKR_HOME=/work -w "/work/${work#$ROOT/}${2:+/$2}" "$IMAGE" sh -c "$1"
+  }
+  askr_bin="/work/${sc_bin#$ROOT/}/askr"
+
+  echo "Building the askr tool for the container ..."
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags cli/askr.lpr >"$work/cli.log" 2>&1; then
+    bad "the tool builds" "$(grep -iE 'error|fatal' "$work/cli.log" | head -3)"
+    return 1
+  fi
+
+  # Removed in the same container that scaffolds: Docker Desktop's mount
+  # cache does not always see a host-side delete in time.
+  out=$(in_box "rm -rf site && $askr_bin new site --auth" 2>&1) || true
+  if [ ! -f "$work/site/askr.toml" ]; then
+    bad "a project with sign-in is scaffolded" "$(echo "$out" | tail -3)"
+    return 1
+  fi
+  sed -i.bak 's|^version = .*|path = "/work"|; s|^path = .*|path = "/work"|' "$work/site/askr.toml"
+  rm -f "$work/site/askr.toml.bak"
+  if in_box "$askr_bin build" site >"$work/build.log" 2>&1; then
+    ok "a project with sign-in is scaffolded and builds"
+  else
+    bad "the project builds" "$(grep -E 'rror|Fatal' "$work/build.log" | head -6)"
+    return 1
+  fi
+
+  docker exec askr-postgres psql -q -U askr -d askr_dev \
+    -c "DROP DATABASE IF EXISTS askr_sess" -c "CREATE DATABASE askr_sess" >/dev/null
+  docker exec askr-mysql mysql -uroot -paskr -e \
+    "DROP DATABASE IF EXISTS askr_sess; CREATE DATABASE askr_sess CHARACTER SET utf8mb4; GRANT ALL ON askr_sess.* TO 'askr'@'%';" \
+    2>/dev/null
+
+  port_a=${ASKR_SESSION_PORT_A:-8361}
+  port_b=${ASKR_SESSION_PORT_B:-8362}
+  a="http://127.0.0.1:$port_a"
+  b="http://127.0.0.1:$port_b"
+  cname=askr-sessioncheck
+
+  # Both processes in one container: two processes share no memory, which
+  # is the property, and one container keeps a SQLite file on one kernel.
+  start_nodes() {
+    docker rm -f $cname >/dev/null 2>&1
+    docker run -d --name $cname --network "$DB_NET" $DOCKER_PLATFORM \
+      -p "$port_a:$port_a" -p "$port_b:$port_b" \
+      -e SESSION_DRIVER="$2" -e DATABASE_URL="$1" \
+      -v "$ROOT":/work -w "/work/${work#$ROOT/}/site" "$IMAGE" \
+      sh -c "./.build/bin/app $port_a 0.0.0.0 & ./.build/bin/app $port_b 0.0.0.0 & wait" >/dev/null
+    n=0
+    until curl -s -o /dev/null "$a/login" && curl -s -o /dev/null "$b/login"; do
+      n=$((n + 1))
+      if [ $n -gt 80 ]; then
+        bad "both nodes answer" "$(docker logs $cname 2>&1 | tail -4)"
+        return 1
+      fi
+      sleep 0.25
+    done
+  }
+  token_in() { grep -o 'name="_token" value="[^"]*"' "$1" | head -1 | sed 's/.*value="//; s/"$//'; }
+  # Never a non-zero exit: under set -e a refused connection would end
+  # the whole gate without a word. curl says 000 instead, which fails
+  # the check it was for.
+  status() { curl -s -o "$work/body" -w '%{http_code}' -b "$jar" -c "$jar" "$@" || true; }
+
+  # Signs in on A. Leaves the session in $jar.
+  sign_up_on_a() {
+    jar="$work/jar-$1"
+    rm -f "$jar"
+    status "$a/register" >/dev/null
+    tok=$(token_in "$work/body")
+    c=$(status --data-urlencode "_token=$tok" --data-urlencode "name=Ada $1" \
+          --data-urlencode "email=ada-$1-$(date +%s)@example.com" \
+          --data-urlencode "password=correct-horse-battery" \
+          --data-urlencode "password_confirmation=correct-horse-battery" \
+          "$a/register")
+    [ "$c" = "303" ]
+  }
+
+  for dsn in \
+      "sqlite:storage/sessions.sqlite" \
+      "postgresql://askr:askr@askr-postgres:5432/askr_sess" \
+      "mysql://askr:askr@askr-mysql:3306/askr_sess"; do
+    dialect=${dsn%%:*}
+    echo
+    echo "- $dialect"
+    [ "$dialect" = sqlite ] && rm -f "$work/site/storage/sessions.sqlite"*
+    if ! in_box "DATABASE_URL='$dsn' ./.build/bin/app --migrate" site >"$work/migrate-$dialect.log" 2>&1; then
+      bad "migrate" "$(tail -3 "$work/migrate-$dialect.log")"
+      continue
+    fi
+    start_nodes "$dsn" database || continue
+
+    if sign_up_on_a "$dialect"; then
+      ok "signed up and in on node A"
+    else
+      bad "signed up and in on node A" "got $c: $(head -c 300 "$work/body")"
+      docker rm -f $cname >/dev/null 2>&1
+      continue
+    fi
+    c=$(status "$b/dashboard")
+    if [ "$c" = "200" ] && grep -q "Welcome back, Ada $dialect" "$work/body"; then
+      ok "node B knows who it is"
+    else
+      bad "node B knows who it is" "got $c: $(head -c 200 "$work/body")"
+    fi
+
+    # What is in the table: the hash of the cookie, never the cookie.
+    # Each query ends in || true: with no table -- a store that never
+    # wrote one -- set -e would otherwise stop the gate here, after one
+    # database, with the failure above as the last word.
+    cookie=$(awk '$6 == "askr_session" { print $7 }' "$jar" | tail -1)
+    hash=$(printf '%s' "$cookie" | shasum -a 256 | cut -d' ' -f1)
+    case $dialect in
+      sqlite)
+        rows=$(in_box "python3 -c \"import sqlite3; c=sqlite3.connect('storage/sessions.sqlite'); print('\\\\n'.join(r[0]+' '+r[1] for r in c.execute('select id_hash, payload from askr_sessions')))\"" site 2>&1 || true) ;;
+      postgresql)
+        rows=$(docker exec askr-postgres psql -At -U askr -d askr_sess \
+                 -c "select id_hash || ' ' || payload from askr_sessions" 2>&1 || true) ;;
+      mysql)
+        rows=$(docker exec askr-mysql mysql -N -uaskr -paskr askr_sess \
+                 -e "select concat(id_hash, ' ', payload) from askr_sessions" 2>/dev/null || true) ;;
+    esac
+    if [ ${#cookie} -eq 32 ] && echo "$rows" | grep -q "$hash"; then
+      ok "the table holds the session under the hash of its id"
+    else
+      bad "the table holds the session under the hash of its id" "cookie ${#cookie} chars; rows: $(echo "$rows" | head -3)"
+    fi
+    if [ -n "$cookie" ] && ! echo "$rows" | grep -q "$cookie"; then
+      ok "and the id itself is nowhere in it"
+    else
+      bad "and the id itself is nowhere in it"
+    fi
+
+    # The cookie from before the logout is kept apart. A logout that
+    # hands out a new cookie would otherwise pass on the new one, while
+    # the old id -- the one somebody may have copied -- still worked.
+    cp "$jar" "$jar.before"
+    tok=$(token_in "$work/body")
+    c=$(status --data-urlencode "_token=$tok" "$b/logout")
+    [ "$c" = "303" ] && ok "signed out on node B" || bad "signed out on node B" "got $c"
+    c=$(curl -s -o /dev/null -w '%{http_code}' -b "$jar.before" "$a/dashboard" || true)
+    [ "$c" = "303" ] && ok "and node A no longer takes the cookie it had" ||
+      bad "and node A no longer takes the cookie it had" "got $c"
+
+    docker rm -f $cname >/dev/null 2>&1
+  done
+
+  # The control. Same app, same scenario, memory: node B must be a
+  # stranger, or the checks above cannot tell a shared session from any
+  # other kind of 200.
+  echo
+  echo "- the control: memory"
+  start_nodes "sqlite:storage/sessions.sqlite" memory && {
+    if sign_up_on_a control; then
+      c=$(status "$b/dashboard")
+      [ "$c" = "303" ] && ok "with the memory driver node B does not know it" ||
+        bad "with the memory driver node B does not know it" "got $c"
+      c=$(status "$a/dashboard")
+      [ "$c" = "200" ] && ok "while node A still does" || bad "while node A still does" "got $c"
+    else
+      bad "signed up on node A with the memory driver" "got $c"
+    fi
+  }
+  docker rm -f $cname >/dev/null 2>&1
+
+  # A driver nobody has written is refused at startup, not taken as memory.
+  out=$(in_box "SESSION_DRIVER=redis DATABASE_URL=sqlite:storage/sessions.sqlite timeout 5 ./.build/bin/app $port_a 2>&1; echo exit=\$?" site 2>&1)
+  if echo "$out" | grep -q 'Unknown session.driver "redis"' && ! echo "$out" | grep -q 'exit=0'; then
+    ok "an unknown driver stops the app at startup, and says so"
+  else
+    bad "an unknown driver stops the app at startup" "$(echo "$out" | tail -3)"
+  fi
+
+  echo
+  if [ "$fail" -ne 0 ]; then
+    echo "session:check failed."
+    return 1
+  fi
+  echo "session:check holds: a login is the database's, not a process's."
+}
+
 cmd_seo_check() {
   prepare
 
@@ -2371,6 +2581,7 @@ case "${1:-}" in
   api:check) shift; cmd_api_check "$@" ;;
   make:check) shift; cmd_make_check "$@" ;;
   seo:check) shift; cmd_seo_check "$@" ;;
+  session:check) shift; cmd_session_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -2403,6 +2614,11 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
                   en validator; API-et over en socket; sidene i Chrome med
                   axe. Krever ./askr db:up; node og Chrome for de to siste.
                   Krever ./askr db:up
+  ./askr session:check
+                  sesjoner i databasen: to app-prosesser mot samme base,
+                  logg inn på den ene, bli kjent på den andre, logg ut på
+                  den andre og vær ute på den første — på SQLite, Postgres
+                  og MySQL, med minne som kontroll. Krever ./askr db:up
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,
