@@ -7,6 +7,13 @@
   published:
 
     SHA-256      NIST FIPS 180-4, the example vectors
+    SHA-1        FIPS 180's, and every length around the block edge
+    HMAC-SHA1    RFC 2202
+    base32       RFC 4648
+    HOTP, TOTP   RFC 4226 and RFC 6238's appendices
+    ChaCha20-Poly1305
+                 RFC 8439's sections and Appendix A.3, and 150 vectors
+                 from python-cryptography at every block edge
     HMAC-SHA256  RFC 4231, all seven
     PBKDF2       the RFC 6070 cases recomputed for SHA-256 (they are in
                  draft-josefsson-scrypt-kdf / RFC 7914's references)
@@ -33,7 +40,7 @@ uses
 {$ENDIF}
   SysUtils, Classes,
   Askr.Core.Crypto, Askr.Core.BigInt, Askr.Core.Ec,
-  Askr.Core.Cbor, Askr.WebAuthn;
+  Askr.Core.Cbor, Askr.WebAuthn, Askr.Core.Aead, Askr.Totp;
 
 var
   Passed: Integer = 0;
@@ -123,6 +130,250 @@ begin
   for I := 0 to High(B) do
     B[I] := StrToInt('$' + Copy(Hex, I * 2 + 1, 2));
   Result := B;
+end;
+
+{ ----------------------------------------- SHA-1, base32, TOTP, AEAD -- }
+
+function Sha1Hex(const Data: TBytes): string;
+var
+  D: TSha1Digest;
+  B: TBytes;
+begin
+  D := Sha1(Data);
+  B := nil;
+  SetLength(B, 20);
+  Move(D[0], B[0], 20);
+  Result := HexEncode(B);
+end;
+
+function HmacSha1Hex(const Key, Msg: TBytes): string;
+var
+  D: TSha1Digest;
+  B: TBytes;
+begin
+  D := HmacSha1(Key, Msg);
+  B := nil;
+  SetLength(B, 20);
+  Move(D[0], B[0], 20);
+  Result := HexEncode(B);
+end;
+
+function Filled(B: Byte; N: Integer): TBytes;
+var
+  I: Integer;
+begin
+  Result := nil;
+  SetLength(Result, N);
+  for I := 0 to N - 1 do
+    Result[I] := B;
+end;
+
+function Counting(From_, N: Integer): TBytes;
+var
+  I: Integer;
+begin
+  Result := nil;
+  SetLength(Result, N);
+  for I := 0 to N - 1 do
+    Result[I] := From_ + I;
+end;
+
+procedure TotpAeadTester;
+const
+  RfcKey = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';   { '12345678901234567890' }
+  Hotp: array[0..9] of string = ('755224', '287082', '359152', '969429',
+    '338314', '254676', '287922', '162583', '399871', '520489');
+  TotpTimes: array[0..5] of Int64 = (59, 1111111109, 1111111111, 1234567890,
+    2000000000, 20000000000);
+  TotpCodes: array[0..5] of string = ('94287082', '07081804', '14050471',
+    '89005924', '69279037', '65353130');
+  B32In: array[0..6] of string = ('', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar');
+  B32Out: array[0..6] of string = ('', 'MY', 'MZXQ', 'MZXW6', 'MZXW6YQ',
+    'MZXW6YTB', 'MZXW6YTBOI');
+  Boundary: array[0..7] of Integer = (55, 56, 57, 63, 64, 65, 119, 120);
+  BoundaryHex: array[0..7] of string = (
+    'c1c8bbdc22796e28c0e15163d20899b65621d65a', 'c2db330f6083854c99d4b5bfb6e8f29f201be699',
+    'f08f24908d682555111be7ff6f004e78283d989a', '03f09f5b158a7a8cdad920bddc29b81c18a551f5',
+    '0098ba824b5c16427bd7a1122a5a442a25ec644d', '11655326c708d70319be2610e8a57d9a5b959d3b',
+    'ee971065aaa017e0632a8ca6c77bb3bf8b1dfc56', 'f34c1488385346a55709ba056ddd08280dd4c6d6');
+var
+  I, J, Good, Rows: Integer;
+  Raised: Boolean;
+  Last: Int64;
+  Secret, Code, S, P: string;
+  L, F: TStringList;
+  Key, Nonce, Aad, Plain, Sealed, Opened: TBytes;
+  Codes: TStringArray;
+begin
+  Start('SHA-1 against FIPS 180 and at every length around the block edge');
+  Like('"abc"', 'a9993e364706816aba3e25717850c26c9cd0d89d', Sha1Hex(Bytes('abc')));
+  Like('the empty string', 'da39a3ee5e6b4b0d3255bfef95601890afd80709', Sha1Hex(nil));
+  Like('two blocks', '84983e441c3bd26ebaae4aa1f95129e5e54670f1',
+    Sha1Hex(Bytes('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq')));
+  Like('a million a''s', '34aa973cd4c4daa4f61eeb2bdbad27316534016f',
+    Sha1Hex(Bytes(Again('a', 1000000))));
+  for I := 0 to High(Boundary) do
+    Like(IntToStr(Boundary[I]) + ' bytes', BoundaryHex[I], Sha1Hex(Bytes(Again('a', Boundary[I]))));
+
+  Start('HMAC-SHA1 against RFC 2202');
+  Like('case 1', 'b617318655057264e28bc0b6fb378c8ef146be00', HmacSha1Hex(Filled($0B, 20), Bytes('Hi There')));
+  Like('case 2', 'effcdf6ae5eb2fa2d27416d5f184df9c259a7c79',
+    HmacSha1Hex(Bytes('Jefe'), Bytes('what do ya want for nothing?')));
+  Like('case 6, a key longer than the block', 'aa4ae5e15272d00e95705637ce8a3b55ed402112',
+    HmacSha1Hex(Filled($AA, 80), Bytes('Test Using Larger Than Block-Size Key - Hash Key First')));
+
+  Start('base32 against RFC 4648');
+  for I := 0 to High(B32In) do
+  begin
+    Like('"' + B32In[I] + '"', B32Out[I], Base32Encode(Bytes(B32In[I])));
+    S := '';
+    Opened := Base32Decode(B32Out[I] + '===');
+    SetLength(S, Length(Opened));
+    if Length(Opened) > 0 then
+      Move(Opened[0], S[1], Length(Opened));
+    Like('and back, padding and all', B32In[I], S);
+  end;
+  Like('lower case and spaces decode too', HexEncode(Bytes('foobar')),
+    HexEncode(Base32Decode('mzxw 6ytb oi')));
+  Raised := False;
+  try
+    Base32Decode('MZXW1');
+  except
+    on ECryptoError do Raised := True;
+  end;
+  Ok('a character outside the alphabet raises rather than being skipped', Raised);
+
+  Start('HOTP against RFC 4226, TOTP against RFC 6238');
+  for I := 0 to 9 do
+    Like('HOTP counter ' + IntToStr(I), Hotp[I], HotpCode(Bytes('12345678901234567890'), I, 6));
+  for I := 0 to High(TotpTimes) do
+    Like('TOTP at ' + IntToStr(TotpTimes[I]), TotpCodes[I], TotpCode(RfcKey, TotpTimes[I], 8));
+
+  Start('a code works once, near its time, and nothing else is one');
+  Secret := NewTotpSecret;
+  Ok('a new secret is 160 bits', Length(Base32Decode(Secret)) = 20);
+  Code := TotpCode(Secret, 1000000020);
+  Last := 0;
+  Ok('the code for now is taken', VerifyTotp(Secret, Code, Last, 1000000020));
+  Ok('and the step it matched is kept', Last = 1000000020 div 30);
+  Ok('the same code again is not -- it is spent', not VerifyTotp(Secret, Code, Last, 1000000020));
+  Last := 0;
+  Ok('the step before is taken, for a clock a little behind',
+    VerifyTotp(Secret, TotpCode(Secret, 1000000020 - 30), Last, 1000000020));
+  Last := 0;
+  Ok('and the step after, for one a little ahead',
+    VerifyTotp(Secret, TotpCode(Secret, 1000000020 + 30), Last, 1000000020));
+  Last := 0;
+  Ok('but not two steps back', not VerifyTotp(Secret, TotpCode(Secret, 1000000020 - 60), Last, 1000000020));
+  Ok('nor two ahead', not VerifyTotp(Secret, TotpCode(Secret, 1000000020 + 60), Last, 1000000020));
+  Last := (1000000020 div 30);
+  Ok('a code from before the last one used is not taken',
+    not VerifyTotp(Secret, TotpCode(Secret, 1000000020 - 30), Last, 1000000020));
+  Last := 0;
+  Ok('spaces in it do not matter',
+    VerifyTotp(Secret, Copy(Code, 1, 3) + ' ' + Copy(Code, 4, 3), Last, 1000000020));
+  Last := 0;
+  Ok('letters are not a code', not VerifyTotp(Secret, 'abcdef', Last, 1000000020));
+  Ok('nor five digits', not VerifyTotp(Secret, Copy(Code, 1, 5), Last, 1000000020));
+  Like('the URI an authenticator reads',
+    'otpauth://totp/My%20Shop:ada@example.com?secret=' + RfcKey +
+    '&issuer=My%20Shop&algorithm=SHA1&digits=6&period=30',
+    TotpUri('My Shop', 'ada@example.com', RfcKey));
+
+  Codes := NewRecoveryCodes;
+  Good := 0;
+  for I := 0 to High(Codes) do
+    if (Length(Codes[I]) = 11) and (Codes[I][6] = '-') then
+      Inc(Good);
+  Ok('eight recovery codes, five and five', (Length(Codes) = 8) and (Good = 8));
+  Good := 0;
+  for I := 0 to High(Codes) do
+    for J := I + 1 to High(Codes) do
+      if Codes[I] = Codes[J] then
+        Inc(Good);
+  Ok('all different', Good = 0);
+  Ok('a recovery code matches however it is typed',
+    RecoveryCodeHash('7kx2m-9qwpd') = RecoveryCodeHash(' 7KX2M 9QWPD '));
+
+  Start('ChaCha20-Poly1305 against RFC 8439');
+  Like('the ChaCha20 block of section 2.3.2',
+    '10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4e' +
+    'd2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e',
+    HexEncode(ChaCha20Block(Counting(0, 32), 1, HexBytes('000000090000004a00000000'))));
+  Like('the Poly1305 tag of section 2.5.2', 'a8061dc1305136c6c22b8baf0c0127a9',
+    HexEncode(Poly1305(HexBytes('85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b'),
+      Bytes('Cryptographic Forum Research Group'))));
+  Key := Counting($80, 32);
+  Nonce := HexBytes('070000004041424344454647');
+  Aad := HexBytes('50515253c0c1c2c3c4c5c6c7');
+  Plain := Bytes('Ladies and Gentlemen of the class of ''99: If I could offer you only one tip for the future, sunscreen would be it.');
+  Sealed := AeadSeal(Key, Nonce, Aad, Plain);
+  Like('the sealed text of section 2.8.2',
+    'd31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b' +
+    '1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc' +
+    '3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691', HexEncode(Sealed));
+  Ok('and it opens', AeadOpen(Key, Nonce, Aad, Sealed, Opened) and (HexEncode(Opened) = HexEncode(Plain)));
+  Sealed[3] := Sealed[3] xor 1;
+  Ok('one bit changed in the text, and it does not', not AeadOpen(Key, Nonce, Aad, Sealed, Opened));
+  Ok('with nothing given back', Length(Opened) = 0);
+  Sealed[3] := Sealed[3] xor 1;
+  Sealed[High(Sealed)] := Sealed[High(Sealed)] xor $80;
+  Ok('one bit in the tag, and it does not', not AeadOpen(Key, Nonce, Aad, Sealed, Opened));
+  Sealed[High(Sealed)] := Sealed[High(Sealed)] xor $80;
+  Aad[0] := Aad[0] xor 1;
+  Ok('other associated data, and it does not', not AeadOpen(Key, Nonce, Aad, Sealed, Opened));
+
+  Start('ChaCha20-Poly1305 and Poly1305 against python-cryptography, at every block edge');
+  L := TStringList.Create;
+  F := TStringList.Create;
+  try
+    L.LoadFromFile('tests/vectors/aead.txt');
+    Good := 0;
+    Rows := 0;
+    for I := 0 to L.Count - 1 do
+    begin
+      if (L[I] = '') or (L[I][1] = '#') then
+        Continue;
+      F.Clear;
+      F.Delimiter := '|';
+      F.StrictDelimiter := True;
+      F.DelimitedText := L[I];
+      Inc(Rows);
+      if F[0] = 'aead' then
+      begin
+        Sealed := AeadSeal(HexBytes(F[1]), HexBytes(F[2]), HexBytes(F[3]), HexBytes(F[4]));
+        if (HexEncode(Sealed) = F[5]) and
+           AeadOpen(HexBytes(F[1]), HexBytes(F[2]), HexBytes(F[3]), HexBytes(F[5]), Opened) and
+           (HexEncode(Opened) = F[4]) then
+          Inc(Good)
+        else
+          WriteLn('        differs: ', Copy(L[I], 1, 100));
+      end
+      else if HexEncode(Poly1305(HexBytes(F[1]), HexBytes(F[2]))) = F[3] then
+        Inc(Good)
+      else
+        WriteLn('        differs: ', Copy(L[I], 1, 100));
+    end;
+    Ok(Format('%d of %d vectors, RFC 8439''s carry cases among them', [Good, Rows]),
+      (Rows > 140) and (Good = Rows));
+  finally
+    F.Free;
+    L.Free;
+  end;
+
+  Start('sealing a column under APP_KEY');
+  SetAppKey(GenerateAppKey);
+  S := SealText('JBSWY3DPEHPK3PXP', 'totp');
+  Ok('it opens with the same purpose', OpenText(S, 'totp', P) and (P = 'JBSWY3DPEHPK3PXP'));
+  Ok('not with another -- a value moved to another column stays shut', not OpenText(S, 'recovery', P));
+  Ok('the secret is not in it', Pos('JBSWY3DPEHPK3PXP', S) = 0);
+  Ok('and it is different every time, with a fresh nonce', SealText('JBSWY3DPEHPK3PXP', 'totp') <> S);
+  Ok('changed, it does not open', not OpenText(Copy(S, 1, Length(S) - 2) + 'AA', 'totp', P));
+  Ok('garbage does not open, and does not raise', not OpenText('v1.@@@', 'totp', P));
+  Ok('nor something that was never sealed', not OpenText('JBSWY3DPEHPK3PXP', 'totp', P));
+  SetAppKey(GenerateAppKey);
+  Ok('and a new APP_KEY does not open the old', not OpenText(S, 'totp', P));
+  SetAppKey('');
 end;
 
 procedure EcdsaTester;
@@ -644,6 +895,7 @@ begin
   Ok('and the hash from it works', VerifyPassword('et passord', H1));
   EcdsaTester;
   WebAuthnTester;
+  TotpAeadTester;
 
   WriteLn;
   WriteLn(Format('— %d passed, %d failed', [Passed, Failed]));

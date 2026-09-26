@@ -40,6 +40,16 @@ with the zero-major caveat that minor releases may break things until
   `SetVerifiedCheck`, `IsVerified`, and `RequireVerified`, which answers a
   browser, an Inertia visit and a JSON client each its own way and says no
   when no check is registered. `./askr auth:check` drives it over a socket.
+- **Encrypting a column.** `SealText` and `OpenText` in `Askr.Core.Aead`
+  keep a secret the app reads back — a TOTP secret — under `APP_KEY`, with
+  ChaCha20-Poly1305 from RFC 8439 in Pascal and the purpose bound in, so a
+  sealed value moved to another column does not open. Held to RFC 8439,
+  its Appendix A.3 and 150 vectors from python-cryptography.
+- **TOTP.** `Askr.Totp`: secrets, codes by RFC 6238, a check that takes
+  the step before and after and refuses a code already used, the
+  `otpauth://` URI, and recovery codes kept as hashes. Under it,
+  `Sha1`, `HmacSha1`, `Base32Encode` and `Base32Decode`, against FIPS 180,
+  RFC 2202 and RFC 4648.
 - **Signed links.** `SignedUrl` and `SignedPath` in `Askr.Signed` sign a
   path, its query and an expiry under `APP_KEY`; `CheckSignature` tells a
   valid link from an expired one and from one that was changed. Nothing is

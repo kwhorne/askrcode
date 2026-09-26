@@ -27,8 +27,12 @@ checked against numbers somebody else published:
 |---|---|
 | SHA-256 | NIST FIPS 180-4 |
 | HMAC-SHA256 | RFC 4231, all seven cases |
+| SHA-1 | FIPS 180, and every length around the block edge |
+| HMAC-SHA1 | RFC 2202 |
 | PBKDF2 | RFC 6070 cases carried over to SHA-256 |
-| base64 | RFC 4648 |
+| base64, base32 | RFC 4648 |
+| HOTP, TOTP | RFC 4226 and RFC 6238 |
+| ChaCha20-Poly1305 | RFC 8439, its Appendix A.3, and 150 vectors from python-cryptography |
 
 ## Randomness
 
@@ -53,6 +57,10 @@ Sha256Hex(S);
 HmacSha256(Key, Msg);
 HmacSha256Hex(Key, Msg);
 ```
+
+`Sha1` and `HmacSha1` are there too, for TOTP and nothing else. SHA-1 is
+broken for collisions, and HMAC is not touched by that; the authenticator
+apps people have compute HMAC-SHA1 whatever the setup asks for.
 
 > The SHA-256 implementation is marked `{$push}{$R-}{$Q-}`. It computes
 > modulo 2^32 and overflows on purpose. Without the marking the whole unit
@@ -147,13 +155,54 @@ secret in a signed value.
 `Unsign` splits on the **last** dot: the payload may contain dots, the
 signature cannot. Comparison is constant time.
 
+## Encrypting a column
+
+```pascal
+uses Askr.Core.Aead;
+
+U.TotpSecret := SealText(Secret, 'totp');
+if OpenText(U.TotpSecret, 'totp', Secret) then ...
+```
+
+For a secret the app has to read back — a TOTP secret, an API key for a
+customer's own account elsewhere — and that a leaked table should not hand
+out with it. The text is `v1.` and then, in base64url, a fresh 12-byte
+nonce, the ciphertext and a 16-byte tag.
+
+- **ChaCha20-Poly1305, RFC 8439.** Encryption that also proves the text was
+  not changed: a sealed value that was altered, cut short or made under
+  another key does not open, and nothing is decrypted before the tag has
+  been checked. ChaCha20 is additions, rotations and XOR, which take the
+  same time whatever the key; AES in software is table lookups that do not.
+- **The purpose is bound in.** It goes in as associated data, so a value
+  sealed as `'totp'` does not open as anything else — copied into another
+  column, it stays shut.
+- **The key is `APP_KEY`**, through HMAC with a label of its own. A new
+  `APP_KEY` makes everything sealed under the old one unreadable, which is
+  what rotating a key means — for a table of TOTP secrets, it means every
+  user sets up two-factor again. Plan it before doing it.
+- **Not a construction of our own.** HMAC in counter mode with a MAC after
+  it would have worked and would have had nothing to be held to. This has
+  RFC 8439's vectors, the Appendix A.3 cases built to hit the hard carries
+  in Poly1305, and 150 vectors from python-cryptography at every block
+  edge. `tools/vectors/aead.py` writes them again.
+
+`AeadSeal`, `AeadOpen`, `ChaCha20Xor` and `Poly1305` are there underneath,
+for a key and nonce of your own. A nonce is used once per key, never again.
+
 ## Encoding
 
 ```pascal
 Base64Encode(B);      Base64Decode(S);
 Base64UrlEncode(B);   Base64UrlDecode(S);     { -_ and no padding }
+Base32Encode(B);      Base32Decode(S);        { what a TOTP secret is written in }
 HexEncode(B);         HexDecode(S);
 ```
+
+`Base32Decode` takes lower case, spaces and dashes, as people type a secret,
+and **raises** on a character outside the alphabet rather than skipping
+it: a secret read wrong gives codes that never match, and nothing says
+why.
 
 base64url is the form that belongs in a URL, a filename or a cookie value.
 

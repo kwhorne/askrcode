@@ -338,6 +338,29 @@ og så videre. `run.sh` globber `p*`, så ingenting peker på de gamle navnene.
 * Bildetestene kjøres i containeren, der libvips finnes, og hopper over
   seg selv på macOS med begrunnelse — som TLS-suiten.
 
+## Kryptering av kolonner og TOTP
+
+* **ChaCha20-Poly1305, ikke en egen konstruksjon.** HMAC i tellermodus med
+  en MAC etter hadde virket, og hadde ikke hatt noe å holdes mot. RFC 8439
+  har vektorer, Appendix A.3 treffer de vanskelige menteoverføringene i
+  Poly1305, og `tools/vectors/aead.py` skriver 150 til fra
+  python-cryptography. Generatoren ligger i repoet, i motsetning til den
+  for ECDSA-vektorene.
+* **Vektorene sjekkes før de skrives inn.** Et RFC-tilfelle jeg skrev en
+  byte for langt ga et gyldig tag — Python regner jo ut hva man gir den —
+  men ikke RFC-ens. Sammenlign med tallet i RFC-en, ikke bare med Python.
+* **Poly1305 i fem 26-bits lemmer**, som poly1305-donna: produktet av to
+  lemmer og summen av fem får plass i 64 bit. Valget mellom h og h − p
+  gjøres med en maske, ikke en gren.
+* **Formålet er associated data** i `SealText`, så en TOTP-hemmelighet
+  kopiert til en annen kolonne ikke åpner der. Nøkkelen er `APP_KEY`
+  gjennom HMAC med egen etikett.
+* **HMAC-SHA1 finnes bare for TOTP.** Autentikator-appene regner SHA-1 og
+  seks siffer uansett hva oppsettet ber om.
+* **To sjekker i `VerifyTotp` var døde**: sifre og lengde. En kode som ikke
+  er seks sifre kan aldri bli lik en, og sammenligningen sier det. Tatt ut;
+  testene står.
+
 ## Elliptiske kurver
 
 * **Lemmene i `Askr.Core.BigInt` er 32 bit, ikke 64.** Et 32x32-produkt

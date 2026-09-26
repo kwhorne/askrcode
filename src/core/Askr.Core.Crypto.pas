@@ -43,6 +43,7 @@ type
   ECryptoError = class(Exception);
 
   TSha256Digest = array[0..31] of Byte;
+  TSha1Digest = array[0..19] of Byte;
 
 { ------------------------------------------------------------ tilfeldig -- }
 
@@ -62,6 +63,24 @@ function RandomToken(Count: Integer = 32): string;
 function Sha256(const Data: TBytes): TSha256Digest; overload;
 function Sha256(const S: string): TSha256Digest; overload;
 function Sha256Hex(const S: string): string;
+
+{ ----------------------------------------------------------------- SHA-1 -- }
+
+{ SHA-1 is broken for collisions, and nothing here uses it for that. It is
+  here for HMAC-SHA1, which collisions do not touch, and which is what TOTP
+  means in practice: RFC 6238 allows SHA-256, and the authenticator apps
+  people actually have ignore that and compute SHA-1. }
+function Sha1(const Data: TBytes): TSha1Digest;
+function HmacSha1(const Key, Msg: TBytes): TSha1Digest;
+
+{ ---------------------------------------------------------------- base32 -- }
+
+{ RFC 4648 base32, without padding: the form an authenticator app takes a
+  secret in. Decode takes lower case, spaces and dashes, and raises on a
+  character outside the alphabet rather than skipping it -- a secret read
+  wrong gives codes that never match, and nothing says why. }
+function Base32Encode(const Data: TBytes): string;
+function Base32Decode(const S: string): TBytes;
 
 { ----------------------------------------------------------- HMAC-SHA256 -- }
 
@@ -381,6 +400,184 @@ begin
     Digest[I * 4 + 2] := Byte((St.H[I] shr 8) and $FF);
     Digest[I * 4 + 3] := Byte(St.H[I] and $FF);
   end;
+end;
+
+{ ----------------------------------------------------------------- SHA-1 -- }
+
+{$push}{$R-}{$Q-}
+function Sha1(const Data: TBytes): TSha1Digest;
+var
+  Msg: TBytes;
+  W: array[0..79] of Cardinal;
+  H0, H1, H2, H3, H4, A, B, C, D, E, F, K, T: Cardinal;
+  BitLen: UInt64;
+  N, I, Blk: Integer;
+begin
+  { Padded as the standard says: a 1 bit, zeros, and the length in bits as
+    a big-endian 64-bit number, to a multiple of 64 bytes. }
+  N := Length(Data);
+  Msg := nil;
+  SetLength(Msg, ((N + 8) div 64 + 1) * 64);
+  if N > 0 then
+    Move(Data[0], Msg[0], N);
+  Msg[N] := $80;
+  BitLen := UInt64(N) * 8;
+  for I := 0 to 7 do
+    Msg[Length(Msg) - 1 - I] := (BitLen shr (8 * I)) and $FF;
+
+  H0 := $67452301; H1 := $EFCDAB89; H2 := $98BADCFE; H3 := $10325476;
+  H4 := $C3D2E1F0;
+  Blk := 0;
+  while Blk < Length(Msg) do
+  begin
+    for I := 0 to 15 do
+      W[I] := (Cardinal(Msg[Blk + I * 4]) shl 24) or
+              (Cardinal(Msg[Blk + I * 4 + 1]) shl 16) or
+              (Cardinal(Msg[Blk + I * 4 + 2]) shl 8) or
+               Cardinal(Msg[Blk + I * 4 + 3]);
+    for I := 16 to 79 do
+    begin
+      T := W[I - 3] xor W[I - 8] xor W[I - 14] xor W[I - 16];
+      W[I] := (T shl 1) or (T shr 31);
+    end;
+    A := H0; B := H1; C := H2; D := H3; E := H4;
+    for I := 0 to 79 do
+    begin
+      if I < 20 then
+      begin
+        F := (B and C) or ((not B) and D);
+        K := $5A827999;
+      end
+      else if I < 40 then
+      begin
+        F := B xor C xor D;
+        K := $6ED9EBA1;
+      end
+      else if I < 60 then
+      begin
+        F := (B and C) or (B and D) or (C and D);
+        K := $8F1BBCDC;
+      end
+      else
+      begin
+        F := B xor C xor D;
+        K := $CA62C1D6;
+      end;
+      T := ((A shl 5) or (A shr 27)) + F + E + K + W[I];
+      E := D;
+      D := C;
+      C := (B shl 30) or (B shr 2);
+      B := A;
+      A := T;
+    end;
+    H0 := H0 + A; H1 := H1 + B; H2 := H2 + C; H3 := H3 + D; H4 := H4 + E;
+    Inc(Blk, 64);
+  end;
+  for I := 0 to 3 do
+  begin
+    Result[I] := (H0 shr (24 - 8 * I)) and $FF;
+    Result[4 + I] := (H1 shr (24 - 8 * I)) and $FF;
+    Result[8 + I] := (H2 shr (24 - 8 * I)) and $FF;
+    Result[12 + I] := (H3 shr (24 - 8 * I)) and $FF;
+    Result[16 + I] := (H4 shr (24 - 8 * I)) and $FF;
+  end;
+end;
+{$pop}
+
+function HmacSha1(const Key, Msg: TBytes): TSha1Digest;
+var
+  K, Inner, Outer: TBytes;
+  D: TSha1Digest;
+  I: Integer;
+begin
+  { A key longer than the block is hashed first, a shorter one padded with
+    zeros -- RFC 2104, and RFC 2202's vectors check both. }
+  K := nil;
+  if Length(Key) > 64 then
+  begin
+    D := Sha1(Key);
+    SetLength(K, 20);
+    Move(D[0], K[0], 20);
+  end
+  else
+    K := Copy(Key);
+  SetLength(K, 64);
+  Inner := nil;
+  SetLength(Inner, 64 + Length(Msg));
+  for I := 0 to 63 do
+    Inner[I] := K[I] xor $36;
+  if Length(Msg) > 0 then
+    Move(Msg[0], Inner[64], Length(Msg));
+  D := Sha1(Inner);
+  Outer := nil;
+  SetLength(Outer, 64 + 20);
+  for I := 0 to 63 do
+    Outer[I] := K[I] xor $5C;
+  Move(D[0], Outer[64], 20);
+  Result := Sha1(Outer);
+end;
+
+{ ---------------------------------------------------------------- base32 -- }
+
+const
+  Base32Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function Base32Encode(const Data: TBytes): string;
+var
+  Buffer: Cardinal;
+  Bits, I: Integer;
+begin
+  Result := '';
+  Buffer := 0;
+  Bits := 0;
+  for I := 0 to High(Data) do
+  begin
+    Buffer := (Buffer shl 8) or Data[I];
+    Inc(Bits, 8);
+    while Bits >= 5 do
+    begin
+      Result := Result + Base32Alphabet[((Buffer shr (Bits - 5)) and 31) + 1];
+      Dec(Bits, 5);
+    end;
+    Buffer := Buffer and ((1 shl Bits) - 1);
+  end;
+  if Bits > 0 then
+    Result := Result + Base32Alphabet[((Buffer shl (5 - Bits)) and 31) + 1];
+end;
+
+function Base32Decode(const S: string): TBytes;
+var
+  Buffer: Cardinal;
+  Bits, I, V, N: Integer;
+  C: Char;
+begin
+  Result := nil;
+  SetLength(Result, Length(S) * 5 div 8 + 1);
+  N := 0;
+  Buffer := 0;
+  Bits := 0;
+  for I := 1 to Length(S) do
+  begin
+    C := UpCase(S[I]);
+    if (C = ' ') or (C = '-') then
+      Continue;
+    if C = '=' then
+      Break;
+    V := Pos(C, Base32Alphabet) - 1;
+    if V < 0 then
+      raise ECryptoError.CreateFmt('"%s" is not base32: %s is not in its alphabet',
+        [S, C]);
+    Buffer := (Buffer shl 5) or Cardinal(V);
+    Inc(Bits, 5);
+    if Bits >= 8 then
+    begin
+      Result[N] := (Buffer shr (Bits - 8)) and $FF;
+      Inc(N);
+      Dec(Bits, 8);
+      Buffer := Buffer and ((1 shl Bits) - 1);
+    end;
+  end;
+  SetLength(Result, N);
 end;
 
 function Sha256(const Data: TBytes): TSha256Digest;
