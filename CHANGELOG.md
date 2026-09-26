@@ -30,6 +30,15 @@ with the zero-major caveat that minor releases may break things until
   on `plugins.stripe = "..."`, which is not how a plugin is written here.
   Install refuses a cached copy that stands on another commit than the
   lock. Git only: the version lives in the tag.
+- **What a plugin gives an app, and when.** `Askr.Plugins`: a plugin is a
+  `TPlugin` its initialization registers, and `UsePlugins(R)` in app.lpr
+  makes each one after the app's own middleware -- `Configure` once the
+  configuration is loaded, then `Routes` with a router that has sessions
+  and sign-in on it. A plugin that cannot start stops the app and says
+  which. `askr new` writes the lines; `askr plugin add` adds them to an
+  app.lpr from before plugins, or shows them when the file does not look
+  the way askr wrote it. The build refuses plugins an app.lpr does not
+  start: linked and never started is a plugin that silently does nothing.
 
 ## 0.15.0 — 2026-09-26
 

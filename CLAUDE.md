@@ -1260,6 +1260,14 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   feiler den i stedet for å hoppe over: uten git finnes ingen plugins.
 * **`^0.1.0` slipper ikke gjennom 0.2.0**, samme nullmajor-regel som for
   rammeverket. Testen holder det.
+* **En plugins `initialization` registrerer bare klassen.** Den kjører før
+  appens første linje — før `LoadConfig` — så ingenting den leser der er
+  konfigurasjonen appen kjører med. `UsePlugins(R)` står etter `UseAuth(R)`
+  og lager pluginene da: `Configure`, så `Routes`.
+* **Byggingen nekter plugins `app.lpr` ikke starter.** Linket og aldri
+  startet er en plugin som stille ikke gjør noe. `plugin add` syr linjene
+  inn ved to markører og finner begge før den skriver noe, samme regel som
+  `make auth`.
 
 ## Kjeder og batcher
 

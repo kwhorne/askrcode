@@ -93,6 +93,16 @@ function PluginBuildFlags(P: TProject; const FrameworkVersion: string;
 function AddPluginSection(const Toml, Name, Git, Version: string): string;
 function RemovePluginSection(const Toml, Name: string; out Found: Boolean): string;
 
+{ Does app.lpr start the plugins: App.Plugins in its uses, so they are
+  linked, and UsePlugins(R), so they run. }
+function AppLprStartsPlugins(const Text: string): Boolean;
+
+{ app.lpr with what it lacks of the two added, at the lines askr new
+  writes: the uses before App.Migrations, the call after UseAuth(R). Every
+  place is found before anything is changed; a file someone reshaped is
+  left alone, and Err holds the lines to add by hand. }
+function WireAppLpr(const Text: string; out Changed: Boolean; out Err: string): string;
+
 { askr plugin add|remove|list|update. }
 function CmdPlugin(P: TProject): Integer;
 function PluginAdd(P: TProject; const Git: string): Integer;
@@ -431,6 +441,89 @@ begin
   end;
 end;
 
+function ReadText(const Path_: string): string;
+var
+  L: TStringList;
+begin
+  L := TStringList.Create;
+  try
+    if FileExists(Path_) then
+      L.LoadFromFile(Path_);
+    Result := L.Text;
+  finally
+    L.Free;
+  end;
+end;
+
+procedure WriteText(const Path_, Text: string);
+var
+  L: TStringList;
+begin
+  L := TStringList.Create;
+  try
+    L.Text := Text;
+    L.SaveToFile(Path_);
+  finally
+    L.Free;
+  end;
+end;
+
+const
+  UsesLine = '  Askr.Plugins, App.Plugins,';
+  CallLine = '  UsePlugins(R);';
+  HandLines = '  in the uses of app.lpr:' + LineEnding + LineEnding + UsesLine + LineEnding +
+    LineEnding + '  and after the middleware, before the routes:' + LineEnding + LineEnding +
+    CallLine;
+
+function AppLprStartsPlugins(const Text: string): Boolean;
+begin
+  Result := (Pos('App.Plugins', Text) > 0) and (Pos('UsePlugins(', Text) > 0);
+end;
+
+function WireAppLpr(const Text: string; out Changed: Boolean; out Err: string): string;
+var
+  L: TStringList;
+  I, UsesAt, CallAt: Integer;
+  NeedUses, NeedCall: Boolean;
+begin
+  Result := Text;
+  Changed := False;
+  Err := '';
+  NeedUses := Pos('App.Plugins', Text) = 0;
+  NeedCall := Pos('UsePlugins(', Text) = 0;
+  if not (NeedUses or NeedCall) then
+    Exit;
+  L := TStringList.Create;
+  try
+    L.Text := Text;
+    UsesAt := -1;
+    CallAt := -1;
+    for I := 0 to L.Count - 1 do
+    begin
+      if Trim(L[I]) = 'App.Migrations, App.Seeders,' then
+        UsesAt := I;
+      if Trim(L[I]) = 'UseAuth(R);' then
+        CallAt := I;
+    end;
+    if (NeedUses and (UsesAt < 0)) or (NeedCall and (CallAt < 0)) then
+    begin
+      Err := 'app.lpr does not look the way askr new writes it, so nothing was ' +
+        'added. Add the plugins yourself --' + LineEnding + LineEnding + HandLines;
+      Exit;
+    end;
+    { The call first: it is below the uses, and inserting the uses would
+      move it. }
+    if NeedCall then
+      L.Insert(CallAt + 1, CallLine);
+    if NeedUses then
+      L.Insert(UsesAt, UsesLine);
+    Result := L.Text;
+    Changed := True;
+  finally
+    L.Free;
+  end;
+end;
+
 { Written only when it changed, so a build with nothing new compiles
   nothing new. }
 procedure WriteIfChanged(const Path_, Text: string);
@@ -463,6 +556,15 @@ begin
   Result := '';
   if not ResolvePlugins(P, FrameworkVersion, Found, Err) then
     Exit;
+  { A plugin that is not linked, or linked and never started, is a plugin
+    that silently does nothing. }
+  if (Length(Found) > 0) and
+     not AppLprStartsPlugins(ReadText(IncludeTrailingPathDelimiter(P.Root) + P.MainFile)) then
+  begin
+    Err := 'askr.toml names plugins, and ' + P.MainFile + ' does not start them. ' +
+      'Add --' + LineEnding + LineEnding + HandLines;
+    Exit;
+  end;
   IndexDir := IncludeTrailingPathDelimiter(P.Root) + '.build' + PathDelim + 'plugins';
   WriteIfChanged(IncludeTrailingPathDelimiter(IndexDir) + 'App.Plugins.pas',
     PluginIndexSource(Found));
@@ -529,33 +631,6 @@ begin
       L.Delete(I);
     Result := L.Text;
     Found := True;
-  finally
-    L.Free;
-  end;
-end;
-
-function ReadText(const Path_: string): string;
-var
-  L: TStringList;
-begin
-  L := TStringList.Create;
-  try
-    if FileExists(Path_) then
-      L.LoadFromFile(Path_);
-    Result := L.Text;
-  finally
-    L.Free;
-  end;
-end;
-
-procedure WriteText(const Path_, Text: string);
-var
-  L: TStringList;
-begin
-  L := TStringList.Create;
-  try
-    L.Text := Text;
-    L.SaveToFile(Path_);
   finally
     L.Free;
   end;
@@ -813,7 +888,8 @@ end;
   the download. }
 function PluginAdd(P: TProject; const Git: string): Integer;
 var
-  Version, Tmp, Err, Commit, Have, Name: string;
+  Version, Tmp, Err, Commit, Have, Name, AppPath, AppText: string;
+  Wired: Boolean;
   M, Cached: TPluginManifest;
   L: TLock;
   Names: TStringArray;
@@ -893,6 +969,22 @@ begin
   Say('Added ' + Name + ' ' + Version + '  (' + Copy(Commit, 1, 12) + ')');
   Say('  askr.toml  [plugins.' + Name + ']');
   Say('  askr.lock  the commit');
+  { An app made before plugins does not start them yet. }
+  AppPath := IncludeTrailingPathDelimiter(P.Root) + P.MainFile;
+  if FileExists(AppPath) then
+  begin
+    AppText := WireAppLpr(ReadText(AppPath), Wired, Err);
+    if Wired then
+    begin
+      WriteText(AppPath, AppText);
+      Say('  ' + P.MainFile + '    now starts the plugins');
+    end
+    else if Err <> '' then
+    begin
+      Say('');
+      Say(Err);
+    end;
+  end;
   Say('');
   Say('It is compiled in on the next build: askr build');
   Result := 0;

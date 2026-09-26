@@ -510,6 +510,9 @@ begin
     '  Askr.Core.Lang, Askr.Locale,' + #10 +
     '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
+    { Written on every build from askr.toml and askr.lock: the plugins'
+      units. Empty until there is one. }
+    '  Askr.Plugins, App.Plugins,' + #10 +
     '  App.Migrations, App.Seeders,' + #10 +
     { This line is the marker `askr make auth` inserts in front of. If you
       change it, the uses lines have to be added by hand — the tool says
@@ -680,7 +683,10 @@ begin
     '  RateLimit.PerMinute(600).KeyBy(@TokenRateKey);' + #10 +
     '  UseRateLimit(R);' + #10 +
     '  UseCsrf(R);' + #10 +
-    '  UseAuth(R);' + #10 + #10 +
+    '  UseAuth(R);' + #10 +
+    '  { The plugins askr.toml names, after the middleware above, so their' + #10 +
+    '    routes have sessions and sign-in. Add one with: askr plugin add }' + #10 +
+    '  UsePlugins(R);' + #10 + #10 +
     '  R.Get(' + Q + '/' + Q + ', Home.Index);' + #10 +
     '  R.Get(' + Q + '/demo' + Q + ', Home.Demo);' + #10 + #10 +
     '  { The commands the app answers to itself: migrate, db:seed, schema,' + #10 +

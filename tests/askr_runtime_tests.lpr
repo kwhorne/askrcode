@@ -24,7 +24,7 @@ uses
   Askr.Queue, Askr.Queue.Db, Askr.Scheduler, Askr.Session, Askr.Session.Db, Askr.Csrf, Askr.Core.Lang, Askr.Core.Format, Askr.Locale,
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
-  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
+  Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
   DOM, XMLRead, Process;
 
 { -------------------------------------------------------------- versjon -- }
@@ -7553,6 +7553,12 @@ begin
       AssertContains(PluginIndexSource(nil), 'unit App.Plugins;', 'and with no plugins it is still a unit to use');
       AssertNotContains(PluginIndexSource(nil), LineEnding + 'uses' + LineEnding, 'with no uses section in it');
 
+      WriteLines(D + '/app.lpr', ['program App;', 'uses Askr.Plugins, App.Plugins;', 'begin', 'end.']);
+      AssertEqual(PluginBuildFlags(P, '0.16.2', Err), '', 'an app.lpr that links the plugins and never starts them is refused');
+      AssertContains(Err, 'does not start them', 'saying so');
+      AssertContains(Err, 'UsePlugins(R);', 'with the line to add');
+      WriteLines(D + '/app.lpr', ['program App;', 'uses Askr.Plugins, App.Plugins;', 'begin',
+        '  UsePlugins(R);', 'end.']);
       Flags := PluginBuildFlags(P, '0.16.2', Err);
       AssertContains(Flags, '-Fu' + ExpandFileName(D) + '/.build/plugins', 'the build gets the directory App.Plugins is in');
       AssertTrue(FileExists(D + '/.build/plugins/App.Plugins.pas'), 'which is written there');
@@ -7688,6 +7694,8 @@ begin
     ReleaseFixture(Repo, '0.1.0', '0.1.0');
     WriteLines(App + '/askr.toml', ['name = "shop"']);
     Toml0 := ReadAll(App + '/askr.toml');
+    WriteLines(App + '/app.lpr', ['program App;', 'uses', '  App.Migrations, App.Seeders,',
+      '  App.Http.HomeController;', 'begin', '  UseAuth(R);', 'end.']);
 
     P := TProject.Create(App);
     try
@@ -7701,6 +7709,7 @@ begin
     AssertTrue((Length(L.Plugins) = 1) and (L.Plugins[0].Version = '0.1.0') and
       (L.Plugins[0].Commit = GitHead(Repo)), 'and the lock holds the commit the tag stands on');
     AssertTrue(FileExists(PluginCacheDir('hello', '0.1.0') + '/askr-plugin.toml'), 'in the cache, under its name');
+    AssertTrue(AppLprStartsPlugins(ReadAll(App + '/app.lpr')), 'and an app.lpr from before plugins now starts them');
 
     P := TProject.Create(App);
     try
@@ -7795,6 +7804,200 @@ begin
     PluginOutput := True;
     RemoveScratch(Root);
   end;
+end;
+
+{ --------------------------------------------------- plugin contract -- }
+
+var
+  GPluginLog: string;
+
+type
+  TAlphaPlugin = class(TPlugin)
+  public
+    function Name: string; override;
+    procedure Configure; override;
+    procedure Routes(R: TRouter); override;
+    function Hello(Req: TRequest): TResponse;
+  end;
+
+  TBetaPlugin = class(TPlugin)
+  public
+    function Name: string; override;
+    procedure Configure; override;
+    procedure Routes(R: TRouter); override;
+  end;
+
+  { Cannot start: its configuration is missing. }
+  TBrokenPlugin = class(TPlugin)
+  public
+    function Name: string; override;
+    procedure Configure; override;
+    procedure Routes(R: TRouter); override;
+  end;
+
+  { Calls itself what Alpha calls itself. }
+  TAlphaAgainPlugin = class(TPlugin)
+  public
+    function Name: string; override;
+  end;
+
+function TAlphaPlugin.Name: string;
+begin
+  Result := 'alpha';
+end;
+
+procedure TAlphaPlugin.Configure;
+begin
+  GPluginLog := GPluginLog + 'alpha:configure ';
+end;
+
+procedure TAlphaPlugin.Routes(R: TRouter);
+begin
+  GPluginLog := GPluginLog + 'alpha:routes ';
+  R.Get('/alpha', Hello);
+end;
+
+function TAlphaPlugin.Hello(Req: TRequest): TResponse;
+begin
+  Result := RespondText('from alpha');
+end;
+
+function TBetaPlugin.Name: string;
+begin
+  Result := 'beta';
+end;
+
+procedure TBetaPlugin.Configure;
+begin
+  GPluginLog := GPluginLog + 'beta:configure ';
+end;
+
+procedure TBetaPlugin.Routes(R: TRouter);
+begin
+  GPluginLog := GPluginLog + 'beta:routes ';
+end;
+
+function TBrokenPlugin.Name: string;
+begin
+  Result := 'broken';
+end;
+
+procedure TBrokenPlugin.Configure;
+begin
+  raise Exception.Create('broken.key is not set');
+end;
+
+procedure TBrokenPlugin.Routes(R: TRouter);
+begin
+  GPluginLog := GPluginLog + 'broken:routes ';
+end;
+
+function TAlphaAgainPlugin.Name: string;
+begin
+  Result := 'Alpha';
+end;
+
+procedure TestPluginContract;
+var
+  R: TRouter;
+  K: TTestClient;
+  Names: TStringArray;
+  Msg: string;
+begin
+  ResetPlugins;
+  GPluginLog := '';
+  R := TRouter.Create;
+  K := nil;
+  try
+    RegisterPlugin(TAlphaPlugin);
+    RegisterPlugin(TBetaPlugin);
+    RegisterPlugin(TAlphaPlugin);
+    UsePlugins(R);
+    AssertEqual(GPluginLog, 'alpha:configure alpha:routes beta:configure beta:routes ',
+      'each plugin is configured and then given the router, in the order they registered, once each');
+    Names := StartedPlugins;
+    AssertTrue((Length(Names) = 2) and (Names[0] = 'alpha') and (Names[1] = 'beta'), 'both are started');
+    K := TTestClient.Create(R);
+    AssertEqual(K.Get('/alpha').Body.ToString, 'from alpha', 'and a plugin''s route answers');
+
+    Msg := '';
+    try
+      UsePlugins(R);
+    except
+      on E: EPluginError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'called twice', 'starting the plugins twice is refused');
+  finally
+    K.Free;
+    R.Free;
+    ResetPlugins;
+  end;
+
+  GPluginLog := '';
+  R := TRouter.Create;
+  try
+    RegisterPlugin(TBrokenPlugin);
+    Msg := '';
+    try
+      UsePlugins(R);
+    except
+      on E: EPluginError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'The plugin broken could not configure: broken.key is not set',
+      'a plugin that cannot start stops the app, and says which and why');
+    AssertEqual(GPluginLog, '', 'and it is not given the router half configured');
+  finally
+    R.Free;
+    ResetPlugins;
+  end;
+
+  R := TRouter.Create;
+  try
+    RegisterPlugin(TAlphaPlugin);
+    RegisterPlugin(TAlphaAgainPlugin);
+    Msg := '';
+    try
+      UsePlugins(R);
+    except
+      on E: EPluginError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'Two plugins call themselves alpha', 'two plugins with one name stop the app');
+  finally
+    R.Free;
+    ResetPlugins;
+  end;
+end;
+
+procedure TestWireAppLpr;
+const
+  { What askr new wrote before plugins, cut to the two places. }
+  Before = 'program App;' + LineEnding + 'uses' + LineEnding +
+    '  Askr.Inertia,' + LineEnding + '  App.Migrations, App.Seeders,' + LineEnding +
+    '  App.Http.HomeController;' + LineEnding + 'begin' + LineEnding +
+    '  UseCsrf(R);' + LineEnding + '  UseAuth(R);' + LineEnding + LineEnding +
+    '  R.Get(''/'', Home.Index);' + LineEnding + 'end.' + LineEnding;
+var
+  T, T2, Err: string;
+  Changed: Boolean;
+begin
+  AssertFalse(AppLprStartsPlugins(Before), 'an app from before plugins does not start them');
+  T := WireAppLpr(Before, Changed, Err);
+  AssertTrue(Changed and (Err = ''), 'it is wired');
+  AssertContains(T, '  Askr.Inertia,' + LineEnding + '  Askr.Plugins, App.Plugins,' + LineEnding +
+    '  App.Migrations, App.Seeders,', 'the uses go in before the migrations index');
+  AssertContains(T, '  UseAuth(R);' + LineEnding + '  UsePlugins(R);' + LineEnding,
+    'and the call right after the middleware');
+  AssertTrue(AppLprStartsPlugins(T), 'after which it starts them');
+
+  T2 := WireAppLpr(T, Changed, Err);
+  AssertFalse(Changed, 'wiring it again changes nothing');
+  AssertEqual(T2, T, 'and gives the same text');
+
+  T := WireAppLpr(StringReplace(Before, '  UseAuth(R);', '  UseAuth(Router);', []), Changed, Err);
+  AssertFalse(Changed, 'an app.lpr someone reshaped is not guessed at');
+  AssertEqual(T, StringReplace(Before, '  UseAuth(R);', '  UseAuth(Router);', []),
+    'not even the half askr could find');
+  AssertContains(Err, 'UsePlugins(R);', 'and the lines to add are shown');
 end;
 
 procedure TestSigV4;
@@ -12623,6 +12826,8 @@ begin
   Test('askr.lock carries each plugin''s commit below the framework''s', @TestPluginLock);
   Test('the build finds the plugins, checks what they build against, and stops a clash', @TestPluginResolve);
   Test('add, update, install and remove fetch from git, pin the commit and check it', @TestPluginGit);
+  Test('an app starts its plugins in order, and one that cannot start stops it', @TestPluginContract);
+  Test('an app.lpr from before plugins is wired, and a reshaped one is not guessed at', @TestWireAppLpr);
 
   Group('Storage');
   Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);
