@@ -116,6 +116,9 @@ with the zero-major caveat that minor releases may break things until
 
 - A database error from SQLite or Postgres ends in `— in: <the SQL>`, not
   `— i: `, which was Norwegian.
+- `Preload` leaves soft-deleted children out of a `HasMany` and a
+  `HasOne`, as a query for them does and as a `BelongsToMany` does. A
+  `BelongsTo` still loads a trashed parent: the key points at it.
 - `Sessions.Count` counts the sessions that have not expired, rather than
   every entry the last sweep left.
 

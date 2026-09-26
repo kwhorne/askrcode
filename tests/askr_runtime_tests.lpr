@@ -3662,6 +3662,127 @@ begin
   end;
 end;
 
+{ ------------------------------------------- relations and soft deletes -- }
+
+type
+  TSdChild = class(TModel)
+  private
+    FId: Int64;
+    FParentId: Int64;
+    FName: string;
+    FDeletedAt: TDateTime;
+  published
+    property Id: Int64 read FId write FId;
+    property ParentId: Int64 read FParentId write FParentId;
+    property Name: string read FName write FName;
+    property DeletedAt: TDateTime read FDeletedAt write FDeletedAt;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+  TSdChildList = TModelList<TSdChild>;
+
+  TSdParent = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FDeletedAt: TDateTime;
+  published
+    Kids: TSdChildList;
+    Eldest: TSdChild;
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property DeletedAt: TDateTime read FDeletedAt write FDeletedAt;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+  TSdKid = class(TModel)
+  private
+    FId: Int64;
+    FParentId: Int64;
+    FName: string;
+    FDeletedAt: TDateTime;
+  published
+    Parent: TSdParent;
+    property Id: Int64 read FId write FId;
+    property ParentId: Int64 read FParentId write FParentId;
+    property Name: string read FName write FName;
+    property DeletedAt: TDateTime read FDeletedAt write FDeletedAt;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+class procedure TSdChild.Describe(S: TSchema);
+begin
+  S.Table('sd_children');
+  S.SoftDeletes;
+end;
+
+class procedure TSdParent.Describe(S: TSchema);
+begin
+  S.Table('sd_parents');
+  S.SoftDeletes;
+  S.HasMany('Kids', TSdChild, 'parent_id');
+  S.HasOne('Eldest', TSdChild, 'parent_id');
+end;
+
+class procedure TSdKid.Describe(S: TSchema);
+begin
+  S.Table('sd_children');
+  S.SoftDeletes;
+  S.BelongsTo('Parent', TSdParent, 'parent_id', 'id');
+end;
+
+{ What Preload loads of a soft-deleting table: the children a query would
+  show, and the parent a row points at whether or not it was deleted. }
+procedure TestPreloadSoftDeletes;
+var
+  A: TArena;
+  C: TDbConnection;
+  P: TSdParent;
+  K: TSdChild;
+  L: TModelList<TSdParent>;
+  Kids: TModelList<TSdKid>;
+begin
+  A := TArena.Create(32 * 1024);
+  UseArena(A);
+  C := OpenDbConnection('sqlite::memory:');
+  UseDb(C);
+  try
+    C.Exec(A, 'CREATE TABLE sd_parents (id INTEGER PRIMARY KEY, name TEXT, deleted_at DATETIME)');
+    C.Exec(A, 'CREATE TABLE sd_children (id INTEGER PRIMARY KEY, parent_id BIGINT, name TEXT, deleted_at DATETIME)');
+    P := TSdParent.Create;
+    P.Name := 'p';
+    P.Save;
+    K := TSdChild.Create;
+    K.ParentId := P.Id;
+    K.Name := 'gone';
+    K.Save;
+    K.Delete;
+    K := TSdChild.Create;
+    K.ParentId := P.Id;
+    K.Name := 'kept';
+    K.Save;
+
+    L := TQuery<TSdParent>.New.Preload(['Kids', 'Eldest']).Get;
+    AssertEqual(L[0].Kids.Count, 1, 'a trashed child is not among the children');
+    AssertEqual(L[0].Kids[0].Name, 'kept', 'the one that is there is');
+    AssertNotNil(L[0].Eldest, 'a has-one finds the one that is there');
+    AssertEqual(L[0].Eldest.Name, 'kept', 'and not the trashed one before it');
+
+    P.Delete;
+    Kids := TQuery<TSdKid>.New.Preload(['Parent']).Get;
+    AssertEqual(Kids.Count, 1, 'the child that is there');
+    AssertNotNil(Kids[0].Parent, 'still has its parent, trashed or not: the key points at it');
+    AssertEqual(Kids[0].Parent.Name, 'p', 'as itself');
+  finally
+    UseDb(nil);
+    UseArena(nil);
+    C.Free;
+    A.Free;
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -8719,6 +8840,9 @@ begin
   Test('the visitor''s choice, then the header, then app.locale', @TestLocales);
   Test('askr lang:check, both ways', @TestLangCheck);
   Test('Lauf''s words: one list in two places, and sent only when they differ', @TestLaufStrings);
+
+  Group('Relations and soft deletes');
+  Test('preload leaves trashed children out and keeps a trashed parent', @TestPreloadSoftDeletes);
 
   Group('Unique samples');
   Test('a unique number''s sample fits its column', @TestUniqueNumberSamples);

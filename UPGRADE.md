@@ -13,6 +13,13 @@ code belong here — everything else is in the commit log.
 **`askr <word>` for a word nothing answers exits 64, not 1.** A script
 that checked for exit 1 after an unknown command will see 64.
 
+**`Preload` leaves soft-deleted children out of a `HasMany` and a
+`HasOne`.** Before, a trashed child was loaded along with the rest, unlike
+a query for the same rows. A page that listed a parent's children with
+`Preload` stops showing the deleted ones; one that relied on seeing them
+queries them with `WithTrashed` instead. A `BelongsTo` still loads a
+trashed parent.
+
 **A Lauf `<Checkbox>` with a `value`, inside a `<Form>`, sends a list.**
 Boxes that share a name and each carry a value are a group now, and the
 form holds the ticked values as an array. A single box that happened to

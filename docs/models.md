@@ -177,6 +177,12 @@ end;
 It is indexed because every query against the table now carries a clause
 about that column.
 
+**A relation loads what a query would.** `Preload` leaves a trashed child
+out of a `HasMany`, a `HasOne` and a `BelongsToMany`, as a query for the
+children does. A `BelongsTo` loads the parent it points at even when that
+parent is trashed: the foreign key still points at it, and a relation left
+empty would be written as "not loaded", which it was.
+
 ## Lifecycle events
 
 Virtual methods, not observers registered at runtime. The compiler sees

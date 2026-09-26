@@ -1164,6 +1164,18 @@ begin
       C.AppendPlaceholder(B, I + 1);
     end;
     B.AppendByte(Ord(')'));
+    { A trashed child is left out, as a query for it would, and as a
+      BelongsToMany does. A BelongsTo loads the parent it points at even
+      so: the key is still there, and nil would be written as "not
+      loaded", which it was. }
+    if (Rel.Kind <> rkBelongsTo) and ChildMeta.SoftDeletes then
+    begin
+      B.Append(' AND ');
+      C.AppendIdentStr(B, ChildMeta.Table);
+      B.AppendByte(Ord('.'));
+      C.AppendIdentStr(B, ChildMeta.DeletedAtColumn);
+      B.Append(' IS NULL');
+    end;
     Sql := B.ToString;
   finally
     Arena.Rewind(Mark);
