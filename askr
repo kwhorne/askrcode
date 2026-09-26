@@ -2506,6 +2506,176 @@ cmd_storage_check() {
   echo "storage:check holds: an S3 server that checks every signature takes every one of these."
 }
 
+# The whole road of a plugin, in the container, from the fixture in
+# tools/plugin-check: a git repository with a tag, a new app, plugin add,
+# the build, the migration, the command, the route over HTTP and the docs
+# over MCP -- and then the things that have to stop the build. The cache
+# lives in the work directory, so it outlives each container.
+cmd_plugin_check() {
+  prepare
+  fail=0
+  ok()   { echo "  ok    $1"; }
+  bad()  { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+  ensure_image
+
+  pc_bin="$BUILD/plugincheck-bin"
+  pc_units="$BUILD/plugincheck-units"
+  work="$BUILD/plugincheck"
+  mkdir -p "$pc_bin" "$pc_units" "$work"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$pc_units|; s|-FE$BIN|-FE$pc_bin|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+  rel="${work#$ROOT/}"
+  in_box() {
+    docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -e ASKR_HOME=/work \
+      -e ASKR_CACHE="/work/$rel/cache" -w "/work/$rel${2:+/$2}" "$IMAGE" sh -c "$1"
+  }
+  askr_bin="/work/${pc_bin#$ROOT/}/askr"
+  hello_url="file:///work/$rel/hello"
+  other_url="file:///work/$rel/other"
+  gitc='git -c user.email=check@example.com -c user.name=check'
+
+  echo "Building the askr tool for the container ..."
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags cli/askr.lpr >"$work/cli.log" 2>&1; then
+    bad "the tool builds" "$(grep -iE 'error|fatal' "$work/cli.log" | head -3)"
+    return 1
+  fi
+
+  # The fixtures become repositories, and the app is made, in one container:
+  # a delete on the host is not always seen by the next one in time.
+  out=$(in_box "rm -rf hello other cache shop &&
+    cp -r /work/tools/plugin-check/hello hello && cp -r /work/tools/plugin-check/other other &&
+    (cd hello && git init -q && $gitc add -A && $gitc commit -qm hello && git tag v0.1.0) &&
+    (cd other && git init -q && $gitc add -A && $gitc commit -qm other && git tag v0.1.0) &&
+    $askr_bin new shop --no-auth" 2>&1) || true
+  if [ ! -f "$work/shop/askr.toml" ] || [ ! -d "$work/hello/.git" ]; then
+    bad "the fixtures and the app are made" "$(echo "$out" | tail -4)"
+    return 1
+  fi
+  sed -i.bak 's|^version = .*|path = "/work"|; s|^path = .*|path = "/work"|' "$work/shop/askr.toml"
+  rm -f "$work/shop/askr.toml.bak"
+  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/plugin.sqlite\n' > "$work/shop/.env"
+  ok "a fixture plugin with a tag, and a new app"
+
+  code=0; in_box "$askr_bin plugin add $hello_url" shop >"$work/add.log" 2>&1 || code=$?
+  if [ $code -eq 0 ] && grep -q '^\[plugins.hello\]' "$work/shop/askr.toml" &&
+     grep -q "^commit = \"$(cd "$work/hello" && git rev-parse HEAD 2>/dev/null)\"" "$work/shop/askr.lock"; then
+    ok "plugin add pins it in askr.toml and its commit in askr.lock"
+  else
+    bad "plugin add pins the plugin" "$(tail -4 "$work/add.log")"
+  fi
+
+  if in_box "$askr_bin build" shop >"$work/build.log" 2>&1; then
+    ok "the app builds with the plugin compiled in"
+  else
+    bad "the app builds with the plugin" "$(grep -E 'rror|Fatal|askr:' "$work/build.log" | head -6)"
+    return 1
+  fi
+  if grep -q 'Hello.Plugin' "$work/shop/.build/plugins/App.Plugins.pas" &&
+     grep -q 'Hello.Migrations.Greetings' "$work/shop/.build/plugins/App.Plugins.pas"; then
+    ok "App.Plugins uses the entry unit and the migration"
+  else
+    bad "App.Plugins uses the plugin's units" "$(cat "$work/shop/.build/plugins/App.Plugins.pas" 2>/dev/null | tail -6)"
+  fi
+
+  in_box "rm -f storage/plugin.sqlite && $askr_bin migrate && $askr_bin migrate:status" shop \
+    >"$work/migrate.log" 2>&1 || true
+  if grep -q 'hello:20260101000000' "$work/migrate.log" && ! grep -qi 'error' "$work/migrate.log"; then
+    ok "the plugin's migration runs, recorded under its name"
+  else
+    bad "the plugin's migration runs" "$(tail -5 "$work/migrate.log")"
+  fi
+
+  out=$(in_box "$askr_bin hello:greet" shop 2>&1) || true
+  if echo "$out" | grep -q 'hello from a plugin command'; then
+    ok "the plugin's command runs"
+  else
+    bad "the plugin's command runs" "$(echo "$out" | tail -3)"
+  fi
+
+  out=$(in_box "HELLO_GREETING='configured here' .build/bin/app 8471 >/dev/null 2>&1 &
+    for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null http://127.0.0.1:8471/ && break; sleep 0.3; done
+    curl -s http://127.0.0.1:8471/hello" shop 2>&1) || true
+  if [ "$out" = "configured here" ]; then
+    ok "the plugin's route answers, with the configuration it read in Configure"
+  else
+    bad "the plugin's route answers with its configuration" "got: $(echo "$out" | head -2)"
+  fi
+
+  frames='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"check","version":"1"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"docs_read","arguments":{"page":"hello/guide","section":"Greeting"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"docs_search","arguments":{"query":"hello.greeting"}}}'
+  printf '%s\n' "$frames" > "$work/frames.jsonl"
+  in_box "$askr_bin mcp < ../frames.jsonl" shop >"$work/mcp.log" 2>&1 || true
+  out=$(cat "$work/mcp.log")
+  if grep '"id":2' "$work/mcp.log" | grep -q 'answers GET /hello' &&
+     grep '"id":3' "$work/mcp.log" | grep -q 'hello/guide.md'; then
+    ok "docs_read and docs_search serve the plugin's docs, as hello/guide.md"
+  else
+    bad "the MCP tools serve the plugin's docs" "$(echo "$out" | tail -3 | cut -c1-200)"
+  fi
+
+  # --- what has to stop the build ---------------------------------------
+
+  cp "$work/shop/app.lpr" "$work/app.lpr.good"
+  grep -v 'UsePlugins(R);' "$work/app.lpr.good" > "$work/shop/app.lpr"
+  code=0; in_box "$askr_bin build" shop >"$work/nostart.log" 2>&1 || code=$?
+  cp "$work/app.lpr.good" "$work/shop/app.lpr"
+  if [ $code -ne 0 ] && grep -q 'does not start them' "$work/nostart.log"; then
+    ok "an app.lpr that does not start the plugins does not build"
+  else
+    bad "an app.lpr without UsePlugins is refused" "exit $code" "$(tail -3 "$work/nostart.log")"
+  fi
+
+  in_box "$askr_bin plugin add $other_url" shop >"$work/add-other.log" 2>&1 || true
+  code=0; in_box "$askr_bin build" shop >"$work/clash.log" 2>&1 || code=$?
+  if [ $code -ne 0 ] && grep -q 'both claim the table hello_greetings' "$work/clash.log"; then
+    ok "two plugins claiming one table do not build, and both are named"
+  else
+    bad "a table claimed twice is refused" "exit $code" "$(tail -3 "$work/clash.log")"
+  fi
+  in_box "$askr_bin plugin remove other" shop >/dev/null 2>&1 || true
+
+  cp "$work/shop/askr.lock" "$work/askr.lock.good"
+  sed -i.bak 's|^commit = "\([0-9a-f]*\)"$|commit = "0000000000000000000000000000000000000000"|' "$work/shop/askr.lock"
+  rm -f "$work/shop/askr.lock.bak"
+  # The framework is a path here; only the plugin's commit is tampered with.
+  code=0; in_box "$askr_bin install" shop >"$work/tamper.log" 2>&1 || code=$?
+  cp "$work/askr.lock.good" "$work/shop/askr.lock"
+  if [ $code -ne 0 ] && grep -q 'pins commit' "$work/tamper.log"; then
+    ok "install refuses a lock whose commit is not the cached copy's"
+  else
+    bad "a tampered lock is refused" "exit $code" "$(tail -3 "$work/tamper.log")"
+  fi
+
+  in_box "cd ../hello && sed -i 's/^version = .*/version = \"0.2.0\"/; s/^askr = .*/askr = \"^9.0.0\"/' askr-plugin.toml &&
+    $gitc commit -qam 0.2.0 && git tag v0.2.0" shop >/dev/null 2>&1 || true
+  sed -i.bak 's|^version = "\^0.1.0"|version = "^0.2.0"|' "$work/shop/askr.toml"
+  rm -f "$work/shop/askr.toml.bak"
+  in_box "$askr_bin plugin update hello" shop >"$work/update.log" 2>&1 || true
+  code=0; in_box "$askr_bin build" shop >"$work/range.log" 2>&1 || code=$?
+  if [ $code -ne 0 ] && grep -q 'builds against Askr ^9.0.0' "$work/range.log"; then
+    ok "a plugin that builds against another Askr does not build"
+  else
+    bad "an Askr range the project does not meet is refused" "exit $code" "$(tail -3 "$work/range.log")"
+  fi
+
+  code=0; in_box "$askr_bin plugin remove hello && $askr_bin build" shop >"$work/remove.log" 2>&1 || code=$?
+  if [ $code -eq 0 ] && ! grep -q 'Hello.Plugin' "$work/shop/.build/plugins/App.Plugins.pas"; then
+    ok "after plugin remove the app builds without it"
+  else
+    bad "the app builds after plugin remove" "exit $code" "$(tail -3 "$work/remove.log")"
+  fi
+
+  echo
+  if [ $fail -ne 0 ]; then
+    echo "plugin:check failed."
+    return 1
+  fi
+  echo "plugin:check holds: a plugin goes from a tag into the binary, and what must stop the build does."
+}
+
 cmd_seo_check() {
   prepare
 
@@ -3278,6 +3448,7 @@ case "${1:-}" in
   qr:check) shift; cmd_qr_check "$@" ;;
   ws:check) shift; cmd_ws_check "$@" ;;
   storage:check) shift; cmd_storage_check "$@" ;;
+  plugin:check) shift; cmd_plugin_check "$@" ;;
   check) shift; cmd_check "$@" ;;
   tls:certs) shift; cmd_tls_certs "$@" ;;
   mysql) shift; cmd_mysql "$@" ;;
@@ -3330,6 +3501,10 @@ askr — byggskript for rammeverket (midlertidig, se steg 6)
   ./askr storage:check
                   S3-disken mot en ekte S3-server som sjekker hver
                   signatur (Versity-gatewayen). Krever versity/versitygw
+  ./askr plugin:check
+                  en fikstur-plugin fra en git-tagg inn i en ny app:
+                  bygging, migrasjon, kommando, rute, docs over MCP, og
+                  det som skal stoppe byggingen
   ./askr test:amd64
                   samme suite bygget og kjørt for x86_64 i container.
                   Arkitektur er en ekte akse: 0.9.0 kompilerte ikke der,

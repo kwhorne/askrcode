@@ -1,0 +1,8 @@
+name = "hello"
+version = "0.1.0"
+askr = "*"
+entry = "Hello.Plugin"
+units = "src"
+migrations = "database"
+config = "hello"
+tables = "hello_greetings"

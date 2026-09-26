@@ -21,6 +21,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr qr:check   # QR-kodene lest tilbake av Chromes egen strekkodeleser
 ./askr ws:check   # Autobahn-testsuiten mot websocketene
 ./askr storage:check # S3-disken mot versitygw, som sjekker hver signatur
+./askr plugin:check  # en fikstur-plugin fra en git-tagg inn i binæren, og det som skal stoppe
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -1271,6 +1272,21 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   tekstrekkefølge; den sorteres nå med samme nøkkel. Første og siste kolon
   er det samme — et pluginnavn har ingen — og mutasjonen som byttet dem
   overlevde, så nøkkelen er `Pos`.
+* **`./askr plugin:check` er porten, og den eneste som prøver koblingen i
+  MCP-verktøyene.** Fiksturene ligger i `tools/plugin-check/` og gjøres til
+  git-repoer inne i containeren — skrevet fra verten rett før, kan en fil
+  lese som tom der. Den legger til, bygger, migrerer, kjører kommandoen,
+  treffer ruten over HTTP med en verdi pluginen leste i `Configure`, og
+  leser docs over MCP; så det som skal stoppe byggingen. Cachen ligger i
+  arbeidskatalogen (`ASKR_CACHE`), ellers er den borte mellom hvert
+  containerkall. Mutasjonssjekket: uten pluginens docs-kilde og uten
+  migrasjonene i `App.Plugins` feiler den.
+* **`echo "$out" | grep` kan dele en JSON-linje.** Bash med `xpg_echo`
+  tolker `\n` i JSON-en som linjeskift, og `"id":2` og teksten havnet på
+  hver sin linje. MCP-sjekken leser fra loggfila i stedet.
+* **Ikke rediger `./askr` mens en port kjører.** Bash leser skriptet bit
+  for bit; tilleggene forskjøv hvor den leste videre, og `test:amd64` døde
+  på en syntaksfeil etter at alle testene var grønne.
 * **En plugins docs er en egen kilde med prefiks**, `stripe/billing.md`.
   Prefikset matches mot pluginnavnene fra manifestene og resten mot
   kildens egen liste — et sidenavn bygger fortsatt aldri en sti. En plugin
