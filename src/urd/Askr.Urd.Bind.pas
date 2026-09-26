@@ -48,6 +48,25 @@ type
     function HasInput(const AName: string): Boolean;
     function InputInt(const AName: string; Default: Int64 = 0): Int64;
     function InputBool(const AName: string; Default: Boolean = False): Boolean;
+    { The ids a request sent under AName, for a BelongsToMany:
+
+        HasTags := Req.InputIds('tag_ids', TagIds, M.Errors);
+
+      A JSON array -- of numbers, or of numeric strings, as a form library
+      may send them -- or form and query fields named `tag_ids[]` or
+      `tag_ids`, repeated. False when the key was not sent at all, which
+      is a PATCH leaving the relation alone; True with an empty array when
+      it was sent empty, which is a form with every box unticked.
+
+      An HTML form sends nothing for no ticked boxes, so it cannot say
+      "none" by itself. A hidden `tag_ids[]` with an empty value can: an
+      empty entry is left out without complaint, and the key is present.
+
+      An entry that is not a positive whole number is a message on AName
+      in Errors, not a list that quietly got shorter. Call it after
+      Validate, which starts Errors afresh. }
+    function InputIds(const AName: string; out Ids: TArray<Int64>;
+      Errors: TErrors): Boolean;
   end;
 
 { A failed validation, for a client that is not a browser.
@@ -77,6 +96,9 @@ function ValidationProblem(E: TErrors;
   const Detail: string = 'The request body did not validate.'): TResponse;
 
 implementation
+
+uses
+  Askr.Http.Multipart;
 
 function ValidationProblem(E: TErrors; const Detail: string): TResponse;
 var
@@ -290,6 +312,137 @@ begin
         end;
     end;
   end;
+end;
+
+{ The raw values under AName or AName[] in an urlencoded string, in the
+  order sent. }
+procedure CollectUrlEncoded(A: TArena; const Source: TStr; const AName: string;
+  var Found: Boolean; var Raw: TStringArray);
+var
+  Rest, Pair, K, V: TStr;
+  Key: string;
+begin
+  Rest := Source;
+  while Rest.Len > 0 do
+  begin
+    Rest.SplitAt(Ord('&'), Pair, Rest);
+    if Pair.Len = 0 then
+      Continue;
+    if not Pair.SplitAt(Ord('='), K, V) then
+      V := StrEmpty;
+    Key := UrlDecode(A, K, True).ToString;
+    if (Key = AName) or (Key = AName + '[]') then
+    begin
+      Found := True;
+      SetLength(Raw, Length(Raw) + 1);
+      Raw[High(Raw)] := UrlDecode(A, V, True).ToString;
+    end;
+  end;
+end;
+
+{ A JSON value as the message names it: a scalar quoted as sent, anything
+  else by what it is -- an empty string for an object would be a message
+  that says nothing. }
+function JsonShown(V: PJsonValue): string;
+begin
+  case V^.Kind of
+    jkString, jkNumber: Result := '"' + V^.Text.ToString + '"';
+    jkBool: if V^.BoolValue then Result := 'true' else Result := 'false';
+    jkNull: Result := 'null';
+    jkArray: Result := 'a list';
+    jkObject: Result := 'an object';
+  end;
+end;
+
+function TRequestBindHelper.InputIds(const AName: string;
+  out Ids: TArray<Int64>; Errors: TErrors): Boolean;
+var
+  Root, V, E: PJsonValue;
+  Raw: TStringArray;
+  Found: Boolean;
+  I, N: Integer;
+  Id: Int64;
+  Bad: string;
+  Out_: TArray<Int64>;
+  F: PMultipartField;
+begin
+  if Errors = nil then
+    raise EValidationError.Create(
+      'InputIds needs the errors to add to: pass M.Errors, after Validate');
+  Ids := nil;
+  Raw := nil;
+  Found := False;
+  Bad := '';
+
+  Root := JsonRoot(Self);
+  if Root <> nil then
+  begin
+    V := JsonMember(Root, AName);
+    if V <> nil then
+    begin
+      Found := True;
+      if V^.Kind <> jkArray then
+        Bad := JsonShown(V)
+      else
+      begin
+        E := V^.First;
+        while E <> nil do
+        begin
+          if E^.Kind in [jkNumber, jkString] then
+          begin
+            SetLength(Raw, Length(Raw) + 1);
+            Raw[High(Raw)] := E^.Text.ToString;
+          end
+          else if Bad = '' then
+            Bad := JsonShown(E);
+          E := E^.Next;
+        end;
+      end;
+    end;
+  end;
+
+  if not Found then
+  begin
+    if IsMultipart then
+    begin
+      for I := 0 to Multipart.FieldCount - 1 do
+      begin
+        F := Multipart.FieldAt(I);
+        if F^.Name.EqualsStr(AName) or F^.Name.EqualsStr(AName + '[]') then
+        begin
+          Found := True;
+          SetLength(Raw, Length(Raw) + 1);
+          Raw[High(Raw)] := F^.Value.ToString;
+        end;
+      end;
+    end
+    else if ContentType.StartsWithStr('application/x-www-form-urlencoded') then
+      CollectUrlEncoded(Arena, Body, AName, Found, Raw);
+  end;
+  if not Found then
+    CollectUrlEncoded(Arena, QueryString, AName, Found, Raw);
+
+  SetLength(Out_, Length(Raw));
+  N := 0;
+  for I := 0 to High(Raw) do
+  begin
+    if Raw[I] = '' then
+      Continue;
+    if TryStrToInt64(Raw[I], Id) and (Id > 0) then
+    begin
+      Out_[N] := Id;
+      Inc(N);
+    end
+    else if Bad = '' then
+      Bad := '"' + Raw[I] + '"';
+  end;
+  SetLength(Out_, N);
+  Ids := Out_;
+
+  if Bad <> '' then
+    Errors.Add(AName, AName + ' must be a list of ids, and ' + Bad +
+      ' is not one');
+  Result := Found;
 end;
 
 procedure TRequestBindHelper.FillInto(M: TModel);

@@ -470,6 +470,17 @@ function SnakeCase(const S: string): string;
 function Pluralize(const S: string): string;
 function TableNameFor(AClass: TClass): string;
 
+{ Every id is a row in ATable -- the ids a form sent for a BelongsToMany,
+  checked before Sync so a refusal is a message on the field and not a
+  foreign key's 500. One query for the whole list, on the ambient
+  connection; the ids that are missing are named on AField:
+
+      tag_ids contains 999, which does not match a row in tags
+
+  An empty list is nothing to check. }
+function IdsExist(Errors: TErrors; const AField, ATable: string;
+  const Ids: array of Int64; const AColumn: string = 'id'): Boolean;
+
 { A published property read as Currency.
 
   GetFloatProp returns Extended, and Currency(Extended) is not a legal
@@ -1681,6 +1692,78 @@ begin
   { No else: every TColumnKind is covered. If a new one arrives it
     becomes a warning about an uninitialised result rather than a silent
     DbNull. }
+end;
+
+function IdsExist(Errors: TErrors; const AField, ATable: string;
+  const Ids: array of Int64; const AColumn: string): Boolean;
+var
+  C: TDbConnection;
+  A: TArena;
+  B: TStrBuilder;
+  R: TDbResult;
+  Params: array of TDbParam;
+  Found: array of Int64;
+  I, J: Integer;
+  Missing: string;
+  Hit: Boolean;
+begin
+  Result := True;
+  if Length(Ids) = 0 then
+    Exit;
+  C := CurrentDb;
+  if C = nil then
+    raise EValidationError.Create(
+      'IdsExist needs a database connection. Set the ambient one with UseDb.');
+  A := TArena.Create(4 * 1024);
+  try
+    SetLength(Params, Length(Ids));
+    for I := 0 to High(Ids) do
+      Params[I] := DbParam(A, Ids[I]);
+    B.Init(A, 128);
+    B.Append('SELECT ');
+    C.AppendIdentStr(B, AColumn);
+    B.Append(' FROM ');
+    C.AppendIdentStr(B, ATable);
+    B.Append(' WHERE ');
+    C.AppendIdentStr(B, AColumn);
+    B.Append(' IN (');
+    for I := 0 to High(Ids) do
+    begin
+      if I > 0 then
+        B.Append(', ');
+      C.AppendPlaceholder(B, I + 1);
+    end;
+    B.AppendByte(Ord(')'));
+    R := C.ExecParams(A, B.ToString, Params);
+    SetLength(Found, R.RowCount);
+    for I := 0 to R.RowCount - 1 do
+      Found[I] := R.AsInt64(I, 0);
+  finally
+    A.Free;
+  end;
+
+  Missing := '';
+  for I := 0 to High(Ids) do
+  begin
+    Hit := False;
+    for J := 0 to High(Found) do
+      if Found[J] = Ids[I] then
+      begin
+        Hit := True;
+        Break;
+      end;
+    if not Hit then
+    begin
+      if Missing <> '' then
+        Missing := Missing + ', ';
+      Missing := Missing + IntToStr(Ids[I]);
+    end;
+  end;
+  if Missing = '' then
+    Exit;
+  Errors.Add(AField, AField + ' contains ' + Missing +
+    ', which does not match a row in ' + ATable);
+  Result := False;
 end;
 
 function RequireDb(Conn: TDbConnection): TDbConnection;

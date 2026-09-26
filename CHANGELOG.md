@@ -56,6 +56,12 @@ with the zero-major caveat that minor releases may break things until
   transaction of its own unless the caller already opened one. The same
   tests run against SQLite, Postgres and MySQL.
 
+  `Req.InputIds('tag_ids', Ids, Errors)` reads the ids a request sent, as
+  a JSON array or repeated `tag_ids[]` form fields, and says whether the
+  key was sent at all -- so a PATCH that leaves the tags alone is not a
+  form with every box unticked. `IdsExist` checks a list in one query and
+  names every id that is not a row, on the field.
+
 ### Changed
 
 - A database error from SQLite or Postgres ends in `— in: <the SQL>`, not

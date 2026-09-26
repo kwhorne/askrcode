@@ -2694,6 +2694,133 @@ begin
   end;
 end;
 
+{ ------------------------------------------------ ids from a request -- }
+
+type
+  TIdsCtl = class
+  public
+    function Read(Req: TRequest): TResponse;
+  end;
+
+function TIdsCtl.Read(Req: TRequest): TResponse;
+var
+  E: TErrors;
+  Ids: TArray<Int64>;
+  Found: Boolean;
+  I: Integer;
+  S: string;
+begin
+  E := TErrors.Create;
+  Found := Req.InputIds('tag_ids', Ids, E);
+  S := '';
+  for I := 0 to High(Ids) do
+  begin
+    if I > 0 then
+      S := S + ',';
+    S := S + IntToStr(Ids[I]);
+  end;
+  if Found then
+    S := 'yes|' + S
+  else
+    S := 'no|' + S;
+  Result := RespondText(S + '|' + E.First('tag_ids'));
+end;
+
+{ The ids a form sent for a BelongsToMany, in every shape a client sends
+  them, and the difference between "not sent" and "sent empty" that a
+  PATCH and a form with every box unticked both depend on. }
+procedure TestInputIds;
+const
+  Json_ = 'application/json';
+  Form_ = 'application/x-www-form-urlencoded';
+  Boundary = 'XyZ';
+var
+  R: TRouter;
+  Ctl: TIdsCtl;
+  K: TTestClient;
+  A: TArena;
+  C: TDbConnection;
+  E: TErrors;
+  Multi: string;
+
+  function Body(Res: TResponse): string;
+  begin
+    Result := Res.Body.ToString;
+  end;
+
+begin
+  Ctl := TIdsCtl.Create;
+  R := TRouter.Create;
+  R.Post('/ids', Ctl.Read);
+  R.Get('/ids', Ctl.Read);
+  K := TTestClient.Create(R);
+  try
+    AssertEqual(Body(K.Post('/ids', '{"tag_ids":[1,"2",3]}', Json_)), 'yes|1,2,3|',
+      'a JSON array, numbers and numeric strings alike');
+    AssertEqual(Body(K.Post('/ids', '{"tag_ids":[]}', Json_)), 'yes||',
+      'an empty array is sent, and empty');
+    AssertEqual(Body(K.Post('/ids', '{"name":"x"}', Json_)), 'no||',
+      'a missing key is not sent');
+    AssertContains(Body(K.Post('/ids', '{"tag_ids":"1,2"}', Json_)),
+      'must be a list of ids, and "1,2" is not one', 'a string is not a list');
+    AssertContains(Body(K.Post('/ids', '{"tag_ids":[1,{"a":1}]}', Json_)),
+      'an object is not one', 'nor is an object in it, which is named for what it is');
+    AssertContains(Body(K.Post('/ids', '{"tag_ids":[1.5]}', Json_)),
+      '"1.5" is not one', 'a fraction is not an id');
+    AssertContains(Body(K.Post('/ids', '{"tag_ids":["-3"]}', Json_)),
+      '"-3" is not one', 'nor is a negative one');
+    AssertEqual(Body(K.Post('/ids', '{"tag_ids":[4,"x",5]}', Json_)),
+      'yes|4,5|tag_ids must be a list of ids, and "x" is not one',
+      'the bad one is refused on the field, not dropped in silence');
+
+    AssertEqual(Body(K.Post('/ids', 'tag_ids%5B%5D=1&tag_ids%5B%5D=3', Form_)), 'yes|1,3|',
+      'form fields named tag_ids[]');
+    AssertEqual(Body(K.Post('/ids', 'tag_ids=4&name=x&tag_ids=5', Form_)), 'yes|4,5|',
+      'or tag_ids, repeated');
+    AssertEqual(Body(K.Post('/ids', 'tag_ids%5B%5D=&name=x', Form_)), 'yes||',
+      'an empty hidden entry says "none" without complaint');
+    AssertEqual(Body(K.Post('/ids', 'name=x', Form_)), 'no||',
+      'and with no entry at all it is not sent');
+    AssertContains(Body(K.Post('/ids', 'tag_ids%5B%5D=abc', Form_)),
+      '"abc" is not one', 'an edited checkbox value is refused');
+    AssertEqual(Body(K.Get('/ids?tag_ids%5B%5D=7')), 'yes|7|', 'the query string');
+
+    Multi := '--' + Boundary + #13#10 +
+      'Content-Disposition: form-data; name="tag_ids[]"' + #13#10#13#10 + '8' + #13#10 +
+      '--' + Boundary + #13#10 +
+      'Content-Disposition: form-data; name="tag_ids[]"' + #13#10#13#10 + '9' + #13#10 +
+      '--' + Boundary + '--' + #13#10;
+    AssertEqual(Body(K.Post('/ids', Multi, 'multipart/form-data; boundary=' + Boundary)),
+      'yes|8,9|', 'and a multipart form, as one with a file in it is');
+  finally
+    K.Free;
+    R.Free;
+    Ctl.Free;
+  end;
+
+  A := TArena.Create(16 * 1024);
+  UseArena(A);
+  C := OpenDbConnection('sqlite::memory:');
+  UseDb(C);
+  try
+    C.Exec(A, 'CREATE TABLE id_tags (id INTEGER PRIMARY KEY, name TEXT)');
+    C.Exec(A, 'INSERT INTO id_tags (id, name) VALUES (1, ''a''), (2, ''b'')');
+    E := TErrors.Create;
+    AssertTrue(IdsExist(E, 'tag_ids', 'id_tags', [1, 2]), 'ids that are rows pass');
+    AssertTrue(E.IsEmpty, 'and add nothing');
+    AssertTrue(IdsExist(E, 'tag_ids', 'id_tags', []), 'no ids is nothing to check');
+    AssertFalse(IdsExist(E, 'tag_ids', 'id_tags', [1, 99, 100]), 'ids to nothing are refused');
+    AssertEqual(E.First('tag_ids'),
+      'tag_ids contains 99, 100, which does not match a row in id_tags',
+      'on the field, naming every one and the table');
+  finally
+    UseDb(nil);
+    UseArena(nil);
+    C.Free;
+    A.Free;
+  end;
+end;
+
 { ------------------------------------------------------- make resource -- }
 
 function TextOf(const F: TGenFiles; const Suffix: string): string;
@@ -7900,6 +8027,7 @@ begin
 
   Group('Exists and Unique');
   Test('a key to nothing and a duplicate are refused on the form', @TestExistsAndUnique);
+  Test('ids for a pivot, in every shape a client sends them', @TestInputIds);
 
   Group('Zero is null');
   Test('a reference to no row is NULL, null and blank', @TestZeroIsNull);

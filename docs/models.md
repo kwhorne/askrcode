@@ -274,6 +274,38 @@ Ids := Post.RelatedIds('Tags'); { what an edit form ticks }
   foreign keys refuse a row to nothing; on a form, check the ids first so
   the refusal lands on the field instead of as a 500.
 
+From a form or an API call:
+
+```pascal
+Ok := Post.Validate;
+HasTags := Req.InputIds('tag_ids', TagIds, Post.Errors);
+if HasTags then
+  IdsExist(Post.Errors, 'tag_ids', 'tags', TagIds);
+if not Post.Errors.IsEmpty then
+  Exit(BackWithErrors(Post.Errors));
+Post.Save;
+if HasTags then
+  Post.Sync('Tags', TagIds);
+```
+
+`InputIds` reads a JSON array — of numbers or numeric strings — or form and
+query fields named `tag_ids[]` or `tag_ids`, repeated. It returns **whether
+the key was sent at all**, which is what lets a `PATCH` that leaves the tags
+alone be told from a form with every box unticked. A plain HTML form sends
+nothing for no ticked boxes, so it says "none" with a hidden
+`<input type="hidden" name="tag_ids[]" value="">`: the empty entry is left
+out without complaint, and the key is there. An entry that is not a positive
+whole number is a message on the field, not a list that quietly got shorter.
+
+`IdsExist` checks the whole list in one query and names every id that is not
+a row:
+
+```
+tag_ids contains 99, 100, which does not match a row in tags
+```
+
+Both add to `Errors`, so call them after `Validate`, which starts it afresh.
+
 ## Lists
 
 ```pascal
