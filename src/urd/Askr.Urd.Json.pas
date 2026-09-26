@@ -38,7 +38,43 @@ procedure WriteModelList(var W: TJsonWriter; L: TModelListBase);
   TGrid.ListResponse is the same thing for a page of them. }
 function RespondModel(M: TModel; AStatus: Integer = 200): TResponse;
 
+{ Ids as a prop: an array of numbers, for the boxes an edit form ticks.
+
+      Inertia('Posts/Edit', ['post', M, 'tag_ids', JsonIds(M.RelatedIds('Tags'))]);
+
+  A prop is a model, a list of them, a simple value or a TJsonWritable,
+  and a dynamic array is none of those; this is the small class that
+  makes it one. It lives in the request arena, like the prop it is. }
+function JsonIds(const Ids: TArray<Int64>): TJsonWritable;
+
 implementation
+
+type
+  TJsonIds = class(TJsonWritable)
+  private
+    FIds: TArray<Int64>;
+  public
+    procedure WriteJson(var W: TJsonWriter); override;
+  end;
+
+procedure TJsonIds.WriteJson(var W: TJsonWriter);
+var
+  I: Integer;
+begin
+  W.BeginArray;
+  for I := 0 to High(FIds) do
+    W.Int(FIds[I]);
+  W.EndArray;
+end;
+
+function JsonIds(const Ids: TArray<Int64>): TJsonWritable;
+var
+  J: TJsonIds;
+begin
+  J := TJsonIds.Create;
+  J.FIds := Copy(Ids);
+  Result := J;
+end;
 
 procedure WriteColumn(var W: TJsonWriter; M: TModel; const Col: TColumnInfo);
 begin

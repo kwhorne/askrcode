@@ -481,6 +481,12 @@ function TableNameFor(AClass: TClass): string;
 function IdsExist(Errors: TErrors; const AField, ATable: string;
   const Ids: array of Int64; const AColumn: string = 'id'): Boolean;
 
+{ The name a request sends a BelongsToMany's ids under: the pivot's key
+  to the other table, plural -- tag_id, so tag_ids. One rule, asked by
+  the generated controllers, the OpenAPI document and the form, so the
+  three cannot name it differently. }
+function IdsInputName(const Rel: TRelationInfo): string;
+
 { A published property read as Currency.
 
   GetFloatProp returns Extended, and Currency(Extended) is not a legal
@@ -1764,6 +1770,11 @@ begin
   Errors.Add(AField, AField + ' contains ' + Missing +
     ', which does not match a row in ' + ATable);
   Result := False;
+end;
+
+function IdsInputName(const Rel: TRelationInfo): string;
+begin
+  Result := Rel.PivotRelatedKey + 's';
 end;
 
 function RequireDb(Conn: TDbConnection): TDbConnection;

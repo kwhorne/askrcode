@@ -20,7 +20,7 @@ const js = async (expression) => (await send('Runtime.evaluate', { expression, a
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 await send('Page.enable')
 // A row to show: the first gadget and note there are.
-const pages = ['/gadgets', '/gadgets/new', '/notes', '/notes/new', '/makers/new']
+const pages = ['/gadgets', '/gadgets/new', '/notes', '/notes/new', '/makers/new', '/tags', '/tags/new']
 await send('Page.navigate', { url: BASE + '/gadgets' })
 for (let i = 0; i < 100 && !(await js(`!!document.querySelector('main h1')`)); i++) await wait(100)
 const g = await js(`document.querySelector('tbody a')?.getAttribute('href')`)

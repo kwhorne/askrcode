@@ -32,7 +32,16 @@ procedure MakeController(const Root, Name: string);
 function ModelUnitText(const N: string; const Intro: TStringArray;
   const Fields: TFieldSpecs; Timestamps, SoftDeletes: Boolean;
   const Describe, Rules, Hidden: TStringArray;
-  const SchemaUnit, SchemaVar: string): string;
+  const SchemaUnit, SchemaVar: string; const ExtraUses: string = '';
+  const ExtraTypes: TStringArray = nil;
+  const ExtraFields: TStringArray = nil): string;
+
+{ The lines a model needs for a BelongsToMany it does not have, as a
+  person reads them: the uses, the list type, the field and the line in
+  Describe. make pivot and make resource both print them, from here, so
+  the two cannot tell someone different things. }
+function ManyToManyModelLines(const Model, Target, Relation,
+  DescribeLine: string): TStringArray;
 
 { customer, order_item -> Customer, OrderItem. }
 function PascalName(const S: string): string;
@@ -1053,7 +1062,8 @@ end;
 function ModelUnitText(const N: string; const Intro: TStringArray;
   const Fields: TFieldSpecs; Timestamps, SoftDeletes: Boolean;
   const Describe, Rules, Hidden: TStringArray;
-  const SchemaUnit, SchemaVar: string): string;
+  const SchemaUnit, SchemaVar: string; const ExtraUses: string;
+  const ExtraTypes: TStringArray; const ExtraFields: TStringArray): string;
 var
   B: TStringList;
   I: Integer;
@@ -1073,9 +1083,15 @@ begin
     A('interface');
     A('');
     A('uses');
-    A('  SysUtils, Askr.Urd.Model;');
+    A('  SysUtils, Askr.Urd.Model' + ExtraUses + ';');
     A('');
     A('type');
+    { A list of another model is a type of its own: nested specialisation
+      cannot be written as a field's type. }
+    for I := 0 to High(ExtraTypes) do
+      A('  ' + ExtraTypes[I]);
+    if Length(ExtraTypes) > 0 then
+      A('');
     for I := 0 to High(Intro) do
       if I = 0 then
         A('  { ' + Intro[I])
@@ -1097,6 +1113,10 @@ begin
     if SoftDeletes then
       A('    FDeletedAt: TDateTime;');
     A('  published');
+    { A relation's field first: a published field has to come before the
+      properties in its section. }
+    for I := 0 to High(ExtraFields) do
+      A('    ' + ExtraFields[I]);
     A('    property Id: Int64 read FId write FId;');
     for I := 0 to High(Fields) do
       A('    property ' + Fields[I].Prop + ': ' + PascalTypeOf(Fields[I]) +
@@ -1120,9 +1140,13 @@ begin
     if Length(Hidden) > 0 then
     begin
       { The typed Add is a class helper in Askr.Urd.Query, next to the
-        typed columns it takes. }
+        typed columns it takes -- unless the interface uses it already,
+        for a relation's list, and a unit named twice does not compile. }
       A('uses');
-      A('  Askr.Urd.Query, ' + SchemaUnit + ';');
+      if Pos('Askr.Urd.Query', ExtraUses) > 0 then
+        A('  ' + SchemaUnit + ';')
+      else
+        A('  Askr.Urd.Query, ' + SchemaUnit + ';');
       A('');
     end;
     A('class procedure T' + N + '.Describe(S: TSchema);');
@@ -1151,6 +1175,19 @@ begin
   finally
     B.Free;
   end;
+end;
+
+function ManyToManyModelLines(const Model, Target, Relation,
+  DescribeLine: string): TStringArray;
+begin
+  Result := nil;
+  SetLength(Result, 5);
+  Result[0] := 'In app/Models/App.Models.' + Model + '.pas:';
+  Result[1] := '  uses       App.Models.' + Target +
+    ', and Askr.Urd.Query where TModelList is not in scope yet';
+  Result[2] := '  type       T' + Target + 'List = TModelList<T' + Target + '>;';
+  Result[3] := '  published  ' + Relation + ': T' + Target + 'List;    { before the properties }';
+  Result[4] := '  Describe   ' + DescribeLine;
 end;
 
 function RefuseExisting(const Paths: array of string; Force: Boolean): Boolean;
@@ -1391,6 +1428,8 @@ var
   N1, N2, S1, S2, T1, T2, Pivot, K1, K2, MigName, MigPath, VersionStr: string;
   Lo, Hi: string;
   B: TStringList;
+  Lines: TStringArray;
+  I: Integer;
 
   procedure A(const S: string);
   begin
@@ -1506,11 +1545,10 @@ begin
   WriteLn('Next:');
   WriteLn('  askr migrate     makes the ' + Pivot + ' table');
   WriteLn('');
-  WriteLn('Then, in app/Models/App.Models.' + N1 + '.pas:');
-  WriteLn('  uses       App.Models.' + N2 + ';');
-  WriteLn('  type       T' + N2 + 'List = TModelList<T' + N2 + '>;');
-  WriteLn('  published  ' + PascalName(T2) + ': T' + N2 + 'List;    { before the properties }');
-  WriteLn('  Describe   S.BelongsToMany(''' + PascalName(T2) + ''', T' + N2 + ');');
+  Lines := ManyToManyModelLines(N1, N2, PascalName(T2),
+    'S.BelongsToMany(''' + PascalName(T2) + ''', T' + N2 + ');');
+  for I := 0 to High(Lines) do
+    WriteLn(Lines[I]);
   WriteLn('');
   WriteLn('One side only, unless both models are in one unit: two units cannot');
   WriteLn('use each other. The pivot works from either; the side you load from is');

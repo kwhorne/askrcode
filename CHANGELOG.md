@@ -68,6 +68,28 @@ with the zero-major caveat that minor releases may break things until
   refuses a model related to itself, whose keys need names a convention
   cannot choose.
 
+  `askr make resource` reads a pivot -- two foreign keys to two tables and
+  nothing of its own -- as a box to tick per row of the other table. The
+  edit form starts with the attached ones ticked, the page and the API
+  show them, and Store and Update check the ids in one query and save the
+  row with its pivot in one transaction. A request that leaves `tag_ids`
+  out leaves them alone; an empty list takes them all off. The pivot
+  itself is refused as a resource, saying what it is. When the boxes
+  cannot be there -- no model for the other table, a model here without
+  the relation, or two units that would use each other -- it says which,
+  and what to do. `./askr make:check` makes a pivot, adds the relation
+  exactly as `make pivot` printed it, and drives the API over a socket and
+  the boxes in Chrome.
+
+  The OpenAPI document describes a `BelongsToMany`: its ids coming in
+  (`tag_ids`, write-only) and its rows going out (`tags`, read-only, there
+  when loaded). `IdsInputName` is the one rule both use. `JsonIds` makes a
+  list of ids an Inertia prop.
+
+  Lauf's `<Checkbox>` takes a `value`: boxes that share a name in a
+  `<Form>` then hold the ticked values as a list, as an HTML form with the
+  same name on several boxes means.
+
 ### Changed
 
 - A database error from SQLite or Postgres ends in `— in: <the SQL>`, not
@@ -77,6 +99,14 @@ with the zero-major caveat that minor releases may break things until
 
 ### Fixed
 
+- **The tests `make resource` writes could collide with each other.** Each
+  test unit counted its unique samples from the millisecond it started,
+  and one unit's parent rows are another unit's rows: the gadgets' test
+  made more makers than milliseconds passed before the makers' test began,
+  and a unique name came round twice. Seen on MySQL. The ranges are a
+  thousand apart per millisecond now, and a unique sample takes the end of
+  the number rather than the start, which was the same for every row of a
+  run in a short column.
 - **`askr new --auth` wrote an app that did not compile**, from 0.12.0 to
   0.13.1. The installer matched the scaffold's uses line exactly, the API
   tokens changed that line, and the match missed without a word: app.lpr

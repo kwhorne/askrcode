@@ -13,6 +13,12 @@ code belong here — everything else is in the commit log.
 **`askr <word>` for a word nothing answers exits 64, not 1.** A script
 that checked for exit 1 after an unknown command will see 64.
 
+**A Lauf `<Checkbox>` with a `value`, inside a `<Form>`, sends a list.**
+Boxes that share a name and each carry a value are a group now, and the
+form holds the ticked values as an array. A single box that happened to
+have a `value` attribute sent `true` or `false` before; it sends `["yes"]`
+or `[]` now. Take the `value` off to keep the boolean.
+
 ## 0.13.1
 
 **`FillInto` no longer fills `created_at`, `updated_at` or `deleted_at`**

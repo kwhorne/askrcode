@@ -347,11 +347,21 @@ begin
 end;
 
 procedure TOpenApi.Collect(C: TModelClass);
+var
+  I: Integer;
+  Meta: TModelMeta;
 begin
   if (C = nil) or (ModelIndex(C) >= 0) then
     Exit;
   SetLength(FModels, Length(FModels) + 1);
   FModels[High(FModels)] := C;
+  { What a BelongsToMany goes out as has a schema of its own. Added after
+    this one, so two models that name each other end here rather than
+    going round. }
+  Meta := C.Meta;
+  for I := 0 to Meta.RelationCount - 1 do
+    if Meta.Relations[I].Kind = rkBelongsToMany then
+      Collect(Meta.Relations[I].Target);
 end;
 
 function TOpenApi.IsCovered(const Path_: string): Boolean;
@@ -592,6 +602,7 @@ var
   Meta: TModelMeta;
   I: Integer;
   Col: TColumnInfo;
+  Rel: TRelationInfo;
   Any: Boolean;
 begin
   Meta := C.Meta;
@@ -618,6 +629,42 @@ begin
       WriteKindSchema(W, Col.Kind, True)
     else
       WriteKindSchema(W, Col.Kind);
+  end;
+  { A BelongsToMany: the rows going out, when they were loaded, and their
+    ids coming in. Not in `required` -- a relation nobody asked for is
+    left out of the JSON, not written as an empty list. }
+  for I := 0 to Meta.RelationCount - 1 do
+  begin
+    Rel := Meta.Relations[I];
+    if Rel.Kind <> rkBelongsToMany then
+      Continue;
+    if Outgoing then
+    begin
+      W.Key(SnakeCase(Rel.Name));
+      W.BeginObject;
+      W.Field('type', 'array');
+      W.Field('readOnly', True);
+      W.Field('description', 'There when the request loaded them, and left ' +
+        'out when it did not.');
+      W.Key('items');
+      W.BeginObject;
+      W.Field('$ref', '#/components/schemas/' + ModelName(Rel.Target));
+      W.EndObject;
+      W.EndObject;
+    end
+    else
+    begin
+      W.Key(IdsInputName(Rel));
+      W.BeginObject;
+      W.Field('type', 'array');
+      W.Field('writeOnly', True);
+      W.Field('description', 'The ids of the rows in ' + Rel.Target.Meta.Table +
+        ' this is related to: all of them, so an id left out is detached. ' +
+        'Leave the key out to leave them as they are.');
+      W.Key('items');
+      WriteKindSchema(W, ckInteger);
+      W.EndObject;
+    end;
   end;
   W.EndObject;
 

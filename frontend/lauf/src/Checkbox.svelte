@@ -17,6 +17,12 @@
     indeterminate = false,
     /** Navnet i <Form>. Faller tilbake til feltets navn. */
     name,
+    /** For a group: boxes that share a name, each with a value of its own.
+        The form then holds the ticked values as a list rather than one
+        true or false -- tag_ids: ['1', '3'] -- which is what a
+        many-to-many sends, and what an HTML form with the same name on
+        several boxes means too. */
+    value,
     label,
     description,
     disabled = false,
@@ -28,7 +34,16 @@
   const form = getContext(FORM)
   const key = $derived(name ?? field?.name)
   const bound = $derived(!!form && key != null)
-  const current = $derived(bound ? !!form.get(key) : !!checked)
+  const grouped = $derived(bound && value !== undefined)
+  const current = $derived(
+    grouped ? listOf(form.get(key)).includes(value) : bound ? !!form.get(key) : !!checked
+  )
+
+  // A list, whatever the form started with: a missing key is no boxes
+  // ticked, not a crash on the first click.
+  function listOf(v) {
+    return Array.isArray(v) ? v : []
+  }
 
   const own = uid('lauf-checkbox')
   const id = $derived(field && !name ? field.id : own)
@@ -45,7 +60,10 @@
 
   function onChange(e) {
     const v = e.currentTarget.checked
-    if (bound) form.set(key, v)
+    if (grouped) {
+      const rest = listOf(form.get(key)).filter((x) => x !== value)
+      form.set(key, v ? [...rest, value] : rest)
+    } else if (bound) form.set(key, v)
     else checked = v
   }
 </script>
@@ -56,6 +74,7 @@
     type="checkbox"
     bind:this={el}
     checked={current}
+    {value}
     aria-checked={indeterminate ? 'mixed' : undefined}
     {disabled}
     onchange={onChange}

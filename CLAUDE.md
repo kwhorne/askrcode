@@ -887,6 +887,73 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   tall på 0 som tomme. Rettelsen er tatt ut igjen, og changeloggen sier
   ikke noe om den. En mutasjon som overlever er et svar, ikke bare et hull.
 
+## Mange-til-mange
+
+* **`BelongsToMany` slår aldri opp målets meta i `Describe`.** Pivot og
+  nøkler utledes av klassenavnene. To modeller som nevner hverandre ville
+  ellers bygget hverandres meta mens deres egen var halvferdig — og
+  `BelongsTo` har den fella fortsatt, når eierens nøkkel ikke er oppgitt.
+* **`LoadManyToMany` står i interface-delen av `Askr.Urd.Query`.** En
+  generisk metode kan ikke kalle en rutine uniten holder for seg selv:
+  `TQuery<M>` spesialiseres i kallerens unit, og derfra må kallet løses.
+* **Kolonnene selekteres som seg selv — `"tags"."name" AS "name"`** — og
+  pivotens nøkkel under et navn ingen modell kan ha. Da finner `Hydrate`
+  dem uansett hva driveren kaller en kvalifisert kolonne.
+* **`Detach([])` fjerner ingenting; `DetachAll` er det som tømmer.** En
+  tom liste som tilfeldigvis var tom skal ikke kunne slette alt. `Sync([])`
+  tømmer derimot, fordi det er det som ble bedt om.
+* **`Sync` har egen transaksjon bare når kalleren ikke har en.** Testen
+  ruller tilbake en ytre transaksjon og krever at synken forsvinner med
+  den — mutasjonen som alltid åpner egen, dør på «cannot start a
+  transaction within a transaction».
+* **Testene er én fil, `tests/pivot.inc`, i alle tre suitene**, slik
+  `queue_db_conc.inc` er det. Hver suite definerer `PivotStart` og
+  `PivotOk` før include-en. Anonyme prosedyrer finnes ikke i 3.2.2, så
+  unntak testes med try/except, ikke med en lambda.
+* **`InputIds` sier om nøkkelen ble sendt, ikke bare hva den inneholdt.**
+  Det er hele forskjellen på en PATCH som lar taggene være og et skjema der
+  alle boksene er avkrysset bort. Et HTML-skjema sender ingenting for null
+  bokser, derfor en skjult tom `tag_ids[]`: tom verdi hoppes over uten
+  klage, og nøkkelen er der.
+* **Én regel for navnet: pivotens nøkkel til den andre tabellen, i
+  flertall** (`IdsInputName`, `tag_id` → `tag_ids`). Kontrollerne,
+  OpenAPI-dokumentet og skjemaet spør alle den, så de kan ikke kalle det
+  noe forskjellig.
+* **En pivot er to fremmednøkler til to ulike tabeller og ingenting
+  annet enn en id og tidsstempler.** Én kolonne til er data om koblingen,
+  og da er tabellen en ressurs med to `BelongsTo`. `PivotOf` returnerer
+  sidene sortert på tabellnavn: SQLite lister fremmednøkler baklengs, og
+  en melding som navnga sidene forskjellig på hver database ville lest som
+  to ting. Funnet av enhetstesten, ikke ved lesing.
+* **`TModelList` bor i `Askr.Urd.Query`, ikke i `Askr.Urd.Model`.** Første
+  kjøring av `make:check` bygde ikke: modellen fikk list-typen uten
+  uniten. En modell som også skjuler kolonner har `Askr.Urd.Query` i
+  implementation-delen fra før, og en unit nevnt to ganger kompilerer
+  ikke — `ModelUnitText` ser etter det.
+* **Rundgangen mellom to units spørres før linjene å legge til.** Ellers
+  ville `make resource Tag` bedt noen skrive nettopp den syklusen.
+  `make:check` kjører Tag etter at Gadget har relasjonen, og krever
+  meldingen.
+* **Linjene `make pivot` skriver ut, er de porten legger inn i modellen.**
+  Porten sjekker at de står i loggen og setter dem inn der de sier. De
+  samme linjene kommer fra `ManyToManyModelLines`, som `make resource`
+  også bruker — to kopier ville sagt forskjellige ting første gang én av
+  dem ble endret.
+* **Redigering etter PUT svarer 303, også når den avvises.** Den
+  genererte testen ventet 302 og feilet i porten på alle tre databasene;
+  koden var riktig, testen tok feil.
+* **`Seq` i de genererte testene startet på millisekundet, og testunits
+  deler tabeller.** Gadgets-testen lager makers som foreldre, Makers-testen
+  lager makers, og da Gadgets-testen fikk flere rader enn det gikk
+  millisekunder før Makers-testen startet, kom et unikt navn igjen. Bare
+  MySQL var rask nok til å vise det, og bare fordi tag-testen la til rader
+  — feilen var eldre enn den. Nå tusen fra hverandre per millisekund. Og et
+  unikt eksempel tar **slutten** av tallet (`SeqTail`), ikke starten: med
+  `Copy(..., 1, n)` var en kort kolonne lik for hver rad i en kjøring.
+* **Lauf `<Checkbox value>` er en gruppe.** Bokser med samme navn og hver
+  sin verdi holder de avkryssede som en liste i `<Form>`. Det er en
+  oppførselsendring for en enkelt boks med `value` — den står i UPGRADE.md.
+
 ## Mail og providere
 
 * **`TMailTransport` er hele grensesnittet: `Send` og `Describe`.** En

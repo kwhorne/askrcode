@@ -74,6 +74,30 @@ type
   end;
   TChildInfos = array of TChildInfo;
 
+  { A table this one is related to through a pivot, as a form needs it:
+    a box to tick for each of its rows, labelled by one of its columns. }
+  TManyInfo = record
+    Rel: TPlanRelation;
+    { The boxes are on the form. False when the other table has no model
+      to query its rows with, when the model here does not declare the
+      relation, or when declaring it would make two units use each other
+      -- and then Why says which, and what to do. }
+    Available: Boolean;
+    Why: string;
+    LabelColumn: string;
+    LabelMember: string;
+    SchemaVar: string;
+    SchemaUnit: string;
+    { The other table's own pages are there, so a row can link to them. }
+    Linked: Boolean;
+    Url: string;
+    { The line Describe needs: short when the pivot and its keys are the
+      ones BelongsToMany would guess, with every name otherwise. }
+    DescribeLine: string;
+    Plan: TResourcePlan;
+  end;
+  TManyInfos = array of TManyInfo;
+
   TGenFile = record
     Path: string;       { relative to the project root }
     Content: string;
@@ -115,7 +139,8 @@ function ResourceNamesOf(const P: TResourcePlan): TResourceNames;
   hold the text. WithModel adds the model unit, Web the controller, pages
   and test for a browser, Api the JSON controller and its test. }
 function ResourceFiles(const P: TResourcePlan; const Parents: TParentInfos;
-  const Children: TChildInfos; WithModel, Web, Api: Boolean): TGenFiles;
+  const Children: TChildInfos; const Manys: TManyInfos;
+  WithModel, Web, Api: Boolean): TGenFiles;
 
 { The tables that point at P, as its page lists them: those whose model is
   in Root, linked when their pages are there too. }
@@ -126,6 +151,13 @@ function ChildrenOf(Schema: TDbSchema; const P: TResourcePlan;
   whose model is in Root, a number for the rest. }
 function ParentsOf(Schema: TDbSchema; const P: TResourcePlan;
   const Root: string): TParentInfos;
+
+{ The tables P is related to through a pivot, as its form needs them: a
+  box for each of their rows, where the other table has a model and the
+  model here declares the relation -- or is being written now, and then
+  it will. OwnerModelWritten says which. }
+function ManysOf(Schema: TDbSchema; const P: TResourcePlan;
+  const Root: string; OwnerModelWritten: Boolean): TManyInfos;
 
 { A database default as a JavaScript value a form can start with, or ''
   when it is not a plain literal. Exposed for the test: the three
@@ -319,6 +351,195 @@ begin
   Result := JsStr(E);
 end;
 
+{ The line a model's Describe needs for Rel. The short form when the
+  pivot and both keys are what BelongsToMany works out from the two class
+  names; every name when they are not, since a guess that differs from
+  the table is a relation to nothing. }
+function ManyDescribeLine(const P: TResourcePlan; const Rel: TPlanRelation): string;
+var
+  Mine, Theirs, Conv: string;
+begin
+  Mine := SnakeCase(P.Model);
+  Theirs := SnakeCase(Rel.Model);
+  if Mine < Theirs then
+    Conv := Mine + '_' + Theirs
+  else
+    Conv := Theirs + '_' + Mine;
+  if (Rel.Pivot = Conv) and (Rel.ForeignKey = Mine + '_id') and
+     (Rel.RelatedKey = Theirs + '_id') then
+    Result := 'S.BelongsToMany(' + PasStr(Rel.Name) + ', T' + Rel.Model + ');'
+  else
+    Result := 'S.BelongsToMany(' + PasStr(Rel.Name) + ', T' + Rel.Model + ', ' +
+      PasStr(Rel.Pivot) + ', ' + PasStr(Rel.ForeignKey) + ', ' +
+      PasStr(Rel.RelatedKey) + ');';
+end;
+
+function FileText(const Path_: string): string;
+var
+  L: TStringList;
+begin
+  Result := '';
+  if not FileExists(Path_) then
+    Exit;
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Path_);
+    Result := L.Text;
+  finally
+    L.Free;
+  end;
+end;
+
+function ManysOf(Schema: TDbSchema; const P: TResourcePlan;
+  const Root: string; OwnerModelWritten: Boolean): TManyInfos;
+var
+  I, K: Integer;
+  Base, Theirs, Mine: string;
+  Lines: TStringArray;
+begin
+  Base := IncludeTrailingPathDelimiter(Root);
+  Result := nil;
+  Mine := FileText(Base + 'app/Models/App.Models.' + P.Model + '.pas');
+  for I := 0 to High(P.Relations) do
+    if P.Relations[I].Kind = prBelongsToMany then
+    begin
+      SetLength(Result, Length(Result) + 1);
+      with Result[High(Result)] do
+      begin
+        Rel := P.Relations[I];
+        Plan := PlanResource(Schema, Rel.Model, Rel.Table);
+        DescribeLine := ManyDescribeLine(P, Rel);
+        LabelColumn := Plan.DefaultSort;
+        LabelMember := '';
+        K := PlanColumnIndex(Plan, LabelColumn);
+        if K >= 0 then
+          LabelMember := Plan.Columns[K].Member;
+        SchemaVar := TableConstName(Rel.Table);
+        SchemaUnit := 'App.Schema.' + PascalCase(Rel.Table);
+        Linked := FileExists(Base + 'app/Http/App.Http.' + PascalCase(Rel.Table) +
+          'Controller.pas');
+        Url := '/' + StringReplace(Rel.Table, '_', '-', [rfReplaceAll]);
+        Theirs := FileText(Base + 'app/Models/App.Models.' + Rel.Model + '.pas');
+        Why := '';
+        if (Length(Plan.Problems) > 0) or (Theirs = '') then
+          Why := Format('%s are left off the form: there is no model for them to ' +
+            'query. Make one -- askr make resource %s -- and run this again ' +
+            'with --force.', [Rel.Table, Rel.Model])
+        else if LabelMember = '' then
+          Why := Format('%s are left off the form: nothing in the table can ' +
+            'label a box.', [Rel.Table])
+        { Two units cannot use each other, and the relation needs this
+          model to use the other one for its list type. Asked before the
+          lines to add, which would otherwise tell someone to write that
+          very cycle. }
+        else if Pos('App.Models.' + P.Model + ';', Theirs) +
+                Pos('App.Models.' + P.Model + ',', Theirs) > 0 then
+          Why := Format('%s are left off the form: App.Models.%s uses ' +
+            'App.Models.%s already, and two units cannot use each other. ' +
+            'Keep the relation on that side, or put the two models in one ' +
+            'unit.', [Rel.Table, Rel.Model, P.Model])
+        else if OwnerModelWritten then
+          { The model written here declares it. }
+        else if (Pos('BelongsToMany(' + PasStr(Rel.Name), Mine) = 0) or
+                (Pos(Rel.Name + ':', Mine) = 0) then
+        begin
+          Why := Format('%s are left off the form: App.Models.%s is there ' +
+            'without the relation. Add these, then run this again with --force:',
+            [Rel.Table, P.Model]);
+          Lines := ManyToManyModelLines(P.Model, Rel.Model, Rel.Name, DescribeLine);
+          for K := 0 to High(Lines) do
+            Why := Why + LineEnding + Lines[K];
+        end;
+        Available := Why = '';
+      end;
+    end;
+end;
+
+{ The Pascal list the relations go in: ['Tags', 'Labels']. '' with none. }
+function PreloadListOf(const Manys: TManyInfos): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(Manys) do
+    if Manys[I].Available then
+    begin
+      if Result <> '' then
+        Result := Result + ', ';
+      Result := Result + PasStr(Manys[I].Rel.Name);
+    end;
+  if Result <> '' then
+    Result := '[' + Result + ']';
+end;
+
+{ The prop the choices go under: tags_choices. Not the table's name, which
+  a select for a BelongsTo to the same table would use. }
+function ChoicesProp(const M: TManyInfo): string;
+begin
+  Result := SnakeCase(M.Rel.Name) + '_choices';
+end;
+
+{ The locals a Store or an Update needs for the relations it saves. }
+function ManyVarsText(const Manys: TManyInfos): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to High(Manys) do
+    if Manys[I].Available then
+      Result := Result + '  ' + Manys[I].Rel.Name + 'Ids: TArray<Int64>;' + #10 +
+        '  Has' + Manys[I].Rel.Name + ': Boolean;' + #10;
+  if Result <> '' then
+    Result := '  C: TDbConnection;' + #10 + Result;
+end;
+
+{ Validate, then the ids, then the row and its relations in one
+  transaction. Fail is what a refusal answers with. Both controllers
+  write it from here, so the web and the API cannot check differently. }
+function ManySaveText(const Manys: TManyInfos; const Fail: string): string;
+var
+  I: Integer;
+  M: TManyInfo;
+  Col: string;
+begin
+  Result := '  M.Validate;' + #10;
+  for I := 0 to High(Manys) do
+    if Manys[I].Available then
+    begin
+      M := Manys[I];
+      Col := '';
+      if M.Plan.PrimaryKey <> 'id' then
+        Col := ', ' + PasStr(M.Plan.PrimaryKey);
+      Result := Result +
+        '  Has' + M.Rel.Name + ' := Req.InputIds(' + PasStr(M.Rel.InputKey) + ', ' +
+          M.Rel.Name + 'Ids, M.Errors);' + #10 +
+        '  if Has' + M.Rel.Name + ' then' + #10 +
+        '    IdsExist(M.Errors, ' + PasStr(M.Rel.InputKey) + ', ' + PasStr(M.Rel.Table) +
+          ', ' + M.Rel.Name + 'Ids' + Col + ');' + #10;
+    end;
+  Result := Result +
+    '  if not M.Errors.IsEmpty then' + #10 +
+    '    Exit(' + Fail + ');' + #10 +
+    '  { The row and what it is related to, together: an id the database' + #10 +
+    '    refuses after all does not leave a row without them. A key the' + #10 +
+    '    request did not send is left as it is. }' + #10 +
+    '  C := CurrentDb;' + #10 +
+    '  C.StartTransaction;' + #10 +
+    '  try' + #10 +
+    '    M.Save;' + #10;
+  for I := 0 to High(Manys) do
+    if Manys[I].Available then
+      Result := Result +
+        '    if Has' + Manys[I].Rel.Name + ' then' + #10 +
+        '      M.Sync(' + PasStr(Manys[I].Rel.Name) + ', ' + Manys[I].Rel.Name + 'Ids);' + #10;
+  Result := Result +
+    '    C.Commit;' + #10 +
+    '  except' + #10 +
+    '    C.Rollback;' + #10 +
+    '    raise;' + #10 +
+    '  end;';
+end;
+
 { ------------------------------------------------------- controller -- }
 
 { The procedure both controllers fill a model with. One emitter, so the
@@ -388,7 +609,8 @@ begin
 end;
 
 function ControllerText(const P: TResourcePlan;
-  const Parents: TParentInfos; const Children: TChildInfos): string;
+  const Parents: TParentInfos; const Children: TChildInfos;
+  const Manys: TManyInfos): string;
 var
   B: TStringList;
   N: TResourceNames;
@@ -412,6 +634,22 @@ var
       if Parents[K].Available then
         Result := Result + ', ' + PasStr(Parents[K].Rel.Table) + ', ' +
           Parents[K].Rel.Model + 'Options';
+    for K := 0 to High(Manys) do
+      if Manys[K].Available then
+        Result := Result + ', ' + PasStr(ChoicesProp(Manys[K])) + ', ' +
+          Manys[K].Rel.Name + 'Choices';
+  end;
+
+  { What an edit form ticks: the ids in each pivot. }
+  function IdsProps: string;
+  var
+    K: Integer;
+  begin
+    Result := '';
+    for K := 0 to High(Manys) do
+      if Manys[K].Available then
+        Result := Result + ',' + #10 + '     ' + PasStr(Manys[K].Rel.InputKey) +
+          ', JsonIds(M.RelatedIds(' + PasStr(Manys[K].Rel.Name) + '))';
   end;
 
 begin
@@ -428,6 +666,11 @@ begin
          (Pos('App.Models.' + Children[I].Rel.Model + ',', Uses_ + ',') = 0) then
         Uses_ := Uses_ + ',' + #10 + '  App.Models.' + Children[I].Rel.Model +
           ', ' + Children[I].SchemaUnit;
+    for I := 0 to High(Manys) do
+      if Manys[I].Available and
+         (Pos('App.Models.' + Manys[I].Rel.Model + ',', Uses_ + ',') = 0) then
+        Uses_ := Uses_ + ',' + #10 + '  App.Models.' + Manys[I].Rel.Model +
+          ', ' + Manys[I].SchemaUnit;
 
     A('{ ' + Capital(N.HumanPlural) + ': the seven actions over the ' +
       P.Table + ' table.');
@@ -450,6 +693,8 @@ begin
     A('  Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,');
     A('  Askr.Inertia, Askr.Session,');
     A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Grid, Askr.Urd.Bind,');
+    if PreloadListOf(Manys) <> '' then
+      A('  Askr.Urd.Driver, Askr.Urd.Json,');
     A(Uses_ + ';');
     A('');
     A('type');
@@ -496,7 +741,35 @@ begin
     A('end;');
     A('');
 
+    if PreloadListOf(Manys) <> '' then
+    begin
+      A('{ The same, with the rows it belongs to many of: for the page that');
+      A('  shows them. }');
+      A('function FindLoaded(Req: TRequest): T' + N.Model + ';');
+      A('begin');
+      A('  Result := TQuery<T' + N.Model + '>.New.Preload(' + PreloadListOf(Manys) + ')');
+      A('    .Find(Req.Param(''id'').ToIntDef(0));');
+      A('end;');
+      A('');
+    end;
+
     B.Add(FillText(P));
+
+    for I := 0 to High(Manys) do
+      if Manys[I].Available then
+      begin
+        A('{ The boxes for ' + Manys[I].Rel.InputKey + ', one per row. More than a thousand');
+        A('  boxes is the wrong control, and this stops there rather than');
+        A('  sending the whole table. }');
+        A('function ' + Manys[I].Rel.Name + 'Choices: TModelList<T' + Manys[I].Rel.Model + '>;');
+        A('begin');
+        A('  Result := TQuery<T' + Manys[I].Rel.Model + '>.New');
+        A('    .OrderBy(' + Manys[I].SchemaVar + '.' + Manys[I].LabelMember + ')');
+        A('    .Limit(1000)');
+        A('    .Get;');
+        A('end;');
+        A('');
+      end;
 
     for I := 0 to High(Parents) do
       if Parents[I].Available then
@@ -558,7 +831,10 @@ begin
     A('var');
     A('  M: T' + N.Model + ';');
     A('begin');
-    A('  M := Find(Req);');
+    if PreloadListOf(Manys) <> '' then
+      A('  M := FindLoaded(Req);')
+    else
+      A('  M := Find(Req);');
     A('  if M = nil then');
     A('    Exit(NotFound);');
     Opt := '';
@@ -597,12 +873,19 @@ begin
     A('function ' + N.CtlClass + '.Store(Req: TRequest): TResponse;');
     A('var');
     A('  M: T' + N.Model + ';');
+    if ManyVarsText(Manys) <> '' then
+      A(TrimRight(ManyVarsText(Manys)));
     A('begin');
     A('  M := T' + N.Model + '.Create;');
     A('  Fill(Req, M);');
-    A('  if not M.Validate then');
-    A('    Exit(BackWithErrors(M.Errors, ''' + N.Url + '/new''));');
-    A('  M.Save;');
+    if ManyVarsText(Manys) <> '' then
+      A(ManySaveText(Manys, 'BackWithErrors(M.Errors, ''' + N.Url + '/new'')'))
+    else
+    begin
+      A('  if not M.Validate then');
+      A('    Exit(BackWithErrors(M.Errors, ''' + N.Url + '/new''));');
+      A('  M.Save;');
+    end;
     A('  Flash(''' + Capital(N.Human) + ' created.'');');
     A('  Result := InertiaRedirect(''' + N.Url + '/'' + IntToStr(M.Id));');
     A('end;');
@@ -617,7 +900,7 @@ begin
     A('  if M = nil then');
     A('    Exit(NotFound);');
     A('  Result := Inertia(''' + N.PagesDir + '/Edit'', [''' + N.Prop + ''', M' +
-      OptionProps + ']);');
+      OptionProps + IdsProps + ']);');
     A('end;');
     A('');
 
@@ -625,14 +908,21 @@ begin
     A('function ' + N.CtlClass + '.Update(Req: TRequest): TResponse;');
     A('var');
     A('  M: T' + N.Model + ';');
+    if ManyVarsText(Manys) <> '' then
+      A(TrimRight(ManyVarsText(Manys)));
     A('begin');
     A('  M := Find(Req);');
     A('  if M = nil then');
     A('    Exit(NotFound);');
     A('  Fill(Req, M);');
-    A('  if not M.Validate then');
-    A('    Exit(BackWithErrors(M.Errors, ''' + N.Url + '/'' + IntToStr(M.Id) + ''/edit''));');
-    A('  M.Save;');
+    if ManyVarsText(Manys) <> '' then
+      A(ManySaveText(Manys, 'BackWithErrors(M.Errors, ''' + N.Url + '/'' + IntToStr(M.Id) + ''/edit'')'))
+    else
+    begin
+      A('  if not M.Validate then');
+      A('    Exit(BackWithErrors(M.Errors, ''' + N.Url + '/'' + IntToStr(M.Id) + ''/edit''));');
+      A('  M.Save;');
+    end;
     A('  Flash(''' + Capital(N.Human) + ' saved.'');');
     A('  Result := InertiaRedirect(''' + N.Url + '/'' + IntToStr(M.Id));');
     A('end;');
@@ -668,21 +958,25 @@ end;
   the list envelope, problem documents, a scope per verb, and the lines
   that describe it to the OpenAPI document next to the routes they
   describe. }
-function ApiControllerText(const P: TResourcePlan): string;
+function ApiControllerText(const P: TResourcePlan; const Manys: TManyInfos): string;
 var
   B: TStringList;
   N: TResourceNames;
+  I: Integer;
+  Uses_, Loaded: string;
 
   procedure A(const S: string);
   begin
     B.Add(S);
   end;
 
-  procedure Head(const Name_, Scope: string);
+  procedure Head(const Name_, Scope: string; const Vars: string = '');
   begin
     A('function ' + N.ApiCtlClass + '.' + Name_ + '(Req: TRequest): TResponse;');
     A('var');
     A('  M: T' + N.Model + ';');
+    if Vars <> '' then
+      A(TrimRight(Vars));
     A('begin');
     A('  AuthorizeScope(''' + Scope + ''');');
   end;
@@ -722,7 +1016,14 @@ begin
     A('  Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,');
     A('  Askr.Auth.Token, Askr.OpenApi,');
     A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Grid, Askr.Urd.Bind, Askr.Urd.Json,');
-    A('  ' + N.ModelUnit + ', ' + N.SchemaUnit + ';');
+    if PreloadListOf(Manys) <> '' then
+      A('  Askr.Urd.Driver,');
+    Uses_ := '  ' + N.ModelUnit + ', ' + N.SchemaUnit;
+    for I := 0 to High(Manys) do
+      if Manys[I].Available and
+         (Pos('App.Models.' + Manys[I].Rel.Model + ',', Uses_ + ',') = 0) then
+        Uses_ := Uses_ + ',' + #10 + '  App.Models.' + Manys[I].Rel.Model;
+    A(Uses_ + ';');
     A('');
     A('type');
     A('  ' + N.ApiCtlClass + ' = class');
@@ -777,6 +1078,16 @@ begin
     A('  Result := TQuery<T' + N.Model + '>.New.Find(Req.Param(''id'').ToIntDef(0));');
     A('end;');
     A('');
+    Loaded := PreloadListOf(Manys);
+    if Loaded <> '' then
+    begin
+      A('{ The same, with the rows it belongs to many of: what a reply shows. }');
+      A('function FindLoaded(Id: Int64): T' + N.Model + ';');
+      A('begin');
+      A('  Result := TQuery<T' + N.Model + '>.New.Preload(' + Loaded + ').Find(Id);');
+      A('end;');
+      A('');
+    end;
     A('function NotFound: TResponse;');
     A('begin');
     A('  Result := Problem(404, ''No ' + N.Human + ' with that id.'');');
@@ -792,32 +1103,59 @@ begin
     A('begin');
     A('  AuthorizeScope(''' + N.ScopeRead + ''');');
     A(GridText(P));
-    A('  Result := G.ListResponse(G.Rows(TQuery<T' + N.Model + '>.New));');
+    if Loaded <> '' then
+      A('  Result := G.ListResponse(G.Rows(TQuery<T' + N.Model + '>.New.Preload(' +
+        Loaded + ')));')
+    else
+      A('  Result := G.ListResponse(G.Rows(TQuery<T' + N.Model + '>.New));');
     A('end;');
     A('');
     Head('Show', N.ScopeRead);
-    Found;
+    if Loaded <> '' then
+    begin
+      A('  M := FindLoaded(Req.Param(''id'').ToIntDef(0));');
+      A('  if M = nil then');
+      A('    Exit(NotFound);');
+    end
+    else
+      Found;
     A('  Result := RespondModel(M);');
     A('end;');
     A('');
-    Head('Store', N.ScopeWrite);
+    Head('Store', N.ScopeWrite, ManyVarsText(Manys));
     A('  M := T' + N.Model + '.Create;');
     A('  Fill(Req, M);');
-    A('  if not M.Validate then');
-    A('    Exit(ValidationProblem(M.Errors));');
-    A('  M.Save;');
+    if Loaded <> '' then
+    begin
+      A(ManySaveText(Manys, 'ValidationProblem(M.Errors)'));
+      A('  M := FindLoaded(M.Id);');
+    end
+    else
+    begin
+      A('  if not M.Validate then');
+      A('    Exit(ValidationProblem(M.Errors));');
+      A('  M.Save;');
+    end;
     A('  Result := RespondModel(M, 201)');
     A('    .WithHeader(''Location'', ''' + N.ApiUrl + '/'' + IntToStr(M.Id));');
     A('end;');
     A('');
     A('{ PATCH, not PUT: a field that is not in the body is left as it is,');
     A('  which is what FillInto does and what PATCH means. }');
-    Head('Update', N.ScopeWrite);
+    Head('Update', N.ScopeWrite, ManyVarsText(Manys));
     Found;
     A('  Fill(Req, M);');
-    A('  if not M.Validate then');
-    A('    Exit(ValidationProblem(M.Errors));');
-    A('  M.Save;');
+    if Loaded <> '' then
+    begin
+      A(ManySaveText(Manys, 'ValidationProblem(M.Errors)'));
+      A('  M := FindLoaded(M.Id);');
+    end
+    else
+    begin
+      A('  if not M.Validate then');
+      A('    Exit(ValidationProblem(M.Errors));');
+      A('  M.Save;');
+    end;
     A('  Result := RespondModel(M);');
     A('end;');
     A('');
@@ -872,13 +1210,14 @@ end;
 
 { ------------------------------------------------------------ model -- }
 
-function ModelText(const P: TResourcePlan): string;
+function ModelText(const P: TResourcePlan; const Manys: TManyInfos): string;
 var
   N: TResourceNames;
   Fields: TFieldSpecs;
-  Intro, Hidden: TStringArray;
+  Intro, Hidden, Describe, Types, Extra: TStringArray;
   I: Integer;
   PC: TPlanColumn;
+  Uses_: string;
 begin
   N := ResourceNamesOf(P);
   Fields := nil;
@@ -903,9 +1242,29 @@ begin
     if PC.LooksSecret then
       Say(Hidden, PC.Member);
   end;
+  { A BelongsToMany is a list of the other model in a published field, and
+    the line in Describe that says through which pivot. }
+  Describe := DescribeLinesOf(P);
+  Types := nil;
+  Extra := nil;
+  Uses_ := '';
+  for I := 0 to High(Manys) do
+    if Manys[I].Available then
+    begin
+      if Uses_ = '' then
+        { TModelList is a generic in the query unit. }
+        Uses_ := ', Askr.Urd.Query';
+      if Pos('App.Models.' + Manys[I].Rel.Model + ',', Uses_ + ',') = 0 then
+      begin
+        Uses_ := Uses_ + ', App.Models.' + Manys[I].Rel.Model;
+        Say(Types, 'T' + Manys[I].Rel.Model + 'List = TModelList<T' + Manys[I].Rel.Model + '>;');
+      end;
+      Say(Extra, Manys[I].Rel.Name + ': T' + Manys[I].Rel.Model + 'List;');
+      Say(Describe, Manys[I].DescribeLine);
+    end;
   Result := ModelUnitText(N.Model, Intro, Fields, P.HasTimestamps,
-    P.HasSoftDeletes, DescribeLinesOf(P), RuleLinesOf(P), Hidden,
-    N.SchemaUnit, N.SchemaVar);
+    P.HasSoftDeletes, Describe, RuleLinesOf(P), Hidden,
+    N.SchemaUnit, N.SchemaVar, Uses_, Types, Extra);
 end;
 
 { ------------------------------------------------------------ pages -- }
@@ -916,7 +1275,8 @@ const
     '     column renamed later is a compile error in the controller and a' + #10 +
     '     blank cell here. -->';
 
-function FieldsText(const P: TResourcePlan; const Parents: TParentInfos): string;
+function FieldsText(const P: TResourcePlan; const Parents: TParentInfos;
+  const Manys: TManyInfos): string;
 var
   B: TStringList;
   Ed: TPlanColumns;
@@ -939,7 +1299,14 @@ begin
     A('<script module>');
     A('  // What a row from the server becomes in the form. Only the fields the');
     A('  // form has: anything else in it would be sent back on save.');
-    A('  export function toForm(row) {');
+    if PreloadListOf(Manys) <> '' then
+    begin
+      A('  // ids is what the page was given for the boxes: the ids in each');
+      A('  // pivot, as text, because a checkbox''s value is text.');
+      A('  export function toForm(row, ids = {}) {');
+    end
+    else
+      A('  export function toForm(row) {');
     A('    const r = row ?? {}');
     A('    return {');
     for I := 0 to High(Ed) do
@@ -964,6 +1331,10 @@ begin
         A('      ' + Col + ': r.' + Col + ' ?? '''',');
       end;
     end;
+    for I := 0 to High(Manys) do
+      if Manys[I].Available then
+        A('      ' + Manys[I].Rel.InputKey + ': (ids.' + Manys[I].Rel.InputKey +
+          ' ?? []).map(String),');
     A('    }');
     A('  }');
     A('');
@@ -990,6 +1361,9 @@ begin
     for I := 0 to High(Parents) do
       if Parents[I].Available then
         Props := Props + Parents[I].Rel.Table + ' = [], ';
+    for I := 0 to High(Manys) do
+      if Manys[I].Available then
+        Props := Props + ChoicesProp(Manys[I]) + ' = [], ';
     A('  import { Field, Input, Textarea, Select, Checkbox } from ''@askrcode/lauf''');
     if Props = '' then
       A('  let {} = $props()')
@@ -1051,6 +1425,23 @@ begin
               '"><Input type="number" step="1" /></Field>');
       end;
     end;
+    { A box per row, with the same name: the form holds the ticked ids as
+      a list, and an unticked form sends an empty one, which says "none"
+      rather than "leave them". }
+    for I := 0 to High(Manys) do
+      if Manys[I].Available then
+      begin
+        A('<Field name="' + Manys[I].Rel.InputKey + '" label="' +
+          LabelOf(Manys[I].Rel.Table) + '" as="fieldset">');
+        A('  {#each ' + ChoicesProp(Manys[I]) + ' as o (o.id)}');
+        A('    <Checkbox name="' + Manys[I].Rel.InputKey + '" value={String(o.id)} label={String(o.' +
+          Manys[I].LabelColumn + ')} />');
+        A('  {:else}');
+        A('    <p class="text-sm text-muted">There are no ' +
+          StringReplace(Manys[I].Rel.Table, '_', ' ', [rfReplaceAll]) + ' yet.</p>');
+        A('  {/each}');
+        A('</Field>');
+      end;
     Result := B.Text;
   finally
     B.Free;
@@ -1137,7 +1528,7 @@ begin
 end;
 
 function ShowText(const P: TResourcePlan; const Parents: TParentInfos;
-  const Children: TChildInfos): string;
+  const Children: TChildInfos; const Manys: TManyInfos): string;
 var
   B: TStringList;
   N: TResourceNames;
@@ -1228,6 +1619,30 @@ begin
       end;
       A('    </div>');
     end;
+    { What it belongs to many of: loaded with the row, and linked when
+      the other table has pages of its own. }
+    for I := 0 to High(Manys) do
+      if Manys[I].Available then
+      begin
+        Rel := SnakeCase(Manys[I].Rel.Name);
+        A('    <div class="flex flex-col gap-1 sm:flex-row sm:gap-4">');
+        A('      <dt class="w-40 shrink-0 text-sm text-muted">' + LabelOf(Manys[I].Rel.Table) + '</dt>');
+        A('      <dd>');
+        A('        {#if (' + N.Prop + '.' + Rel + ' ?? []).length === 0}—{:else}');
+        A('          <ul class="flex flex-wrap gap-x-3 gap-y-1">');
+        A('            {#each ' + N.Prop + '.' + Rel + ' as t (t.id)}');
+        if Manys[I].Linked then
+          A('              <li><Link href={`' + Manys[I].Url +
+            '/${t.id}`} class="underline-offset-2 hover:underline">{t.' +
+            Manys[I].LabelColumn + '}</Link></li>')
+        else
+          A('              <li>{t.' + Manys[I].LabelColumn + '}</li>');
+        A('            {/each}');
+        A('          </ul>');
+        A('        {/if}');
+        A('      </dd>');
+        A('    </div>');
+      end;
     A('  </dl>');
     for I := 0 to High(Children) do
       if Children[I].Available then
@@ -1266,12 +1681,12 @@ begin
 end;
 
 function FormPageText(const P: TResourcePlan; const Parents: TParentInfos;
-  Editing: Boolean): string;
+  const Manys: TManyInfos; Editing: Boolean): string;
 var
   B: TStringList;
   N: TResourceNames;
   I: Integer;
-  Props, Pass, Title: string;
+  Props, Pass, Title, Ids: string;
 
   procedure A(const S: string);
   begin
@@ -1291,6 +1706,20 @@ begin
       begin
         Props := Props + ', ' + Parents[I].Rel.Table + ' = []';
         Pass := Pass + ' {' + Parents[I].Rel.Table + '}';
+      end;
+    Ids := '';
+    for I := 0 to High(Manys) do
+      if Manys[I].Available then
+      begin
+        Props := Props + ', ' + ChoicesProp(Manys[I]) + ' = []';
+        Pass := Pass + ' {' + ChoicesProp(Manys[I]) + '}';
+        if Editing then
+        begin
+          Props := Props + ', ' + Manys[I].Rel.InputKey + ' = []';
+          if Ids <> '' then
+            Ids := Ids + ', ';
+          Ids := Ids + Manys[I].Rel.InputKey;
+        end;
       end;
     if Editing then
       Title := 'Edit ' + N.Human
@@ -1316,7 +1745,10 @@ begin
     if Editing then
     begin
       A('  <Form action={`' + N.Url + '/${' + N.Prop + '.id}`} method="put"');
-      A('        data={toForm(' + N.Prop + ')} {errors} class="flex flex-col gap-4">');
+      if Ids <> '' then
+        A('        data={toForm(' + N.Prop + ', { ' + Ids + ' })} {errors} class="flex flex-col gap-4">')
+      else
+        A('        data={toForm(' + N.Prop + ')} {errors} class="flex flex-col gap-4">');
     end
     else
     begin
@@ -1376,7 +1808,14 @@ begin
   if PC.Field.Unique then
     case PC.Field.Kind of
       ftString, ftText, ftJson:
-        Exit('Copy(''S'' + IntToStr(Seq), 1, ' + IntToStr(Max(PC.Field.Length, 1)) + ')');
+        { The end of Seq, as much of it as fits: a column with no length
+          takes all of it, and one a single character wide takes a digit. }
+        if PC.Field.Length <= 0 then
+          Exit('''S'' + IntToStr(Seq)')
+        else if PC.Field.Length = 1 then
+          Exit('SeqTail(1)')
+        else
+          Exit('''S'' + SeqTail(' + IntToStr(PC.Field.Length - 1) + ')');
       { Assigned, not cast: Seq is an Int64 and a Currency takes it as the
         number it is. }
       ftInt, ftBigInt, ftMoney, ftFloat:
@@ -1439,13 +1878,32 @@ begin
   Result := True;
 end;
 
+{ Whether the test can make rows in the other table of a BelongsToMany:
+  the same test as for a parent. }
+function ManyMakeable(const M: TManyInfo): Boolean;
+var
+  I: Integer;
+  PC: TPlanColumn;
+begin
+  if not M.Available or not M.Plan.CanCreate or (Length(M.Plan.Problems) > 0) then
+    Exit(False);
+  for I := 0 to High(M.Plan.Columns) do
+  begin
+    PC := M.Plan.Columns[I];
+    if PC.Editable and not PC.Field.Nullable and not PC.HasDefault and
+       (PC.Field.Kind = ftReferences) then
+      Exit(False);
+  end;
+  Result := True;
+end;
+
 function TestUnitText(const P: TResourcePlan; const Parents: TParentInfos;
-  Api: Boolean; out Why: string): string;
+  const Manys: TManyInfos; Api: Boolean; out Why: string): string;
 var
   B: TStringList;
   N: TResourceNames;
   Ed: TPlanColumns;
-  I, K: Integer;
+  I, J, K: Integer;
   PC: TPlanColumn;
   Body, First, Firstmember, RequiredCol, Uses_: string;
   CtlUnit, Url, RoutesProc, TestUnit, TestsProc, RD, WR, Forged: string;
@@ -1453,6 +1911,8 @@ var
   Par: TParentInfo;
   ParentIdx: array of Integer;
   Hidden: TStringArray;
+  Mn: TManyInfo;
+  AnyMany: Boolean;
 
   procedure A(const S: string);
   begin
@@ -1565,6 +2025,14 @@ begin
     Uses_ := '  ' + CtlUnit + ', ' + N.ModelUnit;
     for I := 0 to High(ParentIdx) do
       Uses_ := Uses_ + ', App.Models.' + Parents[ParentIdx[I]].Rel.Model;
+    AnyMany := False;
+    for I := 0 to High(Manys) do
+      if CanWrite and ManyMakeable(Manys[I]) then
+      begin
+        AnyMany := True;
+        if Pos('App.Models.' + Manys[I].Rel.Model + ',', Uses_ + ',') = 0 then
+          Uses_ := Uses_ + ', App.Models.' + Manys[I].Rel.Model;
+      end;
 
     A('{ Every action of ' + CtlUnit + ', through the router.');
     A('');
@@ -1612,6 +2080,16 @@ begin
     A('  Seq: Int64;');
     A('  LastFirst: string;');
     A('');
+    A('{ The last N digits of Seq, for a unique column N+1 characters wide:');
+    A('  the end of the number is what changes from one row to the next, and');
+    A('  the front of it is the same for every row of a run. }');
+    A('function SeqTail(N: Integer): string;');
+    A('begin');
+    A('  Result := IntToStr(Seq);');
+    A('  if Length(Result) > N then');
+    A('    Result := Copy(Result, Length(Result) - N + 1, N);');
+    A('end;');
+    A('');
     if Api then
     begin
       A('{ Once for all of them: the database, the migrations, two tokens, and');
@@ -1630,7 +2108,12 @@ begin
     A('begin');
     A('  if Client <> nil then');
     A('    Exit;');
-    A('  Seq := Trunc((Now - EncodeDate(2020, 1, 1)) * 86400000);');
+    { A thousand apart per millisecond. Every test unit counts from its
+      own start, and another unit's parents are rows in the same tables:
+      counting from the millisecond alone, the gadgets' test made more
+      makers than milliseconds passed before the makers' test began, and a
+      unique name came round twice -- on MySQL, which was fast enough. }
+    A('  Seq := Trunc((Now - EncodeDate(2020, 1, 1)) * 86400000) * 1000;');
     A('  Arena := TArena.Create(64 * 1024);');
     A('  UseArena(Arena);');
     A('  Conn := OpenDbConnection(Env(''TEST_DATABASE_URL'', ''sqlite::memory:''));');
@@ -1680,6 +2163,23 @@ begin
     A('  Result := TQuery<T' + N.Model + '>.New.Count;');
     A('end;');
     A('');
+    if AnyMany then
+    begin
+      A('{ Ids as the test compares them: 3,7. }');
+      A('function IdsOf(const Ids: TArray<Int64>): string;');
+      A('var');
+      A('  I: Integer;');
+      A('begin');
+      A('  Result := '''';');
+      A('  for I := 0 to High(Ids) do');
+      A('  begin');
+      A('    if I > 0 then');
+      A('      Result := Result + '','';');
+      A('    Result := Result + IntToStr(Ids[I]);');
+      A('  end;');
+      A('end;');
+      A('');
+    end;
     A('{ The id at the end of a Location: ' + Url + '/7 -> 7. }');
     A('function IdIn(Res: TResponse): Int64;');
     A('var');
@@ -1895,8 +2395,8 @@ begin
       if First <> '' then
       begin
         if P.Columns[PlanColumnIndex(P, First)].Field.Unique then
-          A('  NewFirst := Copy(''C'' + IntToStr(Seq), 1, ' +
-            IntToStr(P.Columns[PlanColumnIndex(P, First)].Field.Length) + ');')
+          A('  NewFirst := ''C'' + SeqTail(' +
+            IntToStr(Max(P.Columns[PlanColumnIndex(P, First)].Field.Length, 2) - 1) + ');')
         else
           A('  NewFirst := ' + FirstLen('Changed') + ';');
         Body := PasStr('{"' + First + '":"') + ' + NewFirst + ' +
@@ -1938,6 +2438,83 @@ begin
       A('end;');
       A('');
 
+      for I := 0 to High(Manys) do
+        if ManyMakeable(Manys[I]) then
+        begin
+          Mn := Manys[I];
+          A('{ The boxes for ' + Mn.Rel.InputKey + ': what is ticked is attached, what is not');
+          A('  is detached, a body without the key leaves them as they are, and an');
+          A('  id to nothing is refused on the field with nothing changed. }');
+          A('procedure Test' + Mn.Rel.Name + ';');
+          A('var');
+          A('  Id: Int64;');
+          A('  Res: TResponse;');
+          A('  T1, T2: T' + Mn.Rel.Model + ';');
+          A('');
+          A('  function Change(const Body: string): TResponse;');
+          A('  begin');
+          if Api then
+            A('    Result := Writer.Send(''PATCH'', ''' + Url + '/'' + IntToStr(Id), Body, ''application/json'');')
+          else
+            A('    Result := ' + WR + '.Put(''' + Url + '/'' + IntToStr(Id), Body);');
+          A('  end;');
+          A('');
+          A('  function Attached: string;');
+          A('  begin');
+          A('    Result := IdsOf(TQuery<T' + N.Model + '>.New.Find(Id).RelatedIds(' +
+            PasStr(Mn.Rel.Name) + '));');
+          A('  end;');
+          A('');
+          A('begin');
+          A('  Ready;');
+          for K := 1 to 2 do
+          begin
+            A('  Inc(Seq);');
+            A('  T' + IntToStr(K) + ' := T' + Mn.Rel.Model + '.Create;');
+            for J := 0 to High(Mn.Plan.Columns) do
+            begin
+              PC := Mn.Plan.Columns[J];
+              if PC.Editable and (not PC.Field.Nullable) and (PC.Field.Kind <> ftReferences) then
+                A('  T' + IntToStr(K) + '.' + PC.Field.Prop + ' := ' + SamplePascal(PC) + ';');
+            end;
+            A('  T' + IntToStr(K) + '.Save;');
+          end;
+          A('  Id := Made;');
+          A('  AssertEqual(Attached, '''', ''one made without ' + Mn.Rel.InputKey + ' has none'');');
+          A('  Res := Change(''{"' + Mn.Rel.InputKey + '":['' + IntToStr(T1.Id) + '','' + IntToStr(T2.Id) + '']}'');');
+          if Api then
+            A('  AssertStatus(Res, 200, ''the ticked ones are saved'');')
+          else
+            A('  AssertStatus(Res, 303, ''the ticked ones are saved'');');
+          A('  AssertEqual(Attached, IntToStr(T1.Id) + '','' + IntToStr(T2.Id), ''and attached'');');
+          if Api then
+            A('  AssertContains(Res.Body.ToString, ''"' + SnakeCase(Mn.Rel.Name) +
+              '":['', ''and the reply has them'');');
+          A('  Change(''{}'');');
+          A('  AssertEqual(Attached, IntToStr(T1.Id) + '','' + IntToStr(T2.Id),');
+          A('    ''a body without ' + Mn.Rel.InputKey + ' leaves them as they are'');');
+          A('  Change(''{"' + Mn.Rel.InputKey + '":['' + IntToStr(T2.Id) + '']}'');');
+          A('  AssertEqual(Attached, IntToStr(T2.Id), ''the one left out is detached'');');
+          A('  Res := Change(''{"' + Mn.Rel.InputKey + '":[999999999]}'');');
+          if Api then
+          begin
+            A('  AssertStatus(Res, 422, ''an id to nothing is refused'');');
+            A('  AssertContains(Res.Body.ToString, ''"' + Mn.Rel.InputKey + '":'', ''on the field'');');
+          end
+          else
+            { 303: the edit is a PUT, and a redirect after one has to be
+              303 or the browser repeats the PUT. }
+            A('  AssertStatus(Res, 303, ''an id to nothing is sent back to the form'');');
+          A('  AssertEqual(Attached, IntToStr(T2.Id), ''and nothing changed'');');
+          A('  Change(''{"' + Mn.Rel.InputKey + '":[]}'');');
+          A('  AssertEqual(Attached, '''', ''and an empty list is none'');');
+          A('  Change(''{"' + Mn.Rel.InputKey + '":['' + IntToStr(T1.Id) + '']}'');');
+          A('  AssertContains(' + RD + '.Get(''' + Url + '/'' + IntToStr(Id)).Body.ToString,');
+          A('    ''"' + SnakeCase(Mn.Rel.Name) + '":[{'', ''its page carries them'');');
+          A('end;');
+          A('');
+        end;
+
       A('procedure TestRemove;');
       A('var');
       A('  Id: Int64;');
@@ -1977,6 +2554,10 @@ begin
       if RequiredCol <> '' then
         A('  Test(''what the rules refuse is not saved'', @TestRefused);');
       A('  Test(''an edit is saved, and only the fields the form has'', @TestUpdate);');
+      for I := 0 to High(Manys) do
+        if ManyMakeable(Manys[I]) then
+          A('  Test(''' + LowerCase(LabelOf(Manys[I].Rel.Table)) +
+            ': ticked is attached, left out is detached'', @Test' + Manys[I].Rel.Name + ');');
       A('  Test(''a delete removes it'', @TestRemove);');
     end
     else
@@ -2033,7 +2614,8 @@ begin
 end;
 
 function ResourceFiles(const P: TResourcePlan; const Parents: TParentInfos;
-  const Children: TChildInfos; WithModel, Web, Api: Boolean): TGenFiles;
+  const Children: TChildInfos; const Manys: TManyInfos;
+  WithModel, Web, Api: Boolean): TGenFiles;
 var
   N: TResourceNames;
   Pages, Why: string;
@@ -2042,21 +2624,21 @@ begin
   N := ResourceNamesOf(P);
   Pages := 'frontend/src/pages/' + N.PagesDir + '/';
   if WithModel then
-    AddFile(Result, 'app/Models/' + N.ModelUnit + '.pas', ModelText(P));
+    AddFile(Result, 'app/Models/' + N.ModelUnit + '.pas', ModelText(P, Manys));
   if Web then
   begin
-    AddFile(Result, 'app/Http/' + N.CtlUnit + '.pas', ControllerText(P, Parents, Children));
+    AddFile(Result, 'app/Http/' + N.CtlUnit + '.pas', ControllerText(P, Parents, Children, Manys));
     AddFile(Result, Pages + 'Index.svelte', IndexText(P));
-    AddFile(Result, Pages + 'Show.svelte', ShowText(P, Parents, Children));
-    AddFile(Result, Pages + 'Add.svelte', FormPageText(P, Parents, False));
-    AddFile(Result, Pages + 'Edit.svelte', FormPageText(P, Parents, True));
-    AddFile(Result, Pages + 'Fields.svelte', FieldsText(P, Parents));
-    AddFile(Result, 'tests/' + N.TestUnit + '.pas', TestUnitText(P, Parents, False, Why));
+    AddFile(Result, Pages + 'Show.svelte', ShowText(P, Parents, Children, Manys));
+    AddFile(Result, Pages + 'Add.svelte', FormPageText(P, Parents, Manys, False));
+    AddFile(Result, Pages + 'Edit.svelte', FormPageText(P, Parents, Manys, True));
+    AddFile(Result, Pages + 'Fields.svelte', FieldsText(P, Parents, Manys));
+    AddFile(Result, 'tests/' + N.TestUnit + '.pas', TestUnitText(P, Parents, Manys, False, Why));
   end;
   if Api then
   begin
-    AddFile(Result, 'app/Http/' + N.ApiCtlUnit + '.pas', ApiControllerText(P));
-    AddFile(Result, 'tests/' + N.ApiTestUnit + '.pas', TestUnitText(P, Parents, True, Why));
+    AddFile(Result, 'app/Http/' + N.ApiCtlUnit + '.pas', ApiControllerText(P, Manys));
+    AddFile(Result, 'tests/' + N.ApiTestUnit + '.pas', TestUnitText(P, Parents, Manys, True, Why));
   end;
 end;
 
@@ -2302,6 +2884,7 @@ var
   P: TResourcePlan;
   N: TResourceNames;
   Parents: TParentInfos;
+  Manys: TManyInfos;
   Files: TGenFiles;
   Paths: array of string;
   I: Integer;
@@ -2327,7 +2910,9 @@ begin
 
   ModelPath := Base + 'app/Models/' + N.ModelUnit + '.pas';
   WithModel := not FileExists(ModelPath);
-  Files := ResourceFiles(P, Parents, ChildrenOf(Schema, P, Root), WithModel, Web, Api);
+  Manys := ManysOf(Schema, P, Root, WithModel);
+  Files := ResourceFiles(P, Parents, ChildrenOf(Schema, P, Root), Manys,
+    WithModel, Web, Api);
 
   Paths := nil;
   for I := 0 to High(Files) do
@@ -2397,8 +2982,11 @@ begin
       SayTestLines(N.ApiTestUnit, N.ApiTestsProc);
   end;
 
-  TestUnitText(P, Parents, Api, Why);
+  TestUnitText(P, Parents, Manys, Api, Why);
   WriteLn('');
+  for I := 0 to High(Manys) do
+    if not Manys[I].Available then
+      WriteLn(Manys[I].Why);
   if Why <> '' then
     WriteLn('The test does not create, edit or delete: ' + Why + '.');
   WriteLn('Next: askr build, then askr test.');

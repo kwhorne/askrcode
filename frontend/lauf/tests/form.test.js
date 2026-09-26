@@ -29,6 +29,7 @@ vi.mock('@inertiajs/svelte', () => ({
 }))
 
 const FormPage = (await import('./fixtures/FormPage.svelte')).default
+const CheckboxGroupForm = (await import('./fixtures/CheckboxGroupForm.svelte')).default
 
 beforeEach(() => {
   sendt.length = 0
@@ -160,4 +161,51 @@ describe('Form', () => {
     const feil = render(FormPage, { errors: { email: 'must be a valid email' } })
     expect(await violations(feil.container)).toEqual([])
   }, 60000)
+})
+
+describe('Checkbox group', () => {
+  const boxes = (c) => [...c.querySelectorAll('input[type="checkbox"]')]
+
+  it('starts from the values the form was given', () => {
+    const { container } = render(CheckboxGroupForm)
+    expect(boxes(container).map((b) => b.checked)).toEqual([false, true, false])
+  })
+
+  it('sends the ticked values as a list, in the order they were ticked', async () => {
+    const { container } = render(CheckboxGroupForm)
+    const [red, green, blue] = boxes(container)
+    await fireEvent.click(blue)
+    await fireEvent.click(green)
+    await fireEvent.click(red)
+    await fireEvent.submit(container.querySelector('form'))
+    expect(sendt[0].data.tag_ids).toEqual(['3', '1'])
+  })
+
+  it('sends an empty list when every box is unticked, not nothing', async () => {
+    const { container } = render(CheckboxGroupForm)
+    await fireEvent.click(boxes(container)[1])
+    await fireEvent.submit(container.querySelector('form'))
+    expect(sendt[0].data.tag_ids).toEqual([])
+  })
+
+  it('takes a form that has no list yet', async () => {
+    const { container } = render(CheckboxGroupForm, { data: { title: 'x' } })
+    await fireEvent.click(boxes(container)[0])
+    await fireEvent.submit(container.querySelector('form'))
+    expect(sendt[0].data.tag_ids).toEqual(['1'])
+  })
+
+  it('puts the error on the group, and every box knows', async () => {
+    const { container } = render(CheckboxGroupForm, {
+      errors: { tag_ids: 'tag_ids contains 9, which does not match a row in tags' },
+    })
+    expect(container.querySelector('fieldset legend').textContent).toContain('Tags')
+    expect(container.textContent).toContain('does not match a row')
+    expect(boxes(container).every((b) => b.getAttribute('aria-invalid') === 'true')).toBe(true)
+  })
+
+  it('has no axe violations', async () => {
+    const { container } = render(CheckboxGroupForm)
+    expect(await violations(container)).toEqual([])
+  }, 30000)
 })

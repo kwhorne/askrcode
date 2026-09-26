@@ -78,14 +78,20 @@ type
   end;
   TPlanColumns = array of TPlanColumn;
 
-  TPlanRelationKind = (prBelongsTo, prHasMany);
+  TPlanRelationKind = (prBelongsTo, prHasMany, prBelongsToMany);
 
   TPlanRelation = record
     Kind: TPlanRelationKind;
     Name: string;        { Maker, Gadgets }
     Table: string;       { the other table }
     Model: string;       { the other model, without the T }
-    ForeignKey: string;  { the column on the many side }
+    ForeignKey: string;  { the column on the many side; for a pivot, its
+                           column that points back here }
+    { BelongsToMany only: the pivot, its column that points at the other
+      table, and the name the ids go under in a request -- tag_ids. }
+    Pivot: string;
+    RelatedKey: string;
+    InputKey: string;
   end;
   TPlanRelations = array of TPlanRelation;
 
@@ -113,6 +119,12 @@ type
   what is wrong goes in Problems, so a caller can print all of it. }
 function PlanResource(Schema: TDbSchema; const ModelName: string;
   const Table: string = ''): TResourcePlan;
+
+{ Whether T is a pivot: two foreign keys to two other tables and nothing
+  of its own but an id and timestamps. The keys and the tables they point
+  at come back ordered by the tables' names. }
+function PivotOf(Schema: TDbSchema; T: TDbTable;
+  out KeyA, RefA, KeyB, RefB: string): Boolean;
 
 { The column in a plan, by name, or -1. }
 function PlanColumnIndex(const P: TResourcePlan; const Column: string): Integer;
@@ -218,6 +230,55 @@ begin
       Exit(True);
     end;
   Result := False;
+end;
+
+{ A pivot: two foreign keys to two other tables, and nothing of its own
+  -- at most a whole-number id and the two timestamps. A column more is
+  data about the link, and then the table is a resource of its own with
+  two BelongsTo. }
+function PivotOf(Schema: TDbSchema; T: TDbTable;
+  out KeyA, RefA, KeyB, RefB: string): Boolean;
+var
+  I: Integer;
+  C: TDbColumn;
+  Swap: string;
+begin
+  KeyA := '';
+  RefA := '';
+  KeyB := '';
+  RefB := '';
+  Result := False;
+  if T.ForeignKeyCount <> 2 then
+    Exit;
+  KeyA := T.ForeignKey(0).Column;
+  RefA := T.ForeignKey(0).RefTable;
+  KeyB := T.ForeignKey(1).Column;
+  RefB := T.ForeignKey(1).RefTable;
+  if (KeyA = KeyB) or (Schema.Table(RefA) = nil) or (Schema.Table(RefB) = nil) then
+    Exit;
+  for I := 0 to T.ColumnCount - 1 do
+  begin
+    C := T.Column(I);
+    if (C.Name = KeyA) or (C.Name = KeyB) or (C.Name = 'created_at') or
+       (C.Name = 'updated_at') then
+      Continue;
+    if C.IsPrimaryKey and (C.Name = 'id') then
+      Continue;
+    Exit;
+  end;
+  { In the order of the tables' names, not the order the schema lists
+    them: SQLite reports foreign keys backwards, and a message that named
+    the two sides differently on each database would read as two things. }
+  if RefB < RefA then
+  begin
+    Swap := KeyA;
+    KeyA := KeyB;
+    KeyB := Swap;
+    Swap := RefA;
+    RefA := RefB;
+    RefB := Swap;
+  end;
+  Result := True;
 end;
 
 { Whether a unique index covers this column alone. The primary key's own
@@ -338,7 +399,7 @@ var
   Rel: TPlanRelation;
   FirstString: string;
   HasCreated, HasUpdated: Boolean;
-  Near: string;
+  Near, KeyA, RefA, KeyB, RefB, Mine, Theirs: string;
 begin
   Result.Model := ModelName;
   Result.Table := Table;
@@ -371,6 +432,15 @@ begin
       'exists; make it first with askr make model %s name:type ... and ' +
       'askr migrate, or name another with --table. The tables there are: %s.',
       [Result.Table, ModelName, Near]));
+    Exit;
+  end;
+
+  if PivotOf(Schema, T, KeyA, RefA, KeyB, RefB) then
+  begin
+    Say(Result.Problems, Format(
+      '%s is the pivot between %s and %s: two keys, and no rows of its own ' +
+      'to list or edit. A resource for %s offers %s as boxes to tick, and ' +
+      'one for %s offers %s.', [T.Name, RefA, RefB, RefA, RefB, RefB, RefA]));
     Exit;
   end;
 
@@ -555,6 +625,9 @@ begin
       if Copy(Name_, Length(Name_) - 2, 3) = '_id' then
         Name_ := Copy(Name_, 1, Length(Name_) - 3);
       Rel.Kind := prBelongsTo;
+      Rel.Pivot := '';
+      Rel.RelatedKey := '';
+      Rel.InputKey := '';
       Rel.Name := PropFor(Name_);
       Rel.Table := Result.Columns[I].Field.RefTable;
       Rel.Model := PropFor(SingularOf(Rel.Table));
@@ -571,16 +644,65 @@ begin
       end;
     end;
 
-  { Has many: the other tables that point here. }
+  { Has many: the other tables that point here. A pivot is not one of
+    them: it is the other table, many to many, through it. }
   for I := 0 to Schema.TableCount - 1 do
   begin
     Other := Schema.TableAt(I);
     if Other.Name = Result.Table then
       Continue;
+    if PivotOf(Schema, Other, KeyA, RefA, KeyB, RefB) then
+    begin
+      if (RefA = Result.Table) and (RefB = Result.Table) then
+      begin
+        Say(Result.Notes, Format(
+          '%s joins %s to itself. Which key means which side is a decision, ' +
+          'not a convention, so it is left out of the form; name both keys ' +
+          'in BelongsToMany.', [Other.Name, Result.Table]));
+        Continue;
+      end;
+      if RefA = Result.Table then
+      begin
+        Mine := KeyA;
+        Theirs := RefB;
+        Rel.RelatedKey := KeyB;
+      end
+      else if RefB = Result.Table then
+      begin
+        Mine := KeyB;
+        Theirs := RefA;
+        Rel.RelatedKey := KeyA;
+      end
+      else
+        Continue;
+      if SingularOf(Theirs) = '' then
+      begin
+        Say(Result.Notes, Format(
+          '%s joins %s to %s, and no model name pluralises to %s, so the ' +
+          'relation is left out. Name the model yourself.',
+          [Other.Name, Result.Table, Theirs, Theirs]));
+        Continue;
+      end;
+      Rel.Kind := prBelongsToMany;
+      Rel.Name := PropFor(Theirs);
+      Rel.Table := Theirs;
+      Rel.Model := PropFor(SingularOf(Theirs));
+      Rel.ForeignKey := Mine;
+      Rel.Pivot := Other.Name;
+      { The same rule IdsInputName has: the key to the other table,
+        plural. }
+      Rel.InputKey := Rel.RelatedKey + 's';
+      SetLength(Result.Relations, Length(Result.Relations) + 1);
+      Result.Relations[High(Result.Relations)] := Rel;
+      Continue;
+    end;
     for J := 0 to Other.ForeignKeyCount - 1 do
       if Other.ForeignKey(J).RefTable = Result.Table then
       begin
         Rel.Kind := prHasMany;
+        Rel.Pivot := '';
+        Rel.RelatedKey := '';
+        Rel.InputKey := '';
         Rel.Name := PropFor(Other.Name);
         Rel.Table := Other.Name;
         Rel.Model := PropFor(SingularOf(Other.Name));
@@ -724,13 +846,19 @@ begin
     begin
       Add('  Relations:');
       for I := 0 to High(P.Relations) do
-        if P.Relations[I].Kind = prBelongsTo then
-          Add(Format('    belongs to %s (T%s) by %s',
-            [P.Relations[I].Name, P.Relations[I].Model, P.Relations[I].ForeignKey]))
-        else
-          Add(Format('    has many %s (T%s) by %s.%s',
-            [P.Relations[I].Name, P.Relations[I].Model, P.Relations[I].Table,
-             P.Relations[I].ForeignKey]));
+        case P.Relations[I].Kind of
+          prBelongsTo:
+            Add(Format('    belongs to %s (T%s) by %s',
+              [P.Relations[I].Name, P.Relations[I].Model, P.Relations[I].ForeignKey]));
+          prHasMany:
+            Add(Format('    has many %s (T%s) by %s.%s',
+              [P.Relations[I].Name, P.Relations[I].Model, P.Relations[I].Table,
+               P.Relations[I].ForeignKey]));
+          prBelongsToMany:
+            Add(Format('    belongs to many %s (T%s) through %s, as %s',
+              [P.Relations[I].Name, P.Relations[I].Model, P.Relations[I].Pivot,
+               P.Relations[I].InputKey]));
+        end;
     end;
     Add('  Sorted by ' + P.DefaultSort + ' unless the request says otherwise.');
   end;

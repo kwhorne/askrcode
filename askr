@@ -939,7 +939,7 @@ make_check_socket() {
     return 0
   fi
   ok "askr token:issue gives a token that may write and one that may only read"
-  in_box "python3 -c \"import sqlite3; c=sqlite3.connect('storage/api.sqlite'); c.execute(\\\"insert into makers(name, created_at, updated_at) values('Acme', datetime('now'), datetime('now'))\\\"); c.commit()\"" \
+  in_box "python3 -c \"import sqlite3; c=sqlite3.connect('storage/api.sqlite'); c.execute(\\\"insert into makers(name, created_at, updated_at) values('Acme', datetime('now'), datetime('now'))\\\"); c.execute(\\\"insert into tags(name, created_at, updated_at) values('Red', datetime('now'), datetime('now')), ('Blue', datetime('now'), datetime('now'))\\\"); c.commit()\"" \
     shop >/dev/null 2>&1 || true
 
   docker rm -f askr-makecheck-api >/dev/null 2>&1
@@ -1010,6 +1010,32 @@ make_check_socket() {
   [ "$c" = "422" ] && grep -q '"name"' "$work/sock-body" &&
     ok "and a name that is taken is a 422 on name" ||
     bad "a name that is taken is a 422" "got $c: $(head -c 200 "$work/sock-body")"
+
+  # Tags over the wire: ids in, rows out, and a key left out is left alone.
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -d '{"name":"Tagged","born":"2026-01-02","maker_id":1,"tag_ids":[1,2]}' "$base/api/gadgets")
+  tloc=$(grep -i '^location:' "$work/sock-head" | tr -d '\r' | sed 's/^[Ll]ocation: *//')
+  if [ "$c" = "201" ] && grep -q '"tags":\[{' "$work/sock-body" &&
+     grep -q '"name":"Red"' "$work/sock-body" && grep -q '"name":"Blue"' "$work/sock-body"; then
+    ok "one made with tag_ids answers with its tags"
+  else
+    bad "one made with tag_ids answers with its tags" "got $c: $(head -c 300 "$work/sock-body")"
+  fi
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -X PATCH -d '{"qty":4}' "$base$tloc")
+  [ "$c" = "200" ] && grep -q '"name":"Blue"' "$work/sock-body" &&
+    ok "a PATCH without tag_ids leaves them" ||
+    bad "a PATCH without tag_ids leaves them" "got $c: $(head -c 300 "$work/sock-body")"
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -X PATCH -d '{"tag_ids":[999]}' "$base$tloc")
+  [ "$c" = "422" ] && grep -q '"tag_ids"' "$work/sock-body" &&
+    ok "a tag that is not there is a 422 on tag_ids" ||
+    bad "a tag that is not there is a 422" "got $c: $(head -c 300 "$work/sock-body")"
+  c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
+        -X PATCH -d '{"tag_ids":[]}' "$base$tloc")
+  [ "$c" = "200" ] && grep -q '"tags":\[\]' "$work/sock-body" &&
+    ok "and an empty list takes them all off" ||
+    bad "an empty list takes them all off" "got $c: $(head -c 300 "$work/sock-body")"
 
   c=$(code -H "$J" -H "Authorization: Bearer $wtok" -H 'Content-Type: application/json' \
         -X PATCH -d '{"name":"Patched"}' "$base$loc")
@@ -1341,13 +1367,52 @@ EOF
   # The round trip's tests go: make resource writes the test program.
   in_box "rm -f storage/resource.sqlite tests/app_tests.lpr && $askr_bin make migration Noop2" \
     shop >/dev/null 2>&1 || true
+
+  # A pivot: tags, and the table between them and gadgets. The relation
+  # goes into the Gadget model make model wrote, line for line as make
+  # pivot says -- which is the check that what it prints is right.
+  if in_box "$askr_bin make model Tag 'name:string(40):unique' && $askr_bin make pivot Gadget Tag" \
+       shop >"$work/pivot.log" 2>&1; then
+    ok "make model Tag, and make pivot Gadget Tag"
+  else
+    bad "make model Tag, and make pivot Gadget Tag" "$(tail -6 "$work/pivot.log")"
+  fi
+  if grep -qF "uses       App.Models.Tag, and Askr.Urd.Query where TModelList is not in scope yet" "$work/pivot.log" &&
+     grep -qF "type       TTagList = TModelList<TTag>;" "$work/pivot.log" &&
+     grep -qF "published  Tags: TTagList;" "$work/pivot.log" &&
+     grep -qF "Describe   S.BelongsToMany('Tags', TTag);" "$work/pivot.log"; then
+    ok "and it prints what the model needs"
+  else
+    bad "and it prints what the model needs" "$(tail -12 "$work/pivot.log")"
+  fi
+  if python3 - "$work/shop/app/Models/App.Models.Gadget.pas" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+for old, new in [
+    ("  SysUtils, Askr.Urd.Model;", "  SysUtils, Askr.Urd.Model, App.Models.Tag, Askr.Urd.Query;"),
+    ("\ntype\n", "\ntype\n  TTagList = TModelList<TTag>;\n\n"),
+    ("  published\n", "  published\n    Tags: TTagList;\n"),
+    ("  S.Table('gadgets');\n", "  S.Table('gadgets');\n  S.BelongsToMany('Tags', TTag);\n"),
+]:
+    if s.count(old) != 1:
+        sys.exit('no single place for: ' + old.strip())
+    s = s.replace(old, new, 1)
+open(p, 'w').write(s)
+PY
+  then
+    ok "which go where it says"
+  else
+    bad "the lines go into the Gadget model"
+  fi
   printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/resource.sqlite\n' > "$work/shop/.env"
   if ! in_box "$askr_bin build && $askr_bin migrate" shop >"$work/res-migrate.log" 2>&1; then
     bad "the project migrates before make resource" "$(grep -E 'rror|Fatal' "$work/res-migrate.log" | head -5)"
     return 1
   fi
 
-  for model in Gadget Maker Note; do
+  # Tag first, so the gadget's page can link to the tags' pages.
+  for model in Tag Gadget Maker Note; do
     if in_box "$askr_bin make resource $model" shop >"$work/res-$model.log" 2>&1; then
       ok "make resource $model"
     else
@@ -1363,6 +1428,24 @@ EOF
     ok "and writes one for a table that had none"
   else
     bad "and writes one for a table that had none"
+  fi
+  if grep -q "belongs to many Tags (TTag) through gadget_tag, as tag_ids" "$work/res-Gadget.log" &&
+     ! grep -q "left off the form" "$work/res-Gadget.log"; then
+    ok "gadgets belong to many tags, with the boxes on the form"
+  else
+    bad "gadgets belong to many tags" "$(grep -E 'many|left off' "$work/res-Gadget.log" | head -4)"
+  fi
+  if grep -q "cannot use each other" "$work/res-Tag.log"; then
+    ok "and tags say why they cannot have boxes for gadgets too"
+  else
+    bad "tags say why they have no boxes for gadgets" "$(tail -8 "$work/res-Tag.log")"
+  fi
+  if in_box "$askr_bin make resource GadgetTag --table=gadget_tag" shop >"$work/res-pivot.log" 2>&1; then
+    bad "the pivot is refused as a resource" "it exited 0"
+  else
+    grep -q "is the pivot between gadgets and tags" "$work/res-pivot.log" &&
+      ok "the pivot is refused as a resource, saying what it is" ||
+      bad "the pivot is refused, saying what it is" "$(cat "$work/res-pivot.log")"
   fi
 
   before=$(cksum < "$work/shop/app/Http/App.Http.GadgetsController.pas")
@@ -1421,9 +1504,9 @@ EOF
 
   echo
   if in_box "$askr_bin build" shop >"$work/res-build.log" 2>&1; then
-    ok "the project builds with the three resources in it"
+    ok "the project builds with the four resources in it"
   else
-    bad "the project builds with the three resources in it" \
+    bad "the project builds with the four resources in it" \
       "$(grep -E 'rror|Fatal' "$work/res-build.log" | head -8)"
     return 1
   fi

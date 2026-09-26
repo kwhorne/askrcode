@@ -140,6 +140,24 @@ What the table says, the resource does:
   with more is the wrong control. Without a model for it, it is a number,
   and says what it points at. A key to a table that is not there is not a
   relation.
+- A **pivot** — a table of two foreign keys to two other tables and
+  nothing of its own but an id and timestamps, such as the one
+  `askr make pivot Gadget Tag` writes — is a box to tick per row of the
+  other table, in one group named for it (`tag_ids`). The edit form starts
+  with the attached ones ticked; the page shows them, linked when the
+  other table has pages; the API reads them with the row and answers a
+  write with them. Store and Update check the ids in one query, so an id
+  to nothing is a message on the field, and save the row and its pivot in
+  one transaction. A request that does not send `tag_ids` leaves them as
+  they are; one that sends an empty list takes them all off. The pivot
+  itself is refused as a resource, and says what it is.
+
+  The boxes need a model for the other table, and a model here that
+  declares the relation. When the model here is written by the command,
+  it declares it. When it is there already, the command says which lines
+  to add rather than editing it. And when the other model already uses
+  this one, it says that two units cannot use each other — the relation
+  lives on one side, or both models live in one unit.
 - A column named like a secret — `password`, `token`, `hash`, `secret`,
   `salt` — is hidden from JSON, and is in neither the form, the list nor
   the page. A guess, made in the direction whose failure is loud.
@@ -238,16 +256,19 @@ claims on this page. It scaffolds a project and then:
 - reads the table with every type back on each database, and requires
   the exact `Describe` and `Rules` lines `make model` wrote — the reader
   `make resource` stands on;
-- makes three resources, one of them on a table with no model, a keyword
-  for a column, a secret and soft deletes; builds them, and runs their
-  tests on all three databases;
+- makes four resources, one of them on a table with no model, a keyword
+  for a column, a secret and soft deletes, and one with a pivot to
+  another — whose relation is added to its model exactly as
+  `make pivot` printed it; builds them, and runs their tests on all three
+  databases;
 - makes two of them `--api` too, and requires `askr openapi --check` to
   find nothing and a real OpenAPI validator to accept the document;
 - drives the API over a socket with tokens from `askr token:issue`,
   including forty refusals in a row and then a request that must still be
   answered;
 - drives the pages in Chrome — create, show, edit, a refused form, the
-  list, search, sort and delete — and runs axe, contrast included, over
+  list, search, sort and delete, and ticking, unticking and clearing the
+  boxes of a pivot — and runs axe, contrast included, over
   every page in light and dark at 1280 and 390 px, with the lists empty
   and with rows in them.
 

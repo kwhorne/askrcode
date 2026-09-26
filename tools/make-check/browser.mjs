@@ -108,6 +108,18 @@ await until(`/^\\/makers\\/\\d+$/.test(location.pathname)`, 'the maker page')
 check(/^\/makers\/\d+$/.test(await js('location.pathname')), 'a new maker lands on its page', before)
 check((await text()).includes('Acme Works'), 'which shows it')
 
+// ---- tags: the rows a gadget ticks boxes for ----
+console.log('- tags')
+for (const name of ['Red', 'Blue']) {
+  await go('/tags/new')
+  await fill('Name', name)
+  await submit()
+  await until(`/^\\/tags\\/\\d+$/.test(location.pathname)`, 'the tag page for ' + name)
+}
+check(/^\/tags\/\d+$/.test(await js('location.pathname')), 'two tags are made through their own pages')
+const ticked = (label) => js(`(${control(label)})?.checked`)
+const tick = (label) => js(`(${control(label)}).click()`)
+
 // ---- a gadget with every type ----
 console.log('- gadgets')
 await go('/gadgets/new')
@@ -126,6 +138,9 @@ await fill('Meta', '{"k":1}')
 await fill('Tag', '123e4567-e89b-12d3-a456-426614174000')
 const makerId = await js(`[...(${control('Maker')}).options].find((o) => o.textContent === 'Acme Works').value`)
 await fill('Maker', makerId)
+check((await ticked('Red')) === false && (await ticked('Blue')) === false,
+  'a new gadget starts with no tag ticked')
+await tick('Red')
 await submit()
 await until(`/^\\/gadgets\\/\\d+$/.test(location.pathname)`, 'the gadget page')
 const gid = (await js('location.pathname')).split('/').pop()
@@ -138,6 +153,9 @@ check(t.includes('Acme Works'), 'the maker is shown by its name, not its id', t)
 check(/Active\s*Yes/.test(t), 'the checkbox saved', t)
 check(t.includes('{"k":1}') || t.includes('{"k": 1}'), 'the JSON', t)
 check((await js('document.body.innerText')).includes('Gadget created.'), 'and the flash says so')
+check(/Tags\s*Red/.test(t) && !t.includes('Blue'), 'the ticked tag is saved, and only that one', t)
+check(await js(`[...document.querySelectorAll('main a')].some((a) => a.textContent.trim() === 'Red' && /\\/tags\\/\\d+$/.test(a.getAttribute('href')))`),
+  'and links to its own page')
 
 // ---- the maker's page lists what points at it ----
 await go(`/makers/${makerId}`)
@@ -160,13 +178,24 @@ check((await valueOf('Seen at'))?.startsWith('2026-01-02T03:04'), 'and the datet
 check((await valueOf('Born')) === '2026-02-03', 'and the date', await valueOf('Born'))
 check((await valueOf('Maker')) === makerId, 'and the maker is selected', await valueOf('Maker'))
 check(await js(`document.querySelector('input[type=checkbox]').checked`), 'and the checkbox is ticked')
+check((await ticked('Red')) === true && (await ticked('Blue')) === false,
+  'and the tag it has is ticked, and only that one')
 await fill('Name', 'Sprocket II')
+await tick('Red')
+await tick('Blue')
 await submit()
 await until(`location.pathname === '/gadgets/${gid}'`, 'back on the gadget page')
 t = await text()
 check(t.includes('Sprocket II'), 'the edit is saved')
 check(t.includes('2026-01-02 03:04:00'), 'and the datetime nobody touched is still there', t)
 check(t.includes('Acme Works'), 'and the maker', t)
+check(/Tags\s*Blue/.test(t) && !t.includes('Red'), 'the untick and the tick are both saved', t)
+await go(`/gadgets/${gid}/edit`)
+await tick('Blue')
+await submit()
+await until(`location.pathname === '/gadgets/${gid}'`, 'back after unticking')
+t = await text()
+check(!t.includes('Blue') && !t.includes('Red'), 'every box unticked is no tags, not the same tags', t)
 
 // ---- what the rules refuse ----
 await go('/gadgets/new')

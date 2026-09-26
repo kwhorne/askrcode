@@ -2858,6 +2858,11 @@ begin
     AssertEqual(E.First('tag_ids'),
       'tag_ids contains 99, 100, which does not match a row in id_tags',
       'on the field, naming every one and the table');
+
+    TInertia.SetVersion('t');
+    AssertContains(Inertia('X', ['tag_ids', JsonIds([3, 1]), 'none', JsonIds(nil)])
+      .Body.ToString, '"tag_ids":[3,1],"none":[]',
+      'ids go out as a prop, an array of numbers, empty as empty');
   finally
     UseDb(nil);
     UseArena(nil);
@@ -2920,7 +2925,7 @@ begin
       Parents := ParentsOf(S, P, Root);
       AssertEqual(Length(Parents), 1, 'one table to point at');
       AssertFalse(Parents[0].Available, 'with no model for it, there is no select');
-      F := ResourceFiles(P, Parents, nil, True, True, False);
+      F := ResourceFiles(P, Parents, nil, nil, True, True, False);
       AssertContains(TextOf(F, 'Fields.svelte'),
         'label="Maker" required description="The id of a row in makers"',
         'and the field is a number that says what it is');
@@ -2955,7 +2960,7 @@ begin
       AssertEqual(Length(Kids), 1, 'one table points here');
       AssertTrue(Kids[0].Available, 'with a model to query it with');
       AssertFalse(Kids[0].Linked, 'and no pages of its own to link to yet');
-      F := ResourceFiles(P, Parents, Kids, True, True, True);
+      F := ResourceFiles(P, Parents, Kids, nil, True, True, True);
       Ctl := TextOf(F, 'App.Http.GadgetsController.pas');
       Fields := TextOf(F, 'Fields.svelte');
       Index_ := TextOf(F, 'Index.svelte');
@@ -3044,7 +3049,7 @@ begin
         not pretend to write. }
       Locked := PlanResource(S, 'Lock');
       AssertFalse(Locked.CanCreate, 'a NOT NULL secret with no default means no create');
-      F := ResourceFiles(Locked, nil, nil, True, True, False);
+      F := ResourceFiles(Locked, nil, nil, nil, True, True, False);
       AssertNotContains(TextOf(F, 'App.Tests.Locks.pas'), '@TestStore',
         'so the test does not try');
       AssertContains(TextOf(F, 'App.Tests.Locks.pas'), 'Nothing that writes is tested',
@@ -3071,6 +3076,182 @@ begin
   finally
     C.Free;
     A.Free;
+  end;
+end;
+
+{ A pivot, as the generators see it: refused as a resource of its own,
+  a BelongsToMany from each side, boxes on the form when the other table
+  has a model and the relation can be declared, and a sentence saying
+  what to do when it cannot. The gate builds and runs what this holds. }
+procedure TestResourceManyToMany;
+const
+  Root = '.build/resource-many';
+var
+  A: TArena;
+  C, C2: TDbConnection;
+  S, S2: TDbSchema;
+  P, Pv, Tg, Ar: TResourcePlan;
+  Manys: TManyInfos;
+  F: TGenFiles;
+  Model, Ctl, Fields, Edit, Add, Show, Api, Test_, ApiTest: string;
+  I, Many: Integer;
+  L: TStringList;
+
+  procedure Put(const Path_, Text_: string);
+  begin
+    L.Text := Text_;
+    L.SaveToFile(Path_);
+  end;
+
+begin
+  RemoveTree(Root);
+  ForceDirectories(Root + '/app/Models');
+  A := TArena.Create(64 * 1024);
+  C := OpenDbConnection('sqlite::memory:');
+  C2 := OpenDbConnection('sqlite::memory:');
+  L := TStringList.Create;
+  S := nil;
+  S2 := nil;
+  try
+    C.Exec(A, 'CREATE TABLE posts (id INTEGER PRIMARY KEY, title VARCHAR(80) NOT NULL)');
+    C.Exec(A, 'CREATE TABLE tags (id INTEGER PRIMARY KEY, name VARCHAR(40) NOT NULL UNIQUE)');
+    C.Exec(A, 'CREATE TABLE post_tag (post_id BIGINT NOT NULL REFERENCES posts(id) ' +
+      'ON DELETE CASCADE, tag_id BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE)');
+    { A link with data of its own is not a pivot: it is a table. }
+    C.Exec(A, 'CREATE TABLE votes (id INTEGER PRIMARY KEY, post_id BIGINT REFERENCES posts(id), ' +
+      'tag_id BIGINT REFERENCES tags(id), weight INTEGER NOT NULL)');
+    S := IntrospectSchema(C);
+
+    Pv := PlanResource(S, 'PostTag', 'post_tag');
+    AssertTrue(Length(Pv.Problems) = 1, 'a pivot is not a resource');
+    AssertContains(Pv.Problems[0], 'the pivot between posts and tags',
+      'and it says what it is');
+    AssertContains(Pv.Problems[0], 'offers tags as boxes to tick', 'and where to go instead');
+
+    P := PlanResource(S, 'Post');
+    Many := -1;
+    for I := 0 to High(P.Relations) do
+      if P.Relations[I].Kind = prBelongsToMany then
+      begin
+        AssertEqual(Many, -1, 'one relation through the one pivot');
+        Many := I;
+      end;
+    AssertTrue(Many >= 0, 'posts belong to many tags');
+    AssertEqual(P.Relations[Many].Name, 'Tags', 'named for the other table');
+    AssertEqual(P.Relations[Many].Pivot, 'post_tag', 'through the pivot');
+    AssertEqual(P.Relations[Many].ForeignKey, 'post_id', 'by the key back here');
+    AssertEqual(P.Relations[Many].RelatedKey, 'tag_id', 'and the key there');
+    AssertEqual(P.Relations[Many].InputKey, 'tag_ids', 'and the ids go under tag_ids');
+    for I := 0 to High(P.Relations) do
+      AssertTrue(P.Relations[I].Table <> 'post_tag', 'the pivot is not a has-many');
+    AssertContains(PlanText(P), 'belongs to many Tags (TTag) through post_tag, as tag_ids',
+      'and the plan says so');
+    Tg := PlanResource(S, 'Tag');
+    Many := -1;
+    for I := 0 to High(Tg.Relations) do
+      if Tg.Relations[I].Kind = prBelongsToMany then
+        Many := I;
+    AssertTrue((Many >= 0) and (Tg.Relations[Many].InputKey = 'post_ids'),
+      'and tags to many posts, the other way');
+
+    Manys := ManysOf(S, P, Root, True);
+    AssertFalse(Manys[0].Available, 'with no model for tags there are no boxes');
+    AssertContains(Manys[0].Why, 'askr make resource Tag', 'and it says what to run');
+    Put(Root + '/app/Models/App.Models.Tag.pas', 'unit App.Models.Tag;');
+    Manys := ManysOf(S, P, Root, True);
+    AssertTrue(Manys[0].Available, 'with one, and the post model being written, there are');
+    AssertEqual(Manys[0].DescribeLine, 'S.BelongsToMany(''Tags'', TTag);',
+      'and a conventional pivot needs no names');
+
+    F := ResourceFiles(P, nil, nil, Manys, True, True, True);
+    Model := TextOf(F, 'App.Models.Post.pas');
+    Ctl := TextOf(F, 'App.Http.PostsController.pas');
+    Fields := TextOf(F, 'Fields.svelte');
+    Edit := TextOf(F, 'Edit.svelte');
+    Add := TextOf(F, 'Add.svelte');
+    Show := TextOf(F, 'Show.svelte');
+    Api := TextOf(F, 'App.Http.PostsApiController.pas');
+    Test_ := TextOf(F, 'App.Tests.Posts.pas');
+    ApiTest := TextOf(F, 'App.Tests.PostsApi.pas');
+
+    AssertContains(Model, 'SysUtils, Askr.Urd.Model, Askr.Urd.Query, App.Models.Tag;',
+      'the model uses the other, and the unit its list type is in');
+    AssertContains(Model, 'TTagList = TModelList<TTag>;', 'names the list type');
+    AssertContains(Model, 'S.BelongsToMany(''Tags'', TTag);', 'declares the relation');
+    AssertTrue((Pos('Tags: TTagList;', Model) > 0) and
+      (Pos('Tags: TTagList;', Model) < Pos('property Id:', Model)),
+      'and holds it in a field before the properties');
+
+    AssertContains(Ctl, 'function TagsChoices: TModelList<TTag>;', 'the boxes are the tags');
+    AssertContains(Ctl, '.OrderBy(Tags.Name)', 'ordered by their label, typed');
+    AssertContains(Ctl, '''tags_choices'', TagsChoices', 'handed to both forms');
+    AssertContains(Ctl, 'Req.InputIds(''tag_ids'', TagsIds, M.Errors);', 'the ids are read');
+    AssertContains(Ctl, 'IdsExist(M.Errors, ''tag_ids'', ''tags'', TagsIds);',
+      'and checked, on the field');
+    AssertContains(Ctl, 'M.Sync(''Tags'', TagsIds);', 'and synced');
+    AssertTrue(Pos('C.StartTransaction;', Ctl) < Pos('M.Sync(', Ctl),
+      'with the row, in one transaction');
+    AssertContains(Ctl, 'if HasTags then', 'and only when the request sent the key');
+    AssertContains(Ctl, 'JsonIds(M.RelatedIds(''Tags''))', 'the edit form is told what is ticked');
+    AssertContains(Ctl, '.Preload([''Tags''])', 'and the page loads them');
+
+    AssertContains(Fields, 'export function toForm(row, ids = {})', 'the form takes the ids');
+    AssertContains(Fields, 'tag_ids: (ids.tag_ids ?? []).map(String),', 'as text, as a box holds them');
+    AssertContains(Fields, '<Field name="tag_ids" label="Tags" as="fieldset">', 'one group');
+    AssertContains(Fields,
+      '<Checkbox name="tag_ids" value={String(o.id)} label={String(o.name)} />',
+      'a box per tag, sharing a name');
+    AssertContains(Edit, 'data={toForm(post, { tag_ids })}', 'the edit form starts ticked');
+    AssertContains(Add, '{tags_choices}', 'the new form has the boxes too');
+    AssertContains(Show, 'post.tags', 'the page shows them');
+
+    AssertContains(Api, '.Preload([''Tags''])', 'the API reads them with the row');
+    AssertContains(Api, 'M := FindLoaded(M.Id);', 'and answers a write with them');
+    AssertContains(Api, 'Req.InputIds(''tag_ids''', 'and reads them from the body');
+
+    AssertContains(Test_, '@TestTags', 'the test ticks and unticks');
+    AssertContains(Test_, '[999999999]', 'and sends an id to nothing');
+    AssertContains(ApiTest, '@TestTags', 'and so does the API test');
+
+    { A model that is there without the relation: no boxes, and the lines. }
+    Put(Root + '/app/Models/App.Models.Post.pas', 'unit App.Models.Post;');
+    Manys := ManysOf(S, P, Root, False);
+    AssertFalse(Manys[0].Available, 'a model there without the relation gets no boxes');
+    AssertContains(Manys[0].Why, 'S.BelongsToMany(''Tags'', TTag);', 'and is told the line');
+    Put(Root + '/app/Models/App.Models.Post.pas',
+      'unit App.Models.Post;' + LineEnding + '    Tags: TTagList;' + LineEnding +
+      '  S.BelongsToMany(''Tags'', TTag);');
+    Manys := ManysOf(S, P, Root, False);
+    AssertTrue(Manys[0].Available, 'with it, the boxes are there');
+    F := ResourceFiles(P, nil, nil, Manys, False, True, False);
+    AssertEqual(TextOf(F, 'App.Models.Post.pas'), '', 'and the model is not written over');
+
+    { Two units cannot use each other. }
+    Put(Root + '/app/Models/App.Models.Tag.pas', 'unit App.Models.Tag;' + LineEnding +
+      'uses App.Models.Post;');
+    Manys := ManysOf(S, P, Root, True);
+    AssertFalse(Manys[0].Available, 'a model that would use one that uses it gets no boxes');
+    AssertContains(Manys[0].Why, 'cannot use each other', 'and is told why');
+
+    { A pivot with names of its own gets every name in Describe. }
+    C2.Exec(A, 'CREATE TABLE articles (id INTEGER PRIMARY KEY, title VARCHAR(80))');
+    C2.Exec(A, 'CREATE TABLE labels (id INTEGER PRIMARY KEY, name VARCHAR(40))');
+    C2.Exec(A, 'CREATE TABLE article_label_links (article_id BIGINT REFERENCES articles(id), ' +
+      'label_id BIGINT REFERENCES labels(id))');
+    S2 := IntrospectSchema(C2);
+    Ar := PlanResource(S2, 'Article');
+    Manys := ManysOf(S2, Ar, Root, True);
+    AssertEqual(Manys[0].DescribeLine,
+      'S.BelongsToMany(''Labels'', TLabel, ''article_label_links'', ''article_id'', ''label_id'');',
+      'a pivot named otherwise is named in full');
+  finally
+    S2.Free;
+    S.Free;
+    L.Free;
+    C2.Free;
+    C.Free;
+    A.Free;
+    RemoveTree(Root);
   end;
 end;
 
@@ -3308,6 +3489,83 @@ begin
     AssertEqual(ProblemMember(Json_,
       'components.schemas.OwnedNote.properties.title.readOnly'), '',
       'and a column a request sets is not');
+  finally
+    D.Free;
+  end;
+end;
+
+type
+  TOaTag = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+  TOaTagList = TModelList<TOaTag>;
+
+  TOaPost = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+  published
+    Tags: TOaTagList;
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+
+class procedure TOaTag.Describe(S: TSchema);
+begin
+  S.Table('oa_tags');
+end;
+
+class procedure TOaPost.Describe(S: TSchema);
+begin
+  S.Table('oa_posts');
+  S.BelongsToMany('Tags', TOaTag);
+end;
+
+{ A BelongsToMany in the document: its ids coming in, under the name
+  IdsInputName gives them, and its rows going out, with a schema of their
+  own that no operation named. }
+procedure TestOpenApiManyToMany;
+var
+  D: TOpenApi;
+  Json_: string;
+begin
+  D := TOpenApi.Create;
+  try
+    D.Title('Many').Version('1').Covers('/api');
+    D.Post('/api/posts').Body(TOaPost).Returns(TOaPost, 201);
+    Json_ := D.ToJson;
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OaPostInput.properties.oa_tag_ids.type'), 'array',
+      'the ids go in as a list');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OaPostInput.properties.oa_tag_ids.items.type'), 'integer',
+      'of whole numbers');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OaPostInput.properties.oa_tag_ids.writeOnly'), 'true',
+      'that are never sent back');
+    AssertContains(ProblemMember(Json_,
+      'components.schemas.OaPostInput.properties.oa_tag_ids.description'),
+      'Leave the key out to leave them as they are', 'and it says what absent means');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OaPost.properties.tags.items.$ref'),
+      '#/components/schemas/OaTag', 'the rows go out as the other model');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OaTag.properties.name.type'), 'string',
+      'which has a schema, though no operation named it');
+    AssertContains(Json_, '"required":["id","title"]',
+      'and the relation is not required: unloaded, it is left out');
+    AssertEqual(ProblemMember(Json_,
+      'components.schemas.OaPost.properties.oa_tag_ids.type'), '',
+      'the ids are not in what goes out');
   finally
     D.Free;
   end;
@@ -8044,6 +8302,10 @@ begin
   Test('the driver comes from config, and what it refuses',
     @TestSessionsFromConfig);
 
+  Group('Many to many in the generators');
+  Test('a pivot is boxes on both sides, and says why when it cannot be',
+    @TestResourceManyToMany);
+
   Group('make pivot');
   Test('the table between two models, named as BelongsToMany expects',
     @TestMakePivot);
@@ -8089,6 +8351,7 @@ begin
     @TestResourcePlan);
 
   Group('OpenAPI');
+  Test('a many-to-many, its ids in and its rows out', @TestOpenApiManyToMany);
   Test('generated from the models and the routes, and checked against both',
     @TestOpenApi);
 
