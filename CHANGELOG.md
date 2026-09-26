@@ -12,7 +12,18 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.14.0 — 2026-09-26
+
+Languages, and what an app with more than one process needs. The
+framework's messages, Lauf's own words, plurals, and numbers and dates
+are in the reader's language and format. Sessions can live in the
+database, so a login on one process is a login on all of them. Many rows
+relate to many through a pivot, from the model to the generated form. And
+an app can register commands of its own.
+
+A few changes can be felt in an app that exists -- an unknown command's
+exit code, `Preload` and soft deletes, a Lauf checkbox with a value, and
+numbers in messages. See UPGRADE.md.
 
 ### Added
 

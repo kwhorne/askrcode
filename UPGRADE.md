@@ -8,7 +8,11 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
-## Unreleased
+## 0.14.0
+
+**Worth reading if a script checks `askr`'s exit code, a page lists
+children with `Preload`, a Lauf checkbox carries a `value`, a test compares
+a validation message, or the app has a root template of its own.**
 
 **`askr <word>` for a word nothing answers exits 64, not 1.** A script
 that checked for exit 1 after an unknown command will see 64.
