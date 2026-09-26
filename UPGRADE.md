@@ -8,7 +8,7 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
-## Unreleased
+## 0.13.1
 
 **`FillInto` no longer fills `created_at`, `updated_at` or `deleted_at`**
 on a model that has `S.Timestamps` or `S.SoftDeletes`. If a handler

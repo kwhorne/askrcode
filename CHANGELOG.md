@@ -12,7 +12,15 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.13.1 — 2026-09-26
+
+What the generators left open. A form now refuses a duplicate and a key
+to nothing before the database does, a resource's page lists the rows
+that point at it, and a request can no longer set the columns a model
+owns -- which the OpenAPI document now says too.
+
+One change can be felt in an app that exists: `FillInto` no longer fills
+`created_at`, `updated_at` or `deleted_at`. See UPGRADE.md.
 
 ### Added
 
