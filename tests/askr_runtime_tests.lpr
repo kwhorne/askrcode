@@ -8124,6 +8124,75 @@ begin
   end;
 end;
 
+function TwiceMessage(R: TRouter; const Pattern: string): string;
+begin
+  Result := '';
+  try
+    R.Get(Pattern, TAlphaPlugin(nil).Hello);
+  except
+    on E: ERouterError do Result := E.Message;
+  end;
+end;
+
+procedure TestRouteTwice;
+var
+  R: TRouter;
+  Msg: string;
+begin
+  R := TRouter.Create;
+  try
+    R.Get('/orders/:id', TAlphaPlugin(nil).Hello);
+    AssertContains(TwiceMessage(R, '/orders/:slug'),
+      'GET /orders/:slug is registered twice (first as /orders/:id)',
+      'one route under another parameter name is the same route, and is refused');
+    R.Post('/orders/:id', TAlphaPlugin(nil).Hello);
+    AssertEqual(TwiceMessage(R, '/orders/new'), '', 'a literal beside a parameter is another route');
+    R.Get('/files/*path', TAlphaPlugin(nil).Hello);
+    AssertContains(TwiceMessage(R, '/files/*rest'), 'registered twice', 'so is a wildcard under another name');
+    AssertEqual(TwiceMessage(R, '/files'), '', 'and the path without it is another route');
+    R.Get('/about', TAlphaPlugin(nil).Hello);
+    AssertContains(TwiceMessage(R, '/about/'), 'registered twice',
+      'a trailing slash is the same route, as the router reads it');
+    R.Get('/time/10:30', TAlphaPlugin(nil).Hello);
+    AssertEqual(TwiceMessage(R, '/time/10:45'), '', 'a colon inside a segment is text, not a parameter');
+  finally
+    R.Free;
+  end;
+
+  { The plugin first, as app.lpr has it: the app's route is the second,
+    and the message says whose the first was. }
+  ResetPlugins;
+  R := TRouter.Create;
+  try
+    RegisterPlugin(TAlphaPlugin);
+    UsePlugins(R);
+    AssertContains(TwiceMessage(R, '/alpha'), '(first as /alpha, by the plugin alpha)',
+      'an app route on a plugin''s path names the plugin');
+    AssertEqual(R.Owner, '', 'and the router is the app''s again after the plugins');
+  finally
+    R.Free;
+    ResetPlugins;
+  end;
+
+  { The app first: the plugin cannot start, and says so. }
+  R := TRouter.Create;
+  try
+    R.Get('/alpha', TAlphaPlugin(nil).Hello);
+    RegisterPlugin(TAlphaPlugin);
+    Msg := '';
+    try
+      UsePlugins(R);
+    except
+      on E: EPluginError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'The plugin alpha could not add its routes: GET /alpha is registered twice',
+      'a plugin route on an app''s path stops the app, naming the plugin');
+  finally
+    R.Free;
+    ResetPlugins;
+  end;
+end;
+
 procedure TestSigV4;
 const
   Secret = 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY';
@@ -12953,6 +13022,7 @@ begin
   Test('an app starts its plugins in order, and one that cannot start stops it', @TestPluginContract);
   Test('an app.lpr from before plugins is wired, and a reshaped one is not guessed at', @TestWireAppLpr);
   Test('a plugin''s migrations run among the app''s by time, and roll back the same way', @TestPluginMigrations);
+  Test('a route added twice is refused where it is added, naming a plugin that owns the first', @TestRouteTwice);
 
   Group('Storage');
   Test('Signature V4 and presigned URLs are botocore''s, byte for byte', @TestSigV4);

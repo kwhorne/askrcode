@@ -8,6 +8,15 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## Unreleased
+
+**A route added twice stops the app where it is added.** Two routes with
+the same method and the same shape -- `/orders/:id` and `/orders/:slug`,
+or `/about` and `/about/` -- used to both be registered, and one of them
+never answered. The second now raises `ERouterError`, naming both. An app
+that starts after the upgrade had none; one that does not has a route it
+can delete.
+
 ## 0.15.0
 
 **Worth reading if the app writes a name into a mail address.**

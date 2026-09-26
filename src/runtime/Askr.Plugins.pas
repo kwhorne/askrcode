@@ -121,7 +121,12 @@ begin
     try
       P.Configure;
       Stage := 'add its routes';
-      P.Routes(R);
+      R.Owner := 'the plugin ' + P.Name;
+      try
+        P.Routes(R);
+      finally
+        R.Owner := '';
+      end;
     except
       on E: Exception do
       begin

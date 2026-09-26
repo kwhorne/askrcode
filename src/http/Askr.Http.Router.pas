@@ -72,7 +72,9 @@ type
     FHandler: TRouteHandler;
     FHandlerProc: TRouteHandlerProc;
     FSpecificity: Integer;
+    FOwner: string;
     procedure Parse(const APattern: string);
+    function Shape: string;
   public
     constructor Create(AMethod: THttpMethod; const APattern: string);
     { With and without the method check. The second exists so a 405 can be
@@ -113,6 +115,7 @@ type
     end;
     FNotFound: TRouteHandler;
     FSorted: Boolean;
+    FOwner: string;
     function Add(AMethod: THttpMethod; const APattern: string): TRoute;
     procedure SortRoutes;
     { The routing itself, without the after-filters. Handle runs the
@@ -124,6 +127,11 @@ type
   public
     constructor Create;
     destructor Destroy; override;
+
+    { Who the routes added from here on belong to, for the message when
+      one is added twice: UsePlugins sets it to 'the plugin stripe' while
+      a plugin adds its routes. '' is the app. }
+    property Owner: string read FOwner write FOwner;
 
     { Registration. The overload without "of object" exists for free
       functions. }
@@ -303,9 +311,50 @@ begin
   inherited Destroy;
 end;
 
-function TRouter.Add(AMethod: THttpMethod; const APattern: string): TRoute;
+{ The route as the router reads it, with the parameter names taken out:
+  /orders/:id and /orders/:slug are one route, and so are /about and
+  /about/ -- Parse skips empty segments. Built from the parsed segments,
+  not the text, so it cannot disagree with what matches. }
+function TRoute.Shape: string;
+var
+  I: Integer;
 begin
+  Result := '';
+  for I := 0 to High(FSegments) do
+    case FSegments[I].Kind of
+      skStatic: Result := Result + '/' + FSegments[I].Text;
+      skParam: Result := Result + '/:';
+      skWildcard: Result := Result + '/*';
+    end;
+end;
+
+function TRouter.Add(AMethod: THttpMethod; const APattern: string): TRoute;
+var
+  I: Integer;
+  Owned: string;
+  Other: TRoute;
+begin
+  { A second route with the same method and shape would never answer:
+    the first always matches before it. Said where it is added -- by a
+    plugin, UsePlugins names the plugin -- rather than found out when the
+    wrong page comes back. }
   Result := TRoute.Create(AMethod, APattern);
+  for I := 0 to FRoutes.Count - 1 do
+  begin
+    Other := TRoute(FRoutes[I]);
+    if (Other.Method = AMethod) and (Other.Shape = Result.Shape) then
+    begin
+      if Other.FOwner <> '' then
+        Owned := ', by ' + Other.FOwner
+      else
+        Owned := '';
+      Result.Free;
+      raise ERouterError.CreateFmt('%s %s is registered twice (first as %s%s): the ' +
+        'second would never answer', [Askr.Http.Types.MethodName(AMethod), APattern,
+        Other.Pattern, Owned]);
+    end;
+  end;
+  Result.FOwner := FOwner;
   FRoutes.Add(Result);
   FSorted := False;
 end;

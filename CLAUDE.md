@@ -1271,6 +1271,15 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   tekstrekkefølge; den sorteres nå med samme nøkkel. Første og siste kolon
   er det samme — et pluginnavn har ingen — og mutasjonen som byttet dem
   overlevde, så nøkkelen er `Pos`.
+* **En rute lagt til to ganger kaster der den legges til.** Formen bygges
+  av de parsede segmentene, ikke av teksten: `Parse` hopper over tomme
+  segmenter, så `/about/` er `/about`, og et kolon midt i et segment er
+  tekst. Første utkast sammenlignet tekst og så ingen av delene; testen for
+  kolon kom fordi mutasjonen overlevde. Ruteren har en `Owner` mens en
+  plugin legger til ruter, så feilen navngir pluginen — i `app.lpr` står
+  `UsePlugins` før appens ruter, så det vanlige er at appens rute kaster.
+  Kommandoer var dekket fra før: `RegisterCommand` lagrer «registered
+  twice» og `RunConsole` stopper appen.
 * **Byggingen nekter plugins `app.lpr` ikke starter.** Linket og aldri
   startet er en plugin som stille ikke gjør noe. `plugin add` syr linjene
   inn ved to markører og finner begge før den skriver noe, samme regel som
