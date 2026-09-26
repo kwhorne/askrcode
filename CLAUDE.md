@@ -950,6 +950,12 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   — feilen var eldre enn den. Nå tusen fra hverandre per millisekund. Og et
   unikt eksempel tar **slutten** av tallet (`SeqTail`), ikke starten: med
   `Copy(..., 1, n)` var en kort kolonne lik for hver rad i en kjøring.
+* **Et unikt tall fikk hele `Seq` som eksempel**, og det er langt forbi en
+  32-bits `INTEGER` på Postgres og MySQL og forbi money sin
+  `NUMERIC(12,2)`. SQLites `INTEGER` er 64 bit, så ingenting sa fra — og
+  porten hadde ingen unik tallkolonne. Nå `Seq mod` det typen tåler, og
+  hele bare i `BIGINT`. `notes` i `make:check` har `rank` og `fee` for det;
+  mutasjonen tilbake til `Seq` gir «out of range» på begge serverne.
 * **Lauf `<Checkbox value>` er en gruppe.** Bokser med samme navn og hver
   sin verdi holder de avkryssede som en liste i `<Form>`. Det er en
   oppførselsendring for en enkelt boks med `value` — den står i UPGRADE.md.

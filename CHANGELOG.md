@@ -129,6 +129,11 @@ with the zero-major caveat that minor releases may break things until
   thousand apart per millisecond now, and a unique sample takes the end of
   the number rather than the start, which was the same for every row of a
   run in a short column.
+- **A unique number column made the generated tests fail on Postgres and
+  MySQL.** Its sample was the whole running count, far past a 32-bit
+  `INTEGER` and past money's `NUMERIC(12,2)`; SQLite's `INTEGER` is 64
+  bits, so nothing said so there. The sample is now the end of the count,
+  as much as the column's type holds -- all of it only in a `BIGINT`.
 - **`askr new --auth` wrote an app that did not compile**, from 0.12.0 to
   0.13.1. The installer matched the scaffold's uses line exactly, the API
   tokens changed that line, and the match missed without a word: app.lpr

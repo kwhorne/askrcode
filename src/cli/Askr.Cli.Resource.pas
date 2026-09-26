@@ -1816,10 +1816,26 @@ begin
           Exit('SeqTail(1)')
         else
           Exit('''S'' + SeqTail(' + IntToStr(PC.Field.Length - 1) + ')');
-      { Assigned, not cast: Seq is an Int64 and a Currency takes it as the
-        number it is. }
-      ftInt, ftBigInt, ftMoney, ftFloat:
+      { Seq whole only where it fits: a BIGINT. An INTEGER is 32 bits on
+        Postgres and MySQL, money is NUMERIC(12,2), and Seq -- counted in
+        thousandths of a millisecond since 2020 -- is far past both; SQLite,
+        whose INTEGER is 64 bits, never said so. The end of it changes per
+        row and per test unit all the same. Assigned, not cast: a Currency
+        takes an Int64 as the number it is. }
+      ftBigInt:
         Exit('Seq');
+      ftInt:
+        if Pos('tiny', LowerCase(PC.SqlType)) > 0 then
+          Exit('(Seq mod 100)')
+        else if (Pos('small', LowerCase(PC.SqlType)) > 0) or
+                (Pos('int2', LowerCase(PC.SqlType)) > 0) then
+          Exit('(Seq mod 30000)')
+        else if Pos('medium', LowerCase(PC.SqlType)) > 0 then
+          Exit('(Seq mod 8000000)')
+        else
+          Exit('(Seq mod 1000000000)');
+      ftMoney, ftFloat:
+        Exit('(Seq mod 1000000000)');
       { A reference is unique already -- the test makes a new parent for
         every row. A boolean can only be unique twice; there is nothing to
         vary, and a table like that makes one row per value. }

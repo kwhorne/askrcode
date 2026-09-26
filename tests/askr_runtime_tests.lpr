@@ -3625,6 +3625,43 @@ begin
   end;
 end;
 
+{ A unique number's sample fits the column: Seq itself only in a BIGINT.
+  It used to be Seq everywhere, which is past an INTEGER on Postgres and
+  MySQL and past NUMERIC(12,2) -- and SQLite, whose INTEGER is 64 bits,
+  never said so. }
+procedure TestUniqueNumberSamples;
+var
+  A: TArena;
+  C: TDbConnection;
+  S: TDbSchema;
+  P: TResourcePlan;
+  F: TGenFiles;
+  T: string;
+begin
+  A := TArena.Create(16 * 1024);
+  C := OpenDbConnection('sqlite::memory:');
+  S := nil;
+  try
+    C.Exec(A, 'CREATE TABLE ranks (id INTEGER PRIMARY KEY, ' +
+      'a INTEGER NOT NULL UNIQUE, b SMALLINT NOT NULL UNIQUE, ' +
+      'c NUMERIC(12,2) NOT NULL UNIQUE, d BIGINT NOT NULL UNIQUE, ' +
+      'e MEDIUMINT NOT NULL UNIQUE)');
+    S := IntrospectSchema(C);
+    P := PlanResource(S, 'Rank');
+    F := ResourceFiles(P, nil, nil, nil, True, True, False);
+    T := TextOf(F, 'App.Tests.Ranks.pas');
+    AssertContains(T, '"a":'' + IntToStr((Seq mod 1000000000))', 'an INTEGER takes the end of Seq');
+    AssertContains(T, '"b":'' + IntToStr((Seq mod 30000))', 'a SMALLINT less of it');
+    AssertContains(T, '"c":'' + IntToStr((Seq mod 1000000000))', 'money fits NUMERIC(12,2)');
+    AssertContains(T, '"d":'' + IntToStr(Seq)', 'a BIGINT takes all of it');
+    AssertContains(T, '"e":'' + IntToStr((Seq mod 8000000))', 'and a MEDIUMINT what fits');
+  finally
+    S.Free;
+    C.Free;
+    A.Free;
+  end;
+end;
+
 { ----------------------------------------------------------- openapi -- }
 
 { A model with something in it that never leaves the process. The
@@ -8682,6 +8719,9 @@ begin
   Test('the visitor''s choice, then the header, then app.locale', @TestLocales);
   Test('askr lang:check, both ways', @TestLangCheck);
   Test('Lauf''s words: one list in two places, and sent only when they differ', @TestLaufStrings);
+
+  Group('Unique samples');
+  Test('a unique number''s sample fits its column', @TestUniqueNumberSamples);
 
   Group('make pivot');
   Test('the table between two models, named as BelongsToMany expects',

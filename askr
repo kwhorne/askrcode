@@ -1375,6 +1375,10 @@ begin
     Text('status', 20).Default('draft');
     Text('api_token', 64).Nullable;
     Bool('pinned').Default(False);
+    { Unique numbers: their samples in the generated test have to fit an
+      INTEGER and a NUMERIC(12,2) on Postgres and MySQL. }
+    Int('rank').Nullable.Unique;
+    Money('fee').Nullable.Unique;
     Timestamps;
     SoftDeletes;
   end;
