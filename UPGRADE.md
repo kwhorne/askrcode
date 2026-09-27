@@ -8,6 +8,22 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.19.0
+
+**`routes:gen` and `routes:check` are commands every app has now.** An app
+that registered a command of its own under either name stops at startup,
+saying so, as it would for `migrate`. Rename yours.
+
+Live props are wired only into projects made from 0.19.0 on. To add them
+to one made earlier, put `Askr.Live` in the uses of `app.lpr` and
+
+```pascal
+UseLive(R);
+```
+
+after `UseAuth(R)`. Then put `<Live />` in the layout, beside `<Flash />`,
+imported from `@askrcode/lauf/inertia`. It claims `/_askr/live`.
+
 ## 0.18.0
 
 **`OnError` is told after a failed job is settled, not before.** By the

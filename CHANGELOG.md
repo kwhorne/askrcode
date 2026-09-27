@@ -14,6 +14,14 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+## 0.19.0 — 2026-09-27
+
+The last three things from Phoenix. A page hears that its props went stale
+and fetches those again, without a reload. A route that is removed takes
+its path function with it, and whatever linked to it stops compiling. And
+the documentation is compiled: every example in it goes through fpc, which
+found the pages wrong about the API in more than twenty places.
+
 ### Added
 
 - **Live props.** `Askr.Live`: a handler calls `LiveOn(['orders'])`, and
