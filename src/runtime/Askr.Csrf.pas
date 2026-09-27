@@ -266,6 +266,10 @@ type
 
 class function TCsrfGuard.Check(Req: TRequest): TResponse;
 begin
+  { A group that said WithoutCsrf -- a webhook from a third party, which
+    cannot send a token and proves itself another way. }
+  if RouteExcludes(ExcludeCsrf) then
+    Exit(nil);
   if CsrfValid(Req) then
     Exit(nil);
   { The message says what is wrong without revealing what was expected.

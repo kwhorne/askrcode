@@ -23,6 +23,29 @@ Every reply under the limit carries `X-RateLimit-Limit` and
 `X-RateLimit-Remaining`, so a client can slow down before it is refused
 rather than after.
 
+## A limit for a group
+
+The router's limiter counts every route. A group can do without it --
+a webhook from one sender, which should not share a bucket with every
+visitor -- or have a limiter of its own:
+
+```pascal
+var
+  ApiLimit: TRateLimit;
+  Api: TRouteGroup;
+begin
+  ApiLimit := TRateLimit.Create.PerMinute(120).KeyBy(@TokenRateKey);
+  Api := R.Group('/api').WithoutRateLimit;
+  Api.Use(ApiLimit.Guard);
+end;
+```
+
+`WithoutRateLimit` keeps the router's limiter out of the group, so a
+request is counted once, by the group's own. The replies carry the
+group's numbers in `X-RateLimit-Limit` and `X-RateLimit-Remaining`. The
+app owns a limiter it creates, and frees it at the end. See
+[groups](routing.md).
+
 ## What it is keyed on
 
 `TokenRateKey` is the token when the request came in with one, and the

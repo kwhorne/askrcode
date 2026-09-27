@@ -85,14 +85,19 @@ vulnerability in other frameworks.
 ## Exemptions
 
 ```pascal
-CsrfExempt('/webhooks/*');
+Hooks := R.Group('/webhooks').WithoutCsrf;
+Hooks.Post('/stripe', Billing.Webhook);
 ```
 
 For webhooks, which come from a third party that cannot possibly have the
 token and must be authenticated some other way — a signature in a header.
+**This is a hole you make on purpose, which is why it has to be written
+down** — and a group writes it down where the routes are, so a route
+added to the group later is covered and a route beside it is not. See
+[groups](routing.md).
 
-The pattern matches exactly, or with a trailing `*`. **This is a hole you
-make on purpose, which is why it has to be written down.**
+`CsrfExempt('/webhooks/*')` does the same by path, matched exactly or with
+a trailing `*`, and is kept for code written before groups.
 
 There is one exemption you do not have to write down: a request that
 authenticated with an [API token](tokens.md) in an `Authorization` header.

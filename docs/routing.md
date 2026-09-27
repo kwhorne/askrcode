@@ -78,8 +78,8 @@ R.SetNotFound(Errors.NotFound);
 
 ## Middleware
 
-Middleware runs before routing. Return `nil` to let the request through, or
-a response to short-circuit it.
+Middleware runs before the handler. Return `nil` to let the request
+through, or a response to short-circuit it.
 
 ```pascal
 function RequireJson(Req: TRequest): TResponse;
@@ -104,8 +104,60 @@ where it was written. A database lease registered as a procedure ran
 *after* an authentication step registered as a class method, and every
 request that needed both was a 500.
 
-Middleware is **global** today. Per-route and per-group middleware is a real
-gap, and not yet built.
+Middleware on the router covers every request. For middleware that only
+some routes need, use a group.
+
+## Groups
+
+A group is a prefix, the middleware its routes need beyond the router's,
+and what they do without:
+
+```pascal
+var
+  Admin, Hooks: TRouteGroup;
+begin
+  Admin := R.Group('/admin');
+  Admin.Use(@RequireAdmin);
+  Admin.Get('/', Dashboard.Show);          { /admin }
+  Admin.Get('/users', Users.Index);        { /admin/users }
+
+  Hooks := R.Group('/hooks').WithoutCsrf.WithoutRateLimit;
+  Hooks.Post('/stripe', Billing.Webhook);  { /hooks/stripe }
+end;
+```
+
+A group is an object, not a block: anonymous procedures do not exist in
+Free Pascal 3.2.2, which Askr builds on. The router owns its groups and
+frees them.
+
+**The order is the router's middleware, then the group's**, from the
+outermost group in, then the handler. A group inside a group has both
+prefixes and both sets of middleware, and does without everything its
+parent does without:
+
+```pascal
+Reports := Admin.Group('/reports');
+Reports.Use(@RequireAccountant);
+Reports.Get('/:year', Reports_.Show);      { /admin/reports/:year }
+```
+
+**The route is found before any middleware runs**, so middleware can read
+the route's parameters -- `Req.Param('year')` above -- and ask about it:
+`MatchedRoute` is the route this request matched, and
+`RouteExcludes(What)` says whether its group does without something.
+
+| | |
+|---|---|
+| `R.Group(Prefix)` | A group under Prefix; `''` for none. Starts with `/`, and has no wildcard |
+| `G.Group(Prefix)` | A group inside G |
+| `G.Use(M)` | Middleware for G's routes, after the router's |
+| `G.WithoutCsrf` | The CSRF check does not run for G's routes |
+| `G.WithoutRateLimit` | The router's rate limit does not count them; a group can have its own |
+| `G.Get`, `G.Post`, ... | Routes under G's prefix |
+
+A route in a group is a route like any other: the same specificity
+ordering, the same `AsName` after it, and the same refusal when its full
+path is already taken.
 
 ## sitemap.xml
 

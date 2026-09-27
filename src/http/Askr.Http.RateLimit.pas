@@ -117,6 +117,14 @@ type
     function SlotsUsed: Integer;
 
     function Enabled: Boolean;
+    { This limiter as middleware, for a group of its own:
+
+          Api := R.Group('/api').WithoutRateLimit;
+          Api.Use(ApiLimit.Guard);
+
+      WithoutRateLimit keeps the router's limiter out of it, so a request
+      is counted once, by this one. }
+    function Guard(Req: TRequest): TResponse;
     property Capacity: Double read FCapacity;
   end;
 
@@ -154,6 +162,8 @@ threadvar
     there is nothing to carry over. }
   GHasInfo: Boolean;
   GRemaining: Integer;
+  { Whose numbers they are: a group's own limiter has its own capacity. }
+  GCapacity: Integer;
 
 function RateLimit: TRateLimit;
 begin
@@ -363,29 +373,23 @@ type
     class function Decorate(Req: TRequest; Res: TResponse): TResponse;
   end;
 
-class function TRateHook.Handle(Req: TRequest): TResponse;
+function TRateLimit.Guard(Req: TRequest): TResponse;
 var
-  L: TRateLimit;
   Key: string;
   RetryAfter, Remaining: Integer;
 begin
   Result := nil;
-  { First, and unconditionally: whatever this worker measured for the
-    last request is not this one's. }
-  GHasInfo := False;
-  GRemaining := 0;
-
-  L := RateLimit;
-  if not L.Enabled then
+  if not Enabled then
     Exit;
-  Key := L.KeyFor(Req);
+  Key := KeyFor(Req);
   if Key = '' then
     Exit;
 
-  if L.Take(Key, RetryAfter, Remaining) then
+  if Take(Key, RetryAfter, Remaining) then
   begin
     GHasInfo := True;
     GRemaining := Remaining;
+    GCapacity := Trunc(FCapacity);
     Exit;
   end;
 
@@ -393,9 +397,24 @@ begin
     else the plain text they have always had. }
   Result := ErrorResponse(429, 'Too many requests.')
     .WithHeader('Retry-After', IntToStr(RetryAfter))
-    .WithHeader('X-RateLimit-Limit', IntToStr(Trunc(L.Capacity)))
+    .WithHeader('X-RateLimit-Limit', IntToStr(Trunc(FCapacity)))
     .WithHeader('X-RateLimit-Remaining', '0')
     .WithHeader('X-RateLimit-Reset', IntToStr(RetryAfter));
+end;
+
+class function TRateHook.Handle(Req: TRequest): TResponse;
+begin
+  { First, and unconditionally: whatever this worker measured for the
+    last request is not this one's. }
+  GHasInfo := False;
+  GRemaining := 0;
+  GCapacity := 0;
+  { A group that does without the router's limit -- because it has one of
+    its own, or because its caller is one sender, like Stripe, that
+    should not share a bucket with everybody. }
+  if RouteExcludes(ExcludeRateLimit) then
+    Exit(nil);
+  Result := RateLimit.Guard(Req);
 end;
 
 class function TRateHook.Decorate(Req: TRequest; Res: TResponse): TResponse;
@@ -407,7 +426,7 @@ begin
     Both numbers are counts and the reset is seconds from now, the same
     unit as Retry-After -- a timestamp here would be a second thing to
     get the timezone of wrong. }
-  Res.WithHeader('X-RateLimit-Limit', IntToStr(Trunc(RateLimit.Capacity)));
+  Res.WithHeader('X-RateLimit-Limit', IntToStr(GCapacity));
   Res.WithHeader('X-RateLimit-Remaining', IntToStr(GRemaining));
 end;
 

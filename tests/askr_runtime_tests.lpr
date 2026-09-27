@@ -9501,6 +9501,215 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------- route groups -- }
+
+var
+  GroupTrace: string;
+
+type
+  TGroupCtl = class
+    class function Echo(Req: TRequest): TResponse;
+    class function Global(Req: TRequest): TResponse;
+    class function Admin(Req: TRequest): TResponse;
+    class function Reports(Req: TRequest): TResponse;
+  end;
+
+class function TGroupCtl.Echo(Req: TRequest): TResponse;
+begin
+  Result := RespondText(MatchedRoute.Pattern + '|' + GroupTrace);
+end;
+
+class function TGroupCtl.Global(Req: TRequest): TResponse;
+begin
+  { The router's own middleware sees the matched route's parameters too:
+    the route is found before any middleware runs. }
+  if Req.Param('year').Len > 0 then
+    GroupTrace := GroupTrace + 'global:' + Req.Param('year').ToString + ';'
+  else
+    GroupTrace := GroupTrace + 'global;';
+  Result := nil;
+end;
+
+class function TGroupCtl.Admin(Req: TRequest): TResponse;
+begin
+  GroupTrace := GroupTrace + 'admin;';
+  if Req.Header('X-Deny').Len > 0 then
+    Exit(RespondText('denied', 403));
+  Result := nil;
+end;
+
+class function TGroupCtl.Reports(Req: TRequest): TResponse;
+begin
+  { The route was matched before any middleware ran, so its parameters
+    are there to read. }
+  GroupTrace := GroupTrace + 'reports:' + Req.Param('year').ToString + ';';
+  Result := nil;
+end;
+
+function GroupGet(K: TTestClient; const Path: string): string;
+var
+  Res: TResponse;
+begin
+  GroupTrace := '';
+  Res := K.Get(Path);
+  Result := IntToStr(Res.StatusCode) + ' ' + Res.Body.ToString;
+end;
+
+function GroupError(R: TRouter; const Prefix: string): string;
+begin
+  Result := '';
+  try
+    R.Group(Prefix);
+  except
+    on E: ERouterError do Result := E.Message;
+  end;
+end;
+
+{ A group is a prefix, its own middleware after the router's, outermost
+  group first, and nothing of it for a route outside it. }
+procedure TestRouteGroups;
+var
+  R: TRouter;
+  A, Rep, Plain: TRouteGroup;
+  K: TTestClient;
+  Lines: TStringList;
+  Msg: string;
+begin
+  R := TRouter.Create;
+  K := TTestClient.Create(R);
+  Lines := TStringList.Create;
+  try
+    R.Use(TGroupCtl.Global);
+    A := R.Group('/admin');
+    A.Use(TGroupCtl.Admin);
+    A.Get('/', TGroupCtl.Echo);
+    A.Get('/users', TGroupCtl.Echo);
+    Rep := A.Group('/reports/');
+    Rep.Use(TGroupCtl.Reports);
+    Rep.Get('/:year', TGroupCtl.Echo);
+    R.Get('/public', TGroupCtl.Echo);
+    Plain := R.Group('');
+    Plain.Get('/plain', TGroupCtl.Echo);
+
+    AssertEqual(GroupGet(K, '/admin'), '200 /admin|global;admin;',
+      'the group''s own path, behind the router''s middleware and then its own');
+    AssertEqual(GroupGet(K, '/admin/users'), '200 /admin/users|global;admin;',
+      'a route under the prefix');
+    AssertEqual(GroupGet(K, '/admin/reports/2026'),
+      '200 /admin/reports/:year|global:2026;admin;reports:2026;',
+      'a nested group: its prefix after its parent''s, its middleware after, ' +
+      'and the parameter readable by every middleware, the router''s too');
+    AssertEqual(GroupGet(K, '/public'), '200 /public|global;',
+      'a route outside the group has none of its middleware');
+    AssertEqual(GroupGet(K, '/plain'), '200 /plain|global;', 'an empty prefix is no prefix');
+    AssertEqual(GroupGet(K, '/admin/nope'), '404 Not Found',
+      'nothing matched is a 404');
+    AssertEqual(GroupTrace, 'global;',
+      'after the router''s middleware, which still sees every request');
+    AssertStatus(K.Post('/admin/users', ''), 405, 'another method on a group''s path is a 405');
+
+    GroupTrace := '';
+    AssertStatus(K.WithHeader('X-Deny', '1').Get('/admin/users'), 403,
+      'a group''s middleware can answer');
+    AssertEqual(GroupTrace, 'global;admin;', 'and the handler does not run');
+
+    Msg := '';
+    try
+      R.Get('/admin/users', TGroupCtl.Echo);
+    except
+      on E: ERouterError do Msg := E.Message;
+    end;
+    AssertContains(Msg, 'registered twice',
+      'a route added beside a group''s, at the same full path, is refused');
+
+    AssertContains(GroupError(R, 'admin'), 'starts with /', 'a prefix starts with /');
+    AssertContains(GroupError(R, '/files/*rest'), 'wildcard',
+      'a wildcard cannot be in a prefix: it has to be last');
+
+    R.Describe(Lines);
+    AssertContains(Lines.Text, '/admin/reports/:year', 'askr routes lists the full path');
+  finally
+    Lines.Free;
+    K.Free;
+    R.Free;
+  end;
+  AssertFalse(RouteExcludes(ExcludeCsrf), 'outside a request nothing is excused');
+end;
+
+{ WithoutCsrf in place of CsrfExempt: the hole is where the routes are,
+  not in a list of paths somewhere else. }
+procedure TestGroupWithoutCsrf;
+var
+  Hooks: TRouteGroup;
+begin
+  CsrfSetup;
+  try
+    Hooks := CsrfR.Group('/hooks').WithoutCsrf;
+    Hooks.Post('/stripe', CsrfC.Webhook);
+    Hooks.Group('/inner').Post('/x', CsrfC.Webhook);
+    CsrfR.Group('/other').Post('/x', CsrfC.Webhook);
+
+    AssertStatus(CsrfK.Post('/hooks/stripe', '{}'), 200,
+      'a POST without a token to a group without CSRF passes');
+    AssertStatus(CsrfK.Post('/hooks/inner/x', '{}'), 200,
+      'and to a group inside it');
+    AssertStatus(CsrfK.Post('/other/x', '{}'), 419, 'another group is still protected');
+    AssertStatus(CsrfK.Post('/form', '{}'), 419, 'and so is a route outside every group');
+  finally
+    CsrfRydd;
+  end;
+end;
+
+{ WithoutRateLimit, and a group with a limiter of its own. }
+procedure TestGroupRateLimit;
+var
+  R: TRouter;
+  Ctl: TCorsCtl;
+  K: TTestClient;
+  Own: TRateLimit;
+  G: TRouteGroup;
+  I: Integer;
+  Res: TResponse;
+begin
+  Ctl := TCorsCtl.Create;
+  R := TRouter.Create;
+  Own := TRateLimit.Create;
+  K := TTestClient.Create(R);
+  try
+    R.Get('/ping', Ctl.Ping);
+    R.Group('/hook').WithoutRateLimit.Get('/ping', Ctl.Ping);
+    G := R.Group('/own').WithoutRateLimit;
+    G.Use(Own.Guard);
+    G.Get('/ping', Ctl.Ping);
+    UseRateLimit(R);
+    RateLimit.PerMinute(60).Burst(1).KeyBy(@TestRateKey);
+    RateLimit.Clear;
+    Own.PerMinute(60).Burst(2).KeyBy(@TestRateKey);
+
+    AssertStatus(K.WithHeader('X-Test-Key', 'a').Get('/ping'), 200, 'the router''s bucket');
+    AssertStatus(K.WithHeader('X-Test-Key', 'a').Get('/ping'), 429, 'empties');
+
+    for I := 1 to 5 do
+      Res := K.WithHeader('X-Test-Key', 'a').Get('/hook/ping');
+    AssertStatus(Res, 200, 'a group without the rate limit is not limited by it');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Limit'), '',
+      'and claims no limit');
+
+    Res := K.WithHeader('X-Test-Key', 'a').Get('/own/ping');
+    AssertStatus(Res, 200, 'a group''s own limiter, with its own bucket');
+    AssertEqual(Res.HeaderValue('X-RateLimit-Limit'), '2', 'and its own numbers');
+    AssertStatus(K.WithHeader('X-Test-Key', 'a').Get('/own/ping'), 200, 'two');
+    AssertStatus(K.WithHeader('X-Test-Key', 'a').Get('/own/ping'), 429,
+      'and the third is refused by it');
+  finally
+    RateLimit.Off;
+    K.Free;
+    Own.Free;
+    R.Free;
+    Ctl.Free;
+  end;
+end;
+
 procedure TestCsrfCookiesSideBySide;
 var
   Res: TResponse;
@@ -12997,6 +13206,8 @@ begin
   Test('the token is stable and bound to the session',
     @TestCsrfTokenStablePerSession);
   Test('an exception for webhooks', @TestCsrfUnntakForWebhooks);
+  Test('a group without CSRF, and only that group', @TestGroupWithoutCsrf);
+  Test('a group without the rate limit, and a group with its own', @TestGroupRateLimit);
   Test('the session cookie and the XSRF cookie live side by side',
     @TestCsrfCookiesSideBySide);
   Test('an Inertia page makes the token, so a form from it is accepted',
@@ -13102,6 +13313,7 @@ begin
   Test('an app.lpr from before plugins is wired, and a reshaped one is not guessed at', @TestWireAppLpr);
   Test('a plugin''s migrations run among the app''s by time, and roll back the same way', @TestPluginMigrations);
   Test('a route added twice is refused where it is added, naming a plugin that owns the first', @TestRouteTwice);
+  Test('route groups: prefix, middleware in order, nesting, parameters', @TestRouteGroups);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

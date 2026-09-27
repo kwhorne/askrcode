@@ -20,7 +20,27 @@
   always beats one with a parameter, and one with a parameter beats a
   wildcard. Otherwise /customers/new would be swallowed by
   /customers/:id depending on the order somebody happened to write
-  them in. }
+  them in.
+
+  **Groups.** A group is a prefix, the middleware its routes need beyond
+  the router's own, and what they do without:
+
+      Admin := R.Group('/admin');
+      Admin.Use(@RequireAdmin);
+      Admin.Get('/users', Users.Index);         { /admin/users }
+
+      R.Group('/hooks').WithoutCsrf.Post('/stripe', Stripe.Webhook);
+
+  An object and not a block, because anonymous procedures do not exist
+  in FPC 3.2.2.
+
+  **The route is found before any middleware runs.** The router's own
+  middleware then runs, then the group's, from the outermost group in,
+  then the handler. Matching first is what lets middleware that covers
+  every route -- CSRF, the rate limit -- ask whether this route's group
+  does without it: RouteExcludes(ExcludeCsrf). Nothing in Askr rewrites
+  the method or the path in middleware, so what matches first is what
+  would have matched after. }
 unit Askr.Http.Router;
 
 {$mode Delphi}{$H+}
@@ -63,8 +83,11 @@ type
     Text: string;
   end;
 
+  TRouteGroup = class;
+
   TRoute = class
   private
+    FGroup: TRouteGroup;
     FMethod: THttpMethod;
     FPattern: string;
     FName: string;
@@ -85,6 +108,8 @@ type
     property Method: THttpMethod read FMethod;
     property Pattern: string read FPattern;
     property Name: string read FName write FName;
+    { The group it was added through, or nil. }
+    property Group: TRouteGroup read FGroup;
   end;
 
   TRouter = class
@@ -116,6 +141,7 @@ type
     FNotFound: TRouteHandler;
     FSorted: Boolean;
     FOwner: string;
+    FGroups: TList;
     function Add(AMethod: THttpMethod; const APattern: string): TRoute;
     procedure SortRoutes;
     { The routing itself, without the after-filters. Handle runs the
@@ -132,6 +158,10 @@ type
       one is added twice: UsePlugins sets it to 'the plugin stripe' while
       a plugin adds its routes. '' is the app. }
     property Owner: string read FOwner write FOwner;
+
+    { A group of routes under Prefix -- '' for none -- with middleware and
+      exclusions of its own. The router owns it. }
+    function Group(const Prefix: string): TRouteGroup;
 
     { Registration. The overload without "of object" exists for free
       functions. }
@@ -175,10 +205,84 @@ type
     function RouteAt(Index: Integer): TRoute;
   end;
 
+  TMiddlewareEntry = record
+    M: TMiddleware;
+    P: TMiddlewareProc;
+  end;
+  TMiddlewareChain = array of TMiddlewareEntry;
+
+  TRouteGroup = class
+  private
+    FRouter: TRouter;
+    FParent: TRouteGroup;
+    FPrefix: string;
+    FBefore: array of TMiddlewareEntry;
+    FExcluded: array of string;
+    function Add(AMethod: THttpMethod; const APattern: string): TRoute;
+    { Its own middleware and its parents', outermost first. }
+    function Middleware: TMiddlewareChain;
+  public
+    { A group inside this one: its prefix after this one's, its
+      middleware after this one's, and everything this one does without. }
+    function Group(const Prefix: string): TRouteGroup;
+
+    procedure Use(M: TMiddleware); overload;
+    procedure Use(M: TMiddlewareProc); overload;
+
+    { What the group's routes do without, for middleware that covers
+      every route to ask about. Returns the group, so it chains:
+      R.Group('/hooks').WithoutCsrf.WithoutRateLimit. }
+    function Without(const What: string): TRouteGroup;
+    function WithoutCsrf: TRouteGroup;
+    function WithoutRateLimit: TRouteGroup;
+    { This group or one it is inside said Without(What). }
+    function Excludes(const What: string): Boolean;
+
+    procedure Get(const Pattern: string; H: TRouteHandler); overload;
+    procedure Get(const Pattern: string; H: TRouteHandlerProc); overload;
+    procedure Post(const Pattern: string; H: TRouteHandler); overload;
+    procedure Post(const Pattern: string; H: TRouteHandlerProc); overload;
+    procedure Put(const Pattern: string; H: TRouteHandler); overload;
+    procedure Patch(const Pattern: string; H: TRouteHandler); overload;
+    procedure Delete(const Pattern: string; H: TRouteHandler); overload;
+    procedure Any(const Pattern: string; H: TRouteHandler); overload;
+
+    { The whole prefix, its parents' included. }
+    property Prefix: string read FPrefix;
+    property Router: TRouter read FRouter;
+  end;
+
+const
+  { The names a group does without, as the framework's middleware asks
+    for them. }
+  ExcludeCsrf = 'csrf';
+  ExcludeRateLimit = 'rate-limit';
+
+{ The route this request matched, or nil -- set before any middleware
+  runs, for this thread's request. }
+function MatchedRoute: TRoute;
+{ The matched route's group does without What. False when nothing
+  matched: a request for no route has nothing to be excused by. }
+function RouteExcludes(const What: string): Boolean;
+
 implementation
 
 uses
   Askr.Core.Log;
+
+threadvar
+  GMatched: TRoute;
+
+function MatchedRoute: TRoute;
+begin
+  Result := GMatched;
+end;
+
+function RouteExcludes(const What: string): Boolean;
+begin
+  Result := (GMatched <> nil) and (GMatched.FGroup <> nil) and
+    GMatched.FGroup.Excludes(What);
+end;
 
 { TRoute }
 
@@ -299,6 +403,7 @@ constructor TRouter.Create;
 begin
   inherited Create;
   FRoutes := TList.Create;
+  FGroups := TList.Create;
 end;
 
 destructor TRouter.Destroy;
@@ -308,8 +413,183 @@ begin
   for I := 0 to FRoutes.Count - 1 do
     TRoute(FRoutes[I]).Free;
   FRoutes.Free;
+  for I := 0 to FGroups.Count - 1 do
+    TRouteGroup(FGroups[I]).Free;
+  FGroups.Free;
   inherited Destroy;
 end;
+
+{ '/admin', never '/admin/' or 'admin'; '' for no prefix. A wildcard has
+  to be the last segment of a route, and a prefix is never the last. }
+function CleanPrefix(const Prefix: string): string;
+begin
+  Result := Prefix;
+  while (Length(Result) > 0) and (Result[Length(Result)] = '/') do
+    SetLength(Result, Length(Result) - 1);
+  if (Result <> '') and (Result[1] <> '/') then
+    raise ERouterError.CreateFmt(
+      'A group''s prefix starts with /: %s', [Prefix]);
+  if Pos('*', Result) > 0 then
+    raise ERouterError.CreateFmt(
+      'A group''s prefix cannot have a wildcard, which has to be the last ' +
+      'segment of a route: %s', [Prefix]);
+end;
+
+function NewGroup(ARouter: TRouter; AParent: TRouteGroup;
+  const APrefix: string): TRouteGroup;
+begin
+  Result := TRouteGroup.Create;
+  Result.FRouter := ARouter;
+  Result.FParent := AParent;
+  if AParent <> nil then
+    Result.FPrefix := AParent.FPrefix + CleanPrefix(APrefix)
+  else
+    Result.FPrefix := CleanPrefix(APrefix);
+  ARouter.FGroups.Add(Result);
+end;
+
+function TRouter.Group(const Prefix: string): TRouteGroup;
+begin
+  Result := NewGroup(Self, nil, Prefix);
+end;
+
+{ ---------------------------------------------------------------- group -- }
+
+function TRouteGroup.Group(const Prefix: string): TRouteGroup;
+begin
+  Result := NewGroup(FRouter, Self, Prefix);
+end;
+
+function TRouteGroup.Add(AMethod: THttpMethod; const APattern: string): TRoute;
+var
+  Full: string;
+begin
+  { /admin + / is /admin, and /admin + /users is /admin/users. }
+  if (APattern = '') or (APattern = '/') then
+    Full := FPrefix
+  else
+    Full := FPrefix + APattern;
+  if Full = '' then
+    Full := '/';
+  Result := FRouter.Add(AMethod, Full);
+  Result.FGroup := Self;
+end;
+
+procedure TRouteGroup.Use(M: TMiddleware);
+begin
+  SetLength(FBefore, Length(FBefore) + 1);
+  FBefore[High(FBefore)].M := M;
+  FBefore[High(FBefore)].P := nil;
+end;
+
+procedure TRouteGroup.Use(M: TMiddlewareProc);
+begin
+  SetLength(FBefore, Length(FBefore) + 1);
+  FBefore[High(FBefore)].M := nil;
+  FBefore[High(FBefore)].P := M;
+end;
+
+function TRouteGroup.Middleware: TMiddlewareChain;
+var
+  Chain: array of TRouteGroup;
+  G: TRouteGroup;
+  I, J, N: Integer;
+begin
+  Chain := nil;
+  G := Self;
+  while G <> nil do
+  begin
+    SetLength(Chain, Length(Chain) + 1);
+    Chain[High(Chain)] := G;
+    G := G.FParent;
+  end;
+  N := 0;
+  for I := 0 to High(Chain) do
+    Inc(N, Length(Chain[I].FBefore));
+  SetLength(Result, N);
+  N := 0;
+  for I := High(Chain) downto 0 do
+    for J := 0 to High(Chain[I].FBefore) do
+    begin
+      Result[N] := Chain[I].FBefore[J];
+      Inc(N);
+    end;
+end;
+
+function TRouteGroup.Without(const What: string): TRouteGroup;
+begin
+  SetLength(FExcluded, Length(FExcluded) + 1);
+  FExcluded[High(FExcluded)] := What;
+  Result := Self;
+end;
+
+function TRouteGroup.WithoutCsrf: TRouteGroup;
+begin
+  Result := Without(ExcludeCsrf);
+end;
+
+function TRouteGroup.WithoutRateLimit: TRouteGroup;
+begin
+  Result := Without(ExcludeRateLimit);
+end;
+
+function TRouteGroup.Excludes(const What: string): Boolean;
+var
+  G: TRouteGroup;
+  I: Integer;
+begin
+  G := Self;
+  while G <> nil do
+  begin
+    for I := 0 to High(G.FExcluded) do
+      if G.FExcluded[I] = What then
+        Exit(True);
+    G := G.FParent;
+  end;
+  Result := False;
+end;
+
+procedure TRouteGroup.Get(const Pattern: string; H: TRouteHandler);
+begin
+  Add(hmGet, Pattern).FHandler := H;
+end;
+
+procedure TRouteGroup.Get(const Pattern: string; H: TRouteHandlerProc);
+begin
+  Add(hmGet, Pattern).FHandlerProc := H;
+end;
+
+procedure TRouteGroup.Post(const Pattern: string; H: TRouteHandler);
+begin
+  Add(hmPost, Pattern).FHandler := H;
+end;
+
+procedure TRouteGroup.Post(const Pattern: string; H: TRouteHandlerProc);
+begin
+  Add(hmPost, Pattern).FHandlerProc := H;
+end;
+
+procedure TRouteGroup.Put(const Pattern: string; H: TRouteHandler);
+begin
+  Add(hmPut, Pattern).FHandler := H;
+end;
+
+procedure TRouteGroup.Patch(const Pattern: string; H: TRouteHandler);
+begin
+  Add(hmPatch, Pattern).FHandler := H;
+end;
+
+procedure TRouteGroup.Delete(const Pattern: string; H: TRouteHandler);
+begin
+  Add(hmDelete, Pattern).FHandler := H;
+end;
+
+procedure TRouteGroup.Any(const Pattern: string; H: TRouteHandler);
+begin
+  Add(hmUnknown, Pattern).FHandler := H;
+end;
+
+{ ---------------------------------------------------------------- router -- }
 
 { The route as the router reads it, with the parameter names taken out:
   /orders/:id and /orders/:slug are one route, and so are /about and
@@ -543,10 +823,32 @@ end;
 function TRouter.Route(Req: TRequest): TResponse;
 var
   I: Integer;
-  R: TRoute;
+  R, Matched: TRoute;
   MethodMatched: Boolean;
+  Chain: TMiddlewareChain;
 begin
   SortRoutes;
+
+  { The route first, so middleware can ask about it. The parameters are
+    the matched route's from here on. }
+  Req.ClearParams;
+  Matched := nil;
+  MethodMatched := False;
+  for I := 0 to FRoutes.Count - 1 do
+  begin
+    R := TRoute(FRoutes[I]);
+    if R.Matches(Req, Req.Path) then
+    begin
+      Matched := R;
+      Break;
+    end;
+    { Samme sti, annen metode: da er 405 riktigere enn 404. }
+    Req.ClearParams;
+    if R.MatchesPath(Req, Req.Path) then
+      MethodMatched := True;
+    Req.ClearParams;
+  end;
+  GMatched := Matched;
 
   for I := 0 to High(FBefore) do
   begin
@@ -558,32 +860,34 @@ begin
       Exit;
   end;
 
-  Req.ClearParams;
-  MethodMatched := False;
-  for I := 0 to FRoutes.Count - 1 do
+  if Matched = nil then
   begin
-    R := TRoute(FRoutes[I]);
-    if R.Matches(Req, Req.Path) then
-    begin
-      if Assigned(R.FHandler) then
-        Exit(R.FHandler(Req));
-      if Assigned(R.FHandlerProc) then
-        Exit(R.FHandlerProc(Req));
-      raise ERouterError.CreateFmt('Route %s has no handler', [R.Pattern]);
-    end;
-    { Samme sti, annen metode: da er 405 riktigere enn 404. }
-    Req.ClearParams;
-    if R.MatchesPath(Req, Req.Path) then
-      MethodMatched := True;
-    Req.ClearParams;
+    if MethodMatched then
+      Exit(ErrorResponse(405));
+    if Assigned(FNotFound) then
+      Exit(FNotFound(Req));
+    Exit(ErrorResponse(404));
   end;
 
-  if MethodMatched then
-    Exit(ErrorResponse(405));
+  if Matched.FGroup <> nil then
+  begin
+    Chain := Matched.FGroup.Middleware;
+    for I := 0 to High(Chain) do
+    begin
+      if Assigned(Chain[I].M) then
+        Result := Chain[I].M(Req)
+      else
+        Result := Chain[I].P(Req);
+      if Result <> nil then
+        Exit;
+    end;
+  end;
 
-  if Assigned(FNotFound) then
-    Exit(FNotFound(Req));
-  Result := ErrorResponse(404);
+  if Assigned(Matched.FHandler) then
+    Exit(Matched.FHandler(Req));
+  if Assigned(Matched.FHandlerProc) then
+    Exit(Matched.FHandlerProc(Req));
+  raise ERouterError.CreateFmt('Route %s has no handler', [Matched.Pattern]);
 end;
 
 procedure TRouter.Describe(Lines: TStrings);

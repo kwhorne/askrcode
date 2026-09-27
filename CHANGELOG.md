@@ -12,6 +12,27 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **Route groups.** `R.Group('/admin')` is a prefix, middleware of its
+  own after the router's, and what its routes do without:
+  `WithoutCsrf` in place of a `CsrfExempt` list somewhere else, and
+  `WithoutRateLimit`, for a sender like a webhook or for a group with a
+  limiter of its own through `TRateLimit.Guard`. Groups nest; the
+  middleware runs from the outermost group in. An object rather than a
+  block, because anonymous procedures do not exist in FPC 3.2.2.
+
+### Changed
+
+- **The route is found before any middleware runs.** The router's
+  middleware still runs first and still sees every request, matched or
+  not, but it now runs knowing which route matched: `MatchedRoute`, the
+  route's parameters, and `RouteExcludes`. That is what lets the CSRF
+  check and the rate limit, which cover every route, leave out a group
+  that does without them.
+
 ## 0.16.0 — 2026-09-26
 
 Plugins. A plugin is a git repository of Pascal that an app builds with,
