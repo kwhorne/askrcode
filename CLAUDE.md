@@ -1385,6 +1385,34 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   verdien.** Det er grunnen til at siden er lukket utenfor utvikling, og
   det står i docs.
 
+## Live props
+
+* **Siden som ble vist, bestemmer hva den får lytte på.** `LiveOn`
+  signerer strøm-URL-en med kanalene, brukeren og et døgns utløp.
+  `/_askr/live` har ingen liste over kanaler en nettleser får be om,
+  fordi handleren som viste siden alt har sjekket. Brukeren er med i det
+  signerte, så en kopiert URL ikke hjelper noen andre. Alle tre er
+  mutasjonssjekket.
+* **Kanalene sjekkes ikke på nytt i `OpenLive`.** Bare `LiveOn` signerer,
+  og den avviser et dårlig navn. Sjekken var en mutasjon som overlevde,
+  og er tatt ut.
+* **URL-en ryddes av arenaen også, ikke bare av `Inertia()`.** En handler
+  som kalte `LiveOn` og så svarte med en redirect, ga ellers neste request
+  på samme worker en URL signert for noen andre.
+* **`$derived` på URL-en, ikke `$effect` på `page.props`.** En partial
+  reload bytter props-objektet, og en effekt på det ville lukket og åpnet
+  strømmen etter hver reload — og mistet det som kom imellom.
+  Mutasjonssjekket.
+* **Gatenes `.env` hadde ingen `APP_KEY`.** Den ble aldri trengt før en
+  side signerte noe. Lista over makers svarte 500 i fane B, og ingenting i
+  fane A så det, fordi feilsamleren bare lytter på én fane. `GATE_APP_KEY`
+  står nå i hver `.env` gatene skriver. De genererte testene setter en
+  egen nøkkel når ingen er satt, men bare for `--live`.
+* **Beviset er to faner i Chrome.** Fane B holder `/makers` åpen med en
+  markør på `window`, fane A lager en maker, og B må vise den med
+  markøren i behold. Stillaset uten `<Live />` i layouten fanges der og
+  ingen andre steder.
+
 ## Supervisor
 
 * **En TThread som kaster fra Execute, dør uten et ord.** Unntaket ligger

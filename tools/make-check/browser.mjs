@@ -98,6 +98,44 @@ async function submit() {
   await js(`document.querySelector('button[type=submit]').click()`)
 }
 
+// ---- a second tab, on the makers' list ----
+// make resource Maker --live: this list listens, and the maker made in the
+// first tab below has to appear in it without anybody touching it. The
+// marker on window is gone if the tab reloaded the page instead.
+async function openTab(url) {
+  const t = await (await fetch(`${CDP}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })).json()
+  const tws = new WebSocket(t.webSocketDebuggerUrl)
+  let n = 0
+  const waiting = new Map()
+  tws.onmessage = (e) => {
+    const m = JSON.parse(e.data)
+    if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m); waiting.delete(m.id) }
+  }
+  await new Promise((r) => (tws.onopen = r))
+  const tsend = (method, params = {}) => new Promise((res) => {
+    const id = ++n
+    waiting.set(id, res)
+    tws.send(JSON.stringify({ id, method, params }))
+  })
+  const tjs = async (expression) => {
+    const r = await tsend('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    return r.result?.result?.value
+  }
+  const tuntil = async (expr, ms = 8000) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      if (await tjs(expr).catch(() => false)) return true
+      await wait(100)
+    }
+    return false
+  }
+  return { js: tjs, until: tuntil, close: () => fetch(`${CDP}/json/close/${t.id}`) }
+}
+const watcher = await openTab(BASE + '/makers')
+await watcher.until(`!!document.querySelector('main') && document.readyState === 'complete'`)
+await wait(500)
+await watcher.js('window.__stillThisPage = true')
+
 // ---- a maker ----
 console.log('- makers')
 await go('/makers/new')
@@ -107,6 +145,12 @@ await submit()
 await until(`/^\\/makers\\/\\d+$/.test(location.pathname)`, 'the maker page')
 check(/^\/makers\/\d+$/.test(await js('location.pathname')), 'a new maker lands on its page', before)
 check((await text()).includes('Acme Works'), 'which shows it')
+const heard = await watcher.until(`document.querySelector('main')?.innerText.includes('Acme Works')`)
+check(heard, 'and the makers list open in another tab shows it, untouched',
+  await watcher.js(`document.querySelector('main')?.innerText.slice(0, 200)`))
+check((await watcher.js('window.__stillThisPage')) === true,
+  'by reloading its props, not the page')
+await watcher.close()
 
 // ---- tags: the rows a gadget ticks boxes for ----
 console.log('- tags')

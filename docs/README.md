@@ -93,6 +93,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Queues](queue.md) | Background jobs, in-process or durable, in chains and batches |
 | [Events](events.md) | Saying what happened, and listeners now or in the queue |
 | [Real time](realtime.md) | Server-sent events, websockets, and broadcasting to both |
+| [Live props](live.md) | A page reloads the props the server says went stale, and only those |
 | [Scheduler](scheduler.md) | Recurring work |
 | [Cache](cache.md) | A sharded LRU in the process |
 | [Mail](mail.md) | Resend, SMTP with STARTTLS, or a log file |

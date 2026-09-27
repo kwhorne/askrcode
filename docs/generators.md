@@ -228,6 +228,21 @@ columns without the key, the timestamps and `deleted_at`, which the model
 sets itself and `FillInto` never fills. Going out, those are there and
 marked `readOnly`.
 
+## Lists that stay current: `--live`
+
+```sh
+askr make resource Gadget --live
+```
+
+The list's handler calls `LiveOn(['gadgets'])`, and every write, whether
+through the pages or through `--api`, calls
+`PropsChanged('gadgets', ['rows', 'grid'])`. A list open in any tab shows
+a row created, changed or deleted in another, without a reload. See
+[Live props](live.md).
+
+It is a flag and not the default, because each open list is a stream,
+and a stream is a thread on the server.
+
 ## The tests it writes
 
 Both kinds of resource get a test in `tests/`, and `askr make resource`
@@ -272,6 +287,9 @@ claims on this page. It scaffolds a project and then:
   databases;
 - makes two of them `--api` too, and requires `askr openapi --check` to
   find nothing and a real OpenAPI validator to accept the document;
+- makes one `--live`, and in Chrome holds its list open in one tab while
+  another tab creates a row. The first tab has to show the row without
+  reloading the page;
 - drives the API over a socket with tokens from `askr token:issue`,
   including forty refusals in a row and then a request that must still be
   answered;

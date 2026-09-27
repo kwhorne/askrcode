@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor;
+  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -9578,6 +9578,124 @@ begin
   raise Exception.Create('a broken meter');
 end;
 
+{ ----------------------------------------------------------------- live -- }
+
+var
+  LiveHeard: TStringList = nil;
+  LiveWantedStats: Boolean;
+
+procedure LiveSink(Id: Int64; const Channel, Event, Data: string);
+begin
+  if LiveHeard <> nil then
+    LiveHeard.Add(Channel + ' ' + Event + ' ' + Data);
+end;
+
+function LivePage(Req: TRequest): TResponse;
+begin
+  LiveOn(['gadgets', 'user.7']);
+  LiveWantedStats := InertiaWants('Gadgets/Index', 'stats');
+  Result := Inertia('Gadgets/Index', ['gadgets', 'the list', 'stats', 'the stats']);
+end;
+
+function StillPage(Req: TRequest): TResponse;
+begin
+  Result := Inertia('Gadgets/Show', ['gadget', 'one']);
+end;
+
+{ Asks for a live page, then goes elsewhere instead. }
+function LiveThenAway(Req: TRequest): TResponse;
+begin
+  LiveOn(['gadgets']);
+  Result := Redirect('/elsewhere', 302);
+end;
+
+procedure TestLive;
+var
+  R: TRouter;
+  K: TTestClient;
+  Body, Url: string;
+  P, Q: Integer;
+  Raised: Boolean;
+
+  function Unescaped(const S: string): string;
+  begin
+    Result := StringReplace(S, '\/', '/', [rfReplaceAll]);
+  end;
+
+begin
+  SetAppKey('Zm9vYmFyYmF6cXV1eGZvb2JhcmJhenF1dXhhYmM9');
+  R := TRouter.Create;
+  K := TTestClient.Create(R);
+  LiveHeard := TStringList.Create;
+  AddBroadcastSink(@LiveSink);
+  try
+    R.Use(SignInFromHeader);
+    R.Get('/gadgets', LivePage);
+    R.Get('/gadgets/1', StillPage);
+    R.Get('/away', LiveThenAway);
+    UseLive(R);
+
+    Body := Unescaped(K.AsInertia.WithHeader('X-As', '7').Get('/gadgets').Body.ToString);
+    P := Pos('"askrLive":"', Body);
+    AssertTrue(P > 0, 'a page that called LiveOn carries askrLive');
+    P := P + Length('"askrLive":"');
+    Q := PosEx('"', Body, P);
+    Url := Copy(Body, P, Q - P);
+    AssertContains(Url, '/_askr/live?channels=gadgets,user.7&user=37&expires=',
+      'the channels and who it is for, signed');
+    AssertTrue(LiveWantedStats, 'a full visit wants every prop');
+
+    AssertEqual(K.WithHeader('X-As', '7').Get(Url).HeaderValue('Content-Type'),
+      'text/event-stream; charset=utf-8', 'the URL opens a stream for the user it was made for');
+    AssertEqual(K.WithHeader('X-As', '8').Get(Url).StatusCode, 403,
+      'and for nobody else');
+    AssertEqual(K.Get(Url).StatusCode, 403, 'nor anybody signed out');
+    AssertEqual(K.WithHeader('X-As', '7').Get(StringReplace(Url, 'user.7', 'user.8', [])).StatusCode,
+      403, 'a channel added to the URL is refused');
+    AssertEqual(K.WithHeader('X-As', '7').Get('/_askr/live?channels=gadgets&user=37').StatusCode,
+      403, 'and an unsigned one');
+
+    Body := Unescaped(K.AsInertia.WithHeader('X-As', '7')
+      .WithHeader('X-Inertia-Partial-Component', 'Gadgets/Index')
+      .WithHeader('X-Inertia-Partial-Data', 'gadgets').Get('/gadgets').Body.ToString);
+    AssertContains(Body, '"gadgets":"the list"', 'a partial reload gets the prop it asked for');
+    AssertFalse(Pos('"stats"', Body) > 0, 'and not the others');
+    AssertFalse(Pos('askrLive', Body) > 0, 'nor the stream URL, which the page has');
+    AssertFalse(LiveWantedStats, 'and InertiaWants said so to the handler');
+
+    Body := K.AsInertia.Get('/gadgets/1').Body.ToString;
+    AssertFalse(Pos('askrLive', Body) > 0, 'a page that did not call LiveOn has none');
+    K.WithHeader('X-As', '7').Get('/away');
+    Body := K.AsInertia.Get('/gadgets/1').Body.ToString;
+    AssertFalse(Pos('askrLive', Body) > 0,
+      'nor after a request that called LiveOn and redirected instead');
+
+    PropsChanged('gadgets', ['gadgets', 'stats']);
+    AssertEqual(LiveHeard.Text, 'gadgets askr.stale {"props":["gadgets","stats"]}'#10,
+      'PropsChanged names the props on the channel, and nothing else');
+
+    Raised := False;
+    try
+      PropsChanged('gadgets', ['a"b']);
+    except
+      on E: ELiveError do Raised := True;
+    end;
+    AssertTrue(Raised, 'a prop name that is not an identifier is refused');
+    Raised := False;
+    try
+      PropsChanged('a channel', ['x']);
+    except
+      on E: ELiveError do Raised := True;
+    end;
+    AssertTrue(Raised, 'and so is a channel name with a space');
+  finally
+    FreeAndNil(LiveHeard);
+    K.Free;
+    R.Free;
+    SetAppKey('');
+  end;
+end;
+
 { ----------------------------------------------------------- supervisor -- }
 
 type
@@ -13991,6 +14109,7 @@ begin
   Test('telemetry: requests, queries, jobs and mail, and what they never carry', @TestTelemetry);
   Test('the dashboard: what it counts, that it escapes, and who sees it', @TestDashboard);
   Test('supervised threads: restarted with backoff, or reported, and the queue and scheduler survive', @TestSupervisor);
+  Test('live props: a signed stream per page, stale props by name, partial reloads', @TestLive);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

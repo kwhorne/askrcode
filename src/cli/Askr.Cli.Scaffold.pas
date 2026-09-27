@@ -550,7 +550,7 @@ begin
     '  Askr.Core.Lang, Askr.Locale,' + #10 +
     '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
-    '  Askr.Dashboard,' + #10 +
+    '  Askr.Dashboard, Askr.Live,' + #10 +
     { Written on every build from askr.toml and askr.lock: the plugins'
       units. Empty until there is one. }
     '  Askr.Plugins, App.Plugins,' + #10 +
@@ -735,7 +735,11 @@ begin
     '      DefineGate(' + Q + 'askr.dashboard' + Q + ', @IsAdmin);' + #10 +
     '' + #10 +
     '    See docs/dashboard.md. }' + #10 +
-    '  UseDashboard(R, Cfg(' + Q + 'app.env' + Q + ', ' + Q + 'local' + Q + ') = ' + Q + 'local' + Q + ', DbPool);' + #10 + #10 +
+    '  UseDashboard(R, Cfg(' + Q + 'app.env' + Q + ', ' + Q + 'local' + Q + ') = ' + Q + 'local' + Q + ', DbPool);' + #10 +
+    '  { /_askr/live: the stream a page listens on when its handler called' + #10 +
+    '    LiveOn([...]), and PropsChanged(channel, [props]) reloads those props' + #10 +
+    '    in every page on the channel. See docs/live.md. }' + #10 +
+    '  UseLive(R);' + #10 + #10 +
     '  R.Get(' + Q + '/' + Q + ', Home.Index);' + #10 +
     '  R.Get(' + Q + '/demo' + Q + ', Home.Demo);' + #10 + #10 +
     '  { The commands the app answers to itself: migrate, db:seed, schema,' + #10 +
@@ -900,7 +904,7 @@ begin
   Emit(Root + '/frontend/src/Layout.svelte',
     '<script>' + #10 +
     '  import { page } from ' + Q + '@inertiajs/svelte' + Q + #10 +
-    '  import { Flash } from ' + Q + '@askrcode/lauf/inertia' + Q + #10 +
+    '  import { Flash, Live } from ' + Q + '@askrcode/lauf/inertia' + Q + #10 +
     '  let { children } = $props()' + #10 + #10 +
     '  // <html lang> kept up after a visit that did not load the page --' + #10 +
     '  // a change of language is one. Lauf''s words and locale are given' + #10 +
@@ -913,7 +917,10 @@ begin
     '     into toasts. It has to sit outside the pages, or the region is' + #10 +
     '     swapped out on every navigation and the message is not read' + #10 +
     '     out. -->' + #10 +
-    '<Flash />' + #10 + #10 +
+    '<Flash />' + #10 +
+    '<!-- Live reloads the props Askr says have gone stale, on a page whose' + #10 +
+    '     handler called LiveOn. On any other page it opens nothing. -->' + #10 +
+    '<Live />' + #10 + #10 +
     '<main class="mx-auto max-w-3xl px-4 pt-10 pb-16">' + #10 +
     '  {@render children?.()}' + #10 +
     '</main>' + #10);

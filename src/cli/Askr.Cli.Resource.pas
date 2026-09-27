@@ -168,7 +168,8 @@ function DefaultLiteral(const PC: TPlanColumn): string;
   schema units and the files, and put the routes and the tests in place.
   Prints what it did. Returns False when it refused, having said why. }
 function MakeResource(const Root: string; Schema: TDbSchema;
-  const ModelName, Table, Title: string; Force, Web, Api: Boolean): Boolean;
+  const ModelName, Table, Title: string; Force, Web, Api: Boolean;
+  Live: Boolean = False): Boolean;
 
 implementation
 
@@ -496,6 +497,13 @@ end;
 { Validate, then the ids, then the row and its relations in one
   transaction. Fail is what a refusal answers with. Both controllers
   write it from here, so the web and the API cannot check differently. }
+{ After a write, when the resource is --live: the list's two props, on the
+  channel LiveOn named in Index. }
+function LiveChanged(const P: TResourcePlan): string;
+begin
+  Result := '  PropsChanged(''' + P.Table + ''', [''rows'', ''grid'']);';
+end;
+
 function ManySaveText(const Manys: TManyInfos; const Fail: string): string;
 var
   I: Integer;
@@ -691,6 +699,8 @@ begin
     A('  SysUtils,');
     A('  Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,');
     A('  Askr.Inertia, Askr.Session,');
+    if P.Live then
+      A('  Askr.Live,');
     A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Grid, Askr.Urd.Bind,');
     if PreloadListOf(Manys) <> '' then
       A('  Askr.Urd.Driver, Askr.Urd.Json,');
@@ -820,6 +830,12 @@ begin
     A('  G: TGrid<T' + N.Model + '>;');
     A('begin');
     A(GridText(P));
+    if P.Live then
+    begin
+      A('  { Live: every write below says so on this channel, and the list');
+      A('    reloads its rows and grid wherever it is open. }');
+      A('  LiveOn([''' + P.Table + ''']);');
+    end;
     A('  Result := Inertia(''' + N.PagesDir + '/Index'',');
     A('    [''rows'', G.Rows(TQuery<T' + N.Model + '>.New), ''grid'', G]);');
     A('end;');
@@ -885,6 +901,8 @@ begin
       A('    Exit(BackWithErrors(M.Errors, ''' + N.Url + '/new''));');
       A('  M.Save;');
     end;
+    if P.Live then
+      A(LiveChanged(P));
     A('  Flash(''' + Capital(N.Human) + ' created.'');');
     A('  Result := InertiaRedirect(''' + N.Url + '/'' + IntToStr(M.Id));');
     A('end;');
@@ -922,6 +940,8 @@ begin
       A('    Exit(BackWithErrors(M.Errors, ''' + N.Url + '/'' + IntToStr(M.Id) + ''/edit''));');
       A('  M.Save;');
     end;
+    if P.Live then
+      A(LiveChanged(P));
     A('  Flash(''' + Capital(N.Human) + ' saved.'');');
     A('  Result := InertiaRedirect(''' + N.Url + '/'' + IntToStr(M.Id));');
     A('end;');
@@ -938,6 +958,8 @@ begin
     if P.HasSoftDeletes then
       A('  { Soft: the model has SoftDeletes, so this sets deleted_at. }');
     A('  M.Delete;');
+    if P.Live then
+      A(LiveChanged(P));
     A('  Flash(''' + Capital(N.Human) + ' deleted.'');');
     A('  Result := InertiaRedirect(''' + N.Url + ''');');
     A('end;');
@@ -1014,6 +1036,8 @@ begin
     A('  SysUtils,');
     A('  Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,');
     A('  Askr.Auth.Token, Askr.OpenApi,');
+    if P.Live then
+      A('  Askr.Live,');
     A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Grid, Askr.Urd.Bind, Askr.Urd.Json,');
     if PreloadListOf(Manys) <> '' then
       A('  Askr.Urd.Driver,');
@@ -1135,6 +1159,8 @@ begin
       A('    Exit(ValidationProblem(M.Errors));');
       A('  M.Save;');
     end;
+    if P.Live then
+      A(LiveChanged(P));
     A('  Result := RespondModel(M, 201)');
     A('    .WithHeader(''Location'', ''' + N.ApiUrl + '/'' + IntToStr(M.Id));');
     A('end;');
@@ -1155,12 +1181,16 @@ begin
       A('    Exit(ValidationProblem(M.Errors));');
       A('  M.Save;');
     end;
+    if P.Live then
+      A(LiveChanged(P));
     A('  Result := RespondModel(M);');
     A('end;');
     A('');
     Head('Remove', N.ScopeWrite);
     Found;
     A('  M.Delete;');
+    if P.Live then
+      A(LiveChanged(P));
     A('  Result := Respond(204);');
     A('end;');
     A('');
@@ -2149,6 +2179,8 @@ begin
       A('  Askr.Http.Response, Askr.Http.Router, Askr.Session,');
     A('  Askr.Urd.Driver, Askr.Urd.Sqlite, Askr.Urd.Pg, Askr.Urd.MySql,');
     A('  Askr.Urd.Model, Askr.Urd.Query, Askr.Norn.Migration,');
+    if P.Live then
+      A('  Askr.Core.Crypto,');
     A('  App.Migrations,');
     A(Uses_ + ';');
     A('');
@@ -2202,6 +2234,13 @@ begin
     A('  UseArena(Arena);');
     A('  Conn := OpenDbConnection(Env(''TEST_DATABASE_URL'', ''sqlite::memory:''));');
     A('  UseDb(Conn);');
+    if P.Live then
+    begin
+      A('  { The list signs the stream it listens on. A key of the tests'' own');
+      A('    when none is set: nothing signed here is used outside them. }');
+      A('  if not HasAppKey then');
+      A('    SetAppKey(''YXNrci1nZW5lcmF0ZWQtdGVzdHMtc2lnbi1vbmx5LTE='');');
+    end;
     A('  M := TMigrator.Create(Conn);');
     A('  try');
     A('    M.Up;');
@@ -2966,7 +3005,7 @@ begin
 end;
 
 function MakeResource(const Root: string; Schema: TDbSchema;
-  const ModelName, Table, Title: string; Force, Web, Api: Boolean): Boolean;
+  const ModelName, Table, Title: string; Force, Web, Api, Live: Boolean): Boolean;
 var
   P: TResourcePlan;
   N: TResourceNames;
@@ -2985,6 +3024,7 @@ begin
   Result := False;
   Base := IncludeTrailingPathDelimiter(Root);
   P := PlanResource(Schema, ModelName, Table);
+  P.Live := Live;
   if Length(P.Problems) > 0 then
   begin
     for I := 0 to High(P.Problems) do

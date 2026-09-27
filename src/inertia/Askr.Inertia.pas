@@ -216,6 +216,21 @@ function InertiaLocation(const Url: string): TResponse;
 { True when the request came from the Inertia client. }
 function IsInertiaRequest(Req: TRequest): Boolean;
 
+{ Whether the reply being built will carry this prop: false on a partial
+  reload that asked for others. A prop that costs a query can be left
+  uncomputed when it would be left out anyway:
+
+      if InertiaWants('Orders/Index', 'stats') then
+        Stats := CountByStatus;
+
+  True outside a request, where there is nothing to ask. }
+function InertiaWants(const Component, PropName: string): Boolean;
+
+{ The stream the page being built listens on for props gone stale, as the
+  askrLive prop. For Askr.Live, which signs it; the reply after this one
+  starts without. }
+procedure InertiaLiveUrl(const Url: string);
+
 implementation
 
 const
@@ -261,6 +276,7 @@ threadvar
   GPageOgValues: array of string;
   GPageJsonLd: string;
   GPageFallback: string;
+  GLiveUrl: string;
 
 var
   GVersion: string = '1';
@@ -356,6 +372,7 @@ end;
 
 class procedure TInertia.ClearPageHead;
 begin
+  GLiveUrl := '';
   GPageFallback := '';
   GPageTitle := '';
   GPageDescription := '';
@@ -384,6 +401,25 @@ class procedure TInertia.SetHistory(AEncrypt, AClear: Boolean);
 begin
   GEncryptHistory := AEncrypt;
   GClearHistory := AClear;
+end;
+
+procedure ForgetLiveUrl(Data: Pointer);
+begin
+  GLiveUrl := '';
+end;
+
+{ Cleared by Inertia when it answers, and by the arena when the request
+  ends: a handler that asked for a live page and then redirected would
+  otherwise hand the next request on this worker a URL signed for someone
+  else. }
+procedure InertiaLiveUrl(const Url: string);
+var
+  A: TArena;
+begin
+  GLiveUrl := Url;
+  A := CurrentArena;
+  if A <> nil then
+    A.Defer(ForgetLiveUrl, nil);
 end;
 
 function IsInertiaRequest(Req: TRequest): Boolean;
@@ -430,6 +466,11 @@ begin
   if Only.Len = 0 then
     Exit(True);
   Result := InList(Only, PropName);
+end;
+
+function InertiaWants(const Component, PropName: string): Boolean;
+begin
+  Result := WantsProp(CurrentRequest, Component, PropName);
 end;
 
 { A deferred prop is not sent in the first reply, but is fetched when the
@@ -562,6 +603,8 @@ begin
     either gets neither: the client keeps what it has. }
   if WantsProp(Req, Component, 'locale') then
     W.Field('locale', CurrentLocale);
+  if (GLiveUrl <> '') and WantsProp(Req, Component, 'askrLive') then
+    W.Field('askrLive', GLiveUrl);
   Lauf := ChangedTextsUnder('lauf');
   if (Length(Lauf) > 0) and WantsProp(Req, Component, 'lauf') then
   begin

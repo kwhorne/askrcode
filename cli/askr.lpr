@@ -765,7 +765,7 @@ begin
       Api := HasFlag('api');
       Web := HasFlag('web') or not Api;
       Result := MakeResource(P.Root, S, PascalName(Name_), FlagText('table'),
-        P.Name, HasFlag('force'), Web, Api);
+        P.Name, HasFlag('force'), Web, Api, HasFlag('live'));
     finally
       S.Free;
     end;
@@ -833,7 +833,7 @@ begin
     Si('       askr make model <Name> name:type ...   with its migration');
     Si('         types: ' + TypeNames + '; string(n) for a length,');
     Si('         a trailing ? for nullable. --no-timestamps, --force');
-    Si('       askr make resource <Name> [--web] [--api] [--table=name] [--force]');
+    Si('       askr make resource <Name> [--web] [--api] [--live] [--table=name] [--force]');
     Si('         from the table: pages (--web, the default), JSON (--api), or both');
     Si('       askr make pivot <Model> <Model> [--force]');
     Si('         the table between two models, for BelongsToMany');

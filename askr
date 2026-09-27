@@ -103,6 +103,10 @@ ensure_image() {
 # migrations went into a file nobody opened, and every page that touched
 # the database was a 500. The text travels in the environment, so a DSN
 # needs no quoting.
+# The APP_KEY a gate's .env carries, as the one askr new writes would: a
+# page that signs something -- a live list -- answers 500 without one.
+GATE_APP_KEY=YXNrci1nYXRlcy1zaWduLW9ubHktbm90LWEtc2VjcmV0MQ==
+
 box_write() {
   docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -e ASKR_BOX_TEXT="$2" "$IMAGE" \
     sh -c 'printf "%s\n" "$ASKR_BOX_TEXT" > "$1"' sh "/work/${1#$ROOT/}"
@@ -957,7 +961,7 @@ EOF
 make_check_socket() {
   api_port=${ASKR_MAKE_API_PORT:-8354}
   base="http://127.0.0.1:$api_port"
-  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/api.sqlite')"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nAPP_KEY=%s\nDATABASE_URL=sqlite:storage/api.sqlite' "$GATE_APP_KEY")"
   in_box "rm -f storage/api.sqlite && $askr_bin migrate" shop >"$work/sock-migrate.log" 2>&1 || true
   in_box "$askr_bin token:issue 1 writer --scopes=gadgets:read,gadgets:write" shop \
     >"$work/sock-writer.log" 2>&1 || true
@@ -1139,7 +1143,7 @@ make_check_browser() {
   fi
   ( cd "$front" && exec npx vite --host 127.0.0.1 ) >"$work/web-vite.log" 2>&1 &
   vite_pid=$!
-  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/browser.sqlite')"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nAPP_KEY=%s\nDATABASE_URL=sqlite:storage/browser.sqlite' "$GATE_APP_KEY")"
   in_box "rm -f storage/browser.sqlite && $askr_bin migrate" shop >"$work/web-migrate.log" 2>&1 || true
   docker rm -f askr-makecheck-web >/dev/null 2>&1
   docker run -d --name askr-makecheck-web -p "$web_port:$web_port" $DOCKER_PLATFORM \
@@ -1339,7 +1343,7 @@ cmd_make_check() {
     dialect=${dsn%%:*}
     echo
     echo "- the round trip on $dialect"
-    box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=%s' "$dsn")"
+    box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nAPP_KEY=%s\nDATABASE_URL=%s' "$GATE_APP_KEY" "$dsn")"
     in_box "rm -f storage/make.sqlite" shop >/dev/null 2>&1 || true
 
     if in_box "$askr_bin migrate" shop >"$work/migrate-$dialect.log" 2>&1; then
@@ -1462,20 +1466,33 @@ PY
   else
     bad "the lines go into the Gadget model"
   fi
-  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/resource.sqlite')"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nAPP_KEY=%s\nDATABASE_URL=sqlite:storage/resource.sqlite' "$GATE_APP_KEY")"
   if ! in_box "$askr_bin build && $askr_bin migrate" shop >"$work/res-migrate.log" 2>&1; then
     bad "the project migrates before make resource" "$(grep -E 'rror|Fatal' "$work/res-migrate.log" | head -5)"
     return 1
   fi
 
-  # Tag first, so the gadget's page can link to the tags' pages.
+  # Tag first, so the gadget's page can link to the tags' pages. Maker is
+  # --live: the browser part holds its list open in one tab and makes a
+  # maker in another.
   for model in Tag Gadget Maker Note; do
-    if in_box "$askr_bin make resource $model" shop >"$work/res-$model.log" 2>&1; then
-      ok "make resource $model"
+    live=""
+    [ "$model" = Maker ] && live=" --live"
+    if in_box "$askr_bin make resource $model$live" shop >"$work/res-$model.log" 2>&1; then
+      ok "make resource $model$live"
     else
-      bad "make resource $model" "$(tail -6 "$work/res-$model.log")"
+      bad "make resource $model$live" "$(tail -6 "$work/res-$model.log")"
     fi
   done
+  mk_ctl="$work/shop/app/Http/App.Http.MakersController.pas"
+  if grep -q "LiveOn(\['makers'\])" "$mk_ctl" &&
+     [ "$(grep -c "PropsChanged('makers', \['rows', 'grid'\])" "$mk_ctl" || true)" = "3" ] &&
+     ! grep -q "LiveOn\|PropsChanged" "$work/shop/app/Http/App.Http.GadgetsController.pas"; then
+    ok "--live: the list listens on its table, and the three writes say so; without it, nothing"
+  else
+    bad "--live writes LiveOn in Index and PropsChanged after each write" \
+      "$(grep -n "LiveOn\|PropsChanged" "$mk_ctl" | head -5)"
+  fi
   if grep -q "App.Models.Gadget.pas, which is there" "$work/res-Gadget.log"; then
     ok "it uses the model make model wrote, and does not rewrite it"
   else
@@ -1721,7 +1738,7 @@ EOF
   # make migration regenerates the index from the directory, which is what
   # puts the hand-written one in it -- the way a person would.
   in_box "$askr_bin make migration Noop" shop >/dev/null 2>&1 || true
-  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/twin.sqlite')"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nAPP_KEY=%s\nDATABASE_URL=sqlite:storage/twin.sqlite' "$GATE_APP_KEY")"
   in_box "rm -f storage/twin.sqlite" shop >/dev/null 2>&1 || true
   if ! in_box "$askr_bin build" shop >"$work/twin-build.log" 2>&1; then
     bad "the project with the twin builds" "$(grep -E 'rror|Fatal' "$work/twin-build.log" | head -4)"
@@ -2614,7 +2631,7 @@ cmd_plugin_check() {
   fi
   sed -i.bak 's|^version = .*|path = "/work"|; s|^path = .*|path = "/work"|' "$work/shop/askr.toml"
   rm -f "$work/shop/askr.toml.bak"
-  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/plugin.sqlite')"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nAPP_KEY=%s\nDATABASE_URL=sqlite:storage/plugin.sqlite' "$GATE_APP_KEY")"
   ok "a fixture plugin with a tag, and a new app"
 
   code=0; in_box "$askr_bin plugin add $hello_url" shop >"$work/add.log" 2>&1 || code=$?

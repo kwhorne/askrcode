@@ -112,6 +112,9 @@ type
     Problems: TStringArray;
     { Things a human should decide, and what the plan did meanwhile. }
     Notes: TStringArray;
+    { Not read from the table: make resource --live. The list listens on
+      a channel named for the table, and every write says so there. }
+    Live: Boolean;
   end;
 
 { Reads Table -- or the table the model's name gives, Customer ->
@@ -412,6 +415,7 @@ begin
   Result.HasSoftDeletes := False;
   Result.DefaultSort := '';
   Result.CanCreate := True;
+  Result.Live := False;
   Result.Problems := nil;
   Result.Notes := nil;
 

@@ -14,6 +14,25 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **Live props.** `Askr.Live`: a handler calls `LiveOn(['orders'])`, and
+  `PropsChanged('orders', ['rows', 'grid'])` anywhere makes every page on
+  the channel reload those props, and only those, as an Inertia partial
+  reload that keeps scroll and form input. The stream URL is signed by
+  the page that was shown, bound to the signed-in user and good for a
+  day, so no browser can ask for a channel its page did not grant. Events
+  name props and carry no values. Lauf's `<Live />`, from
+  `@askrcode/lauf/inertia`, listens, and merges events that arrive
+  together into one reload. `askr new` writes both `UseLive(R)` and
+  `<Live />`.
+- **`askr make resource --live`**: the list listens on its table's
+  channel, and every write, through the pages or `--api`, says so.
+  `make:check` holds a list open in one Chrome tab while another tab
+  creates a row, and requires the first to show it without a reload.
+- **`InertiaWants(Component, Prop)`**, so a handler can skip computing a
+  prop a partial reload did not ask for.
+
 ## 0.18.0 — 2026-09-27
 
 Three more things Phoenix does well. The framework says what it did and how
