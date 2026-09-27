@@ -1,5 +1,12 @@
 # Migrations
 
+<!-- check
+var
+  S: TSchemaBuilder;
+  M: TMigrator;
+  Conn: TDbConnection;
+-->
+
 Migrations are Pascal units compiled into your binary. `askr migrate` asks
 the binary to run them — the tool cannot read them.
 
@@ -106,7 +113,7 @@ end;
 
 Modifiers chain and return the column:
 
-```pascal
+```pascal nocheck
 Text('email', 255).Unique.Nullable;
 Money('balance').Default(0);
 Timestamp('at').DefaultRaw('CURRENT_TIMESTAMP');
@@ -131,6 +138,12 @@ differ, and it is the form the PRD writes.
 
 ## The migrator
 
+<!-- check
+procedure Log(const Line: string);
+begin
+  WriteLn(Line);
+end;
+-->
 ```pascal
 M := TMigrator.Create(Conn);
 try
@@ -201,6 +214,13 @@ askr db:seed
 askr db:seed Posts               # just one
 ```
 
+<!-- check
+type
+  TPosts = class(TSeeder)
+  public
+    procedure Run(Conn: TDbConnection); override;
+  end;
+-->
 ```pascal
 procedure TPosts.Run(Conn: TDbConnection);
 var

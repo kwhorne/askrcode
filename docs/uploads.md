@@ -1,5 +1,12 @@
 # File uploads
 
+<!-- check
+type
+  TFiles = class
+    function Receive(Req: TRequest): TResponse;
+  end;
+-->
+
 ```pascal
 function TFiles.Receive(Req: TRequest): TResponse;
 var
@@ -56,6 +63,12 @@ straight onto a directory: `../../etc/passwd`, or a file called `.bashrc`.
 
 **`StoreIn` does not use it at all.** Random name, sanitised extension. The
 original stays in `ClientName` if you want to store it beside the file.
+
+<!-- check
+var
+  F: TUploadedFile;
+  Path: string;
+-->
 
 ```pascal
 Path := F.StoreIn('storage/uploads');

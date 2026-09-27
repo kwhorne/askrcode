@@ -15,6 +15,13 @@ Schedule.EverySeconds(30, 'heartbeat');
 Schedule.Start;
 ```
 
+<!-- check
+var
+  Payload: string;
+  N: Integer;
+  Lines: TStringList;
+-->
+
 ## It dispatches; it never executes
 
 **The scheduler pushes to the queue and never runs anything itself.**
@@ -65,7 +72,7 @@ askr schedule:run
 
 ## Inspecting
 
-```pascal
+```pascal nocheck
 Schedule.Count;
 Schedule.Describe(Lines);
 Schedule.Ticks;  Schedule.Dispatched;

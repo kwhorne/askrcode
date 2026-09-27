@@ -1,5 +1,10 @@
 # API tokens
 
+<!-- check
+var
+  R: TRouter;
+-->
+
 A session is a browser mechanism: a cookie, a CSRF token beside it, and
 something at the other end that stores cookies and follows redirects. A
 program has none of that. It gets a bearer token instead.
@@ -49,12 +54,12 @@ askr token:revoke --user=7     # everything that user has
 
 ## From code
 
-```pascal
+```pascal nocheck
 function IssueToken(Db: TDbConnection; const UserId, Name_: string;
   const Scopes: array of string; ExpiresInSeconds: Int64 = 0): string;
 function FindToken(Db: TDbConnection; const Plain: string;
   out T: TApiToken): Boolean;
-procedure RevokeToken(Db: TDbConnection; TokenId: Int64);
+function RevokeToken(Db: TDbConnection; TokenId: Int64): Boolean;
 function RevokeTokensFor(Db: TDbConnection; const UserId: string): Integer;
 function TokensFor(Db: TDbConnection; const UserId: string): TApiTokens;
 procedure EnsureTokenSchema(Db: TDbConnection);
@@ -66,10 +71,17 @@ either; it stores an id and nothing else about a person.
 
 ## Scopes
 
-```pascal
+```pascal nocheck
 function TokenAllows(const Scope: string): Boolean;
 procedure AuthorizeScope(const Scope: string);   { raises EForbidden → 403 }
 ```
+
+<!-- check
+type
+  TOrderCtl = class
+    function Store(Req: TRequest): TResponse;
+  end;
+-->
 
 ```pascal
 function TOrderCtl.Store(Req: TRequest): TResponse;

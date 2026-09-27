@@ -1,9 +1,39 @@
 # Models
 
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+    FCustomerId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property CustomerId: Int64 read FCustomerId write FCustomerId;
+  end;
+  TProfile = class(TModel)
+  private
+    FId: Int64;
+    FCustomerId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property CustomerId: Int64 read FCustomerId write FCustomerId;
+  end;
+  TTag = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  end;
+var
+  Arena: TArena;
+-->
+
 A model is a class with a `published` section. The mapping comes from RTTI —
 no code generation, no annotations.
 
-```pascal
+```pascal nocheck
 uses Askr.Urd.Model;
 
 type
@@ -36,6 +66,22 @@ the property name.
 > code generation.
 
 ## Describe
+
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FNotes: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Notes: string read FNotes write FNotes;
+  public
+    class procedure Describe(S: TSchema); override;
+  end;
+-->
 
 ```pascal
 class procedure TCustomer.Describe(S: TSchema);
@@ -76,6 +122,11 @@ It is the same argument as a `TDateTime` of zero being written as NULL
 
 ### ZeroIsNull
 
+<!-- check
+var
+  S: TSchema;
+-->
+
 ```pascal
 S.ZeroIsNull('MakerId');
 ```
@@ -101,6 +152,24 @@ A `TDateTime` of zero is an unset date. It is written as NULL, is blank to
 
 ## Saving
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+var
+  C: TCustomer;
+-->
+
 ```pascal
 C := Arena.New<TCustomer>;
 C.Name := 'Ada';
@@ -116,9 +185,14 @@ by `Hydrate` and by `Save`, and decides INSERT against UPDATE.
 
 ## Timestamps
 
+<!-- check
+var
+  S: TSchema;
+-->
+
 ```pascal
 S.Timestamps;                            { created_at, updated_at }
-S.Timestamps('opprettet', 'endret');     { your own names }
+S.Timestamps('added_on', 'changed_on');     { your own names }
 ```
 
 The model needs matching published `TDateTime` properties. If they are
@@ -143,9 +217,29 @@ preserve original timestamps.
 
 ## Soft deletes
 
+<!-- check
+var
+  S: TSchema;
+-->
+
 ```pascal
 S.SoftDeletes;                  { deleted_at }
 ```
+
+<!-- check
+type
+  TPost = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+  published
+    Tags: TModelList<TTag>;
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+  end;
+var
+  Post: TPost;
+-->
 
 ```pascal
 Post.Delete;        { sets deleted_at; the row stays }
@@ -163,6 +257,11 @@ make impossible. See [Queries](queries.md) for `WithTrashed` and
 `Save` must update it rather than inserting a new one.
 
 The migration side has a matching one-liner:
+
+<!-- check
+var
+  S: TSchemaBuilder;
+-->
 
 ```pascal
 with S.Create('posts') do
@@ -188,6 +287,23 @@ empty would be written as "not loaded", which it was.
 Virtual methods, not observers registered at runtime. The compiler sees
 them, and there is no reflection to go through.
 
+<!-- check
+function Sluggify(const S: string): string; begin Result := LowerCase(S); end;
+type
+  TPost = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+    FSlug: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+    property Slug: string read FSlug write FSlug;
+  public
+    procedure BeforeSave; override;
+  end;
+-->
+
 ```pascal
 procedure TPost.BeforeSave;
 begin
@@ -210,6 +326,24 @@ exception.
 
 ## Relations
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+var
+  S: TSchema;
+-->
+
 ```pascal
 S.HasMany('Orders', TOrder, 'customer_id');
 S.BelongsTo('Customer', TCustomer, 'customer_id');
@@ -218,7 +352,7 @@ S.HasOne('Profile', TProfile, 'customer_id');
 
 The `published` field holds the loaded relation:
 
-```pascal
+```pascal nocheck
 type
   TCustomer = class(TModel)
   published
@@ -240,6 +374,11 @@ null, so the frontend can tell "no orders" from "did not ask".
 Posts have many tags, and tags have many posts. The rows between them live
 in a pivot table that holds a pair of keys and nothing else:
 
+<!-- check
+var
+  S: TSchema;
+-->
+
 ```pascal
 S.BelongsToMany('Tags', TTag);
 ```
@@ -253,6 +392,11 @@ lines that go in the model rather than editing it.
 
 Name them when yours differ:
 
+<!-- check
+var
+  S: TSchema;
+-->
+
 ```pascal
 S.BelongsToMany('Tags', TTag, 'article_labels', 'article_id', 'label_id');
 ```
@@ -264,6 +408,22 @@ left out, as a query for it would; it is still attached.
 
 The rows in the pivot are changed on the model, which has to be saved first
 — the pivot row points at its id:
+
+<!-- check
+type
+  TPost = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+  published
+    Tags: TModelList<TTag>;
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+  end;
+var
+  Post: TPost;
+  Ids: TArray<Int64>;
+-->
 
 ```pascal
 Post.Attach('Tags', [3, 7]);    { adds the ones not already there }
@@ -287,6 +447,23 @@ Ids := Post.RelatedIds('Tags'); { what an edit form ticks }
   the refusal lands on the field instead of as a 500.
 
 From a form or an API call:
+
+<!-- check
+type
+  TPost = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+  published
+    Tags: TModelList<TTag>;
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+  end;
+var
+  Post: TPost;
+  TagIds: TArray<Int64>;
+  Ok, HasTags: Boolean;
+-->
 
 ```pascal
 Ok := Post.Validate;
@@ -320,10 +497,29 @@ Both add to `Errors`, so call them after `Validate`, which starts it afresh.
 
 ## Lists
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+var
+  Rows: TModelList<TCustomer>;
+  I: Integer;
+-->
+
 ```pascal
-Liste := TQuery<TCustomer>.New.Get;
-for I := 0 to Liste.Count - 1 do
-  WriteLn(Liste[I].Name);
+Rows := TQuery<TCustomer>.New.Get;
+for I := 0 to Rows.Count - 1 do
+  WriteLn(Rows[I].Name);
 ```
 
 `TModelList<M>` lives in the arena and indexes with the right static type.
@@ -333,6 +529,25 @@ be specialised per model, which is the boilerplate generics were supposed to
 remove.
 
 ## What never goes in a payload
+
+<!-- check
+type
+  TUser = class(TModel)
+  private
+    FId: Int64;
+    FPasswordHash: string;
+  published
+    property Id: Int64 read FId write FId;
+    property PasswordHash: string read FPasswordHash write FPasswordHash;
+  public
+    class procedure HideFromJson(H: TJsonHidden); override;
+  end;
+  TUsersColumns = record
+    const PasswordHash: TColStr = (Name: 'password_hash'; Table: 'users');
+  end;
+var
+  Users: TUsersColumns;
+-->
 
 ```pascal
 class procedure TUser.HideFromJson(H: TJsonHidden);
@@ -364,6 +579,24 @@ written, still queryable — it just never leaves in a payload. Ask
 
 ## Validation
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  public
+    procedure Rules(V: TValidator); override;
+  end;
+-->
+
 ```pascal
 procedure TCustomer.Rules(V: TValidator);
 begin
@@ -371,6 +604,24 @@ begin
   V.Field('Email').Required.Email.UniqueIn('customers');
 end;
 ```
+
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+var
+  C: TCustomer;
+-->
 
 ```pascal
 if not C.Validate then

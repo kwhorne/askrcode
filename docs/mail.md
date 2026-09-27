@@ -19,6 +19,44 @@ Mail.Send(M);
 `Send` frees the message unless you pass `False`. The builders return the
 message, so they chain.
 
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+  end;
+  TCustomer = class(TModel)
+  private
+    FEmail: string;
+  published
+    property Email: string read FEmail write FEmail;
+  end;
+  TUser = class(TModel)
+  private
+    FEmail, FName: string;
+  published
+    property Email: string read FEmail write FEmail;
+    property Name: string read FName write FName;
+  end;
+  TUpload = class(TModel)
+  private
+    FPath: string;
+  published
+    property Path: string read FPath write FPath;
+  end;
+var
+  M: TMailMessage;
+  Order: TOrder;
+  Customer: TCustomer;
+  U: TUser;
+  Upload: TUpload;
+  CsvBytes: TBytes;
+  Link, Host, User, Password: string;
+  H: TFakeResendHttp;
+-->
+
 ## Picking a transport
 
 `MailFromConfig` reads `MAIL_TRANSPORT` and builds the right one, so
@@ -126,7 +164,7 @@ rejected the same way.
 ### Sending the same mail twice
 
 ```pascal
-M.Idempotency('order-' + Order.Id + '-receipt');
+M.Idempotency('order-' + IntToStr(Order.Id) + '-receipt');
 ```
 
 This is the reason to use the HTTP API rather than SMTP. A queued job that
@@ -168,6 +206,11 @@ MAIL_PASSWORD=…
 MAIL_ENCRYPTION=tls     # tls (STARTTLS) | ssl (port 465) | none
 ```
 
+<!-- check
+var
+  T: TSmtpTransport;
+-->
+
 ```pascal
 T := TSmtpTransport.Create(Host, 587, smtpStartTls);
 T.Credentials(User, Password);
@@ -182,12 +225,22 @@ and AUTH LOGIN both put it on the wire in base64, which is not encryption.
 With `MAIL_ENCRYPTION=none` and a username set, Askr refuses rather than
 hands the password to anyone watching. If the relay really is on loopback:
 
+<!-- check
+var
+  T: TSmtpTransport;
+-->
+
 ```pascal
 T.AllowPlainAuth := True;
 ```
 
 PLAIN is preferred over LOGIN — one round trip instead of three — and a
 server that offers neither is an error rather than a guess.
+
+<!-- check
+var
+  T: TSmtpTransport;
+-->
 
 ```pascal
 T.VerifyPeer := False;      { self-signed certificates in test only }
@@ -308,6 +361,11 @@ then yours. Names can have folders: `auth/verify`.
 
 ## Testing
 
+<!-- check
+var
+  T: TNullTransport;
+-->
+
 ```pascal
 T := TNullTransport.Create;
 SetMail(TMailer.Create(T));
@@ -318,6 +376,11 @@ AssertTrue(Pos('Welcome', T.LastMessage) > 0, 'right subject');
 
 For the Resend path specifically, `TFakeResendHttp` lets you check the
 request without sending anything:
+
+<!-- check
+var
+  T: TResendTransport;
+-->
 
 ```pascal
 H := TFakeResendHttp.Create;
@@ -346,6 +409,10 @@ see [HTTP client](http-client.md). That is the path Resend takes.)
 Mail is the archetypal background job, and with a provider it is more
 than a latency argument: a request that sends mail inline **fails with a
 500 when the provider does**.
+
+<!-- check
+procedure SendWelcome(const Ctx: TJobContext); begin end;
+-->
 
 ```pascal
 Queue.Handle('send-welcome', @SendWelcome);

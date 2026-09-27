@@ -1,5 +1,28 @@
 # Lists and pagination
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName, FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+  TCustomersTable = record
+    const Name: TCol<string> = (Name: 'name'; Table: 'customers');
+    const Email: TCol<string> = (Name: 'email'; Table: 'customers');
+    const Balance: TCol<Currency> = (Name: 'balance'; Table: 'customers');
+  end;
+var
+  Customers: TCustomersTable;
+  G: TGrid<TCustomer>;
+-->
+
 A list endpoint answers three questions at once: what the rows are, where
 in the set they came from, and how to ask for the next lot.
 
@@ -49,6 +72,13 @@ thing. It did not, once, and that is a trap worth not having.
 
 A list endpoint answers with three things: the rows, where in the set
 they came from, and how to ask for the next lot.
+
+<!-- check
+type
+  TCustomerCtl = class
+    function Index(Req: TRequest): TResponse;
+  end;
+-->
 
 ```pascal
 function TCustomerCtl.Index(Req: TRequest): TResponse;

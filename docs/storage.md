@@ -1,5 +1,19 @@
 # File storage
 
+<!-- check
+type
+  TUser = class(TModel)
+  private
+    FAvatarPath: string;
+  published
+    property AvatarPath: string read FAvatarPath write FAvatarPath;
+  end;
+var
+  U: TUser;
+  Path, Bytes, Link, TempDir: string;
+  R: TRouter;
+-->
+
 Where an app keeps the files people give it: a directory on this machine
 in development, and S3 — or anything that speaks it — in production, where
 the files have to outlive the server and be shared by every process. The
@@ -17,7 +31,8 @@ U.AvatarPath := Path;
 U.Save;
 
 { later }
-if Storage.Get(U.AvatarPath, Bytes) then ...
+if Storage.Get(U.AvatarPath, Bytes) then
+  ...
 Link := Storage.TemporaryUrl(U.AvatarPath, 15 * 60);  // good for fifteen minutes
 ```
 

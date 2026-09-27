@@ -42,6 +42,25 @@ with the zero-major caveat that minor releases may break things until
 - **`FillRoute(Pattern, Values)`**: a path with its parameters
   percent-encoded. A slash in a parameter is refused, because the router
   decodes before it splits and the link would reach another route.
+- **`./askr docs:check`**: every Pascal example in `docs/` is compiled,
+  each wrapped in a unit of its own, and so is every program in
+  `examples/`. A failure is reported at the page's own line. What a page's
+  examples take for granted is declared in a comment the page does not
+  show; a framework name never gets a stand-in, so a name that does not
+  exist is the page being wrong.
+
+### Fixed
+
+- **The documentation was wrong about the API in more than twenty
+  places**, all found by compiling it. Among them: `.WithJson` and
+  `ToJson` (the calls are `RespondJson` and `RespondModel`), `BadRequest`
+  and `Unauthorized` (neither exists; `Problem(Status, Detail)` does),
+  `Req.Files` (it is `Req.Multipart`), `Session.Flash` and `Auth.Id` (they
+  are `CurrentSession.Flash` and `Askr.Auth.Id`), `Inertia(Component)`
+  without props, `RevokeToken` shown as a procedure, `@Writer.Delta` for a
+  method callback, and a login example that read the errors of a user it
+  had just found to be nil. `Put`, `Patch`, `Delete` and `Any` take a
+  method only, which the routing page now says.
 
 ## 0.18.0 — 2026-09-27
 

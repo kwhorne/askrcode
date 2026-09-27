@@ -38,12 +38,52 @@ begin
 end;
 ```
 
+<!-- check
+type
+  TOrderShipped = class(TNotification)
+  private
+    FOrderId: Int64;
+  published
+    property OrderId: Int64 read FOrderId write FOrderId;
+  end;
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+  end;
+  TUser = class(TModel)
+  private
+    FId: Int64;
+    FName, FEmail, FPhone: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Phone: string read FPhone write FPhone;
+  end;
+var
+  Notice: TOrderShipped;
+  O: TOrder;
+  U: TUser;
+-->
+
 ```pascal
 { a handler }
 Notice := TOrderShipped.Create;
 Notice.OrderId := O.Id;
-NotifyLater(NotifiableFor(U.Id, U.Email).WithName(U.Name).WithPhone(U.Phone), Notice);
+NotifyLater(NotifiableFor(IntToStr(U.Id), U.Email).WithName(U.Name).WithPhone(U.Phone), Notice);
 ```
+
+<!-- check
+var
+  OpsWebhook: string;
+  Alert: TNotification;
+  Notes: TDbNotifications;
+  Pool: TDbPool;
+  Rows: TStoredNotifications;
+  Count: Integer;
+-->
 
 ## Who is told
 
@@ -157,11 +197,11 @@ properties. The table, `notifications`, is made the first time it is
 needed, so the app starts with the database down.
 
 ```pascal
-Rows := DatabaseNotifications.ListFor(Auth.Id, True);   { unread, newest first }
-Count := DatabaseNotifications.UnreadCount(Auth.Id);
-DatabaseNotifications.MarkRead(Auth.Id, Req.Param('id'));
-DatabaseNotifications.MarkAllRead(Auth.Id);
-DatabaseNotifications.Delete(Auth.Id, Req.Param('id'));
+Rows := DatabaseNotifications.ListFor(Askr.Auth.Id, True);   { unread, newest first }
+Count := DatabaseNotifications.UnreadCount(Askr.Auth.Id);
+DatabaseNotifications.MarkRead(Askr.Auth.Id, Req.Param('id').ToString);
+DatabaseNotifications.MarkAllRead(Askr.Auth.Id);
+DatabaseNotifications.Delete(Askr.Auth.Id, Req.Param('id').ToString);
 Result := RespondJson(NotificationsJson(Rows));             { for the bell to fetch }
 ```
 
@@ -176,6 +216,18 @@ Inside a request the request's own connection is used; a queue worker
 borrows from the pool.
 
 ## Slack
+
+<!-- check
+type
+  TDeployFailed = class(TNotification)
+  private
+    FCommit: string;
+  public
+    function ToSlack(const N: TNotifiable): string; override;
+  published
+    property Commit: string read FCommit write FCommit;
+  end;
+-->
 
 ```pascal
 uses Askr.Notify.Slack;   { registers the channel }
@@ -238,6 +290,12 @@ type
       const Uid: string); override;
   end;
 
+procedure TPushChannel.Send(const N: TNotifiable; Notice: TNotification;
+  const Uid: string);
+begin
+  ...
+end;
+
 RegisterChannel('push', TPushChannel.Create);
 ```
 
@@ -247,10 +305,21 @@ own.
 
 ## Testing
 
+<!-- check
+type
+  TOrderShipped = class(TNotification)
+  private
+    FOrderId: Int64;
+  published
+    property OrderId: Int64 read FOrderId write FOrderId;
+  end;
+procedure PlaceOrder; begin end;
+-->
+
 ```pascal
 FakeNotifications([TOrderShipped]);
 try
-  PlaceOrder(...);
+  PlaceOrder;
   AssertEqual(NotificationsSent(TOrderShipped, '7'), 1, 'the customer was told');
   AssertEqual(SentNotificationChannels(TOrderShipped), 'mail,database,sms', 'every way');
   AssertContains(SentNotificationJson(TOrderShipped), '"OrderId":42', 'about the order');

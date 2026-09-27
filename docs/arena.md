@@ -1,5 +1,28 @@
 # The arena
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  end;
+
+var
+  A, Arena: TArena;
+  Mark: TArenaMark;
+  Customer: TCustomer;
+  H: THandle;
+
+procedure CloseHandle(Data: Pointer);
+begin
+  FileClose(THandle(PtrUInt(Data)));
+end;
+-->
+
 This is the one page to read before writing Askr code. Everything else in
 the framework follows from it.
 
@@ -9,7 +32,7 @@ A worker owns **one arena** and calls `Reset` before each request.
 Everything allocated during the request is freed in a single operation. No
 per-object cleanup, no refcounting, no garbage collector.
 
-```pascal
+```pascal nocheck
 type
   TGreeting = class(TArenaObject)      // inherits arena allocation
     Name: TStr;
@@ -179,7 +202,7 @@ A slice: a pointer and a length into memory someone else owns. The parser
 copies nothing — every field on a request is a slice into the buffer the
 bytes arrived in.
 
-```pascal
+```pascal nocheck
 function TStr.IsEmpty: Boolean;
 function TStr.ToString: string;          { copies out; use at the edges }
 function TStr.EqualsStr(const S: string): Boolean;
@@ -196,8 +219,9 @@ function TStr.ToInt64(out V: Int64): Boolean;
 `ToString` copies into a heap string. Use it at the edges — logging, a model
 property, an exception message — not in a loop.
 
-> `TStr.SplitAt` cannot take `Self` as an out parameter: `Left` is written
-> before `Right` is computed.
+> `TStr.SplitAt` can take `Self` as an out parameter —
+> `Rest.SplitAt(B, Item, Rest)` is the usual call — because both halves are
+> worked out before either is written.
 
 ## Background work
 

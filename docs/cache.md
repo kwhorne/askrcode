@@ -1,5 +1,12 @@
 # Cache
 
+<!-- check
+var
+  Json: string;
+  V: TStr;
+  Arena: TArena;
+-->
+
 A sharded LRU in the process. No Redis, no Memcached.
 
 ```pascal

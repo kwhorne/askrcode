@@ -15,16 +15,61 @@ R.Delete('/customers/:id', Customers.Destroy_);
 Server.SetHandler(R.Handle);
 ```
 
+<!-- check
+type
+  TController = class
+    function Index(Req: TRequest): TResponse;
+    function New_(Req: TRequest): TResponse;
+    function Show(Req: TRequest): TResponse;
+    function Store(Req: TRequest): TResponse;
+    function Update(Req: TRequest): TResponse;
+    function Destroy_(Req: TRequest): TResponse;
+    function Serve(Req: TRequest): TResponse;
+    function NotFound(Req: TRequest): TResponse;
+    function Webhook(Req: TRequest): TResponse;
+  end;
+  TPage = class
+    Slug: string;
+    UpdatedAt: TDateTime;
+  end;
+var
+  R: TRouter;
+  Server: TAskrServer;
+  StaticFiles: TStaticFiles;
+  Home, Customers, Orders, Files, Errors, Dashboard, Users, Billing,
+    Reports_: TController;
+  Id: Int64;
+  Path: TStr;
+  Lines: TStrings;
+  K: TTestClient;
+  Res: TResponse;
+  LastEdited: TDateTime;
+  Pages: array of TPage;
+  P: TPage;
+function TController.Index(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.New_(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.Show(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.Store(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.Update(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.Destroy_(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.Serve(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.NotFound(Req: TRequest): TResponse; begin Result := nil; end;
+function TController.Webhook(Req: TRequest): TResponse; begin Result := nil; end;
+function RequireAdmin(Req: TRequest): TResponse; begin Result := nil; end;
+function RequireAccountant(Req: TRequest): TResponse; begin Result := nil; end;
+-->
+
 `Get`, `Post`, `Put`, `Patch`, `Delete` and `Any` each take a pattern and a
 handler. A handler is:
 
-```pascal
+```pascal nocheck
 TRouteHandler = function(Req: TRequest): TResponse of object;   { a method }
 TRouteHandlerProc = function(Req: TRequest): TResponse;         { free-standing }
 ```
 
 Both forms exist because a controller method and a plain function are both
-reasonable, and Pascal distinguishes them at the type level.
+reasonable, and Pascal distinguishes them at the type level. `Get` and
+`Post` take either; `Put`, `Patch`, `Delete` and `Any` take a method.
 
 > The dispatch method is `Handle`, not `Dispatch` — `Dispatch` would shadow
 > `TObject.Dispatch`.
@@ -79,7 +124,7 @@ askr routes:check    # exits 1 when it no longer matches the routes
 
 `App.Routes` has one function per path:
 
-```pascal
+```pascal nocheck
 uses App.Routes;
 
 Result := InertiaRedirect(GadgetsIdEditPath(M.Id));   { /gadgets/7/edit }
@@ -187,6 +232,11 @@ frees them.
 outermost group in, then the handler. A group inside a group has both
 prefixes and both sets of middleware, and does without everything its
 parent does without:
+
+<!-- check
+var
+  Admin, Reports: TRouteGroup;
+-->
 
 ```pascal
 Reports := Admin.Group('/reports');
@@ -315,7 +365,7 @@ Middleware alone is not enough. The session must be written back and the
 cookie set **after** the handler has run, and there is nowhere to hang that
 when the only hook is "before".
 
-```pascal
+```pascal nocheck
 TResponseFilter = function(Req: TRequest; Res: TResponse): TResponse of object;
 
 R.After(@AddSecurityHeaders);
@@ -347,7 +397,7 @@ A project from `askr new` wires this, in this order:
 
 ```pascal
 UseCors(R);             { first: a preflight carries no credentials }
-R.Use(Statisk.Serve);   { static files: no session, no CSRF, short-circuits }
+R.Use(StaticFiles.Serve);   { static files: no session, no CSRF, short-circuits }
 UseMaintenance(R);      { askr down / askr up }
 
 SetSessions(TSessionStore.Create);

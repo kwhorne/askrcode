@@ -1,5 +1,13 @@
 # OpenAPI
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  end;
+var
+  R: TRouter;
+-->
+
 There was no OpenAPI document in Askr for a long time, and the reason was
 written down rather than left implied: Askr knows its routes but not
 which of them are public, what they accept or what they return, and a

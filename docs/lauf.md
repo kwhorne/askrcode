@@ -1,5 +1,23 @@
 # Lauf — the frontend layer
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FName: string;
+  published
+    property Name: string read FName write FName;
+  end;
+  TCustomersColumns = record
+    const Name : TColStr = (Name: 'name'; Table: 'customers');
+    const Email: TColStr = (Name: 'email'; Table: 'customers');
+  end;
+var
+  Customers: TCustomersColumns;
+  G: TGrid<TCustomer>;
+  C: TCustomer;
+-->
+
 Lauf is Askr's component library: Svelte 5, Tailwind v4, and the pieces that
 know about Inertia and Urd. `askr new` sets it up, and a new project's demo
 page is already written in it.

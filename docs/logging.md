@@ -16,6 +16,25 @@ LogDebug('cache miss', ['key', K]);
 Fields are pairs: key, value, key, value. Values are anything
 `array of const` accepts — integers, strings, booleans, floats.
 
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+    FTotal: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Total: Currency read FTotal write FTotal;
+  end;
+var
+  Order: TOrder;
+  N: Integer;
+  K: string;
+  Opts: TServerOptions;
+function BuildExpensiveMessage: string; begin Result := ''; end;
+procedure MyWriter(const Line: string); begin end;
+-->
+
 ## Two formats
 
 ```
@@ -82,6 +101,8 @@ that cannot be written must not take down the app.
 ## Exceptions
 
 ```pascal
+try
+  ...
 except
   on E: Exception do
     LogException(E, 'while saving', ['id', Order.Id]);

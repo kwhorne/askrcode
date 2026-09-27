@@ -25,6 +25,20 @@ UseLocales(R);     { after the sessions, which keep a visitor's choice }
 `askr new` writes both lines, `app.locale = "en"` in `askr.toml`, and a
 `lang/en.toml` that starts empty.
 
+<!-- check
+type
+  TUser = class(TModel)
+  private
+    FName: string;
+  published
+    property Name: string read FName write FName;
+  end;
+var
+  R: TRouter;
+  U: TUser;
+  N: Integer;
+-->
+
 ## Where a word comes from
 
 A key is looked up in this order:
@@ -56,6 +70,13 @@ and adds `Vary: Accept-Language` when the header decided it, so a cache in
 between does not hand one visitor's language to the next.
 
 A "change language" link calls `SetLocale`:
+
+<!-- check
+type
+  TLangController = class
+    function Choose(Req: TRequest): TResponse;
+  end;
+-->
 
 ```pascal
 function TLangController.Choose(Req: TRequest): TResponse;
@@ -107,7 +128,7 @@ many = ":count plików"
 other = ":count pliku"
 ```
 
-```pascal
+```pascal nocheck
 TransCount('app.items', N)
 TransCount('app.left', N, ['name', U.Name])
 ```
@@ -159,7 +180,7 @@ lists equal — so `askr lang:check` checks a `[lauf]` section like the rest.
 A number or a date the reader sees is written as the reader's locale writes
 it — the request's, as for words:
 
-```pascal
+```pascal nocheck
 LocaleNumber(1234567)          { 1,234,567      1 234 567 in nb }
 LocaleDecimal(3.14159, 2)      { 3.14           3,14 }
 LocaleCurrency(1234.5)         { 1,234.5        1 234,5 }

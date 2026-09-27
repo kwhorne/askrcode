@@ -2466,6 +2466,21 @@ print(str((struct.unpack('>I',h[o:o+4])[0]&0x7fffffff)%1000000).zfill(6))" "$1" 
 # another encoder, module for module; this holds it to a reader, which is
 # what a phone is. The reader is there in Chrome on macOS; elsewhere the
 # gate says so and does not claim to have run.
+# Every Pascal example in docs/ through fpc, each wrapped in a unit of its
+# own; an error is reported at the page's own line. See
+# tools/docs-check/check.py for how a fragment is wrapped and how a page
+# declares what its examples take for granted. Pages as arguments check
+# those alone. ASKR_DOCS_OUT gives a separate build directory, so two runs
+# at once do not share .ppu files.
+cmd_docs_check() {
+  prepare
+  ensure_image
+  out=${ASKR_DOCS_OUT:-.build/docscheck}
+  mkdir -p "$ROOT/$out"
+  docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+    python3 tools/docs-check/check.py /work fpc "/work/$out" "$@"
+}
+
 cmd_qr_check() {
   prepare
   ensure_image
@@ -3588,6 +3603,7 @@ case "${1:-}" in
   session:check) shift; cmd_session_check "$@" ;;
   auth:check) shift; cmd_auth_check "$@" ;;
   qr:check) shift; cmd_qr_check "$@" ;;
+  docs:check) shift; cmd_docs_check "$@" ;;
   ws:check) shift; cmd_ws_check "$@" ;;
   storage:check) shift; cmd_storage_check "$@" ;;
   plugin:check) shift; cmd_plugin_check "$@" ;;

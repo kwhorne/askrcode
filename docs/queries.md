@@ -1,9 +1,69 @@
 # Queries
 
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+    FCustomerId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property CustomerId: Int64 read FCustomerId write FCustomerId;
+  end;
+
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+
+  TPost = class(TModel)
+  private
+    FId: Int64;
+    FTitle: string;
+    FDraft: Boolean;
+  published
+    property Id: Int64 read FId write FId;
+    property Title: string read FTitle write FTitle;
+    property Draft: Boolean read FDraft write FDraft;
+  end;
+
+  TCustomersColumns = record
+    const Id          : TColInt64    = (Name: 'id'; Table: 'customers');
+    const Name        : TColStr      = (Name: 'name'; Table: 'customers');
+    const Email       : TColStr      = (Name: 'email'; Table: 'customers');
+    const Balance     : TColCurrency = (Name: 'balance'; Table: 'customers');
+    const ConfirmedAt : TColDateTime = (Name: 'confirmed_at'; Table: 'customers');
+    const DeletedAt   : TColDateTime = (Name: 'deleted_at'; Table: 'customers');
+  end;
+
+  TPostsColumns = record
+    const Id        : TColInt64    = (Name: 'id'; Table: 'posts');
+    const Title     : TColStr      = (Name: 'title'; Table: 'posts');
+    const Draft     : TColBool     = (Name: 'draft'; Table: 'posts');
+    const CreatedAt : TColDateTime = (Name: 'created_at'; Table: 'posts');
+  end;
+
+var
+  Customers: TCustomersColumns;
+  Posts: TPostsColumns;
+-->
+
+<!-- check
+var
+  Rows: TModelList<TCustomer>;
+-->
 ```pascal
 uses Askr.Urd.Query, App.Schema.Customers;
 
-Liste := TQuery<TCustomer>.New
+Rows := TQuery<TCustomer>.New
   .Where(Customers.Balance, GT, 150)
   .Where(Customers.Email, Like, '%@example.com')
   .OrderBy(Customers.Balance, Desc)
@@ -15,13 +75,13 @@ Liste := TQuery<TCustomer>.New
 `Customers.Balance` is a typed column constant generated from your real
 database by `askr schema`. That is what makes the builder typed:
 
-```pascal
+```pascal nocheck
 .Where(Customers.Email, Eq, 42)     { will not compile }
 ```
 
 See [Typed columns](schema.md). You can also write columns by hand:
 
-```pascal
+```pascal nocheck
 .Where(ColStr('customers', 'email'), Eq, 'ada@example.com')
 ```
 
@@ -31,7 +91,7 @@ See [Typed columns](schema.md). You can also write columns by hand:
 
 ## Filtering
 
-```pascal
+```pascal nocheck
 .Where(Col, Op, Value)
 ```
 
@@ -39,7 +99,7 @@ Operators: `Eq`, `Ne`, `GT`, `GTE`, `LT`, `LTE`, `Like`, `ILike`.
 Overloads exist for `Int64`, `string`, `Currency`, `Double`, `Boolean` and
 `TDateTime`, each taking the matching column type.
 
-```pascal
+```pascal nocheck
 .WhereIn(Customers.Id, [1, 2, 3])
 .WhereIn(Customers.Email, ['a@x.no', 'b@x.no'])
 .WhereNull(Customers.DeletedAt)
@@ -50,8 +110,8 @@ Terms are combined with `AND`.
 
 ### Searching several columns at once
 
-```pascal
-.WhereAnyLike([Customers.Name, Customers.Email], Req.Query('q'))
+```pascal nocheck
+.WhereAnyLike([Customers.Name, Customers.Email], Req.Query('q').ToString)
 ```
 
 `WhereAnyLike(Cols, Text, CaseSensitive = False)` is free-text search over
@@ -75,15 +135,19 @@ is what `Askr.Urd.Grid` relies on.
 
 ## Ordering, limits, paging
 
-```pascal
+```pascal nocheck
 .OrderBy(Customers.Name)              { Asc by default }
 .OrderBy(Customers.Balance, Desc)
 .Limit(25)
 .Offset(50)
 ```
 
+<!-- check
+var
+  Rows: TModelList<TCustomer>;
+-->
 ```pascal
-Liste := TQuery<TCustomer>.New.Paginate(Req.Page, 25);
+Rows := TQuery<TCustomer>.New.Paginate(Req.Page, 25);
 ```
 
 `Req.Page` reads `?page=N` and clamps to at least 1.
@@ -113,6 +177,10 @@ and `Paginate` is the one that promises pages.
 | `.Count` | `Int64` |
 | `.ToSql` | The SQL it would run — useful in tests and logs |
 
+<!-- check
+var
+  C: TCustomer;
+-->
 ```pascal
 C := TQuery<TCustomer>.New.Find(7);
 if C = nil then
@@ -121,7 +189,7 @@ if C = nil then
 
 ## Eager loading
 
-```pascal
+```pascal nocheck
 .Preload(['Orders'])
 ```
 
@@ -170,6 +238,10 @@ regardless; `RestoreAll` brings back the trashed ones.
 Query scopes need nothing from the framework. A scope is a function that
 returns a query — typed, chainable, and the compiler sees it:
 
+<!-- check
+var
+  Rows: TModelList<TPost>;
+-->
 ```pascal
 function RecentPosts(Count: Integer): TQuery<TPost>;
 begin
@@ -178,7 +250,7 @@ begin
     .Limit(Count);
 end;
 
-Liste := RecentPosts(10).WithTrashed.Get;
+Rows := RecentPosts(10).WithTrashed.Get;
 ```
 
 It cannot be a class method on the model: the return type would
@@ -187,6 +259,10 @@ applies to `TModelList<M>`.
 
 ## Choosing the connection
 
+<!-- check
+var
+  C: TDbConnection;
+-->
 ```pascal
 TQuery<TCustomer>.New;              { the ambient connection }
 TQuery<TCustomer>.Using(C);         { a specific one }

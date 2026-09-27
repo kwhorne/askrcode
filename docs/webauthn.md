@@ -1,5 +1,12 @@
 # Passkeys
 
+<!-- check
+var
+  ClientDataJson, AttestationObject, AuthenticatorData, Signature: TBytes;
+  Challenge, PubX, PubY: TBytes;
+  StoredSignCount: UInt32;
+-->
+
 `Askr.WebAuthn` verifies both WebAuthn ceremonies: registering a new
 credential, and signing in with one. The cryptography underneath is
 `Askr.Core.Ec` and `Askr.Core.Crypto`, both pure Pascal — this works on a
@@ -34,7 +41,7 @@ begin
   Reg := VerifyRegistration(Opts, ClientDataJson, AttestationObject,
                             Challenge);
   if not Reg.Ok then
-    Exit(BadRequest(Reg.Error));
+    Exit(Problem(400, Reg.Error));
 
   { Store Reg.CredentialId, Reg.PublicKeyX, Reg.PublicKeyY and
     Reg.SignCount against the user. }
@@ -46,11 +53,25 @@ returns 32 random bytes, which is what the spec recommends.
 
 ## Signing in
 
+<!-- check
+type
+  TUser = class(TModel)
+  private
+    FId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+  end;
+var
+  Opts: TWebAuthnOptions;
+  Asr: TAssertion;
+  U: TUser;
+-->
+
 ```pascal
 Asr := VerifyAssertion(Opts, ClientDataJson, AuthenticatorData,
                        Signature, Challenge, PubX, PubY, StoredSignCount);
 if not Asr.Ok then
-  Exit(Unauthorized(Asr.Error));
+  Exit(Problem(401, Asr.Error));
 
 if Asr.CloneWarning then
   LogInfo('passkey sign counter did not advance', ['user', U.Id]);

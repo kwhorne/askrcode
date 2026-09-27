@@ -1,5 +1,16 @@
 # Images
 
+<!-- check
+var
+  Inf: TImageInfo;
+  Orient: Integer;
+  Data, Clean, Thumb, Avatar, Webp: TBytes;
+
+procedure Store(const Data: TBytes);
+begin
+end;
+-->
+
 Two units, and the split between them is the important part.
 
 `Askr.Image` tells you what a file **is** without decoding a pixel. No
@@ -18,13 +29,13 @@ uses Askr.Image;
 var
   F: PUploadedFile;
 begin
-  F := Req.Files.FileAt(0);
+  F := Req.Multipart.FileAt(0);
 
   if SniffFormat(F^.Content) = ifUnknown then
-    Exit(BadRequest('That is not an image.'));
+    Exit(RespondText('That is not an image.', 400));
 
   if not ExtensionMatches(F^.SafeName, F^.Content) then
-    Exit(BadRequest('The file does not match its extension.'));
+    Exit(RespondText('The file does not match its extension.', 400));
 end;
 ```
 
@@ -39,12 +50,17 @@ instead.
 
 ## Dimensions without decoding
 
+<!-- check
+var
+  F: PUploadedFile;
+-->
+
 ```pascal
 Inf := ReadImageInfo(F^.Content);
 if Inf.Ok and ((Inf.Width > 6000) or (Inf.Height > 6000)) then
-  Exit(BadRequest('That image is too large.'));
+  Exit(RespondText('That image is too large.', 400));
 if Inf.Animated then
-  Exit(BadRequest('Animated images are not allowed here.'));
+  Exit(RespondText('Animated images are not allowed here.', 400));
 ```
 
 `ReadImageInfo` parses the header only — JPEG's SOF marker, PNG's IHDR,

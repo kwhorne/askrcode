@@ -1,5 +1,10 @@
 # Rate limiting
 
+<!-- check
+var
+  R: TRouter;
+-->
+
 How often one caller may ask. Off until a number is set, and `askr new`
 sets one.
 

@@ -7,6 +7,16 @@ SetSessions(SessionsFromConfig(DbPool));
 UseSessions(R);
 ```
 
+<!-- check
+function Handle(Req: TRequest): TResponse; begin Result := nil; end;
+var
+  R: TRouter;
+  DbPool: TDbPool;
+  S: TSession;
+  Res: TResponse;
+  Json: TStr;
+-->
+
 That is what `askr new` writes. `SessionsFromConfig` reads two keys:
 
 ```toml
@@ -156,7 +166,7 @@ A backend of your own is a class with five methods — `Load`, `Save`,
 `Delete`, `Count` and `Sweep` — passed to `TSessionStore.Create(Backend)`.
 The store owns it from then on.
 
-```pascal
+```pascal nocheck
 Sessions.Count;
 Sessions.Created;  Sessions.Resumed;  Sessions.Expired;
 Sessions.Destroy_(Id);

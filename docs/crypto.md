@@ -4,6 +4,25 @@
 uses Askr.Core.Crypto;
 ```
 
+<!-- check
+type
+  TUser = class(TModel)
+  private
+    FId: Int64;
+    FPasswordHash: string;
+    FTotpSecret: string;
+  published
+    property Id: Int64 read FId write FId;
+    property PasswordHash: string read FPasswordHash write FPasswordHash;
+    property TotpSecret: string read FTotpSecret write FTotpSecret;
+  end;
+var
+  U: TUser;
+  P, Password, Key, Msg, Signed, Payload, Secret: string;
+  Salt: TBytes;
+  Iterations, DkLen: Integer;
+-->
+
 **Everything here is written in pure Pascal, without OpenSSL.** That is a
 deliberate choice, and the reason is the PRD's first promise: the binary
 must start on a machine without OpenSSL. If password hashing leaned on
@@ -51,6 +70,11 @@ fine for test data, useless for a session id.
 
 ## Hashing
 
+<!-- check
+var
+  S: string;
+-->
+
 ```pascal
 Sha256(S);              { TSha256Digest — 32 bytes }
 Sha256Hex(S);
@@ -69,6 +93,11 @@ apps people have compute HMAC-SHA1 whatever the setup asks for.
 
 ## Comparing secrets
 
+<!-- check
+var
+  A, B: string;
+-->
+
 ```pascal
 ConstantTimeEquals(A, B);
 ```
@@ -81,6 +110,11 @@ Unequal lengths leak, but unavoidably: the length of a hash is public. What
 must not leak is *where* they differ, so the loop always runs to the end.
 
 ## Passwords
+
+<!-- check
+var
+  Hash: string;
+-->
 
 ```pascal
 Hash := HashPassword('correct horse battery staple');
@@ -145,7 +179,8 @@ key swapped silently logs everyone out.
 
 ```pascal
 Signed := Sign('user=7|expires=1790000000');
-if Unsign(Signed, Payload) then ...
+if Unsign(Signed, Payload) then
+  ...
 ```
 
 The result is `<text>.<signature>`, and **the text is readable** — the
@@ -161,7 +196,8 @@ signature cannot. Comparison is constant time.
 uses Askr.Core.Aead;
 
 U.TotpSecret := SealText(Secret, 'totp');
-if OpenText(U.TotpSecret, 'totp', Secret) then ...
+if OpenText(U.TotpSecret, 'totp', Secret) then
+  ...
 ```
 
 For a secret the app has to read back — a TOTP secret, an API key for a
@@ -192,6 +228,12 @@ for a key and nonce of your own. A nonce is used once per key, never again.
 
 ## Encoding
 
+<!-- check
+var
+  B: TBytes;
+  S: string;
+-->
+
 ```pascal
 Base64Encode(B);      Base64Decode(S);
 Base64UrlEncode(B);   Base64UrlDecode(S);     { -_ and no padding }
@@ -211,6 +253,11 @@ base64url is the form that belongs in a URL, a filename or a cookie value.
 `Askr.Core.Ec` verifies ECDSA signatures on P-256, on top of the 256-bit
 arithmetic in `Askr.Core.BigInt`. It exists for WebAuthn — Askr **verifies
 signatures, it does not produce them.**
+
+<!-- check
+var
+  Qx, Qy, R, S, Hash: TBytes;
+-->
 
 ```pascal
 if EcdsaVerifyP256(Qx, Qy, R, S, Hash) then

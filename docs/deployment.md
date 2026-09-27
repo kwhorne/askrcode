@@ -1,5 +1,10 @@
 # Deployment
 
+<!-- check
+var
+  Opts: TServerOptions;
+-->
+
 ```sh
 askr build
 ```

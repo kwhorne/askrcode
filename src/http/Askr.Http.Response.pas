@@ -32,7 +32,7 @@ type
     constructor Create(AStatus: Integer = 200);
 
     { The builders return Self, so they chain:
-      Result := Respond(201).WithHeader('Location', Url).WithJson(Payload); }
+      Result := RespondJson(Payload, 201).WithHeader('Location', Url); }
     function Status(ACode: Integer): TResponse;
     function WithHeader(const AName, AValue: string): TResponse; overload;
     function WithHeader(const AName: string; const AValue: TStr): TResponse; overload;

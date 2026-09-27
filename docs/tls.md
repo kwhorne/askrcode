@@ -1,5 +1,12 @@
 # TLS
 
+<!-- check
+var
+  Opts: TServerOptions;
+  Client: THttpClient;
+  Transport: TSmtpTransport;
+-->
+
 OpenSSL is loaded with `dlopen`, not linked in. **The binary starts on a
 machine without OpenSSL** — an app behind a reverse proxy never needs it.
 

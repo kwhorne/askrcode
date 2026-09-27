@@ -1,11 +1,30 @@
 # Responses
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  end;
+var
+  Res: TResponse;
+  Payload, Id, Raw, Html: string;
+  SomeTStr: TStr;
+  W: TJsonWriter;
+  Arena: TArena;
+  C, Customer: TCustomer;
+  I: Integer;
+-->
+
 `TResponse` lives in the arena and its builders return `Self`, so they chain:
 
 ```pascal
-Result := Respond(201)
-  .WithHeader('Location', '/customers/7')
-  .WithJson(Payload);
+Result := RespondJson(Payload, 201)
+  .WithHeader('Location', '/customers/7');
 ```
 
 ## Constructors
@@ -38,7 +57,7 @@ Raising is the only way out of the middle of a function, and not every
 failure is a fault. An exception descending from `EHttpError` says which
 status it should become:
 
-```pascal
+```pascal nocheck
 type
   ENotFound = class(EHttpError)
   public
@@ -80,7 +99,7 @@ actively harmful.
 Res.WithCookie('theme', 'dark', 86400);
 ```
 
-```pascal
+```pascal nocheck
 function WithCookie(const AName, AValue: string;
   MaxAge: Integer = -1;
   Secure: Boolean = False;
@@ -100,7 +119,7 @@ frontend genuinely must read — `XSRF-TOKEN` is the one that matters.
 
 ## Status codes
 
-```pascal
+```pascal nocheck
 Res.Status(422);
 Res.StatusCode;
 ```
@@ -161,7 +180,7 @@ the window closes itself on the next write.
 
 ## Bodies
 
-```pascal
+```pascal nocheck
 Res.WithBody('text');
 Res.WithBody(SomeTStr);       { no copy }
 Res.Body;
@@ -197,14 +216,14 @@ Result := RespondJson(W.ToString);
 Models serialise through RTTI in `Askr.Urd.Json`:
 
 ```pascal
-Result := RespondJson(ToJson(Customer));
+Result := RespondModel(Customer);
 ```
 
 ## Reading a response
 
 Useful in response filters and tests:
 
-```pascal
+```pascal nocheck
 Res.StatusCode;
 Res.HeaderValue('Location');
 Res.HeaderCount;

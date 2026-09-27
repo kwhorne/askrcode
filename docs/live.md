@@ -4,6 +4,24 @@ A page that finds out its data went stale and fetches it again, without
 the person looking at it doing anything. The server says which props have
 changed; every page listening reloads those props, and only those.
 
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+    FStatus: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Status: string read FStatus write FStatus;
+  end;
+  TOrders = class
+    function Index(Req: TRequest): TResponse;
+  end;
+var
+  G: TGrid<TOrder>;
+  Q: TQuery<TOrder>;
+-->
+
 ```pascal
 uses Askr.Live;
 
@@ -60,6 +78,12 @@ event in the first place.
 
 A partial reload asks for some props, but the handler runs in full. When
 a prop costs a query, ask first:
+
+<!-- check
+var
+  Stats: Int64;
+function CountByStatus: Int64; begin Result := 0; end;
+-->
 
 ```pascal
 if InertiaWants('Orders/Index', 'stats') then

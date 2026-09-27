@@ -14,6 +14,29 @@ its real type.
 2 file(s), 2 changed.
 ```
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FEmail: string;
+    FBalance: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+  end;
+
+  { What askr schema writes in App.Schema.Customers. }
+  TCustomersColumns = record
+    const Id      : TColInt64    = (Name: 'id'; Table: 'customers');
+    const Email   : TColStr      = (Name: 'email'; Table: 'customers');
+    const Balance : TColCurrency = (Name: 'balance'; Table: 'customers');
+  end;
+
+var
+  Customers: TCustomersColumns;
+-->
 ```pascal
 uses App.Schema.Customers;
 
@@ -43,7 +66,7 @@ operational diff would be useless.
 
 The manifest answers questions about the schema at runtime:
 
-```pascal
+```pascal nocheck
 ColumnExists('customers', 'email');
 IsIndexed('customers', 'created_at');
 PascalTypeOf('customers', 'balance');     { 'Currency' }

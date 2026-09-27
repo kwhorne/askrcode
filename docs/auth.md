@@ -1,5 +1,38 @@
 # Authentication and authorisation
 
+<!-- check
+type
+  TUser = class(TModel)
+  private
+    FId: Int64;
+    FEmail: string;
+    FPasswordHash: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Email: string read FEmail write FEmail;
+    property PasswordHash: string read FPasswordHash write FPasswordHash;
+  end;
+  TPost = class(TModel)
+  private
+    FId: Int64;
+    FAuthorId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property AuthorId: Int64 read FAuthorId write FAuthorId;
+  end;
+  TUsersColumns = record
+    const Email: TColStr = (Name: 'email'; Table: 'users');
+  end;
+function UserVerified(const Id: string): Boolean; begin Result := False; end;
+var
+  Users: TUsersColumns;
+  R: TRouter;
+  U: TUser;
+  Post: TPost;
+  UserId, Email, Password, Link, Html, Secret: string;
+  Remember: Boolean;
+-->
+
 ## Scaffolding it
 
 ```sh
@@ -132,10 +165,14 @@ your app verifies and calls `Login` with an id.
 
 ```pascal
 U := TQuery<TUser>.New.Where(Users.Email, Eq, Email).First;
-if (U <> nil) and VerifyPassword(Password, U.PasswordHash) then
-  Login(IntToStr(U.Id), Remember)
-else
-  Exit(BackWithErrors(U.Errors));
+if (U = nil) or not VerifyPassword(Password, U.PasswordHash) then
+begin
+  { One message for both. "No such account" would tell anyone asking
+    who is registered. }
+  CurrentSession.Flash('error', 'Those credentials do not match.');
+  Exit(Redirect('/login', 303));
+end;
+Login(IntToStr(U.Id), Remember);
 ```
 
 It sounds like a detour, but it is the one order that cannot go wrong: the
@@ -200,7 +237,7 @@ end;
 DefineGate('edit-post', @CanEdit);
 ```
 
-```pascal
+```pascal nocheck
 if Allows('edit-post', Post) then ...
 if Denies('edit-post', Post) then Exit(RespondText('Forbidden', 403));
 Authorize('edit-post', Post);        { raises EForbidden }
@@ -283,7 +320,7 @@ uses Askr.Signed;
 Link := SignedUrl('/unsubscribe?list=news&user=42', 7 * 24 * 60 * 60);
 ```
 
-```pascal
+```pascal nocheck
 case CheckSignature(Req) of
   scValid:   ...;
   scExpired: ...;  { ours, but old: offer a new one }
@@ -413,7 +450,7 @@ with no session and no cookie. `Check`, `Id`, `User` and every gate then
 answer as they do for a browser, so authorisation is written once. See
 [API tokens](tokens.md).
 
-```pascal
+```pascal nocheck
 procedure LoginForRequest(const UserId: string);
 function IsRequestIdentity: Boolean;
 ```

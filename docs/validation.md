@@ -1,7 +1,40 @@
 # Validation
 
+<!-- check
+var
+  C: TModel;
+  V: TValidator;
+  W: TJsonWriter;
+  I: Integer;
+-->
+
 Rules live on the model.
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+    FEmail: string;
+    FBalance: Currency;
+    FAge: Int64;
+    FStatus: string;
+    FPassword: string;
+    FPasswordConfirmation: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+    property Balance: Currency read FBalance write FBalance;
+    property Age: Int64 read FAge write FAge;
+    property Status: string read FStatus write FStatus;
+    property Password: string read FPassword write FPassword;
+    property PasswordConfirmation: string read FPasswordConfirmation write FPasswordConfirmation;
+  public
+    procedure Rules(V: TValidator); override;
+  end;
+-->
 ```pascal
 procedure TCustomer.Rules(V: TValidator);
 begin
@@ -65,8 +98,8 @@ its own email as taken. The column defaults to the one the property maps to.
 > name.**
 
 ```pascal
-V.Field('CustomerId')          { the property }
-C.Errors.Has('customer_id')    { the column }
+V.Field('CustomerId');         { the property }
+C.Errors.Has('customer_id');   { the column }
 ```
 
 That is deliberate. The frontend receives errors keyed the way the form
@@ -89,7 +122,7 @@ Fields without errors are not listed at all. `TErrors` lives in the arena
 and dies with the request.
 
 Messages are English, because everything a user of the framework sees is:
-`' is required'`, `'%s must be at least %d characters'`, and so on.
+`:attribute is required`, `:attribute must be at least :min characters`, and so on.
 
 ## Across a redirect
 

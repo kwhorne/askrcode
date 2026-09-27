@@ -22,6 +22,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr ws:check   # Autobahn-testsuiten mot websocketene
 ./askr storage:check # S3-disken mot versitygw, som sjekker hver signatur
 ./askr plugin:check  # en fikstur-plugin fra en git-tagg inn i binæren, og det som skal stoppe
+./askr docs:check    # hvert Pascal-eksempel i docs/ og hvert program i examples/ gjennom fpc
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -1385,6 +1386,26 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   verdien.** Det er grunnen til at siden er lukket utenfor utvikling, og
   det står i docs.
 
+## Docs som bevis
+
+* **`./askr docs:check` kompilerer hvert ```pascal-eksempel i docs/**, hvert
+  pakket inn i en egen unit, og hvert program i `examples/`. En feil meldes
+  på sidens egen linje. Det sidene tar for gitt — variabler, lesernes egne
+  modeller og handlere — deklareres i en `<!-- check -->`-kommentar som
+  siden ikke viser. En kommentar rett før en blokk gjelder bare den.
+* **Et rammeverksnavn får aldri en stub.** Finnes ikke navnet, er det
+  docs som tar feil. Første kjøring kompilerte 32 av 310, og å få resten
+  gjennom fant over tjue steder der docs tok feil om API-et:
+  `.WithJson`, `ToJson`, `BadRequest`, `Unauthorized`, `Req.Files`,
+  `Session.Flash`, `Auth.Id`, `Inertia(Component)` uten props, og en
+  `RevokeToken` som var en funksjon. Ingen av dem var funnet ved å lese.
+* **`nocheck` er for det som ikke er kode**: en liste med properties som
+  ikke er setninger, en signatur uten kropp, en blokk som viser en feil
+  med vilje. 47 står slik nå, hver med grunnen i rapporten fra den som
+  satte den.
+* **Den fant også et notat her som var feil**: at `TStr.SplitAt` ikke tålte
+  `Self` som ut-parameter. Kilden var rettet for lenge siden.
+
 ## Verified routes
 
 * **`App.Routes` skrives av appbinæren, ikke av verktøyet.** Rutene er
@@ -2172,8 +2193,11 @@ grunn; den slår av en reell typesjekk.
 * FPC leter etter `fpc.cfg` i `~/.fpc.cfg` og `/etc/fpc.cfg` på Unix, ikke ved
   siden av binaeren. fpcupdeluxe legger den ved binaeren — sett
   `PPC_CONFIG_PATH`.
-* `TStr.SplitAt` kan ikke ta `Self` som ut-parameter — `Left` skrives før
-  `Right` beregnes.
+* `TStr.SplitAt` tåler `Self` som ut-parameter: `Rest.SplitAt(B, Item,
+  Rest)` er det vanlige kallet. Den kunne ikke det en gang, fordi `Left`
+  ble skrevet før `Right` var regnet ut. Nå regnes begge halvdelene ut i
+  lokale variabler først. Notatet sa det gamle helt til `docs:check` fikk
+  en agent til å lese kilden.
 * `SIGPIPE` må ignoreres før serveren starter, ellers dreper en klient som
   lukker tidlig hele prosessen.
 * `DownTo` er et reservert ord og kan ikke brukes som parameternavn.

@@ -35,6 +35,13 @@ Run `askr list` to see what your binary answers to.
 
 ### Commands of your own
 
+<!-- check
+var
+  Month: string;
+  DryRun: Boolean;
+  Limit: Integer;
+-->
+
 ```pascal
 function SendInvoices(const A: TConsoleArgs): Integer;
 begin

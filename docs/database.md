@@ -1,5 +1,38 @@
 # Databases
 
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+    FTotal: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property Total: Currency read FTotal write FTotal;
+  end;
+
+  TOrderLine = class(TModel)
+  private
+    FId: Int64;
+    FOrderId: Int64;
+  published
+    property Id: Int64 read FId write FId;
+    property OrderId: Int64 read FOrderId write FOrderId;
+  end;
+
+var
+  C: TDbConnection;
+  A, Arena: TArena;
+  R: TDbResult;
+  B: TStrBuilder;
+  I, Row, Col: Integer;
+  Id: Int64;
+  Order: TOrder;
+  Line: TOrderLine;
+  Pool: TDbPool;
+  Dsn: string;
+-->
+
 Three dialects, one interface: **Postgres, MySQL and SQLite**. Models, the
 query builder, validation and eager loading are bit for bit the same code
 against all three.
@@ -74,7 +107,7 @@ embedded quote.
 `TDbResult` owns nothing from the client library. Everything is copied into
 the arena, and `PQclear` (or its equivalent) happens before `Exec` returns.
 
-```pascal
+```pascal nocheck
 R.RowCount;  R.FieldCount;  R.AffectedRows;
 R.Value(Row, Col);      R.Value(Row, 'name');
 R.IsNull(Row, Col);     R.AsInt64(Row, Col);
@@ -137,7 +170,7 @@ transaction that is all one piece and known to be the outermost.
 
 ## Errors
 
-```pascal
+```pascal nocheck
 except
   on E: EDbError do
     if E.IsUniqueViolation then

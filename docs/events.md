@@ -14,6 +14,31 @@ type
   end;
 ```
 
+<!-- check
+type
+  TUserRegistered = class(TEvent)
+  private
+    FUserId: Int64;
+    FEmail: string;
+  published
+    property UserId: Int64 read FUserId write FUserId;
+    property Email: string read FEmail write FEmail;
+  end;
+  TUser = class(TModel)
+  private
+    FId: Int64;
+    FEmail: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Email: string read FEmail write FEmail;
+  end;
+var
+  E: TUserRegistered;
+  U: TUser;
+procedure AddToNewsletter(E: TEvent); begin end;
+procedure SendWelcome(E: TEvent); begin end;
+-->
+
 ```pascal
 { at startup }
 Listen(TUserRegistered, @AddToNewsletter);
@@ -25,6 +50,18 @@ E.UserId := U.Id;
 E.Email := U.Email;
 DispatchEvent(E);
 ```
+
+<!-- check
+type
+  TUserRegistered = class(TEvent)
+  private
+    FUserId: Int64;
+    FEmail: string;
+  published
+    property UserId: Int64 read FUserId write FUserId;
+    property Email: string read FEmail write FEmail;
+  end;
+-->
 
 ```pascal
 procedure SendWelcome(E: TEvent);

@@ -1,7 +1,39 @@
 # APIs
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  end;
+var
+  R: TRouter;
+  W: TJsonWriter;
+  StaticFiles: TStaticFiles;
+  DbPool: TDbPool;
+
+procedure AppSitemap(S: TSitemap);
+begin
+end;
+
+function LeaseDb(Req: TRequest): TResponse;
+begin
+  Result := nil;
+end;
+
+function ReleaseDb(Req: TRequest; Res: TResponse): TResponse;
+begin
+  Result := Res;
+end;
+-->
+
 Askr serves pages and it serves programs, and the difference is not two
 sets of routes. It is one route that can tell who is asking.
+
+<!-- check
+type
+  TCustomerCtl = class
+    function Store(Req: TRequest): TResponse;
+  end;
+-->
 
 ```pascal
 function TCustomerCtl.Store(Req: TRequest): TResponse;
@@ -25,8 +57,10 @@ a handler that has to ask will eventually forget.
 
 ## The whole stack
 
-This is what `askr new` writes, in this order, and the order is the
-argument:
+These are the lines of the `app.lpr` that `askr new` writes that decide who
+a request comes from and what it may do, in the order it writes them. The
+order is the argument. It leaves out the lines that decide none of that:
+the language, the plugins, the dashboard and live props.
 
 ```pascal
 UseCors(R);             { first: a preflight carries no credentials }
@@ -38,7 +72,7 @@ UseRobots(R);
 R.Use(@LeaseDb);        { before anything that reads the database }
 R.After(@ReleaseDb);
 
-SetSessions(TSessionStore.Create);
+SetSessions(SessionsFromConfig(DbPool));
 UseSessions(R);
 UseTokenAuth(R);        { Authorization: Bearer — before UseCsrf }
 RateLimit.PerMinute(600).KeyBy(@TokenRateKey);
@@ -66,7 +100,7 @@ wired together in one file, and it is what `./askr api:check` drives.
 
 ## Who asked for JSON
 
-```pascal
+```pascal nocheck
 function TRequest.AcceptsJson: Boolean;
 ```
 
@@ -120,7 +154,7 @@ member, which the RFC allows.
 
 ### Building one
 
-```pascal
+```pascal nocheck
 function Problem(AStatus: Integer; const Detail: string = ''): TResponse;
 ```
 
@@ -131,7 +165,7 @@ Exit(Problem(409, 'That order has already shipped.'));
 For a document with extension members of your own, the two halves are
 exposed separately:
 
-```pascal
+```pascal nocheck
 procedure BeginProblem(var W: TJsonWriter; AStatus: Integer;
   const Detail: string = '');
 function ProblemFrom(var W: TJsonWriter; AStatus: Integer): TResponse;
@@ -146,7 +180,7 @@ Result := ProblemFrom(W, 429);
 
 ### From a validation
 
-```pascal
+```pascal nocheck
 function ValidationProblem(E: TErrors;
   const Detail: string = 'The request body did not validate.'): TResponse;
 ```
@@ -205,7 +239,7 @@ Raising is the only way out of the middle of a function, and not every
 failure is a fault. An exception descending from `EHttpError` says which
 status it should become:
 
-```pascal
+```pascal nocheck
 type
   ENotFound = class(EHttpError)
   public

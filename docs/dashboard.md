@@ -1,5 +1,11 @@
 # Dashboard
 
+<!-- check
+var
+  R: TRouter;
+  DbPool: TDbPool;
+-->
+
 `/_askr` is what the app is doing, seen from inside it: the routes that
 answered and how long they took, the statements that took the time, the
 jobs by what became of them, mail sent and failed, and the pool, the queue

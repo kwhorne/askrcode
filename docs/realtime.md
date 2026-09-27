@@ -7,6 +7,13 @@ and fast. Both are fed by the same `Broadcast`.
 
 ## Server-sent events
 
+<!-- check
+type
+  TFeed = class
+    function Open(Req: TRequest): TResponse;
+  end;
+-->
+
 ```pascal
 uses Askr.Http.Stream;
 
@@ -82,6 +89,15 @@ The head carries `Cache-Control: no-cache, no-transform` and
 events back to fill a buffer.
 
 ## WebSockets
+
+<!-- check
+type
+  TRooms = class
+    function Join(Req: TRequest): TResponse;
+  end;
+var
+  Chat: TWsHandler;
+-->
 
 ```pascal
 uses Askr.Http.WebSocket;

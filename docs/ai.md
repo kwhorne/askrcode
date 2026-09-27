@@ -1,5 +1,14 @@
 # AI
 
+<!-- check
+var
+  K: TAiClient;
+  R: TAiResponse;
+  F: TFakeAiTransport;
+  Json: string;
+  SomeOtherKey: string;
+-->
+
 Claude through the Messages API. There is no official Pascal SDK, so this is
 raw HTTP against `POST /v1/messages`. The protocol is documented and stable;
 what Askr owns is the serialisation, and `Askr.Core.Json` handles both
@@ -86,7 +95,7 @@ R := K.Send([
   UserMsg('What did it cost?')]);
 ```
 
-```pascal
+```pascal nocheck
 R.Text;          R.Thinking;
 R.StopReason;    R.Model;
 R.Usage.InputTokens;  R.Usage.OutputTokens;
@@ -96,6 +105,15 @@ R.Raw;           { the whole response, for anything not picked out }
 
 ## Streaming
 
+<!-- check
+type
+  TWriter = class
+    function Delta(const S: string): Boolean;
+  end;
+var
+  Writer: TWriter;
+-->
+
 ```pascal
 function TWriter.Delta(const S: string): Boolean;
 begin
@@ -103,7 +121,7 @@ begin
   Result := True;      { False stops the stream }
 end;
 
-R := K.Stream('Write a short story.', @Writer.Delta);
+R := K.Stream('Write a short story.', Writer.Delta);
 ```
 
 The callback gets the text as it arrives; the returned response still has
@@ -162,7 +180,7 @@ aside and restored.
 
 ## Errors
 
-```pascal
+```pascal nocheck
 except
   on E: EAiError do
   begin

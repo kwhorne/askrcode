@@ -1,9 +1,32 @@
 # Inertia and Svelte
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+  end;
+var
+  Component, Value, LdJson, Html, AssetHash: string;
+  C: TCustomer;
+  P: TModel;
+-->
+
 Inertia lets you build server-driven pages with a component frontend and no
 API in between. The server returns props; the client renders the component.
 
 **Askr targets Inertia 3.**
+
+<!-- check
+type
+  TCustomers = class
+    function Index(Req: TRequest): TResponse;
+  end;
+-->
 
 ```pascal
 uses Askr.Inertia;
@@ -25,7 +48,7 @@ end;
 ## Props
 
 ```pascal
-Inertia(Component);
+Inertia(Component, []);
 Inertia(Component, ['key', Value, 'key', Value]);
 ```
 
@@ -68,7 +91,7 @@ Both sources end up in the same `flash` prop, and **any key you set is
 carried**, not a fixed list of them:
 
 ```pascal
-Session.Flash('error', 'That link is no longer valid.');
+CurrentSession.Flash('error', 'That link is no longer valid.');
 ```
 
 ```js
@@ -80,6 +103,10 @@ internally, but they arrive as their own `errors` prop rather than inside
 `flash` — see [Validation](validation.md).
 
 ## Shared props
+
+<!-- check
+procedure ShareAuth(var W: TJsonWriter); begin end;
+-->
 
 ```pascal
 TInertia.SetShare(@ShareAuth);
@@ -220,7 +247,8 @@ intermediaries cache the wrong response for the wrong client.
 ## Detecting an Inertia request
 
 ```pascal
-if IsInertiaRequest(Req) then ...
+if IsInertiaRequest(Req) then
+  ...
 ```
 
 Also what `RequireAuth` uses to answer 401 instead of redirecting — a 302 to

@@ -1,5 +1,17 @@
 # Getting started
 
+<!-- check
+type
+  THomeController = class
+    function Index(Req: TRequest): TResponse;
+    function Demo(Req: TRequest): TResponse;
+  end;
+var
+  R: TRouter;
+  Home: THomeController;
+function THomeController.Demo(Req: TRequest): TResponse; begin Result := nil; end;
+-->
+
 ## The toolchain
 
 Askr needs Free Pascal. It builds and passes its full test suite on **3.2.2**
@@ -133,6 +145,10 @@ default, and turning it off is the deliberate act.
 ## Your first route
 
 `app.lpr` holds the wiring. Routes are registered there:
+
+<!-- check
+function THomeController.Index(Req: TRequest): TResponse; begin Result := nil; end;
+-->
 
 ```pascal
 R.Get('/', Home.Index);

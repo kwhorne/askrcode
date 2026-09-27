@@ -1,5 +1,11 @@
 # Threads
 
+<!-- check
+procedure IndexWhatChanged; begin end;
+var
+  Indexer: TSupervisedThread;
+-->
+
 A thread in Free Pascal that raises out of its `Execute` just ends. The
 exception is kept in `FatalException`, nobody reads it, and whatever the
 thread did stops being done. Askr's own background threads -- the queue's

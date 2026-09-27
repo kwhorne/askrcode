@@ -82,7 +82,7 @@ is never linked, and its initialization never runs -- the same reason
 
 ## In app.lpr
 
-```pascal
+```pascal nocheck
 uses
   ...
   Askr.Plugins, App.Plugins,
@@ -122,8 +122,10 @@ tables = "stripe_customers, stripe_events"
 The entry unit registers the plugin, and nothing else, in its
 initialization:
 
-```pascal
+```pascal nocheck
 unit Askr.Plugin.Stripe;
+
+{$mode Delphi}{$H+}
 
 interface
 

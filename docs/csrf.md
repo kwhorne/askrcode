@@ -1,5 +1,17 @@
 # CSRF
 
+<!-- check
+type
+  TBillingCtl = class
+    function Webhook(Req: TRequest): TResponse;
+  end;
+function TBillingCtl.Webhook(Req: TRequest): TResponse; begin Result := nil; end;
+var
+  R: TRouter;
+  Hooks: TRouteGroup;
+  Billing: TBillingCtl;
+-->
+
 On by default in a project from `askr new`. A POST without a valid token
 answers **419** before it reaches your handler.
 

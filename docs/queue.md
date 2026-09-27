@@ -1,5 +1,29 @@
 # Queues
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FEmail: string;
+  published
+    property Email: string read FEmail write FEmail;
+  end;
+var
+  Customer: TCustomer;
+  Payload, Id, FileId, Row: string;
+  Rows: TStringArray;
+  B: TBatch;
+  Ctx: TJobContext;
+  S: TBatchState;
+  Percent: Integer;
+  Store: TDbJobStore;
+procedure LogJobFailure(const JobName, Message_: string); begin end;
+-->
+
+<!-- check
+procedure SendWelcome(const Ctx: TJobContext); begin end;
+-->
+
 ```pascal
 uses Askr.Queue;
 
@@ -163,7 +187,7 @@ not there.
 
 ## Counters
 
-```pascal
+```pascal nocheck
 Queue.Pending;
 Queue.Processed;  Queue.Retried;  Queue.Failed;  Queue.Dropped;
 Queue.Workers;
@@ -193,6 +217,10 @@ what the last job did is there to be checked. It is for tests.
 The in-process queue loses everything on restart. A welcome email that was
 never sent because someone deployed a new version is not a performance
 detail — it is data that is gone.
+
+<!-- check
+procedure SendWelcome(const Ctx: TJobContext); begin end;
+-->
 
 ```pascal
 uses Askr.Queue.Db;

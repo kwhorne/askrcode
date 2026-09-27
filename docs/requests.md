@@ -1,5 +1,32 @@
 # Requests
 
+<!-- check
+type
+  TCustomer = class(TModel)
+  private
+    FId: Int64;
+    FName, FEmail: string;
+  published
+    property Id: Int64 read FId write FId;
+    property Name: string read FName write FName;
+    property Email: string read FEmail write FEmail;
+  end;
+  TCustomersTable = record
+    const Name: TCol<string> = (Name: 'name'; Table: 'customers');
+    const Email: TCol<string> = (Name: 'email'; Table: 'customers');
+  end;
+var
+  Customers: TCustomersTable;
+  Name, Slug, Auth: TStr;
+  Page: Integer;
+  Limit, Id: Int64;
+  F: TUploadedFile;
+  Path: string;
+  Arena: TArena;
+  C: TCustomer;
+  R: TRequest;
+-->
+
 `TRequest` is parsed into the arena and **copies nothing**. Every field is a
 `TStr` slice into the buffer the bytes arrived in. When the host calls
 `Arena.Reset`, both the buffer and the request go in one operation.
@@ -18,7 +45,8 @@
 | `RemoteAddr` | The peer |
 
 ```pascal
-if Req.Method = hmPost then ...
+if Req.Method = hmPost then
+  ...
 ```
 
 > Inside a class, `MethodName` resolves to `TObject.MethodName`. Qualify it:
@@ -30,7 +58,8 @@ if Req.Method = hmPost then ...
 Name := Req.Query('name');              { TStr, percent-decoded, + is space }
 Page := Req.Page;                       { ?page=N, clamped to at least 1 }
 Limit := Req.IntQuery('limit', 25);
-if Req.HasQuery('debug') then ...
+if Req.HasQuery('debug') then
+  ...
 ```
 
 `Page` exists because pagination is the most common place a query parameter
@@ -43,14 +72,16 @@ Set by the router when a pattern matches.
 ```pascal
 Id := Req.IntParam('id');       { 0 if absent or not a number }
 Slug := Req.Param('slug');      { TStr }
-if Req.HasParam('id') then ...
+if Req.HasParam('id') then
+  ...
 ```
 
 ## Form fields
 
 ```pascal
 Name := Req.Form('name');
-if Req.HasForm('subscribe') then ...
+if Req.HasForm('subscribe') then
+  ...
 ```
 
 `Form` reads **both** `application/x-www-form-urlencoded` and the ordinary
@@ -78,7 +109,8 @@ See [File uploads](uploads.md).
 
 ```pascal
 Auth := Req.Header('Authorization');    { case-insensitive }
-if Req.HasHeader('X-Inertia') then ...
+if Req.HasHeader('X-Inertia') then
+  ...
 ```
 
 `HasHeader` is true for a header present with an empty value; `Header` would
@@ -86,7 +118,7 @@ return an empty `TStr` for both.
 
 ## The body
 
-```pascal
+```pascal nocheck
 Req.Body;              { TStr, the raw bytes }
 Req.ContentLength;
 Req.IsJson;            { application/json, and anything +json }

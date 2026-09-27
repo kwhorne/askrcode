@@ -1,5 +1,11 @@
 # Desktop
 
+<!-- check
+procedure Routes(R: TRouter);
+begin
+end;
+-->
+
 The same app in a native window. The HTTP server runs on localhost and a
 webview points at it — one codebase, two shells.
 

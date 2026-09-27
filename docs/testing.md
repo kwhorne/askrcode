@@ -1,6 +1,6 @@
 # Testing
 
-```pascal
+```pascal nocheck
 uses Askr.Testing;
 
 begin
@@ -13,6 +13,51 @@ end.
 
 `RunTestsAndHalt` prints a report and exits non-zero on failure.
 `RunTests` returns the failure count if you want to do something else.
+
+<!-- check
+type
+  TOrder = class(TModel)
+  private
+    FId: Int64;
+    FCustomerId: Int64;
+    FTotal: Currency;
+  published
+    property Id: Int64 read FId write FId;
+    property CustomerId: Int64 read FCustomerId write FCustomerId;
+    property Total: Currency read FTotal write FTotal;
+  end;
+  TOrderFactory = TFactory<TOrder>;
+
+  TOrderPlaced = class(TEvent)
+  private
+    FTotal: Currency;
+  published
+    property Total: Currency read FTotal write FTotal;
+  end;
+
+  TOrderShipped = class(TNotification)
+  end;
+
+var
+  R: TRouter;
+  Res: TResponse;
+  Cond: Boolean;
+  Actual, Expected, Haystack, Needle, Body: string;
+  Obj: TObject;
+  C, Conn: TDbConnection;
+  Token: string;
+  G: TOrderFactory;
+  O, Big, Draft: TOrder;
+  Lots: TOrderFactory.TItems;
+
+procedure PlaceOrder;
+begin
+end;
+
+procedure OneRequest;
+begin
+end;
+-->
 
 ```sh
 askr test
@@ -37,6 +82,10 @@ expression. It is what you read when it fails.
 
 ## Testing HTTP without a socket
 
+<!-- check
+var
+  K: TTestClient;
+-->
 ```pascal
 K := TTestClient.Create(R);
 try
@@ -48,6 +97,10 @@ finally
 end;
 ```
 
+<!-- check
+var
+  K: TTestClient;
+-->
 ```pascal
 K.Post('/customers', '{"name":"Ada"}');
 K.Put('/customers/7', Body, 'application/x-www-form-urlencoded');
@@ -67,8 +120,12 @@ fault still raises out of the test: an exception says more than a 500.
 
 ## Testing the arena
 
+<!-- check
+var
+  K: TTestClient;
+-->
 ```pascal
-AssertArenaStable(Klient.Arena, @OneRequest, 300,
+AssertArenaStable(K.Arena, @OneRequest, 300,
   'the arena levels off over 300 requests');
 ```
 
@@ -119,7 +176,7 @@ begin
   finally
     M.Free;
   end;
-  Token := IssueToken(Conn, ...); { shared by every test: before the sandbox }
+  Token := IssueToken(Conn, 'test', 'tests', ['*']); { shared by every test: before the sandbox }
   Sandbox(Conn);                  { from here, a rollback after each test }
 end;
 ```
@@ -215,6 +272,10 @@ Queue.RunPushed;                       { through the real handler, now }
 Queue.StopFaking;
 ```
 
+<!-- check
+var
+  F: TMailFake;
+-->
 ```pascal
 F := FakeMail;
 try
@@ -270,6 +331,11 @@ end;
 | `TLogTransport` | Mail: writes to a file |
 | `TFakeAiTransport` | AI: canned responses, and records what was sent |
 
+<!-- check
+var
+  K: TAiClient;
+  F: TFakeAiTransport;
+-->
 ```pascal
 F := TFakeAiTransport.Create;
 K.UseTransport(F, True);

@@ -121,7 +121,7 @@ should.
 
 ## The API
 
-```pascal
+```pascal nocheck
 uses Askr.Run;
 
 S := Transpile('app/Queries.run', '.build/run/App.Queries.pas', 'App.Queries');
@@ -139,9 +139,9 @@ is deliberate: what is being measured is not *how* the schema is read but
 
 Row types are emitted in **dependency order**. A record cannot
 forward-reference another record in Pascal, so `TOrderRow` must come before
-`TCustomerRow` when the latter has an `Orders` field. `SorterModeller` does
+`TCustomerRow` when the latter has an `Orders` field. `SortModels` does
 a depth-first sort and reports a cycle rather than hiding it.
 
 As a unit rather than a one-shot program, global state has to be reset:
-`Transpile` is called once per file in the same process, and `Nullstill`
+`Transpile` is called once per file in the same process, and `ResetState`
 runs first. Without it the second file inherits the first file's models.

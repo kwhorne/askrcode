@@ -26,6 +26,13 @@ Debug := CfgBool('app.debug', False);
 from the current directory for both files, so commands work from a
 subdirectory.
 
+<!-- check
+var
+  Port: Integer;
+  Dsn: string;
+  Debug: Boolean;
+-->
+
 ## The API
 
 | | |
@@ -132,7 +139,7 @@ text locally and JSON in production. See [Logging](logging.md).
 
 ## `app.url`, and why it is not the request
 
-```pascal
+```pascal nocheck
 uses Askr.Core.Url;
 
 AppUrl                              { https://example.com, or '' }

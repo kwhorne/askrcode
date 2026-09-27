@@ -14,6 +14,17 @@ finally
 end;
 ```
 
+<!-- check
+var
+  K: THttpClient;
+  R: THttpResponse;
+  Url, Body, Method, ContentType, Id, Token: string;
+
+procedure Handle(const Body: string);
+begin
+end;
+-->
+
 ## Requests
 
 ```pascal
@@ -35,7 +46,7 @@ Headers set on the client go with every request it makes.
 
 ## Responses
 
-```pascal
+```pascal nocheck
 R.Status;        R.Reason;      R.Ok;        { 200-299 }
 R.Body;
 R.Header('Content-Type');                    { case-insensitive }
@@ -70,6 +81,16 @@ HTTPS needs OpenSSL. See [TLS](tls.md).
 
 For Server-Sent Events, and for long responses that should not sit in memory
 before the caller sees any of them:
+
+<!-- check
+type
+  TListener = class
+    Cancelled: Boolean;
+    function Chunk(const S: string): Boolean;
+  end;
+var
+  Listener: TListener;
+-->
 
 ```pascal
 function TListener.Chunk(const S: string): Boolean;

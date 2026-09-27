@@ -73,6 +73,10 @@ must not become a 500.
 
 ## Saying something of your own
 
+<!-- check
+procedure ChargeTheCard; begin end;
+-->
+
 ```pascal
 var
   Started: Int64;

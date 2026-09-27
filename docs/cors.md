@@ -1,5 +1,10 @@
 # CORS
 
+<!-- check
+var
+  R: TRouter;
+-->
+
 CORS is not a lock. It is a browser telling a page on one origin what it
 may do with a reply from another, and nothing else honours it — curl
 ignores it, so does a server, so does anything that is not a browser. A
