@@ -8,6 +8,25 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.18.0
+
+**`OnError` is told after a failed job is settled, not before.** By the
+time it runs, the job has been retried, moved to the failed table or
+dropped. An `OnError` that read the job back from the store, expecting it
+to be still reserved, will no longer find it there. An `OnError` that
+raises no longer ends the worker: it is logged, and the worker starts
+again.
+
+The dashboard is in `app.lpr` only for projects made from 0.18.0 on. To
+add it to one made earlier, add `Askr.Dashboard` to the uses and
+
+```pascal
+UseDashboard(R, Cfg('app.env', 'local') = 'local', DbPool);
+```
+
+after `UsePlugins(R)`. It claims `/_askr`; a route of your own there is
+refused where it is added.
+
 ## 0.17.0
 
 Nothing can break. The route is now found before any middleware runs,

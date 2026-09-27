@@ -14,6 +14,12 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+## 0.18.0 — 2026-09-27
+
+Three more things Phoenix does well. The framework says what it did and how
+long it took; a page inside the app shows it; and a background thread that
+crashes is started again or reported, never lost.
+
 ### Added
 
 - **Telemetry.** `Askr.Core.Telemetry`: the framework says when a request,
