@@ -27,7 +27,7 @@ interface
 
 uses
   SysUtils, Classes, DynLibs, Askr.Core.Arena, Askr.Core.Text,
-  Askr.Urd.Driver;
+  Askr.Urd.Driver, Askr.Core.Telemetry;
 
 type
   TSqliteConnection = class(TDbConnection)
@@ -577,23 +577,59 @@ begin
 end;
 
 function TSqliteConnection.Exec(A: TArena; const Sql: string): TDbResult;
+var
+  T0: Int64;
 begin
   { Without parameters it is not cached. This is where migrations and DDL
     end up, and a cached CREATE TABLE is neither useful nor wanted. The
     same split as in the Postgres and MySQL drivers. }
-  Result := Run(A, Sql, [], False);
+  T0 := TelemetryStart;
+  try
+    Result := Run(A, Sql, [], False);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, Result);
 end;
 
 function TSqliteConnection.ExecParams(A: TArena; const Sql: string;
   const Params: array of TDbParam): TDbResult;
+var
+  T0: Int64;
 begin
-  Result := Run(A, Sql, Params, Length(Params) > 0);
+  T0 := TelemetryStart;
+  try
+    Result := Run(A, Sql, Params, Length(Params) > 0);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, Result);
 end;
 
 function TSqliteConnection.InsertGetId(A: TArena; const Sql: string;
   const Params: array of TDbParam; const IdColumn: string): Int64;
+var
+  T0: Int64;
 begin
-  Run(A, Sql, Params, Length(Params) > 0);
+  T0 := TelemetryStart;
+  try
+    Run(A, Sql, Params, Length(Params) > 0);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, nil);
   if IdColumn = '' then
     Exit(0);
   { SQLite has RETURNING from 3.35, but last_insert_rowid works in every

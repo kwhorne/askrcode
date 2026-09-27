@@ -98,6 +98,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Mail](mail.md) | Resend, SMTP with STARTTLS, or a log file |
 | [Notifications](notifications.md) | Telling a person something by mail, in the database, on Slack or by text message |
 | [Logging](logging.md) | Levels, fields, text or JSON |
+| [Telemetry](telemetry.md) | What happened and how long it took: requests, queries, jobs and mail, to whoever listens |
 | [HTTP client](http-client.md) | Calling other services, with certificate verification |
 | [AI](ai.md) | Claude: text, streaming, tools, structured output |
 

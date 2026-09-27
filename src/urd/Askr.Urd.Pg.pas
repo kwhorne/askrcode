@@ -33,7 +33,7 @@ interface
 
 uses
   SysUtils, Classes, DynLibs, Askr.Core.Arena, Askr.Core.Text,
-  Askr.Urd.Driver;
+  Askr.Urd.Driver, Askr.Core.Telemetry;
 
 type
   TPgConnection = class(TDbConnection)
@@ -604,14 +604,38 @@ begin
 end;
 
 function TPgConnection.Exec(A: TArena; const Sql: string): TDbResult;
+var
+  T0: Int64;
 begin
-  Result := Run(A, Sql, []);
+  T0 := TelemetryStart;
+  try
+    Result := Run(A, Sql, []);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, Result);
 end;
 
 function TPgConnection.ExecParams(A: TArena; const Sql: string;
   const Params: array of TDbParam): TDbResult;
+var
+  T0: Int64;
 begin
-  Result := Run(A, Sql, Params);
+  T0 := TelemetryStart;
+  try
+    Result := Run(A, Sql, Params);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, Result);
 end;
 
 function TPgConnection.InsertGetId(A: TArena; const Sql: string;
@@ -621,23 +645,33 @@ var
   R: TDbResult;
   Mark: TArenaMark;
   Full: string;
+  T0: Int64;
 begin
-  if IdColumn = '' then
+  Full := Sql;
+  if IdColumn <> '' then
   begin
-    Run(A, Sql, Params);
-    Exit(0);
+    Mark := A.Mark;
+    B.Init(A, Length(Sql) + 32);
+    B.Append(Sql);
+    B.Append(' RETURNING ');
+    AppendIdentStr(B, IdColumn);
+    Full := B.ToString;
+    A.Rewind(Mark);
   end;
 
-  Mark := A.Mark;
-  B.Init(A, Length(Sql) + 32);
-  B.Append(Sql);
-  B.Append(' RETURNING ');
-  AppendIdentStr(B, IdColumn);
-  Full := B.ToString;
-  A.Rewind(Mark);
+  T0 := TelemetryStart;
+  try
+    R := Run(A, Full, Params);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, nil);
 
-  R := Run(A, Full, Params);
-  if R.IsEmpty then
+  if (IdColumn = '') or R.IsEmpty then
     Exit(0);
   Result := R.AsInt64(0, 0);
 end;

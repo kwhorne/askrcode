@@ -24,6 +24,9 @@ function UnixNow: Int64;
 function UnixNowMs: Int64;
 { A monotonic reading in milliseconds, for timeouts and measurement. }
 function MonotonicMs: Int64;
+{ The same clock in microseconds: a query takes less than a millisecond
+  often enough that milliseconds would call most of them 0. }
+function MonotonicUs: Int64;
 
 { 'Sun, 06 Nov 1994 08:49:37 GMT' — exactly 29 bytes. }
 procedure AppendHttpDate(var B: TStrBuilder; Epoch: Int64);
@@ -125,6 +128,22 @@ end;
 {$ELSE}
 begin
   Result := Int64(GetTickCount64);
+end;
+{$ENDIF}
+
+function MonotonicUs: Int64;
+{$IFDEF UNIX}
+var
+  TS: TTimeSpec;
+begin
+  if clock_gettime(ClockMonotonic, @TS) = 0 then
+    Result := Int64(TS.tv_sec) * 1000000 + TS.tv_nsec div 1000
+  else
+    Result := UnixNow * 1000000;
+end;
+{$ELSE}
+begin
+  Result := Int64(GetTickCount64) * 1000;
 end;
 {$ENDIF}
 

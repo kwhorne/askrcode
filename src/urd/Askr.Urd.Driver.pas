@@ -23,7 +23,7 @@ unit Askr.Urd.Driver;
 interface
 
 uses
-  SysUtils, Askr.Core.Arena, Askr.Core.Text;
+  SysUtils, Askr.Core.Arena, Askr.Core.Text, Askr.Core.Telemetry;
 
 type
   TSqlDialect = (sdPostgres, sdMySql, sdSqlite);
@@ -137,6 +137,12 @@ type
     FInTransaction: Boolean;
     FSavepoints: Integer;
     procedure Statement(const Sql: string);
+    { askr.query, for the drivers' Exec, ExecParams and InsertGetId: the
+      statement with its placeholders, never its parameters, and the rows
+      it gave or touched. A failure says its SQLSTATE and not its message:
+      MySQL's message for a unique violation quotes the value. }
+    procedure QueryDone(const Sql: string; Started: Int64; R: TDbResult);
+    procedure QueryFailed(const Sql: string; Started: Int64; E: Exception);
   public
     function Dialect: TSqlDialect; virtual; abstract;
     function IsAlive: Boolean; virtual; abstract;
@@ -372,6 +378,38 @@ end;
 function TDbConnection.SupportsReturning: Boolean;
 begin
   Result := Dialect <> sdMySql;
+end;
+
+procedure TDbConnection.QueryDone(const Sql: string; Started: Int64;
+  R: TDbResult);
+var
+  Rows: Int64;
+begin
+  if Started = 0 then
+    Exit;
+  Rows := 0;
+  if R <> nil then
+    if R.RowCount > 0 then
+      Rows := R.RowCount
+    else if R.AffectedRows > 0 then
+      Rows := R.AffectedRows;
+  EmitSince('askr.query', Started, ['sql', Sql, 'rows', IntToStr(Rows)]);
+end;
+
+procedure TDbConnection.QueryFailed(const Sql: string; Started: Int64;
+  E: Exception);
+var
+  State: string;
+begin
+  if Started = 0 then
+    Exit;
+  if E is EDbError then
+    State := EDbError(E).SqlState
+  else
+    State := E.ClassName;
+  if State = '' then
+    State := 'unknown';
+  EmitSince('askr.query', Started, ['sql', Sql, 'rows', '0', 'error', State]);
 end;
 
 procedure TDbConnection.Statement(const Sql: string);

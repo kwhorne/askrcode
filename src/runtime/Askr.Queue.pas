@@ -28,7 +28,7 @@ interface
 
 uses
   SysUtils, Classes, SyncObjs, Askr.Core.Arena, Askr.Core.Text,
-  Askr.Core.Clock;
+  Askr.Core.Clock, Askr.Core.Telemetry;
 
 type
   EQueueError = class(Exception);
@@ -1272,6 +1272,8 @@ var
   Backoff: Int64;
   Got, Ok: Boolean;
   Err: string;
+  Started: Int64;
+  Name_, Outcome: string;
 begin
   while FQueue.IsRunning do
   begin
@@ -1300,6 +1302,9 @@ begin
     H := FQueue.HandlerFor(J.Name);
     if not Assigned(H) then
     begin
+      if TelemetryOn then
+        EmitTelemetry('askr.job', 0,
+          ['job', J.Name, 'outcome', 'dropped', 'attempt', IntToStr(J.Attempt + 1)]);
       InterLockedIncrement64(Int64(FQueue.FDropped));
       if Assigned(FQueue.FOnError) then
         FQueue.FOnError(J.Name, 'no handler registered');
@@ -1331,6 +1336,12 @@ begin
 
       Ok := False;
       Err := '';
+      { askr.job: its name, what became of it, and which attempt it was.
+        The name is copied: the store lets go of the job when it is
+        settled. }
+      Name_ := J.Name;
+      Outcome := 'done';
+      Started := TelemetryStart;
       try
         H(Ctx);
         Ok := True;
@@ -1357,6 +1368,7 @@ begin
           if J.Attempt + 1 < FQueue.FMaxAttempts then
           begin
             InterLockedIncrement64(Int64(FQueue.FRetried));
+            Outcome := 'retry';
             { Exponential backoff, capped at 30 seconds. }
             Backoff := Int64(100) shl J.Attempt;
             if Backoff > 30000 then
@@ -1366,6 +1378,7 @@ begin
           else
           begin
             InterLockedIncrement64(Int64(FQueue.FFailed));
+            Outcome := 'failed';
             FQueue.FStore.Fail(J, Err);
           end;
         end;
@@ -1373,6 +1386,8 @@ begin
         on E: Exception do
           StoreTrouble(FQueue, J.Name, E);
       end;
+      EmitSince('askr.job', Started,
+        ['job', Name_, 'outcome', Outcome, 'attempt', IntToStr(Ctx.Attempt)]);
     finally
       UseArena(Prev);
       { After Complete, Retry or Fail: a retried job is back in the store

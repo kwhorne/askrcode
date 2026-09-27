@@ -18,7 +18,7 @@ uses
   Askr.Urd.Driver, Askr.Urd.Pg, Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db,
   Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json,
-  Askr.Testing;
+  Askr.Testing, Askr.Core.Telemetry;
 
 var
   Passed: Integer = 0;
@@ -404,6 +404,18 @@ end;
 
 {$I sandbox.inc}
 
+procedure TelemetryStartPart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure TelemetryOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I telemetry.inc}
+
 procedure SessionStart(const Name: string);
 begin
   Start(Name);
@@ -425,6 +437,7 @@ begin
     PivotPart(C);
     TransactionPart(C);
     SandboxPart(C);
+    TelemetryPart(C);
   finally
     C.Free;
   end;

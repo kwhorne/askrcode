@@ -36,7 +36,7 @@ interface
 
 uses
   SysUtils, Classes, DynLibs, Askr.Core.Arena, Askr.Core.Text,
-  Askr.Urd.Driver;
+  Askr.Urd.Driver, Askr.Core.Telemetry;
 
 type
   TMySqlConnection = class(TDbConnection)
@@ -1091,40 +1091,69 @@ begin
 end;
 
 function TMySqlConnection.Exec(A: TArena; const Sql: string): TDbResult;
+var
+  T0: Int64;
 begin
-  Result := RunText(A, Sql);
+  T0 := TelemetryStart;
+  try
+    Result := RunText(A, Sql);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, Result);
 end;
 
 function TMySqlConnection.ExecParams(A: TArena; const Sql: string;
   const Params: array of TDbParam): TDbResult;
+var
+  T0: Int64;
 begin
-  if Length(Params) = 0 then
-    Result := RunText(A, Sql)
-  else
-    Result := RunPrepared(A, Sql, Params);
+  T0 := TelemetryStart;
+  try
+    if Length(Params) = 0 then
+      Result := RunText(A, Sql)
+    else
+      Result := RunPrepared(A, Sql, Params);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
+  end;
+  QueryDone(Sql, T0, Result);
 end;
 
 function TMySqlConnection.InsertGetId(A: TArena; const Sql: string;
   const Params: array of TDbParam; const IdColumn: string): Int64;
+{ MySQL has no RETURNING. LAST_INSERT_ID is read from the connection
+  afterwards, and applies to the last INSERT on this particular
+  connection — so it is safe even with a pool, as long as nobody shares
+  a connection. }
+var
+  T0: Int64;
 begin
-  { MySQL has no RETURNING. LAST_INSERT_ID is read from the connection
-    afterwards, and applies to the last INSERT on this particular
-    connection — so it is safe even with a pool, as long as nobody shares
-    a connection. }
-  if Length(Params) = 0 then
-  begin
-    RunText(A, Sql);
-    if IdColumn = '' then
-      Exit(0);
-    Result := Int64(mysql_insert_id(FMysql));
-  end
-  else
-  begin
-    RunPrepared(A, Sql, Params);
-    if IdColumn = '' then
-      Exit(0);
-    Result := Int64(mysql_insert_id(FMysql));
+  T0 := TelemetryStart;
+  try
+    if Length(Params) = 0 then
+      RunText(A, Sql)
+    else
+      RunPrepared(A, Sql, Params);
+  except
+    on E: Exception do
+    begin
+      QueryFailed(Sql, T0, E);
+      raise;
+    end;
   end;
+  QueryDone(Sql, T0, nil);
+  if IdColumn = '' then
+    Exit(0);
+  Result := Int64(mysql_insert_id(FMysql));
 end;
 
 procedure TMySqlConnection.StartTransaction;

@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process;
+  DOM, XMLRead, Process, Askr.Core.Telemetry;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -9550,6 +9550,199 @@ begin
   end;
 end;
 
+{ ---------------------------------------------------------- telemetry -- }
+
+var
+  TelSeen: TStringList = nil;
+
+{ Name, then key=value for each field, then whether a duration came. }
+procedure TelRecord(const E: TTelemetryEvent);
+var
+  I: Integer;
+  Line: string;
+begin
+  Line := E.Name;
+  I := 0;
+  while I < High(E.Fields) do
+  begin
+    Line := Line + ' ' + E.Fields[I] + '=' + E.Fields[I + 1];
+    Inc(I, 2);
+  end;
+  if E.DurationUs < 0 then
+    Line := Line + ' NEGATIVE';
+  TelSeen.Add(Line);
+end;
+
+procedure TelBroken(const E: TTelemetryEvent);
+begin
+  raise Exception.Create('a broken meter');
+end;
+
+type
+  TTelCtl = class
+    class function Order(Req: TRequest): TResponse;
+    class function Refused(Req: TRequest): TResponse;
+  end;
+
+class function TTelCtl.Order(Req: TRequest): TResponse;
+begin
+  Result := RespondText('order ' + Req.Param('id').ToString);
+end;
+
+class function TTelCtl.Refused(Req: TRequest): TResponse;
+begin
+  raise EForbidden.Create('not yours');
+end;
+
+procedure TelJobOk(const Ctx: TJobContext);
+begin
+end;
+
+procedure TelJobFails(const Ctx: TJobContext);
+begin
+  raise Exception.Create('the job failed');
+end;
+
+function TelFind(const Needle: string): string;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to TelSeen.Count - 1 do
+    if Pos(Needle, TelSeen[I]) > 0 then
+      Exit(TelSeen[I]);
+end;
+
+procedure TestTelemetry;
+var
+  R: TRouter;
+  K: TTestClient;
+  C: TDbConnection;
+  A: TArena;
+  Q: TQueue;
+  Mailer: TMailer;
+  Raised: Boolean;
+begin
+  ClearTelemetry;
+  AssertFalse(TelemetryOn, 'nothing attached, nothing on');
+  AssertEqual(TelemetryStart, 0, 'and no clock is read');
+
+  TelSeen := TStringList.Create;
+  R := TRouter.Create;
+  K := TTestClient.Create(R);
+  A := TArena.Create(8192);
+  try
+    AttachTelemetry('askr', @TelRecord);
+    AssertTrue(TelemetryOn, 'attached, on');
+
+    { askr.request }
+    R.Get('/orders/:id', TTelCtl.Order);
+    R.Get('/refused', TTelCtl.Refused);
+    K.Get('/orders/7');
+    AssertEqual(TelFind('askr.request'),
+      'askr.request method=GET route=/orders/:id path=/orders/7 status=200',
+      'a request: the route as a pattern, the path, the status');
+    TelSeen.Clear;
+    K.Get('/nowhere');
+    AssertEqual(TelSeen.Text, 'askr.request method=GET route= path=/nowhere status=404'#10,
+      'a request no route matched: no route, and a 404');
+    TelSeen.Clear;
+    K.Get('/refused');
+    AssertContains(TelFind('askr.request'), 'status=403',
+      'a handler that refuses: the status it answered with');
+
+    { askr.query }
+    C := UseTestDatabase;
+    TelSeen.Clear;
+    C.Exec(A, 'CREATE TABLE tel_items (id INTEGER PRIMARY KEY, secret TEXT)');
+    C.ExecParams(A, 'INSERT INTO tel_items (id, secret) VALUES (?, ?)',
+      [DbParam(A, Int64(1)), DbParam(A, 'hunter2-sentinel')]);
+    C.Exec(A, 'SELECT id FROM tel_items');
+    AssertEqual(TelFind('SELECT id'), 'askr.query sql=SELECT id FROM tel_items rows=1',
+      'a query: the statement and its rows');
+    AssertContains(TelFind('INSERT'), 'rows=1', 'an insert: the rows it touched');
+    AssertEqual(Pos('hunter2-sentinel', TelSeen.Text), 0,
+      'a parameter is never in it: the statement has placeholders, and that is all');
+    TelSeen.Clear;
+    Raised := False;
+    try
+      C.Exec(A, 'SELECT nothing FROM no_such_table');
+    except
+      on E: EDbError do Raised := True;
+    end;
+    AssertTrue(Raised, 'a query that fails still raises');
+    AssertContains(TelFind('no_such_table'), 'error=',
+      'and says it failed, by its SQLSTATE');
+    CloseTestDatabase;
+
+    { askr.job }
+    TelSeen.Clear;
+    Q := TQueue.Create(1, 1);
+    try
+      Q.Handle('tel.ok', TelJobOk);
+      Q.Handle('tel.fails', TelJobFails);
+      Q.Start;
+      Q.Push('tel.ok', '');
+      Q.Push('tel.fails', '');
+      Q.WaitUntilEmpty(5000);
+    finally
+      Q.Stop;
+      Q.Free;
+    end;
+    AssertEqual(TelFind('job=tel.ok'), 'askr.job job=tel.ok outcome=done attempt=1',
+      'a job that ran');
+    AssertEqual(TelFind('job=tel.fails'), 'askr.job job=tel.fails outcome=failed attempt=1',
+      'and one that failed on its last attempt');
+
+    { askr.mail }
+    TelSeen.Clear;
+    Mailer := TMailer.Create(TNullTransport.Create);
+    try
+      Mailer.Send(TMailMessage.Create.From('shop@example.com')
+        .AddTo('ada@example.com').AddTo('bo@example.com')
+        .Subject('s').Text('t'));
+    finally
+      Mailer.Free;
+    end;
+    AssertContains(TelFind('askr.mail'), 'recipients=2', 'a mail: how many recipients');
+    AssertEqual(Pos('ada@example.com', TelSeen.Text), 0, 'and not who');
+
+    { A plugin's own, the prefix's dot, a broken handler, detaching. }
+    TelSeen.Clear;
+    EmitTelemetry('stripe.webhook', 5, ['type', 'x']);
+    AssertEqual(TelSeen.Count, 0, 'askr does not hear stripe');
+    AttachTelemetry('stripe', @TelRecord);
+    EmitTelemetry('stripe.webhook', 5, ['type', 'x']);
+    AssertEqual(TelSeen.Text, 'stripe.webhook type=x'#10, 'stripe does');
+    DetachTelemetry(@TelRecord);
+    AttachTelemetry('askr.req', @TelRecord);
+    TelSeen.Clear;
+    K.Get('/orders/7');
+    AssertEqual(TelSeen.Count, 0,
+      'a prefix is whole names: askr.req does not hear askr.request');
+    DetachTelemetry(@TelRecord);
+    AttachTelemetry('askr.request', @TelBroken);
+    AttachTelemetry('askr.request', @TelRecord);
+    SetLogLevel(llNone);
+    try
+      AssertStatus(K.Get('/orders/7'), 200, 'a handler that raises does not fail the request');
+    finally
+      SetLogLevel(llInfo);
+    end;
+    AssertEqual(TelSeen.Count, 1, 'and the next handler still hears it');
+    ClearTelemetry;
+    TelSeen.Clear;
+    K.Get('/orders/7');
+    AssertEqual(TelSeen.Count, 0, 'detached, nothing');
+  finally
+    ClearTelemetry;
+    A.Free;
+    K.Free;
+    R.Free;
+    FreeAndNil(TelSeen);
+  end;
+end;
+
 { ------------------------------------------------------- route groups -- }
 
 var
@@ -13365,6 +13558,7 @@ begin
   Test('a plugin''s migrations run among the app''s by time, and roll back the same way', @TestPluginMigrations);
   Test('a route added twice is refused where it is added, naming a plugin that owns the first', @TestRouteTwice);
   Test('route groups: prefix, middleware in order, nesting, parameters', @TestRouteGroups);
+  Test('telemetry: requests, queries, jobs and mail, and what they never carry', @TestTelemetry);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

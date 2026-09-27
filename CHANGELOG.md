@@ -12,6 +12,20 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
+## Unreleased
+
+### Added
+
+- **Telemetry.** `Askr.Core.Telemetry`: the framework says when a request,
+  a query, a job or a mail is done -- `askr.request`, `askr.query`,
+  `askr.job`, `askr.mail`, each with its duration in microseconds -- and a
+  plugin names its own under its own prefix. `AttachTelemetry('askr.query',
+  @Handler)` listens. Nothing attached costs one integer read: no clock,
+  no fields. The fields never carry a request's values or a secret: a
+  query is its statement with placeholders, a mail how many recipients,
+  a failure its SQLSTATE or class and not its message. Each driver sends
+  its own, and `tests/telemetry.inc` holds all three.
+
 ## 0.17.0 — 2026-09-27
 
 Three things Phoenix does well, fitted to a compiled stack. Routes come in

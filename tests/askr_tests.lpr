@@ -20,7 +20,7 @@ uses
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
   Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url, Askr.Urd.Json,
   Askr.Http.Robots, Askr.Http.Sitemap, Askr.Console.Commands,
-  Askr.Testing;
+  Askr.Testing, Askr.Core.Telemetry;
 
 var
   Passed: Integer = 0;
@@ -3615,6 +3615,18 @@ end;
 
 {$I sandbox.inc}
 
+procedure TelemetryStartPart(const Name: string);
+begin
+  Group(Name);
+end;
+
+procedure TelemetryOk(const What: string; Cond: Boolean);
+begin
+  Check(Cond, What);
+end;
+
+{$I telemetry.inc}
+
 procedure TestSqlite;
 var
   A: TArena;
@@ -4241,6 +4253,7 @@ begin
     PivotPart(C);
     TransactionPart(C);
     SandboxPart(C);
+    TelemetryPart(C);
   finally
     UseDb(PrevDb);
     UseArena(PrevA);

@@ -25,7 +25,7 @@ interface
 uses
   SysUtils, Classes, StrUtils, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock, Askr.Core.Config,
-  Askr.Core.Crypto, netdb, Askr.Tls;
+  Askr.Core.Crypto, netdb, Askr.Tls, Askr.Core.Telemetry;
 
 type
   EMailError = class(Exception);
@@ -1518,10 +1518,31 @@ begin
 end;
 
 procedure TMailer.Send(M: TMailMessage; FreeAfter: Boolean);
+var
+  Started: Int64;
+  Recipients: string;
 begin
+  { askr.mail: the transport as Describe gives it, which never has a
+    secret, and how many recipients -- not who. A failure says its class:
+    an SMTP server's refusal quotes the address. }
+  Started := TelemetryStart;
+  if Started <> 0 then
+    Recipients := IntToStr(Length(M.ToList) + Length(M.CcList) +
+      Length(M.BccList));
   try
-    FTransport.Send(M);
+    try
+      FTransport.Send(M);
+    except
+      on E: Exception do
+      begin
+        EmitSince('askr.mail', Started, ['transport', FTransport.Describe,
+          'recipients', Recipients, 'error', E.ClassName]);
+        raise;
+      end;
+    end;
     Inc(FSent);
+    EmitSince('askr.mail', Started, ['transport', FTransport.Describe,
+      'recipients', Recipients]);
   finally
     if FreeAfter then
       M.Free;

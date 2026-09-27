@@ -268,7 +268,7 @@ function RouteExcludes(const What: string): Boolean;
 implementation
 
 uses
-  Askr.Core.Log;
+  Askr.Core.Log, Askr.Core.Telemetry;
 
 threadvar
   GMatched: TRoute;
@@ -779,10 +779,32 @@ end;
   the filters with a 500 in hand, for what they clean up, and is raised
   again so the server logs it as the fault it is and closes the
   connection. }
+{ askr.request: the route that matched -- its pattern, so /orders/:id is
+  one line on a dashboard and not one per order -- and the status that
+  went out. The path is there too, for the log; it has no query string. }
+procedure RequestTelemetry(Req: TRequest; Started: Int64; Status_: Integer);
+var
+  Pattern: string;
+begin
+  if Started = 0 then
+    Exit;
+  if GMatched <> nil then
+    Pattern := GMatched.Pattern
+  else
+    Pattern := '';
+  EmitSince('askr.request', Started,
+    ['method', Askr.Http.Types.MethodName(Req.Method),
+     'route', Pattern,
+     'path', Req.Path.ToString,
+     'status', IntToStr(Status_)]);
+end;
+
 function TRouter.Handle(Req: TRequest): TResponse;
 var
   Status_: Integer;
+  Started: Int64;
 begin
+  Started := TelemetryStart;
   try
     Result := Route(Req);
   except
@@ -796,6 +818,7 @@ begin
         except
           { The fault that brought us here is the one to report. }
         end;
+        RequestTelemetry(Req, Started, Status_);
         raise;
       end;
       { Below 500 it is not a fault, so it is not logged as one. The
@@ -814,10 +837,15 @@ begin
         RunAfter(Req, ErrorResponse(500));
       except
       end;
+      RequestTelemetry(Req, Started, 500);
       raise;
     end;
   end;
   Result := RunAfter(Req, Result);
+  if Result <> nil then
+    RequestTelemetry(Req, Started, Result.StatusCode)
+  else
+    RequestTelemetry(Req, Started, 0);
 end;
 
 function TRouter.Route(Req: TRequest): TResponse;
