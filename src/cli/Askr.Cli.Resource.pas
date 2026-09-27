@@ -490,7 +490,7 @@ begin
       Result := Result + '  ' + Manys[I].Rel.Name + 'Ids: TArray<Int64>;' + #10 +
         '  Has' + Manys[I].Rel.Name + ': Boolean;' + #10;
   if Result <> '' then
-    Result := '  C: TDbConnection;' + #10 + Result;
+    Result := '  Tx: TDbTransaction;' + #10 + Result;
 end;
 
 { Validate, then the ids, then the row and its relations in one
@@ -522,9 +522,9 @@ begin
     '    Exit(' + Fail + ');' + #10 +
     '  { The row and what it is related to, together: an id the database' + #10 +
     '    refuses after all does not leave a row without them. A key the' + #10 +
-    '    request did not send is left as it is. }' + #10 +
-    '  C := CurrentDb;' + #10 +
-    '  C.StartTransaction;' + #10 +
+    '    request did not send is left as it is. Inside a transaction that' + #10 +
+    '    is open already -- a test''s -- it is a savepoint in it. }' + #10 +
+    '  Tx := CurrentDb.Transaction;' + #10 +
     '  try' + #10 +
     '    M.Save;' + #10;
   for I := 0 to High(Manys) do
@@ -533,10 +533,9 @@ begin
         '    if Has' + Manys[I].Rel.Name + ' then' + #10 +
         '      M.Sync(' + PasStr(Manys[I].Rel.Name) + ', ' + Manys[I].Rel.Name + 'Ids);' + #10;
   Result := Result +
-    '    C.Commit;' + #10 +
-    '  except' + #10 +
-    '    C.Rollback;' + #10 +
-    '    raise;' + #10 +
+    '    Tx.Commit;' + #10 +
+    '  finally' + #10 +
+    '    Tx.Finish;' + #10 +
     '  end;';
 end;
 

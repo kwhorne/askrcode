@@ -3590,6 +3590,18 @@ end;
 
 {$I pivot.inc}
 
+procedure TransactionStart(const Name: string);
+begin
+  Group(Name);
+end;
+
+procedure TransactionOk(const What: string; Cond: Boolean);
+begin
+  Check(Cond, What);
+end;
+
+{$I transaction.inc}
+
 procedure TestSqlite;
 var
   A: TArena;
@@ -4214,6 +4226,7 @@ begin
     Check(With_ <= Without + (Without div 4) + 2, 'the cache did not make it slower');
 
     PivotPart(C);
+    TransactionPart(C);
   finally
     UseDb(PrevDb);
     UseArena(PrevA);

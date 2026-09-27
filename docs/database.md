@@ -94,15 +94,37 @@ generated key.
 ## Transactions
 
 ```pascal
-C.StartTransaction;
-try
-  ...
-  C.Commit;
-except
-  C.Rollback;
-  raise;
+var
+  Tx: TDbTransaction;
+begin
+  Tx := C.Transaction;
+  try
+    Order.Save;
+    Line.Save;
+    Tx.Commit;
+  finally
+    Tx.Finish;      { rolls back unless Commit ran }
+  end;
 end;
 ```
+
+**It nests.** Outside a transaction `Transaction` starts one; inside one
+-- a caller's, a test's -- it is a `SAVEPOINT`, and its rollback takes
+back only what it did. The same function is then right whether it is
+called on its own or from inside something bigger, and nothing has to
+ask `C.InTransaction` first. `Tx.Nested` says which it is.
+
+`Finish` belongs in the `finally`: an `Exit` from the middle is then
+rolled back too, and there is no `except` that has to raise again. A
+second `Commit` raises.
+
+On Postgres, an error inside a transaction aborts all of it until it is
+rolled back. Rolling back to the savepoint is what makes the enclosing
+transaction usable again, so a nested unit of work that fails on a
+unique violation does not take its caller's work with it.
+
+`StartTransaction`, `Commit` and `Rollback` are still there, for a
+transaction that is all one piece and known to be the outermost.
 
 > **MySQL commits implicitly on DDL.** A transaction around a migration
 > there gives false safety, and the migrator says so rather than pretending

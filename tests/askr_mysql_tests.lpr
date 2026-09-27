@@ -212,6 +212,18 @@ end;
 
 {$I pivot.inc}
 
+procedure TransactionStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure TransactionOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I transaction.inc}
+
 procedure SessionStart(const Name: string);
 begin
   Start(Name);
@@ -231,6 +243,7 @@ begin
   C := OpenDbConnection(Dsn);
   try
     PivotPart(C);
+    TransactionPart(C);
   finally
     C.Free;
   end;

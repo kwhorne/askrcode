@@ -90,9 +90,53 @@ type
     property AffectedRows: Int64 read FAffected;
   end;
 
+  TDbConnection = class;
+
+  { A unit of work: a transaction, or a savepoint inside one.
+
+        Tx := C.Transaction;
+        try
+          M.Save;
+          Other.Save;
+          Tx.Commit;
+        finally
+          Tx.Finish;       // rolls back unless Commit ran
+        end;
+
+    **It nests.** Outside a transaction it starts one; inside one --
+    somebody else's, a test's, a caller's -- it is a SAVEPOINT, and its
+    Rollback takes back only what it did. The same code is then right in
+    both places, which the "own transaction if there is none" pattern it
+    replaces was not: that one did nothing inside a transaction, so a
+    failure halfway through took the caller's work with it on Postgres,
+    where an error aborts the whole transaction until it is rolled back.
+
+    Finish in the finally, not Rollback in an except: an Exit out of the
+    middle is then covered too, and nothing has to be raised again.
+
+    A record with no heap object in it, so nothing to free. }
+  TDbTransaction = record
+  private
+    FConn: TDbConnection;
+    FSavepoint: string;
+    FDone: Boolean;
+  public
+    procedure Commit;
+    procedure Rollback;
+    { Rolls back unless Commit or Rollback already ran. For the finally.
+      A rollback that fails here is swallowed: the fault that brought the
+      code to this finally is the one to report, and a connection that
+      cannot roll back is discarded by the pool when it comes back. }
+    procedure Finish;
+    { A savepoint, inside somebody else's transaction. }
+    function Nested: Boolean;
+  end;
+
   TDbConnection = class abstract
   protected
     FInTransaction: Boolean;
+    FSavepoints: Integer;
+    procedure Statement(const Sql: string);
   public
     function Dialect: TSqlDialect; virtual; abstract;
     function IsAlive: Boolean; virtual; abstract;
@@ -119,6 +163,11 @@ type
     procedure AppendIdentStr(var B: TStrBuilder; const AName: string);
 
     function SupportsReturning: Boolean; virtual;
+
+    { A transaction, or a savepoint inside the one that is open. See
+      TDbTransaction. }
+    function Transaction: TDbTransaction;
+
     property InTransaction: Boolean read FInTransaction;
   end;
 
@@ -323,6 +372,84 @@ end;
 function TDbConnection.SupportsReturning: Boolean;
 begin
   Result := Dialect <> sdMySql;
+end;
+
+procedure TDbConnection.Statement(const Sql: string);
+var
+  A: TArena;
+begin
+  A := TArena.Create(1024);
+  try
+    Exec(A, Sql);
+  finally
+    A.Free;
+  end;
+end;
+
+function TDbConnection.Transaction: TDbTransaction;
+begin
+  Result.FConn := Self;
+  Result.FDone := False;
+  if not FInTransaction then
+  begin
+    StartTransaction;
+    Result.FSavepoint := '';
+    Exit;
+  end;
+  { SAVEPOINT, RELEASE SAVEPOINT and ROLLBACK TO SAVEPOINT are spelt the
+    same in MySQL, Postgres and SQLite. The number only has to be one no
+    savepoint on this connection has had, so it only counts up. }
+  Inc(FSavepoints);
+  Result.FSavepoint := 'askr_sp_' + IntToStr(FSavepoints);
+  Statement('SAVEPOINT ' + Result.FSavepoint);
+end;
+
+{ TDbTransaction }
+
+procedure TDbTransaction.Commit;
+begin
+  if FDone then
+    raise EDbError.Create('The transaction was already committed or rolled back');
+  FDone := True;
+  if FSavepoint = '' then
+    FConn.Commit
+  else
+    { Released, not committed: what it did is the enclosing transaction's
+      now, and goes or stays with it. }
+    FConn.Statement('RELEASE SAVEPOINT ' + FSavepoint);
+end;
+
+procedure TDbTransaction.Rollback;
+begin
+  if FDone then
+    raise EDbError.Create('The transaction was already committed or rolled back');
+  FDone := True;
+  if FSavepoint = '' then
+    FConn.Rollback
+  else
+  begin
+    { Back to the savepoint, and then gone: ROLLBACK TO keeps it, and a
+      savepoint left behind is one more for the enclosing transaction to
+      carry. On Postgres this is also what makes the enclosing transaction
+      usable again after an error inside this one. }
+    FConn.Statement('ROLLBACK TO SAVEPOINT ' + FSavepoint);
+    FConn.Statement('RELEASE SAVEPOINT ' + FSavepoint);
+  end;
+end;
+
+procedure TDbTransaction.Finish;
+begin
+  if FDone or (FConn = nil) then
+    Exit;
+  try
+    Rollback;
+  except
+  end;
+end;
+
+function TDbTransaction.Nested: Boolean;
+begin
+  Result := FSavepoint <> '';
 end;
 
 { Registrering }

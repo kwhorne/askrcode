@@ -280,7 +280,8 @@ Ids := Post.RelatedIds('Tags'); { what an edit form ticks }
   said on purpose, never the accident of a list that happened to be empty.
 - **`Sync` is all or nothing.** It runs in a transaction, so an id the
   database refuses leaves the rows as they were rather than half-changed.
-  Called inside a transaction you opened, your commit decides.
+  Called inside a transaction you opened, it is a savepoint in yours, and
+  your commit decides.
 - **An id is not checked against the other table here.** The pivot's
   foreign keys refuse a row to nothing; on a form, check the ids first so
   the refusal lands on the field instead of as a 500.

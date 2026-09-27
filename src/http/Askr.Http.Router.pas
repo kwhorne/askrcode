@@ -27,7 +27,7 @@
 
       Admin := R.Group('/admin');
       Admin.Use(@RequireAdmin);
-      Admin.Get('/users', Users.Index);         { /admin/users }
+      Admin.Get('/users', Users.Index);         // /admin/users
 
       R.Group('/hooks').WithoutCsrf.Post('/stripe', Stripe.Webhook);
 

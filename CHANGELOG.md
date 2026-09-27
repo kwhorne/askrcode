@@ -23,6 +23,15 @@ with the zero-major caveat that minor releases may break things until
   limiter of its own through `TRateLimit.Guard`. Groups nest; the
   middleware runs from the outermost group in. An object rather than a
   block, because anonymous procedures do not exist in FPC 3.2.2.
+- **Transactions that nest.** `Tx := C.Transaction; try ... Tx.Commit;
+  finally Tx.Finish; end;` starts a transaction, or makes a `SAVEPOINT`
+  inside one that is open, and its rollback takes back only what it did.
+  It replaces the "a transaction of its own when there is none" pattern,
+  which did nothing inside a caller's transaction -- so a failure halfway
+  through took the caller's work with it on Postgres, where an error
+  aborts the whole transaction. `Sync` and `Attach` use it, and so do the
+  controllers `askr make resource` writes, which called
+  `StartTransaction` and could not run inside a test's transaction.
 
 ### Changed
 

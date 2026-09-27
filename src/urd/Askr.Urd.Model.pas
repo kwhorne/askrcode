@@ -414,7 +414,7 @@ type
       Sync makes the pivot exactly the ids given, an empty list included,
       and does it in a transaction: an id the database refuses leaves the
       rows as they were, not half-changed. Inside a transaction the
-      caller opened, the caller's commit decides.
+      caller opened it is a savepoint, and the caller's commit decides.
 
       Nothing here checks that an id is a row. The pivot's foreign keys
       refuse one that is not; a form should check first, so the refusal
@@ -1967,7 +1967,7 @@ var
   Wanted, Have: TArray<Int64>;
   OwnerId: Int64;
   I: Integer;
-  Own: Boolean;
+  Tx: TDbTransaction;
 begin
   Rel := ManyToManyOf(Meta, Relation, 'Attach');
   OwnerId := OwnerIdFor(Self, 'Attach');
@@ -1976,23 +1976,15 @@ begin
     Exit;
   C := RequireDb(Conn);
   A := TArena.Create(8 * 1024);
-  Own := not C.InTransaction;
+  Tx := C.Transaction;
   try
-    if Own then
-      C.StartTransaction;
-    try
-      Have := PivotIdsOf(C, A, Rel, OwnerId);
-      for I := 0 to High(Wanted) do
-        if not HasId(Have, Wanted[I]) then
-          PivotInsert(C, A, Rel, OwnerId, Wanted[I]);
-      if Own then
-        C.Commit;
-    except
-      if Own then
-        C.Rollback;
-      raise;
-    end;
+    Have := PivotIdsOf(C, A, Rel, OwnerId);
+    for I := 0 to High(Wanted) do
+      if not HasId(Have, Wanted[I]) then
+        PivotInsert(C, A, Rel, OwnerId, Wanted[I]);
+    Tx.Commit;
   finally
+    Tx.Finish;
     A.Free;
   end;
 end;
@@ -2047,40 +2039,34 @@ var
   Wanted, Have, Gone: TArray<Int64>;
   OwnerId: Int64;
   I, N: Integer;
-  Own: Boolean;
+  Tx: TDbTransaction;
 begin
   Rel := ManyToManyOf(Meta, Relation, 'Sync');
   OwnerId := OwnerIdFor(Self, 'Sync');
   Wanted := DistinctIds(Ids, 'Sync');
   C := RequireDb(Conn);
   A := TArena.Create(8 * 1024);
-  Own := not C.InTransaction;
+  { A savepoint inside a transaction that is open, and a transaction of
+    its own otherwise: either way the pivot is never half synced. }
+  Tx := C.Transaction;
   try
-    if Own then
-      C.StartTransaction;
-    try
-      Have := PivotIdsOf(C, A, Rel, OwnerId);
-      SetLength(Gone, Length(Have));
-      N := 0;
-      for I := 0 to High(Have) do
-        if not HasId(Wanted, Have[I]) then
-        begin
-          Gone[N] := Have[I];
-          Inc(N);
-        end;
-      SetLength(Gone, N);
-      PivotDelete(C, A, Rel, OwnerId, Gone, False);
-      for I := 0 to High(Wanted) do
-        if not HasId(Have, Wanted[I]) then
-          PivotInsert(C, A, Rel, OwnerId, Wanted[I]);
-      if Own then
-        C.Commit;
-    except
-      if Own then
-        C.Rollback;
-      raise;
-    end;
+    Have := PivotIdsOf(C, A, Rel, OwnerId);
+    SetLength(Gone, Length(Have));
+    N := 0;
+    for I := 0 to High(Have) do
+      if not HasId(Wanted, Have[I]) then
+      begin
+        Gone[N] := Have[I];
+        Inc(N);
+      end;
+    SetLength(Gone, N);
+    PivotDelete(C, A, Rel, OwnerId, Gone, False);
+    for I := 0 to High(Wanted) do
+      if not HasId(Have, Wanted[I]) then
+        PivotInsert(C, A, Rel, OwnerId, Wanted[I]);
+    Tx.Commit;
   finally
+    Tx.Finish;
     A.Free;
   end;
 end;
