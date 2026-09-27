@@ -25,6 +25,16 @@ with the zero-major caveat that minor releases may break things until
   query is its statement with placeholders, a mail how many recipients,
   a failure its SQLSTATE or class and not its message. Each driver sends
   its own, and `tests/telemetry.inc` holds all three.
+- **`/_askr`, the dashboard.** `UseDashboard(R, Open, Pool)` in
+  `Askr.Dashboard`: requests by route with their 5xx and times, the
+  statements with the most time in all, jobs by outcome, mail sent and
+  failed, the pool, the queue and the plugins -- drawn from telemetry, in
+  plain HTML with no script and no npm. `askr new` writes it open in
+  development. Elsewhere it answers only a user the gate `askr.dashboard`
+  allows, and is a 404 to everyone else; without the gate, nobody. Its
+  memory is fixed, and every value on it is escaped.
+- **`HasQueue`**, whether `SetQueue` has been called, since `Queue` raises
+  when it has not.
 
 ## 0.17.0 — 2026-09-27
 

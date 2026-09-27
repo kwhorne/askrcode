@@ -2043,6 +2043,30 @@ cmd_auth_check() {
     sleep 0.25
   done
 
+  # The dashboard the scaffold wires up: open under APP_ENV=local, with
+  # the request just made on it by its route; and a 404 when the same
+  # binary runs as production, where no askr.dashboard gate is defined.
+  dc=$(curl -s -o "$work/dash" -w '%{http_code}' "$base/_askr" || true)
+  if [ "$dc" = "200" ] && grep -q '<td>GET /login</td>' "$work/dash"; then
+    ok "/_askr is open in development, with the requests it has seen"
+  else
+    bad "/_askr is open in development" "got $dc: $(head -c 300 "$work/dash" 2>/dev/null)"
+  fi
+  pport=$((port + 1))
+  docker rm -f $cname-prod >/dev/null 2>&1
+  docker run -d --name $cname-prod $DOCKER_PLATFORM -p "$pport:$pport" \
+    -e APP_ENV=production -e DATABASE_URL=sqlite:storage/auth.sqlite \
+    -v "$ROOT":/work -w "/work/${work#$ROOT/}/site" "$IMAGE" \
+    sh -c "./.build/bin/app $pport 0.0.0.0" >/dev/null
+  n=0
+  until curl -s -o /dev/null "http://127.0.0.1:$pport/login" || [ $n -gt 80 ]; do
+    n=$((n + 1)); sleep 0.25
+  done
+  dc=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$pport/_askr" || true)
+  [ "$dc" = "404" ] && ok "and a 404 in production, without the gate" ||
+    bad "/_askr in production without the gate is a 404" "got $dc: $(docker logs $cname-prod 2>&1 | tail -3)"
+  docker rm -f $cname-prod >/dev/null 2>&1
+
   jar="$work/jar"
   rm -f "$jar"
   token_in() { grep -o 'name="_token" value="[^"]*"' "$1" | head -1 | sed 's/.*value="//; s/"$//'; }

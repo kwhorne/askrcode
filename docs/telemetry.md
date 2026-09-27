@@ -5,6 +5,9 @@ mail -- with how long it took, to anything that listens. A log, a
 dashboard or a metrics exporter each attach, and the code that did the
 work knows none of them. The idea is Phoenix's `:telemetry`.
 
+The [dashboard](dashboard.md) at `/_askr` is one such listener, and
+ships with every new app.
+
 ```pascal
 uses Askr.Core.Telemetry;
 

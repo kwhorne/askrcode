@@ -550,6 +550,7 @@ begin
     '  Askr.Core.Lang, Askr.Locale,' + #10 +
     '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
+    '  Askr.Dashboard,' + #10 +
     { Written on every build from askr.toml and askr.lock: the plugins'
       units. Empty until there is one. }
     '  Askr.Plugins, App.Plugins,' + #10 +
@@ -726,7 +727,15 @@ begin
     '  UseAuth(R);' + #10 +
     '  { The plugins askr.toml names, after the middleware above, so their' + #10 +
     '    routes have sessions and sign-in. Add one with: askr plugin add }' + #10 +
-    '  UsePlugins(R);' + #10 + #10 +
+    '  UsePlugins(R);' + #10 +
+    '  { /_askr: requests, queries, jobs and mail as this process has seen' + #10 +
+    '    them. Open in development; elsewhere only to a user the gate' + #10 +
+    '    askr.dashboard allows, and a 404 to everyone else:' + #10 +
+    '' + #10 +
+    '      DefineGate(' + Q + 'askr.dashboard' + Q + ', @IsAdmin);' + #10 +
+    '' + #10 +
+    '    See docs/dashboard.md. }' + #10 +
+    '  UseDashboard(R, Cfg(' + Q + 'app.env' + Q + ', ' + Q + 'local' + Q + ') = ' + Q + 'local' + Q + ', DbPool);' + #10 + #10 +
     '  R.Get(' + Q + '/' + Q + ', Home.Index);' + #10 +
     '  R.Get(' + Q + '/demo' + Q + ', Home.Demo);' + #10 + #10 +
     '  { The commands the app answers to itself: migrate, db:seed, schema,' + #10 +

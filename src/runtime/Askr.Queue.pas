@@ -324,6 +324,8 @@ type
 
 function Queue: TQueue;
 procedure SetQueue(AQueue: TQueue);
+{ Whether SetQueue has been called: Queue raises when it has not. }
+function HasQueue: Boolean;
 
 const
   ChainJob = 'askr.chain';
@@ -357,6 +359,11 @@ end;
 procedure SetQueue(AQueue: TQueue);
 begin
   GQueue := AQueue;
+end;
+
+function HasQueue: Boolean;
+begin
+  Result := GQueue <> nil;
 end;
 
 { TJobStore }

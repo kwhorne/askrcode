@@ -1351,6 +1351,30 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   `Ready` utsteder to per kjøring, før sandkassen. Mutasjonen som fjerner
   `Sandbox(Conn)` fra malen fanges der og ingen andre steder.
 
+## Telemetri og dashbordet
+
+* **Ingen lytter koster én heltallslesing.** `TelemetryStart` gir 0 når
+  ingen lytter, og alle som sender spør før de leser en klokke eller
+  bygger et felt. Mutasjonen som leser klokka uansett, fanges.
+* **Feltene bærer aldri en verdi fra requesten.** SQL-en er setningen med
+  plassholdere, en mail er antall mottakere, en feil er SQLSTATE eller
+  klassenavn — ikke meldingen: MySQLs melding for et unik-brudd siterer
+  verdien som sto der. `telemetry.inc` sender et sentinel-passord som
+  parameter på alle tre og krever at det ikke finnes noe sted.
+* **Driverne sender hver for seg**, fra Exec, ExecParams og InsertGetId.
+  Derfor er testen én include i alle tre suitene, som `pivot.inc`.
+* **`/_askr` er en 404, ikke en 403**, når den er lukket. Uten gaten
+  `askr.dashboard` svarer den ingen — samme regel som at en gate som ikke
+  finnes svarer nei. `auth:check` kjører den stillasede appen med
+  `APP_ENV=production` og krever 404; mutasjonen som alltid åpner den i
+  stillaset fanges der og ingen andre steder.
+* **Dashbordet teller ikke seg selv**, og minnet er fast: 50 siste, 200
+  ruter, 200 setninger, 100 jobber. Det som ikke får plass telles i
+  totalen og sies på siden.
+* **En setning bygget med verdien spleiset inn i teksten vises med
+  verdien.** Det er grunnen til at siden er lukket utenfor utvikling, og
+  det står i docs.
+
 ## Kjeder og batcher
 
 * **En kjede er én jobb om gangen**: første steg, med resten i seg. Lykkes

@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process, Askr.Core.Telemetry;
+  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -9578,6 +9578,162 @@ begin
   raise Exception.Create('a broken meter');
 end;
 
+{ ------------------------------------------------------------ dashboard -- }
+
+type
+  TDashCtl = class
+    class function Order(Req: TRequest): TResponse;
+    class function Broken(Req: TRequest): TResponse;
+  end;
+
+class function TDashCtl.Order(Req: TRequest): TResponse;
+begin
+  Result := RespondText('order');
+end;
+
+class function TDashCtl.Broken(Req: TRequest): TResponse;
+begin
+  raise Exception.Create('broken on purpose');
+end;
+
+function OnlyOneSeesTheDashboard(const UserId: string; Resource: TObject): Boolean;
+begin
+  Result := UserId = '1';
+end;
+
+function NobodySeesTheDashboard(const UserId: string; Resource: TObject): Boolean;
+begin
+  Result := False;
+end;
+
+procedure TestDashboard;
+var
+  R, Closed: TRouter;
+  K, KC: TTestClient;
+  C: TDbConnection;
+  A: TArena;
+  Pool: TDbPool;
+  Page: string;
+  I: Integer;
+
+  function Gauge(const Name_: string): string;
+  var
+    P, Q: Integer;
+  begin
+    P := Pos('<dt>' + Name_ + '</dt><dd>', Page);
+    if P = 0 then
+      Exit('(none)');
+    P := P + Length('<dt>' + Name_ + '</dt><dd>');
+    Q := PosEx('</dd>', Page, P);
+    Result := Copy(Page, P, Q - P);
+  end;
+
+begin
+  ResetDashboard;
+  ClearTelemetry;
+  R := TRouter.Create;
+  Closed := TRouter.Create;
+  K := TTestClient.Create(R);
+  KC := TTestClient.Create(Closed);
+  A := TArena.Create(8192);
+  Pool := TDbPool.Create('sqlite::memory:', 3);
+  try
+    { Opened first: connecting sets its pragmas, and they are queries. }
+    C := UseTestDatabase;
+    R.Get('/orders/:id', TDashCtl.Order);
+    R.Get('/broken', TDashCtl.Broken);
+    UseDashboard(R, True, Pool);
+    AssertTrue(TelemetryOn, 'the dashboard listens');
+
+    K.Get('/orders/7');
+    K.Get('/orders/8');
+    K.Get('/nowhere');
+    try
+      K.Get('/broken');
+    except
+      on E: Exception do ;
+    end;
+    C.Exec(A, 'SELECT 1 AS "<b>bold</b>"');
+    try
+      C.Exec(A, 'SELECT nothing FROM no_such_table');
+    except
+      on E: EDbError do ;
+    end;
+    EmitTelemetry('askr.job', 1500, ['job', 'send-invoice', 'outcome', 'done', 'attempt', '1']);
+    EmitTelemetry('askr.job', 900, ['job', 'send-invoice', 'outcome', 'retry', 'attempt', '1']);
+    EmitTelemetry('askr.job', 0, ['job', '<i>nobody</i>', 'outcome', 'dropped', 'attempt', '1']);
+    EmitTelemetry('askr.mail', 10, ['transport', 'log', 'recipients', '1']);
+    EmitTelemetry('askr.mail', 10, ['transport', 'log', 'recipients', '1', 'error', 'EMailError']);
+
+    Page := K.Get('/_askr').Body.ToString;
+    AssertContains(Page, '<title>Askr dashboard</title>', 'the page is there, open in development');
+    AssertEqual(Gauge('Requests'), '4', 'four requests, the dashboard''s own not among them');
+    AssertContains(Page, '<td>GET /orders/:id</td><td class="num">2</td>',
+      'a route by its pattern, with both requests to it');
+    AssertContains(Page, '<td>GET (no route)</td>', 'a request no route matched is still counted');
+    AssertContains(Page, '<td>GET /broken</td><td class="num">1</td><td class="num bad">1</td>',
+      'and a handler that raised is a 5xx against its route');
+    AssertEqual(Gauge('Queries'), '2', 'both queries');
+    AssertEqual(Gauge('Failed queries'), '1', 'one of them failed');
+    AssertContains(Page, 'SELECT 1 AS &quot;&lt;b&gt;bold&lt;/b&gt;&quot;',
+      'the SQL is escaped');
+    AssertFalse(Pos('<b>bold', Page) > 0, 'and never markup');
+    AssertContains(Page, '<td>send-invoice</td><td class="num">1</td><td class="num">1</td>',
+      'a job, by what became of it');
+    AssertContains(Page, '&lt;i&gt;nobody&lt;/i&gt;', 'a job name is escaped too');
+    AssertEqual(Gauge('Mail sent'), '1', 'mail sent');
+    AssertEqual(Gauge('Mail failed'), '1', 'mail failed');
+    AssertEqual(Gauge('Pool in use'), '0 of 3', 'the pool, as it is now');
+    AssertEqual(Gauge('Jobs pending'), '(none)', 'no queue, no queue gauges, and no raise');
+    AssertContains(Page, '<td>/orders/8</td>', 'the recent requests, by path');
+    AssertTrue(Pos('/orders/8', Page) < Pos('/orders/7</td>', Page),
+      'newest first');
+    AssertEqual(K.Get('/_askr').HeaderValue('Cache-Control'), 'no-store',
+      'not cached');
+
+    K.Get('/_askr');
+    Page := K.Get('/_askr').Body.ToString;
+    AssertEqual(Gauge('Requests'), '4', 'refreshing it does not count itself');
+
+    { Fixed memory: a statement past the limit is counted, not listed. }
+    for I := 1 to 230 do
+      EmitTelemetry('askr.query', 5, ['sql', 'SELECT ' + IntToStr(I), 'rows', '1']);
+    Page := K.Get('/_askr').Body.ToString;
+    AssertContains(Page, '32 runs of further statements are counted above but not listed.',
+      'past two hundred statements, the rest are counted but not remembered');
+    AssertEqual(Gauge('Queries'), '232', 'and every run is in the total');
+
+    { Closed: no gate, nobody -- a 404, signed in or not. }
+    Closed.Use(SignInFromHeader);
+    Closed.Get('/', TDashCtl.Order);
+    UseDashboard(Closed, False);
+    AssertEqual(KC.Get('/_askr').StatusCode, 404, 'closed and no gate: a 404');
+    AssertEqual(KC.WithHeader('X-As', '1').Get('/_askr').StatusCode, 404,
+      'even signed in, when no gate says yes');
+    DefineGate(DashboardGate, @OnlyOneSeesTheDashboard);
+    AssertEqual(KC.WithHeader('X-As', '1').Get('/_askr').StatusCode, 200,
+      'the gate lets its user in');
+    AssertEqual(KC.WithHeader('X-As', '2').Get('/_askr').StatusCode, 404,
+      'and nobody else');
+    AssertEqual(KC.Get('/_askr').StatusCode, 404, 'nor anybody signed out');
+    AssertEqual(KC.WithHeader('X-As', '1').Get('/_askr/').StatusCode, 200,
+      'with a trailing slash too');
+
+    ResetDashboard;
+    AssertFalse(TelemetryOn, 'reset, it stops listening');
+  finally
+    DefineGate(DashboardGate, @NobodySeesTheDashboard);
+    ResetDashboard;
+    CloseTestDatabase;
+    Pool.Free;
+    A.Free;
+    KC.Free;
+    K.Free;
+    Closed.Free;
+    R.Free;
+  end;
+end;
+
 type
   TTelCtl = class
     class function Order(Req: TRequest): TResponse;
@@ -13559,6 +13715,7 @@ begin
   Test('a route added twice is refused where it is added, naming a plugin that owns the first', @TestRouteTwice);
   Test('route groups: prefix, middleware in order, nesting, parameters', @TestRouteGroups);
   Test('telemetry: requests, queries, jobs and mail, and what they never carry', @TestTelemetry);
+  Test('the dashboard: what it counts, that it escapes, and who sees it', @TestDashboard);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');
