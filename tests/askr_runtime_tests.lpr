@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard;
+  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -9578,6 +9578,270 @@ begin
   raise Exception.Create('a broken meter');
 end;
 
+{ ----------------------------------------------------------- supervisor -- }
+
+type
+  { Raises on the runs listed in FailOn, sleeps SlowMs on the run listed
+    in SlowOn first, and returns on any other run. }
+  TCrashy = class(TSupervisedThread)
+  public
+    Runs: Integer;
+    FailOn: set of 1..20;
+    SlowOn, SlowMs: Integer;
+    Keep: Boolean;
+    ForeverUntilUnwanted: Boolean;
+    { Waits for its owner to stop it, then raises: a call that fails
+      because everything is shutting down. }
+    RaiseOnceUnwanted: Boolean;
+  protected
+    procedure Run; override;
+    function Wanted: Boolean; override;
+  end;
+
+procedure TCrashy.Run;
+begin
+  Inc(Runs);
+  if RaiseOnceUnwanted then
+  begin
+    while Keep do
+      Sleep(5);
+    raise EConvertError.Create('shutting down');
+  end;
+  if Runs = SlowOn then
+    Sleep(SlowMs);
+  if ForeverUntilUnwanted or ((Runs <= 20) and (Runs in FailOn)) then
+    raise EConvertError.Create('supervisor-secret-sentinel');
+end;
+
+function TCrashy.Wanted: Boolean;
+begin
+  Result := Keep and not Terminated;
+end;
+
+var
+  SupSeen: TStringList;
+
+procedure SupRecord(const E: TTelemetryEvent);
+begin
+  SupSeen.Add(E.Field('thread') + ' ' + E.Field('outcome') + ' ' +
+    E.Field('error') + ' restarts=' + E.Field('restarts') + ' in_ms=' +
+    E.Field('in_ms'));
+end;
+
+function SupStat(const Name: string): TSupervisedStat;
+var
+  All: TArray<TSupervisedStat>;
+  I: Integer;
+begin
+  All := SupervisedThreads;
+  for I := 0 to High(All) do
+    if All[I].Name = Name then
+      Exit(All[I]);
+  Result.Name := '';
+  Result.Running := 0;
+  Result.Crashes := 0;
+  Result.Restarts := 0;
+  Result.LastError := '';
+  Result.LastCrashAt := 0;
+end;
+
+function SupCrashy(const Name: string; Policy: TRestartPolicy): TCrashy;
+begin
+  Result := TCrashy.Create(Name, Policy, True);
+  Result.Keep := True;
+end;
+
+procedure SupWait(T: TThread);
+begin
+  T.WaitFor;
+end;
+
+var
+  SupRealRan: LongInt = 0;
+
+procedure SupRealJob(const Ctx: TJobContext);
+begin
+  InterLockedIncrement(SupRealRan);
+end;
+
+procedure SupFailingJob(const Ctx: TJobContext);
+begin
+  raise Exception.Create('this job fails');
+end;
+
+procedure SupOnErrorRaises(const JobName, Message_: string);
+begin
+  raise Exception.Create('OnError itself fails');
+end;
+
+type
+  { A store whose first pushes fail, as a database gone for a moment. }
+  TFlakyStore = class(TMemoryJobStore)
+  public
+    FailsLeft: Integer;
+    procedure Push(const JobName: string; Data: PByte; Len: SizeInt;
+      DelayMs: Int64); override;
+  end;
+
+procedure TFlakyStore.Push(const JobName: string; Data: PByte; Len: SizeInt;
+  DelayMs: Int64);
+begin
+  if FailsLeft > 0 then
+  begin
+    Dec(FailsLeft);
+    raise Exception.Create('the database went away');
+  end;
+  inherited Push(JobName, Data, Len, DelayMs);
+end;
+
+procedure TestSupervisor;
+var
+  T: TCrashy;
+  Q: TQueue;
+  Store: TFlakyStore;
+  Sched: TScheduler;
+  Began: Int64;
+begin
+  ClearTelemetry;
+  ResetSupervisedThreads;
+  SetRestartBackoff(5, 20, 30000);
+  SupSeen := TStringList.Create;
+  AttachTelemetry('askr.thread', @SupRecord);
+  try
+    { Restarted until it returns. }
+    T := SupCrashy('test.crashy', rpOnCrash);
+    T.FailOn := [1, 2];
+    T.Start;
+    SupWait(T);
+    AssertEqual(T.Runs, 3, 'a crash is followed by a restart, until Run returns');
+    AssertEqual(T.Restarts, 2, 'twice restarted');
+    T.Free;
+    AssertEqual(SupStat('test.crashy').Crashes, 2, 'both crashes counted by name');
+    AssertEqual(SupStat('test.crashy').Restarts, 2, 'and both restarts');
+    AssertEqual(SupStat('test.crashy').LastError, 'EConvertError', 'the last one by its class');
+    AssertEqual(SupStat('test.crashy').Running, 0, 'and it is not running now');
+    AssertTrue(SupStat('test.crashy').LastCrashAt > 0, 'with when');
+    AssertEqual(SupSeen.Text,
+      'test.crashy restarted EConvertError restarts=1 in_ms=5'#10 +
+      'test.crashy restarted EConvertError restarts=2 in_ms=10'#10,
+      'each crash an askr.thread event, the wait doubling');
+    AssertFalse(Pos('supervisor-secret-sentinel', SupSeen.Text) > 0,
+      'and never the message');
+
+    { rpNever: reported, not restarted. }
+    SupSeen.Clear;
+    T := SupCrashy('test.once', rpNever);
+    T.FailOn := [1];
+    T.Start;
+    SupWait(T);
+    AssertEqual(T.Runs, 1, 'rpNever does not restart');
+    T.Free;
+    AssertEqual(SupSeen.Text, 'test.once ended EConvertError restarts=0 in_ms='#10,
+      'but the crash is reported');
+    AssertEqual(SupStat('test.once').Crashes, 1, 'and counted');
+
+    { The wait doubles to the cap, and a run that lasted resets it. }
+    SupSeen.Clear;
+    SetRestartBackoff(5, 20, 150);
+    T := SupCrashy('test.backoff', rpOnCrash);
+    T.FailOn := [1, 2, 3, 4, 5];
+    T.SlowOn := 5;
+    T.SlowMs := 250;
+    T.Start;
+    SupWait(T);
+    T.Free;
+    AssertEqual(SupSeen.Text,
+      'test.backoff restarted EConvertError restarts=1 in_ms=5'#10 +
+      'test.backoff restarted EConvertError restarts=2 in_ms=10'#10 +
+      'test.backoff restarted EConvertError restarts=3 in_ms=20'#10 +
+      'test.backoff restarted EConvertError restarts=4 in_ms=20'#10 +
+      'test.backoff restarted EConvertError restarts=5 in_ms=5'#10,
+      'doubling, capped, and back to the first after a run that lasted');
+
+    { Not wanted: no restart, and the backoff is not waited out. }
+    SetRestartBackoff(10000, 10000, 30000);
+    T := SupCrashy('test.stopped', rpOnCrash);
+    T.ForeverUntilUnwanted := True;
+    T.Start;
+    Began := MonotonicMs;
+    while (T.Runs = 0) and (MonotonicMs - Began < 2000) do
+      Sleep(5);
+    Sleep(50);
+    T.Keep := False;
+    Began := MonotonicMs;
+    SupWait(T);
+    AssertTrue(MonotonicMs - Began < 2000,
+      'an owner that stops does not wait out a ten-second backoff');
+    AssertEqual(T.Runs, 1, 'and nothing restarts after it');
+    T.Free;
+    SetRestartBackoff(5, 20, 30000);
+
+    { A crash after the stop: reported as the end it is, not as a
+      restart that will never come. }
+    SupSeen.Clear;
+    T := SupCrashy('test.shutdown', rpOnCrash);
+    T.RaiseOnceUnwanted := True;
+    T.Start;
+    Sleep(30);
+    T.Keep := False;
+    SupWait(T);
+    AssertEqual(T.Restarts, 0, 'a crash after the stop is not a restart');
+    T.Free;
+    AssertEqual(SupSeen.Text, 'test.shutdown ended EConvertError restarts=0 in_ms='#10,
+      'and says it ended');
+
+    { The queue: an OnError that raises used to end the worker. With one
+      worker, nothing after it would ever run. }
+    ResetSupervisedThreads;
+    Q := TQueue.Create(1, 1);
+    try
+      Q.Handle('sup-real', SupRealJob);
+      Q.Handle('sup-fails', SupFailingJob);
+      Q.OnError := SupOnErrorRaises;
+      Q.Start;
+      Q.Push('sup-nobody', '');
+      Q.Push('sup-fails', '');
+      Q.Push('sup-real', '');
+      AssertTrue(Q.WaitUntilEmpty(5000),
+        'the queue empties, with an OnError that raises for two of three jobs');
+      AssertEqual(SupRealRan, 1, 'and the job after them ran');
+      AssertEqual(Q.Dropped, 1, 'the unhandled one dropped');
+      AssertEqual(Q.Failed, 1, 'the failing one failed, settled before OnError was told');
+      AssertEqual(SupStat('askr.queue').Restarts, 2, 'the worker restarted twice');
+      AssertEqual(SupStat('askr.queue').Running, 1, 'and is running');
+    finally
+      Q.Free;
+    end;
+    AssertEqual(SupStat('askr.queue').Running, 0, 'stopped with its queue');
+
+    { The scheduler: a push that fails used to end its thread, and every
+      scheduled job with it. }
+    Store := TFlakyStore.Create;
+    Store.FailsLeft := 1;
+    Q := TQueue.Create(Store, 1, 1, True);
+    Sched := TScheduler.Create(Q);
+    try
+      Sched.EverySeconds(1, 'sup-tick');
+      Sched.Start;
+      Began := MonotonicMs;
+      while (Sched.Dispatched = 0) and (MonotonicMs - Began < 5000) do
+        Sleep(20);
+      AssertTrue(Sched.Dispatched > 0,
+        'a push that failed once does not end the schedule');
+      AssertEqual(SupStat('askr.scheduler').Crashes, 1, 'the failure is counted');
+      AssertEqual(SupStat('askr.scheduler').LastError, 'Exception', 'by its class');
+    finally
+      Sched.Free;
+      Q.Free;
+    end;
+  finally
+    DetachTelemetry(@SupRecord);
+    FreeAndNil(SupSeen);
+    SetRestartBackoff(100, 30000, 30000);
+    ResetSupervisedThreads;
+  end;
+end;
+
 { ------------------------------------------------------------ dashboard -- }
 
 type
@@ -9615,6 +9879,7 @@ var
   Pool: TDbPool;
   Page: string;
   I: Integer;
+  Crashy: TCrashy;
 
   function Gauge(const Name_: string): string;
   var
@@ -9664,6 +9929,12 @@ begin
     EmitTelemetry('askr.job', 0, ['job', '<i>nobody</i>', 'outcome', 'dropped', 'attempt', '1']);
     EmitTelemetry('askr.mail', 10, ['transport', 'log', 'recipients', '1']);
     EmitTelemetry('askr.mail', 10, ['transport', 'log', 'recipients', '1', 'error', 'EMailError']);
+    ResetSupervisedThreads;
+    Crashy := SupCrashy('dash.<b>x</b>', rpNever);
+    Crashy.FailOn := [1];
+    Crashy.Start;
+    Crashy.WaitFor;
+    Crashy.Free;
 
     Page := K.Get('/_askr').Body.ToString;
     AssertContains(Page, '<title>Askr dashboard</title>', 'the page is there, open in development');
@@ -9685,6 +9956,9 @@ begin
     AssertEqual(Gauge('Mail failed'), '1', 'mail failed');
     AssertEqual(Gauge('Pool in use'), '0 of 3', 'the pool, as it is now');
     AssertEqual(Gauge('Jobs pending'), '(none)', 'no queue, no queue gauges, and no raise');
+    AssertContains(Page, '<td>dash.&lt;b&gt;x&lt;/b&gt;</td><td class="num">0</td>' +
+      '<td class="num bad">1</td><td class="num">0</td><td>EConvertError, ',
+      'a supervised thread that crashed and is gone, by its escaped name and class');
     AssertContains(Page, '<td>/orders/8</td>', 'the recent requests, by path');
     AssertTrue(Pos('/orders/8', Page) < Pos('/orders/7</td>', Page),
       'newest first');
@@ -13716,6 +13990,7 @@ begin
   Test('route groups: prefix, middleware in order, nesting, parameters', @TestRouteGroups);
   Test('telemetry: requests, queries, jobs and mail, and what they never carry', @TestTelemetry);
   Test('the dashboard: what it counts, that it escapes, and who sees it', @TestDashboard);
+  Test('supervised threads: restarted with backoff, or reported, and the queue and scheduler survive', @TestSupervisor);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

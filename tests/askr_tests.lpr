@@ -20,7 +20,7 @@ uses
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
   Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url, Askr.Urd.Json,
   Askr.Http.Robots, Askr.Http.Sitemap, Askr.Console.Commands,
-  Askr.Testing, Askr.Core.Telemetry;
+  Askr.Testing, Askr.Core.Telemetry, Askr.Core.Supervisor;
 
 var
   Passed: Integer = 0;
@@ -5072,6 +5072,7 @@ end;
 type
   TWsTestHandler = class(TWsHandler)
     Log: string;
+    FailNextOpen: Boolean;
     procedure Opened(C: TWsConnection); override;
     procedure Text(C: TWsConnection; const Msg: string); override;
     procedure Closed(C: TWsConnection; Code: Word); override;
@@ -5084,7 +5085,25 @@ type
 
 procedure TWsTestHandler.Opened(C: TWsConnection);
 begin
+  if FailNextOpen then
+  begin
+    FailNextOpen := False;
+    raise EConvertError.Create('the handler failed on open');
+  end;
   Log := Log + 'open:' + C.UserId + ' ';
+end;
+
+{ The crashes counted for a supervised thread's name. }
+function WsCrashes: Int64;
+var
+  All: TArray<TSupervisedStat>;
+  I: Integer;
+begin
+  All := SupervisedThreads;
+  Result := 0;
+  for I := 0 to High(All) do
+    if All[I].Name = 'askr.websocket' then
+      Result := All[I].Crashes;
 end;
 
 procedure TWsTestHandler.Text(C: TWsConnection; const Msg: string);
@@ -5151,6 +5170,8 @@ var
   Host: TWsHost;
   A, B, C, D, E: TClient;
   Head, Body: string;
+  Crashes: Int64;
+  Waited: Integer;
 begin
   WriteLn;
   WriteLn('websockets');
@@ -5211,6 +5232,23 @@ begin
     Check(ReadUntil(A, #$88#$02#$03#$E8, 2000), 'a close is answered with the same code');
     Check(WaitForSockets(0, 2000) and (Pos('closed:1000', Host.Handler.Log) > 0),
       'the connection goes, and the handler hears the code');
+    A.Close;
+
+    { An Opened that raises: the connection goes, as it always did, and
+      now the crash is counted rather than lost in FatalException. }
+    Crashes := WsCrashes;
+    Host.Handler.FailNextOpen := True;
+    Check(A.Connect(Server.BoundPort), 'a client whose handler fails on open connects');
+    A.Buf := '';
+    A.SendRaw(WsHandshake + #13#10);
+    Waited := 0;
+    while (WsCrashes = Crashes) and (Waited < 2000) do
+    begin
+      Sleep(10);
+      Inc(Waited, 10);
+    end;
+    Check(WsCrashes = Crashes + 1, 'the crash is counted for askr.websocket');
+    Check(WaitForSockets(0, 2000), 'and the connection is gone');
     A.Close;
 
     { One left open for the server to close. }

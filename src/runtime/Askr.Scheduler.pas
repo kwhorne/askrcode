@@ -101,7 +101,7 @@ procedure SetSchedule(AScheduler: TScheduler);
 implementation
 
 uses
-  DateUtils;
+  DateUtils, Askr.Core.Supervisor;
 
 var
   GSchedule: TScheduler = nil;
@@ -120,11 +120,16 @@ begin
 end;
 
 type
-  TSchedulerThread = class(TThread)
+  { Supervised: a Push that raises -- a durable queue whose database is
+    gone for a moment -- used to end this thread, and with it every
+    scheduled job until the process restarted. The entry is not advanced
+    when its push fails, so it runs on the first tick after the restart. }
+  TSchedulerThread = class(TSupervisedThread)
   private
     FOwner: TScheduler;
   protected
-    procedure Execute; override;
+    procedure Run; override;
+    function Wanted: Boolean; override;
   public
     constructor Create(AOwner: TScheduler);
   end;
@@ -132,10 +137,15 @@ type
 constructor TSchedulerThread.Create(AOwner: TScheduler);
 begin
   FOwner := AOwner;
-  inherited Create(False);
+  inherited Create('askr.scheduler', rpOnCrash);
 end;
 
-procedure TSchedulerThread.Execute;
+function TSchedulerThread.Wanted: Boolean;
+begin
+  Result := FOwner.IsRunning;
+end;
+
+procedure TSchedulerThread.Run;
 var
   NextAt: Int64;
 begin

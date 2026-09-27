@@ -48,6 +48,7 @@ nobody. A gate that does not exist says no.
 | Statements | the twenty with the most time in all, with runs, failures, average and slowest |
 | Jobs | each job by name: done, retried, failed, dropped |
 | Recent requests | the last fifty, newest first |
+| Threads | the [supervised threads](threads.md) by name: running, crashes, restarts, the last crash's class and when |
 | Plugins | the plugins `UsePlugins` started |
 
 Statements are sorted by total time, not by their slowest run. A

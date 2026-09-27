@@ -116,6 +116,16 @@ var der — porten døde da stille på en echo-linje. Samme feil som
 `capture.sh` omgår fra den andre siden, der en skriving på verten leste som
 tom inne i containeren. La containeren gjøre begge deler i samme kall.
 
+**En fil verten skriver om, kan leses med sin GAMLE lengde i containeren.**
+`make:check` skrev `.env` fra verten rett før en container leste den, og
+`DATABASE_URL=sqlite:storage/browser.sqlite` kom fram som `…browser.sql`
+— nøyaktig lengden `…api.sqlite`-fila hadde. Migrasjonene gikk inn i en fil
+ingen åpnet, og hver side som rørte databasen svarte 500. Postgres-feilen
+«could not translate host name "askr"» i samme kjøring var en DSN kuttet på
+samme måte. `box_write` lar containeren skrive fila den skal lese, med
+teksten i miljøet. En prøve med fem `.env`-filer av lik lengde fant
+ingenting — lengden må endre seg for at feilen skal vises.
+
 **Et steg som alt under avhenger av, må ikke stå i `set -e` uten melding.**
 Stillaset i porten var `>/dev/null 2>&1` uten `|| true`, og da det feilet
 forsvant hele kjøringen uten et ord. Samme regel som den om at en port som
@@ -1374,6 +1384,31 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **En setning bygget med verdien spleiset inn i teksten vises med
   verdien.** Det er grunnen til at siden er lukket utenfor utvikling, og
   det står i docs.
+
+## Supervisor
+
+* **En TThread som kaster fra Execute, dør uten et ord.** Unntaket ligger
+  i `FatalException`, og ingen leser det. Tre av Askrs tråder kunne det:
+  scheduleren på en `Push` som feilet (databasen borte et øyeblikk — da
+  sto all planlagt jobb til omstart), en køworker hvis `OnError` kastet,
+  og en websocket hvis `Opened` kastet. Alle fire trådtypene arver nå
+  `TSupervisedThread`; køen og scheduleren med `rpOnCrash`, strømmer og
+  websockets med `rpNever`, fordi forbindelsen er borte uansett.
+* **`OnError` får vite det etter at jobben er avgjort**, ikke før.
+  Kastet den før, sto jobben reservert. I no-handler-grenen ble dessuten
+  `FBusy` aldri talt ned, og `WaitUntilEmpty` ventet på en jobb som ikke
+  fantes. Begge mutasjonssjekket.
+* **`Arr[F(...)]` der F gjør `SetLength(Arr)` tar adressen til det gamle
+  arrayet.** Første utkast av `Entered` skrev
+  `Inc(GStats[StatIndex(Name)].Running)`, og hver supervisert tråd døde
+  med `EAccessViolation` før `Run` — køen tok ingen jobber. Indeksen
+  først, så oppslaget.
+* **Backoff-ventingen skjer i skiver som spør `Wanted`**, så en eier som
+  stopper ikke venter ut tretti sekunder i `WaitFor`. Testen setter
+  ventingen til ti sekunder og krever at stoppet tar under to.
+* **Tellingen er per navn, ikke per tråd.** En strøm som krasjet og ble
+  frigjort for et minutt siden, står fortsatt der, og hundre strømmer er
+  én linje.
 
 ## Kjeder og batcher
 

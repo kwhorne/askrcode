@@ -82,8 +82,13 @@ procedure StopStreams;
 
 implementation
 
+uses
+  Askr.Core.Supervisor;
+
 type
-  TStreamThread = class(TThread)
+  { Supervised, never restarted: a crash closes the stream as before, and
+    is now a log line and a count instead of nothing. }
+  TStreamThread = class(TSupervisedThread)
   private
     FSock: TSocket;
     FTls: TTlsConn;
@@ -93,7 +98,7 @@ type
     FLastId: Int64;
     function Send(const S: string): Boolean;
   protected
-    procedure Execute; override;
+    procedure Run; override;
   public
     constructor Create(ASock: TSocket; ATls: TTlsConn;
       const AChannels: string; ALastId: Int64);
@@ -334,7 +339,7 @@ begin
   FreeOnTerminate := True;
   { A small stack: a stream waits and writes, and hundreds of them should
     not cost hundreds of default stacks. }
-  inherited Create(True, 256 * 1024);
+  inherited Create('askr.stream', rpNever, True, 256 * 1024);
 end;
 
 destructor TStreamThread.Destroy;
@@ -389,7 +394,7 @@ begin
   Result := True;
 end;
 
-procedure TStreamThread.Execute;
+procedure TStreamThread.Run;
 var
   Batch: string;
   I: Integer;

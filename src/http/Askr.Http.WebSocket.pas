@@ -55,7 +55,7 @@ interface
 uses
   SysUtils, Classes, SyncObjs, Sockets, BaseUnix,
   Askr.Core.Arena, Askr.Core.Text, Askr.Http.Request, Askr.Http.Response,
-  Askr.Http.Stream, Askr.Tls;
+  Askr.Http.Stream, Askr.Tls, Askr.Core.Supervisor;
 
 type
   EWebSocketError = class(Exception);
@@ -74,7 +74,7 @@ type
     procedure Closed(C: TWsConnection; Code: Word); virtual;
   end;
 
-  TWsConnection = class(TThread)
+  TWsConnection = class(TSupervisedThread)
   private
     FSock: TSocket;
     FTls: TTlsConn;
@@ -91,7 +91,7 @@ type
     function SendFrame(Opcode: Byte; const Payload: string): Boolean;
     procedure Fail(Code: Word);
   protected
-    procedure Execute; override;
+    procedure Run; override;
   public
     constructor Create(ASock: TSocket; ATls: TTlsConn; AHandler: TWsHandler;
       const AChannels, AUserId, ALeftover: string);
@@ -460,7 +460,7 @@ begin
   FSendLock := TCriticalSection.Create;
   FArena := TArena.Create(16 * 1024);
   FreeOnTerminate := True;
-  inherited Create(True, 256 * 1024);
+  inherited Create('askr.websocket', rpNever, True, 256 * 1024);
 end;
 
 destructor TWsConnection.Destroy;
@@ -639,7 +639,7 @@ begin
   end;
 end;
 
-procedure TWsConnection.Execute;
+procedure TWsConnection.Run;
 var
   B0, B1, Opcode: Byte;
   Fin, Masked: Boolean;

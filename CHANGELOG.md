@@ -35,6 +35,26 @@ with the zero-major caveat that minor releases may break things until
   memory is fixed, and every value on it is escaped.
 - **`HasQueue`**, whether `SetQueue` has been called, since `Queue` raises
   when it has not.
+- **Supervised threads.** `TSupervisedThread` in `Askr.Core.Supervisor`:
+  the work goes in `Run`, and a crash is logged, sent as `askr.thread`
+  and counted by name. `rpOnCrash` starts it again after a backoff that
+  doubles from 100 ms to 30 s and resets after a run that lasted.
+  `rpNever` ends it. The queue's workers and the scheduler restart;
+  streams and websockets are reported and end. The dashboard has a
+  Threads section.
+
+### Fixed
+
+- **A failed push ended the scheduler.** A durable queue whose database
+  was gone for a moment made `Tick` raise, the scheduler's thread ended,
+  and no scheduled job ran again until the process restarted. The thread
+  is supervised now, and the entry runs on the first tick after.
+- **An `OnError` that raised ended a queue worker**, and on the
+  no-handler path left the job counted as running, so `WaitUntilEmpty`
+  waited for it. The worker restarts. `OnError` is told only after the
+  job is retried, failed or dropped.
+- **A websocket whose `Opened` raised was closed without a word.** It is
+  a log line and a count now.
 
 ## 0.17.0 — 2026-09-27
 

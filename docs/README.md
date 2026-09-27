@@ -100,6 +100,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [Logging](logging.md) | Levels, fields, text or JSON |
 | [Telemetry](telemetry.md) | What happened and how long it took: requests, queries, jobs and mail, to whoever listens |
 | [Dashboard](dashboard.md) | `/_askr`: routes, slow statements, jobs, mail and the pool, from inside the running app |
+| [Threads](threads.md) | Supervised background threads: restarted with backoff, or reported, never lost in silence |
 | [HTTP client](http-client.md) | Calling other services, with certificate verification |
 | [AI](ai.md) | Claude: text, streaming, tools, structured output |
 

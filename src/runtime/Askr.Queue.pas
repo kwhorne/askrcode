@@ -28,7 +28,7 @@ interface
 
 uses
   SysUtils, Classes, SyncObjs, Askr.Core.Arena, Askr.Core.Text,
-  Askr.Core.Clock, Askr.Core.Telemetry;
+  Askr.Core.Clock, Askr.Core.Telemetry, Askr.Core.Supervisor;
 
 type
   EQueueError = class(Exception);
@@ -214,14 +214,18 @@ type
     function Push: string;
   end;
 
-  TQueueWorker = class(TThread)
+  { Supervised: an OnError that raises, or anything else that escapes the
+    loop, restarts the worker instead of taking its share of the queue
+    with it. }
+  TQueueWorker = class(TSupervisedThread)
   private
     FQueue: TQueue;
     FArena: TArena;
     FIndex: Integer;
     FDone: QWord;
   protected
-    procedure Execute; override;
+    procedure Run; override;
+    function Wanted: Boolean; override;
   public
     constructor Create(AQueue: TQueue; AIndex: Integer);
     destructor Destroy; override;
@@ -1251,7 +1255,12 @@ begin
   { Its own arena per worker, reset between jobs. The same pattern as the
     HTTP workers, and for the same reason. }
   FArena := TArena.Create(64 * 1024);
-  inherited Create(False);
+  inherited Create('askr.queue', rpOnCrash);
+end;
+
+function TQueueWorker.Wanted: Boolean;
+begin
+  Result := FQueue.IsRunning;
 end;
 
 destructor TQueueWorker.Destroy;
@@ -1270,7 +1279,7 @@ begin
     Q.FOnError(JobName, 'the job store failed: ' + E.ClassName + ': ' + E.Message);
 end;
 
-procedure TQueueWorker.Execute;
+procedure TQueueWorker.Run;
 var
   J: TReservedJob;
   H: TJobHandler;
@@ -1309,19 +1318,26 @@ begin
     H := FQueue.HandlerFor(J.Name);
     if not Assigned(H) then
     begin
-      if TelemetryOn then
-        EmitTelemetry('askr.job', 0,
-          ['job', J.Name, 'outcome', 'dropped', 'attempt', IntToStr(J.Attempt + 1)]);
-      InterLockedIncrement64(Int64(FQueue.FDropped));
-      if Assigned(FQueue.FOnError) then
-        FQueue.FOnError(J.Name, 'no handler registered');
+      { Dropped before OnError is told, and uncounted in a finally: an
+        OnError that raises restarts the worker, and must not leave the
+        job reserved or WaitUntilEmpty waiting on it. }
       try
-        FQueue.FStore.Drop(J, 'no handler registered');
-      except
-        on E: Exception do
-          StoreTrouble(FQueue, J.Name, E);
+        if TelemetryOn then
+          EmitTelemetry('askr.job', 0,
+            ['job', J.Name, 'outcome', 'dropped', 'attempt', IntToStr(J.Attempt + 1)]);
+        InterLockedIncrement64(Int64(FQueue.FDropped));
+        Name_ := J.Name;
+        try
+          FQueue.FStore.Drop(J, 'no handler registered');
+        except
+          on E: Exception do
+            StoreTrouble(FQueue, Name_, E);
+        end;
+        if Assigned(FQueue.FOnError) then
+          FQueue.FOnError(Name_, 'no handler registered');
+      finally
+        InterLockedDecrement(FQueue.FBusy);
       end;
-      InterLockedDecrement(FQueue.FBusy);
       Continue;
     end;
 
@@ -1370,8 +1386,6 @@ begin
         end
         else
         begin
-          if Assigned(FQueue.FOnError) then
-            FQueue.FOnError(J.Name, Err);
           if J.Attempt + 1 < FQueue.FMaxAttempts then
           begin
             InterLockedIncrement64(Int64(FQueue.FRetried));
@@ -1391,10 +1405,15 @@ begin
         end;
       except
         on E: Exception do
-          StoreTrouble(FQueue, J.Name, E);
+          StoreTrouble(FQueue, Name_, E);
       end;
       EmitSince('askr.job', Started,
         ['job', Name_, 'outcome', Outcome, 'attempt', IntToStr(Ctx.Attempt)]);
+      { Told after the job is settled: an OnError that raises restarts the
+        worker, and the job is already back in the store or in the failed
+        table by then. }
+      if not Ok and Assigned(FQueue.FOnError) then
+        FQueue.FOnError(Name_, Err);
     finally
       UseArena(Prev);
       { After Complete, Retry or Fail: a retried job is back in the store

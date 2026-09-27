@@ -33,7 +33,7 @@ interface
 
 uses
   SysUtils, StrUtils, SyncObjs,
-  Askr.Core.Text, Askr.Core.Clock, Askr.Core.Telemetry,
+  Askr.Core.Text, Askr.Core.Clock, Askr.Core.Telemetry, Askr.Core.Supervisor,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Urd.Pool, Askr.Queue, Askr.Auth, Askr.Plugins;
 
@@ -308,6 +308,7 @@ var
   Recent: array of TRecent;
   I, K, N: Integer;
   Plugins: TStringArray;
+  Threads: TArray<TSupervisedStat>;
   Requests, Queries, QueryErrors, MailSent, MailFailed, Up: Int64;
   UncountedRoutes, UncountedStatements: Int64;
 
@@ -440,6 +441,29 @@ begin
       IntToStr(Recent[I].Status) + '</td><td class="num">' + Ms(Recent[I].Us) +
       '</td></tr>');
   A('</tbody></table></div>');
+
+  { The supervised threads by name: a crash stays in the count after the
+    thread is gone, which is the point of keeping it. }
+  Threads := SupervisedThreads;
+  A('<h2>Threads</h2><div class="wrap"><table><thead><tr><th>Thread</th>' +
+    '<th>Running</th><th>Crashes</th><th>Restarts</th><th>Last crash</th></tr></thead><tbody>');
+  if Length(Threads) = 0 then
+    A('<tr><td colspan="5" class="empty">No supervised threads have started.</td></tr>');
+  for I := 0 to High(Threads) do
+  begin
+    A('<tr><td>' + E_(Threads[I].Name) + '</td><td class="num">' +
+      IntToStr(Threads[I].Running) + '</td><td class="num' +
+      IfThen(Threads[I].Crashes > 0, ' bad', '') + '">' +
+      IntToStr(Threads[I].Crashes) + '</td><td class="num">' +
+      IntToStr(Threads[I].Restarts) + '</td><td>');
+    if Threads[I].LastCrashAt > 0 then
+      A(E_(Threads[I].LastError) + ', ' +
+        IntToStr(UnixNow - Threads[I].LastCrashAt) + ' s ago');
+    A('</td></tr>');
+  end;
+  A('</tbody></table></div>');
+  if Length(Threads) > 0 then
+    A('<p class="sub">The log has each crash''s message.</p>');
 
   Plugins := StartedPlugins;
   A('<h2>Plugins</h2>');
