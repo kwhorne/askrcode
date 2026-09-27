@@ -1578,6 +1578,30 @@ PY
         "$(grep -E 'FAIL|got|expected|rror' "$work/res-test-${label%%:*}.log" | head -12)"
     fi
   done
+  # The sandbox, on the database Askr prefers: every row a generated test
+  # writes is rolled back when the test ends. Counted after one run and
+  # after a second; without the sandbox every table the tests write to
+  # grows. api_tokens is the exception on purpose -- Ready issues two
+  # tokens per run, before the sandbox, for every test to share.
+  mysql_rows() {
+    for t in $(docker exec askr-mysql mysql -N -uaskr -paskr askr_make \
+                 -e "SHOW TABLES" 2>/dev/null); do
+      [ "$t" = "api_tokens" ] && continue
+      printf '%s=%s ' "$t" "$(docker exec askr-mysql mysql -N -uaskr -paskr \
+        askr_make -e "SELECT COUNT(*) FROM \`$t\`" 2>/dev/null)"
+    done
+  }
+  before=$(mysql_rows)
+  in_box "TEST_DATABASE_URL='mysql://askr:askr@askr-mysql:3306/askr_make' $askr_bin test" \
+    shop >"$work/res-test-mysql-2.log" 2>&1 || true
+  after=$(mysql_rows)
+  if [ -n "$before" ] && [ "$before" = "$after" ]; then
+    ok "a second run on MySQL leaves no row behind: the sandbox rolls every test back"
+  else
+    bad "the generated tests leave no row behind on MySQL" \
+      "after one run:  $before" "after two runs: $after"
+  fi
+
   # The document, straight after generation: no drift, and valid to a
   # validator that is not ours. A resource whose description disagreed
   # with its routes would be the generator lying on the first run.

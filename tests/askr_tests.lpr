@@ -19,7 +19,8 @@ uses
   Askr.Urd.Bind, Askr.Norn.Schema, Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Inertia, Askr.Urd.Query, Askr.Urd.Sqlite, Askr.Urd.Grid,
   Askr.Cache, Askr.Queue, Askr.Core.Config, Askr.Core.Url, Askr.Urd.Json,
-  Askr.Http.Robots, Askr.Http.Sitemap, Askr.Console.Commands;
+  Askr.Http.Robots, Askr.Http.Sitemap, Askr.Console.Commands,
+  Askr.Testing;
 
 var
   Passed: Integer = 0;
@@ -3602,6 +3603,18 @@ end;
 
 {$I transaction.inc}
 
+procedure SandboxStart(const Name: string);
+begin
+  Group(Name);
+end;
+
+procedure SandboxOk(const What: string; Cond: Boolean);
+begin
+  Check(Cond, What);
+end;
+
+{$I sandbox.inc}
+
 procedure TestSqlite;
 var
   A: TArena;
@@ -4227,6 +4240,7 @@ begin
 
     PivotPart(C);
     TransactionPart(C);
+    SandboxPart(C);
   finally
     UseDb(PrevDb);
     UseArena(PrevA);

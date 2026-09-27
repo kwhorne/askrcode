@@ -32,6 +32,15 @@ with the zero-major caveat that minor releases may break things until
   aborts the whole transaction. `Sync` and `Attach` use it, and so do the
   controllers `askr make resource` writes, which called
   `StartTransaction` and could not run inside a test's transaction.
+- **A test sandbox.** `Sandbox(Conn)` in `Askr.Testing`: from there on
+  every test runs in a transaction that is rolled back when it ends, so a
+  suite can run against MySQL -- or Postgres -- and leave the database as
+  it was. The tests `askr make resource` writes call it at the end of
+  `Ready`, after the migrations and the tokens every test shares. MySQL
+  commits on DDL, and the sandbox cannot stop that: a marker row per test
+  catches it, and a `Commit` by hand, and fails that test saying its rows
+  were committed and why. `./askr make:check` runs the generated tests on
+  MySQL twice and requires no table to grow.
 
 ### Changed
 

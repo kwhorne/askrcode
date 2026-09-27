@@ -102,6 +102,34 @@ function RunTests: Integer;
 { Runs and exits the process with the right exit code. }
 procedure RunTestsAndHalt;
 
+{ **The sandbox.** From here on every test runs in a transaction on C
+  that is rolled back when it ends, so what one test writes no other test
+  sees -- and TEST_DATABASE_URL is left as it was, on MySQL and Postgres
+  as on SQLite.
+
+  Call it last, once the database is set up: migrations and fixtures
+  that every test shares -- a token issued once -- belong before it, or
+  they are rolled back after the first test. Called from inside a test,
+  it starts with that test.
+
+  **MySQL commits on DDL.** A CREATE, ALTER or DROP inside a test ends
+  its transaction there, the rollback takes back nothing, and what the
+  test wrote stays. The sandbox cannot prevent that, and it does not keep
+  quiet about it: a marker row goes in at the start of every test, and
+  one still there after the rollback fails that test, saying its writes
+  were committed and what the likely cause is. A Commit by hand is caught
+  the same way. Code under test that wants a transaction of its own uses
+  C.Transaction, which is a savepoint inside the sandbox's. }
+procedure Sandbox(C: TDbConnection);
+{ Ends it, rolling back the test in progress. }
+procedure StopSandbox;
+
+{ Forgets every registered test. For a suite that drives the runner
+  itself, as the sandbox's own test does. }
+procedure ClearTests;
+{ The message of the last failure RunTests reported. }
+function LastFailure: string;
+
 implementation
 
 uses
@@ -121,6 +149,94 @@ var
   GFailures: Integer = 0;
   GCurrentFailed: Boolean = False;
   GTestDb: TDbConnection = nil;
+  GSandbox: TDbConnection = nil;
+  GLastFailure: string = '';
+
+const
+  SandboxTable = 'askr_sandbox';
+
+procedure SandboxExec(const Sql: string);
+var
+  A: TArena;
+begin
+  A := TArena.Create(1024);
+  try
+    GSandbox.Exec(A, Sql);
+  finally
+    A.Free;
+  end;
+end;
+
+procedure SandboxBegin;
+begin
+  if (GSandbox = nil) or GSandbox.InTransaction then
+    Exit;
+  GSandbox.StartTransaction;
+  SandboxExec('INSERT INTO ' + SandboxTable + ' (id) VALUES (1)');
+end;
+
+{ Rolls back, and says whether the marker survived: whether something
+  inside the test committed the transaction it was in. }
+function SandboxEnd: Boolean;
+var
+  A: TArena;
+begin
+  Result := False;
+  if GSandbox = nil then
+    Exit;
+  if GSandbox.InTransaction then
+    try
+      GSandbox.Rollback;
+    except
+      { A connection that cannot roll back will say so on the next test. }
+    end;
+  A := TArena.Create(1024);
+  try
+    Result := GSandbox.Exec(A, 'SELECT count(*) FROM ' + SandboxTable)
+      .AsInt64(0, 0) > 0;
+  finally
+    A.Free;
+  end;
+  if Result then
+    SandboxExec('DELETE FROM ' + SandboxTable);
+end;
+
+procedure Sandbox(C: TDbConnection);
+begin
+  if C = GSandbox then
+    Exit;
+  StopSandbox;
+  if C.InTransaction then
+    raise ETestFailure.Create(
+      'Sandbox needs a connection with no transaction open: the ' +
+      'sandbox''s is the outermost, and a test''s own are savepoints in it.');
+  GSandbox := C;
+  { Outside any transaction, so it is there whatever a test does. A row
+    left from a run that died is not this run's. }
+  SandboxExec('CREATE TABLE IF NOT EXISTS ' + SandboxTable +
+    ' (id INTEGER PRIMARY KEY)');
+  SandboxExec('DELETE FROM ' + SandboxTable);
+  SandboxBegin;
+end;
+
+procedure StopSandbox;
+begin
+  if GSandbox = nil then
+    Exit;
+  SandboxEnd;
+  GSandbox := nil;
+end;
+
+procedure ClearTests;
+begin
+  GTests := nil;
+  GGroup := '';
+end;
+
+function LastFailure: string;
+begin
+  Result := GLastFailure;
+end;
 
 procedure Group(const Name: string);
 begin
@@ -392,6 +508,7 @@ begin
     end;
 
     GCurrentFailed := False;
+    SandboxBegin;
     try
       GTests[I].Proc;
     except
@@ -399,6 +516,7 @@ begin
       begin
         GCurrentFailed := True;
         Inc(GFailures);
+        GLastFailure := E.Message;
         WriteLn('    FAIL ', GTests[I].Name_);
         WriteLn('         ', E.Message);
       end;
@@ -406,9 +524,29 @@ begin
       begin
         GCurrentFailed := True;
         Inc(GFailures);
+        GLastFailure := 'unexpected ' + E.ClassName + ': ' + E.Message;
         WriteLn('    FAIL ', GTests[I].Name_);
-        WriteLn('         unexpected ', E.ClassName, ': ', E.Message);
+        WriteLn('         ', GLastFailure);
       end;
+    end;
+    if SandboxEnd then
+    begin
+      { Its writes are in the database now, and the next test will see
+        them. Said on this test, where the cause is. }
+      GLastFailure := 'what this test wrote was committed, so the sandbox ' +
+        'could not roll it back and its rows are still in the database.';
+      if GSandbox.Dialect = sdMySql then
+        GLastFailure := GLastFailure + ' On MySQL a CREATE, ALTER or DROP ' +
+          'commits the transaction it is in -- the likeliest cause.';
+      GLastFailure := GLastFailure + ' A Commit by hand does the same; use ' +
+        'C.Transaction, which is a savepoint inside the sandbox.';
+      if not GCurrentFailed then
+      begin
+        GCurrentFailed := True;
+        Inc(GFailures);
+        WriteLn('    FAIL ', GTests[I].Name_);
+      end;
+      WriteLn('         ', GLastFailure);
     end;
     if not GCurrentFailed then
       WriteLn('    ok   ', GTests[I].Name_);

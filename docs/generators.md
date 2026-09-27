@@ -173,8 +173,10 @@ What the table says, the resource does:
 - `deleted_at` makes it soft: `Remove` sets it.
 
 **The test runs on `TEST_DATABASE_URL`, and on `sqlite::memory:` without
-one**, with the migrations run first. A test that wrote into the database
-you develop against would leave its rows there. When it cannot make a row —
+one**, with the migrations run first, and each test in a transaction that
+is rolled back when it ends — see [the sandbox](testing.md). Point it at a
+database that is only for tests all the same: the migrations run there.
+When it cannot make a row —
 a `NOT NULL` column the form leaves out, with no default — it tests the
 list and the 404 and says why it does not write.
 
@@ -243,9 +245,9 @@ puts it in `tests/app_tests.lpr` — writing that file if there is none.
 
 **The database is `TEST_DATABASE_URL`, and `sqlite::memory:` without one**,
 with the migrations run first and — for the API — two tokens issued
-there. A test that wrote into the database you develop against would leave
-its rows in it. Point `TEST_DATABASE_URL` at a database that is only for
-tests: pending migrations run on it.
+there, before the [sandbox](testing.md) rolls each test back. Point
+`TEST_DATABASE_URL` at a database that is only for tests: pending
+migrations run on it, and the tokens stay.
 
 When a row cannot be made — a `NOT NULL` column the form leaves out, with
 no default, or a reference to a table the test cannot make a row in — the

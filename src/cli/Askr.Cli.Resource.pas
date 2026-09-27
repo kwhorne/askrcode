@@ -2120,9 +2120,10 @@ begin
     A('{ Every action of ' + CtlUnit + ', through the router.');
     A('');
     A('  Written by askr make resource. The database is TEST_DATABASE_URL, and');
-    A('  sqlite::memory: when that is not set, with the migrations run first:');
-    A('  a test that wrote into the database you develop against would leave');
-    A('  its rows there. Pending migrations are run on TEST_DATABASE_URL too,');
+    A('  sqlite::memory: when that is not set, with the migrations run first.');
+    A('  Each test runs in a transaction rolled back when it ends -- Sandbox, in');
+    A('  Ready -- so it leaves no rows behind. Pending migrations are run on');
+    A('  TEST_DATABASE_URL, and what Ready sets up stays there,');
     if Api then
     begin
       A('  so point it at a database that is only for this. The tokens are');
@@ -2223,6 +2224,9 @@ begin
     end;
     A('  ' + RoutesProc + '(Router);');
     A('  Client := TTestClient.Create(Router);');
+    A('  { Last: what is above is shared by every test, and from here each');
+    A('    test runs in a transaction that is rolled back when it ends. }');
+    A('  Sandbox(Conn);');
     A('end;');
     A('');
     if Api then

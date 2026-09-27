@@ -17,7 +17,8 @@ uses
   Askr.Core.Arena, Askr.Core.Text, Askr.Core.Clock,
   Askr.Urd.Driver, Askr.Urd.Pg, Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db,
-  Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
+  Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json,
+  Askr.Testing;
 
 var
   Passed: Integer = 0;
@@ -391,6 +392,18 @@ end;
 
 {$I transaction.inc}
 
+procedure SandboxStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure SandboxOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I sandbox.inc}
+
 procedure SessionStart(const Name: string);
 begin
   Start(Name);
@@ -411,6 +424,7 @@ begin
   try
     PivotPart(C);
     TransactionPart(C);
+    SandboxPart(C);
   finally
     C.Free;
   end;

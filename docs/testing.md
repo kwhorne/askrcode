@@ -98,6 +98,70 @@ In memory, so nothing to clean up and nothing to collide with.
 For a test that needs durability across connections — a durable queue, for
 instance — use a file under `.build/` and delete it in the teardown.
 
+## The sandbox: tests on MySQL, left as they were
+
+Tests against the database you deploy on find what SQLite cannot: MySQL's
+unique-violation codes, a 32-bit `INTEGER` that overflows, `SKIP LOCKED`.
+The sandbox is what makes that cheap: every test runs in a transaction
+that is rolled back when it ends, so nothing one test writes is seen by
+the next, and the database is left as it was.
+
+```pascal
+procedure Ready;
+var
+  M: TMigrator;
+begin
+  Conn := OpenDbConnection(Env('TEST_DATABASE_URL', 'sqlite::memory:'));
+  UseDb(Conn);
+  M := TMigrator.Create(Conn);    { migrations, outside any transaction }
+  try
+    M.Up;
+  finally
+    M.Free;
+  end;
+  Token := IssueToken(Conn, ...); { shared by every test: before the sandbox }
+  Sandbox(Conn);                  { from here, a rollback after each test }
+end;
+```
+
+```sh
+TEST_DATABASE_URL=mysql://askr:askr@127.0.0.1:3306/shop_test askr test
+```
+
+**Call `Sandbox` last.** Everything before it is set up once and stays;
+everything after it, in a test, is rolled back. A token issued after it
+would be gone by the second test. The tests `askr make resource` writes
+do this already.
+
+**Code under test that wants a transaction gets a savepoint.**
+`C.Transaction` inside a test is a savepoint in the sandbox's, and its
+commit is kept only as long as the test lasts. `C.StartTransaction` by
+hand fails inside the sandbox on MySQL and SQLite, and on Postgres opens
+nothing while its `Commit` ends the sandbox's -- use `Transaction`.
+
+**MySQL commits on DDL.** A `CREATE`, `ALTER` or `DROP` inside a test ends
+its transaction there, the rollback takes back nothing, and the rows the
+test wrote stay in the database. The sandbox cannot prevent that. It does
+not keep quiet about it either: a marker row goes in when each test
+starts, and one still there after the rollback fails that test:
+
+```
+    FAIL runs DDL
+         what this test wrote was committed, so the sandbox could not roll
+         it back and its rows are still in the database. On MySQL a
+         CREATE, ALTER or DROP commits the transaction it is in -- the
+         likeliest cause. A Commit by hand does the same; use
+         C.Transaction, which is a savepoint inside the sandbox.
+```
+
+A `Commit` by hand is caught the same way. Schema changes belong in
+migrations, which run before `Sandbox`.
+
+MySQL is Askr's preferred database, and the sandbox is proven against it
+first: `./askr make:check` runs the generated tests on it twice and
+requires every table to hold the same rows after the second run as after
+the first. It works the same on Postgres and SQLite.
+
 ## Factories
 
 ```pascal

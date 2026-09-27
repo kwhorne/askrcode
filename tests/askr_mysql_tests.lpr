@@ -19,7 +19,8 @@ uses
   Askr.Urd.Driver, Askr.Urd.MySql, Askr.Urd.Pool,
   Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect,
   Askr.Queue, Askr.Queue.Db,
-  Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json;
+  Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json,
+  Askr.Testing;
 
 type
   { One migration that touches everything the introspection has to
@@ -224,6 +225,18 @@ end;
 
 {$I transaction.inc}
 
+procedure SandboxStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure SandboxOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I sandbox.inc}
+
 procedure SessionStart(const Name: string);
 begin
   Start(Name);
@@ -244,6 +257,7 @@ begin
   try
     PivotPart(C);
     TransactionPart(C);
+    SandboxPart(C);
   finally
     C.Free;
   end;

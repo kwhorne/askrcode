@@ -1306,6 +1306,51 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   inn ved to markører og finner begge før den skriver noe, samme regel som
   `make auth`.
 
+## Rutegrupper, transaksjoner og sandkassen
+
+* **Ruten finnes før middlewaren kjører.** Ruterens egen middleware ser
+  fortsatt hver request, også uten treff, men vet nå hvilken rute som
+  traff: `MatchedRoute`, parameterne og `RouteExcludes`. Det er det som lar
+  CSRF og rate limit, som gjelder alle ruter, hoppe over en gruppe som
+  sier `WithoutCsrf`/`WithoutRateLimit`. Ingenting i Askr skriver om metode
+  eller sti i middleware — sjekket før byttet — så det som treffer først er
+  det som ville truffet etter. `matchlate`-mutasjonen overlevde til ruterens
+  *egen* middleware leste en parameter i testen; bare gruppens gjorde det.
+* **En gruppe er et objekt, ikke en blokk.** Anonyme prosedyrer finnes ikke
+  i 3.2.2. Ruteren eier gruppene.
+* **Klammeparentes i en klammekommentar avhenger av hvor den står.**
+  Ruterens header står *før* `{$mode Delphi}`, der FPC nøster kommentarer,
+  og kompilerte med `{ /admin/users }` inni; samme konstruksjon i driveren,
+  etter modusbyttet, ga «TDbConnection is not completely defined» fordi
+  kommentaren sluttet for tidlig. Skriv `//` inne i en `{ }`-kommentar.
+* **`C.Transaction` nøster med SAVEPOINT**, som staves likt i alle tre.
+  `Finish` i `finally`, ikke `Rollback` i `except`: da dekkes `Exit` også.
+  Telleren for savepoint-navn går bare opp — nedtelling og nullstilling var
+  kode ingen test kunne skille fra fravær, og er tatt ut. En dobbel `Commit`
+  må sjekkes i recorden: MySQL-driveren kaster selv på `Commit` uten
+  transaksjon, Postgres gjør ikke det — mutasjonen overlevde på MySQL og
+  ble fanget på Postgres.
+* **Postgres avbryter hele transaksjonen ved en feil inni den**, til noe
+  rulles tilbake. Det er grunnen til at «egen transaksjon når det ikke er
+  noen»-mønsteret var feil: inne i en annens transaksjon gjorde det ingen
+  ting, og en unik-feil halvveis tok kallerens arbeid med seg.
+  `transaction.inc` holder nettopp det, på alle tre.
+* **Genererte kontrollere kalte `StartTransaction`**, og kunne ikke ha kjørt
+  inne i en tests transaksjon: MySQL kaster «already open», SQLite nekter,
+  og Postgres åpner ingenting mens `COMMIT` avslutter testens. Derfor kom
+  steg 2 før sandkassen.
+* **Sandkassen: `Sandbox(Conn)` sist i `Ready`.** Migrasjoner og tokens alle
+  testene deler hører til før den, ellers rulles de tilbake etter første
+  test. Løperen starter en transaksjon og legger en markørrad før hver test,
+  ruller tilbake etter, og en markør som fortsatt finnes betyr at noe inni
+  testen committet — DDL på MySQL, eller en `Commit` for hånd. Den testen
+  feiler og sier hvorfor; sandkassen kan ikke hindre det, bare ikke tie.
+* **MySQL er Askrs foretrukne database** (brukeren, 2026-09-27). Postgres
+  fases ikke ut. `make:check` kjører de genererte testene mot MySQL to ganger
+  og krever at ingen tabell har vokst — `api_tokens` unntatt, med vilje:
+  `Ready` utsteder to per kjøring, før sandkassen. Mutasjonen som fjerner
+  `Sandbox(Conn)` fra malen fanges der og ingen andre steder.
+
 ## Kjeder og batcher
 
 * **En kjede er én jobb om gangen**: første steg, med resten i seg. Lykkes
