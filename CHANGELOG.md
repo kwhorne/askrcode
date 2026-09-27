@@ -12,7 +12,16 @@ Dates are release dates. Versions follow [semver](https://semver.org),
 with the zero-major caveat that minor releases may break things until
 1.0 — which is exactly why `^0.6.0` does not allow `0.7.0`.
 
-## Unreleased
+## 0.17.0 — 2026-09-27
+
+Three things Phoenix does well, fitted to a compiled stack. Routes come in
+groups with middleware of their own and what they do without, so a
+webhook does without CSRF where its route is written, not in a list
+somewhere else. Transactions nest, with savepoints. And a test suite can
+run against MySQL -- the database Askr prefers -- and leave it as it was:
+each test is rolled back, and a test whose writes were committed anyway,
+by DDL on MySQL or a Commit by hand, fails and says so. `askr new
+--database=mysql` starts a project there.
 
 ### Added
 
@@ -41,6 +50,10 @@ with the zero-major caveat that minor releases may break things until
   catches it, and a `Commit` by hand, and fails that test saying its rows
   were committed and why. `./askr make:check` runs the generated tests on
   MySQL twice and requires no table to grow.
+- **`askr new <name> --database=mysql`.** `.env` points at MySQL, with a
+  `TEST_DATABASE_URL` of its own beside it, and the next steps say how to
+  make the two databases. SQLite stays the default, because it needs no
+  server; Postgres is a line to uncomment in either.
 
 ### Changed
 

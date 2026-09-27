@@ -187,7 +187,7 @@ procedure Bruk;
 begin
   Si('askr ' + AskrVersion);
   Si('');
-  Si('  askr new <name> [--auth] new project');
+  Si('  askr new <name>          new project; --auth, --database=mysql');
   Si('  askr serve [port]        dev server with hot reload');
   Si('  askr build [--target web|desktop]');
   Si('  askr routes              show the routing table');
@@ -795,6 +795,23 @@ begin
   ReadLn(Reply);
   Reply := LowerCase(Trim(Reply));
   Result := (Reply = 'y') or (Reply = 'yes');
+end;
+
+{ --database=sqlite, the default, or --database=mysql. Postgres works as
+  well as either, and is a line to uncomment in .env: a flag for each would
+  be a promise to keep the same for every one. }
+function WantsDatabase: TNewDatabase;
+var
+  V: string;
+begin
+  V := LowerCase(FlagText('database'));
+  if (V = '') or (V = 'sqlite') then
+    Exit(ndSqlite);
+  if V = 'mysql' then
+    Exit(ndMySql);
+  Si('askr new: --database is sqlite or mysql, not ' + V + '. Postgres is a');
+  Si('line to uncomment in the .env either one writes.');
+  Halt(1);
 end;
 
 procedure CmdMake(P: TProject);
@@ -1777,7 +1794,7 @@ begin
       Si('Usage: askr new <name>');
       Halt(1);
     end;
-    NewProject(GetCurrentDir, ParamStr(2), WantsAuth);
+    NewProject(GetCurrentDir, ParamStr(2), WantsAuth, WantsDatabase);
     Exit;
   end;
 

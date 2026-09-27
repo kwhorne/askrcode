@@ -8,6 +8,14 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.17.0
+
+Nothing can break. The route is now found before any middleware runs,
+and a middleware sees the matched route and its parameters -- but a
+request's path and method cannot be written, so nothing a middleware did
+could have changed which route matched. Route groups, `C.Transaction`
+and the test sandbox are new; code that does not use them runs as it did.
+
 ## 0.16.0
 
 **Worth reading if the app registers routes by hand.**

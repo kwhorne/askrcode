@@ -156,12 +156,31 @@ Add a route, save, and the dev server rebuilds. See [Routing](routing.md).
 askr make model Post --migration
 ```
 
-That writes a model in `app/Models/` and a migration in `database/`. Set a
-database in `.env`:
+That writes a model in `app/Models/` and a migration in `database/`. The
+database is in `.env`, and a new project starts on SQLite, which needs no
+server:
 
 ```
 DATABASE_URL=sqlite:shop.db
 ```
+
+**MySQL is the database Askr prefers** for everything past the first
+afternoon, and `askr new shop --database=mysql` starts there instead:
+
+```
+DATABASE_URL=mysql://root@127.0.0.1:3306/shop
+TEST_DATABASE_URL=mysql://root@127.0.0.1:3306/shop_test
+```
+
+The tests get a database of their own, where each test is rolled back --
+see [the sandbox](testing.md). Make the two databases once; askr does not
+own your server:
+
+```sh
+mysql -uroot -e "CREATE DATABASE shop CHARACTER SET utf8mb4; CREATE DATABASE shop_test CHARACTER SET utf8mb4"
+```
+
+Postgres works as well as either, and is a line to uncomment in `.env`.
 
 Then:
 

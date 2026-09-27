@@ -21,6 +21,11 @@ C := OpenDbConnection('postgresql://user:pass@host:5432/db');
 | `mysql:` | `libmariadb3` | `mysql://askr:askr@127.0.0.1:3306/shop` |
 | `sqlite:` | `libsqlite3` | `sqlite:shop.db`, `sqlite::memory:` |
 
+**MySQL is Askr's preferred database.** A new project starts on SQLite,
+because it needs no server; `askr new <name> --database=mysql` starts on
+MySQL, with a database for the tests beside it. Postgres is not a second
+class: every suite runs on all three.
+
 Drivers register themselves in their `initialization` section, so putting
 the unit in `uses` is all it takes. If the scheme has no driver, the error
 says so and names the unit to add:

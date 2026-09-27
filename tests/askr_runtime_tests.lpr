@@ -1291,6 +1291,55 @@ begin
   end;
 end;
 
+function ReadWhole(const Path: string): string;
+var
+  F: TFileStream;
+begin
+  F := TFileStream.Create(Path, fmOpenRead);
+  try
+    SetLength(Result, F.Size);
+    if F.Size > 0 then
+      F.ReadBuffer(Result[1], F.Size);
+  finally
+    F.Free;
+  end;
+end;
+
+{ SQLite stays what a new project starts on -- it needs no server -- and
+  --database=mysql points .env at Askr's preferred database, the tests'
+  own included. }
+procedure TestScaffoldDatabase;
+const
+  Folder = '.build/scaffold-db';
+var
+  Env_, Example: string;
+begin
+  RemoveTree(Folder + '/my-shop');
+  RemoveTree(Folder + '/plain');
+  ForceDirectories(Folder);
+
+  NewProject(Folder, 'plain', False);
+  Env_ := ReadWhole(Folder + '/plain/.env');
+  AssertContains(Env_, #10'DATABASE_URL=sqlite:plain.db'#10,
+    'without the flag the project starts on SQLite');
+  AssertContains(Env_, #10'# DATABASE_URL=mysql://root@127.0.0.1:3306/plain'#10,
+    'with MySQL a line away');
+  AssertNotContains(Env_, #10'TEST_DATABASE_URL=',
+    'and the tests on sqlite::memory:, which needs nothing set');
+
+  NewProject(Folder, 'my-shop', False, ndMySql);
+  Env_ := ReadWhole(Folder + '/my-shop/.env');
+  AssertContains(Env_, #10'DATABASE_URL=mysql://root@127.0.0.1:3306/my_shop'#10,
+    'with it, MySQL, and a database name with no hyphen in it');
+  AssertContains(Env_, #10'TEST_DATABASE_URL=mysql://root@127.0.0.1:3306/my_shop_test'#10,
+    'the tests on a database of their own');
+  AssertContains(Env_, #10'# DATABASE_URL=sqlite:my-shop.db'#10,
+    'and SQLite a line away');
+  Example := ReadWhole(Folder + '/my-shop/.env.example');
+  AssertContains(Example, #10'TEST_DATABASE_URL='#10,
+    '.env.example names the tests'' database too');
+end;
+
 { The installer edits a file askr new wrote and the user may since have
   changed. Every edit it makes needs its anchor; 0.12.0 to 0.13.1 missed
   one in silence and wrote an app.lpr that did not compile. What is held
@@ -13145,6 +13194,8 @@ begin
     @TestAuthInstall);
   Test('every file askr new writes ends with a line break',
     @TestScaffoldEndsLines);
+  Test('askr new --database=mysql points .env at MySQL, and the default at SQLite',
+    @TestScaffoldDatabase);
 
   Group('API tokens');
   Test('hashed at rest, scoped, revocable, and never from a URL',

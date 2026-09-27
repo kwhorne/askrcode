@@ -14,8 +14,17 @@ interface
 uses
   SysUtils, Classes, Askr.Core.Crypto, Askr.Core.Version, Askr.Cli.Fields;
 
+type
+  { The database a new project's .env points at. SQLite needs no server,
+    so it is what a project starts on; MySQL is Askr's preferred database
+    for everything after that. }
+  TNewDatabase = (ndSqlite, ndMySql);
+
 procedure NewProject(const ParentDir, Name: string;
-  WithAuth: Boolean = False);
+  WithAuth: Boolean = False; Database: TNewDatabase = ndSqlite);
+{ The database name a project called Name gets: my-shop is my_shop, since
+  a hyphen in a MySQL database name has to be quoted everywhere. }
+function DatabaseNameFor(const Name: string): string;
 procedure MakeModel(const Root, Name: string; WithMigration: Boolean);
 { A model and its migration from one field spec, so they cannot disagree.
   Refuses to write anything when a file it would write is already there,
@@ -418,8 +427,38 @@ begin
   end;
 end;
 
+function DatabaseNameFor(const Name: string): string;
+begin
+  Result := StringReplace(LowerCase(Name), '-', '_', [rfReplaceAll]);
+end;
+
+{ The database lines of .env: DATABASE_URL, and for MySQL the tests' own
+  database too, since that is the one the sandbox rolls back on. }
+function EnvDatabaseLines(const Name: string; Database: TNewDatabase): string;
+var
+  Db: string;
+begin
+  Db := DatabaseNameFor(Name);
+  case Database of
+    ndSqlite:
+      Result :=
+        'DATABASE_URL=sqlite:' + Name + '.db' + #10 +
+        '# DATABASE_URL=mysql://root@127.0.0.1:3306/' + Db + #10 +
+        '# DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/' + Name + #10;
+    ndMySql:
+      Result :=
+        'DATABASE_URL=mysql://root@127.0.0.1:3306/' + Db + #10 +
+        '# DATABASE_URL=sqlite:' + Name + '.db' + #10 +
+        #10 +
+        '# The tests'' own database. Each test runs in a transaction that is' + #10 +
+        '# rolled back, but the migrations run there -- never point it at' + #10 +
+        '# DATABASE_URL.' + #10 +
+        'TEST_DATABASE_URL=mysql://root@127.0.0.1:3306/' + Db + '_test' + #10;
+  end;
+end;
+
 procedure NewProject(const ParentDir, Name: string;
-  WithAuth: Boolean);
+  WithAuth: Boolean; Database: TNewDatabase);
 var
   Root, Framework, LaufDep, Pin: string;
 begin
@@ -951,8 +990,7 @@ begin
     '# LOG_FILE=storage/app.log' + #10 +
     #10 +
     '# Needed by askr migrate, db:seed, schema and the rest.' + #10 +
-    'DATABASE_URL=sqlite:' + Name + '.db' + #10 +
-    '# DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/' + Name + #10 +
+    EnvDatabaseLines(Name, Database) +
     #10 +
     '# memory | database. memory is gone on a restart and not shared' + #10 +
     '# between two nodes; database keeps them in DATABASE_URL.' + #10 +
@@ -986,6 +1024,7 @@ begin
     'APP_KEY=' + #10 +
     'LOG_LEVEL=info' + #10 +
     'DATABASE_URL=' + #10 +
+    'TEST_DATABASE_URL=' + #10 +
     '# memory | database' + #10 +
     'SESSION_DRIVER=memory' + #10 +
     #10 +
@@ -1044,7 +1083,16 @@ begin
   WriteLn('Done. Next:');
   WriteLn;
   WriteLn('  cd ', Name);
-  if WithAuth then
+  if Database = ndMySql then
+  begin
+    { The one step askr cannot take for you: a database server it does not
+      own. The app starts without it, and askr migrate says so. }
+    WriteLn('  mysql -uroot -e "CREATE DATABASE ', DatabaseNameFor(Name),
+      ' CHARACTER SET utf8mb4; CREATE DATABASE ', DatabaseNameFor(Name),
+      '_test CHARACTER SET utf8mb4"');
+    WriteLn('  askr build && askr migrate');
+  end
+  else if WithAuth then
     WriteLn('  askr build && askr migrate');
   WriteLn('  (cd frontend && npm install)');
   WriteLn('  askr serve');
