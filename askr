@@ -96,6 +96,18 @@ ensure_image() {
   fi
 }
 
+# box_write <path under ROOT> <text>: a container writes the file a
+# container is about to read. Docker's mount cache can hand a container a
+# file the host rewrote a moment ago at its OLD length: a .env that went
+# from ...api.sqlite to ...browser.sqlite was read as ...browser.sql, the
+# migrations went into a file nobody opened, and every page that touched
+# the database was a 500. The text travels in the environment, so a DSN
+# needs no quoting.
+box_write() {
+  docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -e ASKR_BOX_TEXT="$2" "$IMAGE" \
+    sh -c 'printf "%s\n" "$ASKR_BOX_TEXT" > "$1"' sh "/work/${1#$ROOT/}"
+}
+
 # Kjører fpc med argumentene som følger, lokalt eller i container.
 # Avbryter ved kompileringsfeil. Uten det kjører neste steg videre på den
 # forrige binæren, og en suite kan melde grønt på kode som ikke kompilerer.
@@ -945,7 +957,7 @@ EOF
 make_check_socket() {
   api_port=${ASKR_MAKE_API_PORT:-8354}
   base="http://127.0.0.1:$api_port"
-  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/api.sqlite\n' > "$work/shop/.env"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/api.sqlite')"
   in_box "rm -f storage/api.sqlite && $askr_bin migrate" shop >"$work/sock-migrate.log" 2>&1 || true
   in_box "$askr_bin token:issue 1 writer --scopes=gadgets:read,gadgets:write" shop \
     >"$work/sock-writer.log" 2>&1 || true
@@ -1127,7 +1139,7 @@ make_check_browser() {
   fi
   ( cd "$front" && exec npx vite --host 127.0.0.1 ) >"$work/web-vite.log" 2>&1 &
   vite_pid=$!
-  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/browser.sqlite\n' > "$work/shop/.env"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/browser.sqlite')"
   in_box "rm -f storage/browser.sqlite && $askr_bin migrate" shop >"$work/web-migrate.log" 2>&1 || true
   docker rm -f askr-makecheck-web >/dev/null 2>&1
   docker run -d --name askr-makecheck-web -p "$web_port:$web_port" $DOCKER_PLATFORM \
@@ -1327,7 +1339,7 @@ cmd_make_check() {
     dialect=${dsn%%:*}
     echo
     echo "- the round trip on $dialect"
-    printf 'APP_ENV=local\nDATABASE_URL=%s\n' "$dsn" > "$work/shop/.env"
+    box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=%s' "$dsn")"
     in_box "rm -f storage/make.sqlite" shop >/dev/null 2>&1 || true
 
     if in_box "$askr_bin migrate" shop >"$work/migrate-$dialect.log" 2>&1; then
@@ -1450,7 +1462,7 @@ PY
   else
     bad "the lines go into the Gadget model"
   fi
-  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/resource.sqlite\n' > "$work/shop/.env"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/resource.sqlite')"
   if ! in_box "$askr_bin build && $askr_bin migrate" shop >"$work/res-migrate.log" 2>&1; then
     bad "the project migrates before make resource" "$(grep -E 'rror|Fatal' "$work/res-migrate.log" | head -5)"
     return 1
@@ -1709,7 +1721,7 @@ EOF
   # make migration regenerates the index from the directory, which is what
   # puts the hand-written one in it -- the way a person would.
   in_box "$askr_bin make migration Noop" shop >/dev/null 2>&1 || true
-  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/twin.sqlite\n' > "$work/shop/.env"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/twin.sqlite')"
   in_box "rm -f storage/twin.sqlite" shop >/dev/null 2>&1 || true
   if ! in_box "$askr_bin build" shop >"$work/twin-build.log" 2>&1; then
     bad "the project with the twin builds" "$(grep -E 'rror|Fatal' "$work/twin-build.log" | head -4)"
@@ -2602,7 +2614,7 @@ cmd_plugin_check() {
   fi
   sed -i.bak 's|^version = .*|path = "/work"|; s|^path = .*|path = "/work"|' "$work/shop/askr.toml"
   rm -f "$work/shop/askr.toml.bak"
-  printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/plugin.sqlite\n' > "$work/shop/.env"
+  box_write "$work/shop/.env" "$(printf 'APP_ENV=local\nDATABASE_URL=sqlite:storage/plugin.sqlite')"
   ok "a fixture plugin with a tag, and a new app"
 
   code=0; in_box "$askr_bin plugin add $hello_url" shop >"$work/add.log" 2>&1 || code=$?
@@ -2912,6 +2924,9 @@ LPR
     else
       echo "  FAIL  $1"
       echo "        did not find: $3"
+      # What came back instead: an intermittent failure that only says
+      # what it missed cannot be diagnosed after the fact.
+      printf '%s\n' "$2" | grep -v '"tools":\[' | cut -c1-240 | tail -3 | sed 's/^/        got: /'
       fail=1
     fi
   }
