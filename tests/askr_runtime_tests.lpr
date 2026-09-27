@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream;
+  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream, Askr.Cli.RoutesUnit;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -9578,6 +9578,149 @@ begin
   raise Exception.Create('a broken meter');
 end;
 
+{ ------------------------------------------------------ verified routes -- }
+
+type
+  TRoutesCtl = class
+    class function Echo(Req: TRequest): TResponse;
+    class function Any_(Req: TRequest): TResponse;
+  end;
+
+class function TRoutesCtl.Echo(Req: TRequest): TResponse;
+begin
+  Result := RespondText(Req.Param('v').ToString);
+end;
+
+class function TRoutesCtl.Any_(Req: TRequest): TResponse;
+begin
+  Result := RespondText('ok');
+end;
+
+procedure TestVerifiedRoutes;
+var
+  R: TRouter;
+  K: TTestClient;
+  Text, Iface: string;
+  Fns: TStringArray;
+  Raised: Boolean;
+  Other: TRouter;
+begin
+  { FillRoute }
+  AssertEqual(FillRoute('/gadgets/:id/edit', ['7']), '/gadgets/7/edit', 'a parameter filled in');
+  AssertEqual(FillRoute('/', []), '/', 'the root is itself');
+  AssertEqual(FillRoute('/f/:v', ['a b?c']), '/f/a%20b%3Fc', 'a space and a question mark are encoded');
+  AssertEqual(FillRoute('/f/:v', ['æ']), '/f/%C3%A6', 'UTF-8 byte by byte');
+  AssertEqual(FillRoute('/files/*path', ['docs/a b.txt']), '/files/docs/a%20b.txt',
+    'a wildcard keeps its slashes');
+  Raised := False;
+  try
+    FillRoute('/f/:a/:b', ['1']);
+  except
+    on E: ERouterError do Raised := True;
+  end;
+  AssertTrue(Raised, 'too few values is refused');
+  Raised := False;
+  try
+    FillRoute('/f/:a', ['1', '2']);
+  except
+    on E: ERouterError do Raised := True;
+  end;
+  AssertTrue(Raised, 'and too many');
+  Raised := False;
+  try
+    FillRoute('/f/:a', ['']);
+  except
+    on E: ERouterError do Raised := True;
+  end;
+  AssertTrue(Raised, 'and an empty one, which would be another path');
+  Raised := False;
+  try
+    FillRoute('/f/:a', ['x/y']);
+  except
+    on E: ERouterError do Raised := True;
+  end;
+  AssertTrue(Raised, 'and a slash in a parameter, which the router would split');
+
+  R := TRouter.Create;
+  K := TTestClient.Create(R);
+  try
+    R.Get('/echo/:v', TRoutesCtl.Echo);
+    AssertEqual(K.Get(FillRoute('/echo/:v', ['a b æ?#%&'])).Body.ToString, 'a b æ?#%&',
+      'what FillRoute encodes, the router decodes to the same parameter');
+  finally
+    K.Free;
+    R.Free;
+  end;
+
+  { RoutesUnitText }
+  R := TRouter.Create;
+  try
+    R.Get('/gadgets/:id', TRoutesCtl.Any_);
+    R.Patch('/gadgets/:id', TRoutesCtl.Any_);
+    R.Get('/gadgets/:id/edit', TRoutesCtl.Any_);
+    R.Get('/gadgets', TRoutesCtl.Any_);
+    R.Get('/', TRoutesCtl.Any_);
+    R.Get('/docs/:slug', TRoutesCtl.Any_);
+    R.AsName('docs.show');
+    R.Get('/a-b', TRoutesCtl.Any_);
+    R.Get('/a_b', TRoutesCtl.Any_);
+    R.Get('/items/:type', TRoutesCtl.Any_);
+    R.Get('/users/:user_id/posts/:id', TRoutesCtl.Any_);
+    R.Get('/files/*path', TRoutesCtl.Any_);
+    { Two routes on one path, and only the second named. }
+    R.Get('/orders/:id', TRoutesCtl.Any_);
+    R.Patch('/orders/:id', TRoutesCtl.Any_);
+    R.AsName('orders.show');
+    Text := RoutesUnitText(R);
+    Iface := Copy(Text, 1, Pos(#10'implementation'#10, Text));
+    Fns := RoutesUnitFunctions(Text);
+    AssertEqual(string.Join(' ', Fns),
+      'RootPath ABPath AB2Path DocsShowPath FilesPathPath GadgetsPath GadgetsIdPath ' +
+      'GadgetsIdEditPath ItemsTypePath OrdersShowPath UsersUserIdPostsIdPath',
+      'one function per pattern, in pattern order, named by the route or the pattern');
+    AssertContains(Iface, 'function GadgetsIdEditPath(const Id: string): string; overload;',
+      'a parameter is a string');
+    AssertContains(Iface, 'function GadgetsIdEditPath(Id: Int64): string; overload;',
+      'and an id is an Int64 too, in the interface');
+    AssertContains(Text, '  Result := FillRoute(''/gadgets/:id/edit'', [IntToStr(Id)]);',
+      'which FillRoute fills');
+    AssertContains(Text, 'function DocsShowPath(const Slug: string): string;'#10,
+      'a named route has its name, and no overload without an id');
+    AssertContains(Text, 'function ItemsTypePath(const Type_: string): string;',
+      'a parameter that is a keyword is not one in Pascal');
+    AssertContains(Iface,
+      'function UsersUserIdPostsIdPath(UserId: Int64; Id: Int64): string; overload;',
+      'every id an Int64 in the overload');
+    AssertEqual(Text, RoutesUnitText(R), 'the same routes give the same text');
+
+    { Added in another order, the file is the same. }
+    Other := TRouter.Create;
+    try
+      Other.Patch('/orders/:id', TRoutesCtl.Any_);
+      Other.AsName('orders.show');
+      Other.Get('/orders/:id', TRoutesCtl.Any_);
+      Other.Get('/files/*path', TRoutesCtl.Any_);
+      Other.Get('/users/:user_id/posts/:id', TRoutesCtl.Any_);
+      Other.Get('/items/:type', TRoutesCtl.Any_);
+      Other.Get('/a_b', TRoutesCtl.Any_);
+      Other.Get('/a-b', TRoutesCtl.Any_);
+      Other.Get('/docs/:slug', TRoutesCtl.Any_);
+      Other.AsName('docs.show');
+      Other.Get('/', TRoutesCtl.Any_);
+      Other.Get('/gadgets', TRoutesCtl.Any_);
+      Other.Get('/gadgets/:id/edit', TRoutesCtl.Any_);
+      Other.Patch('/gadgets/:id', TRoutesCtl.Any_);
+      Other.Get('/gadgets/:id', TRoutesCtl.Any_);
+      AssertEqual(RoutesUnitText(Other), Text,
+        'and the order they were added in changes nothing');
+    finally
+      Other.Free;
+    end;
+  finally
+    R.Free;
+  end;
+end;
+
 { ----------------------------------------------------------------- live -- }
 
 var
@@ -14110,6 +14253,7 @@ begin
   Test('the dashboard: what it counts, that it escapes, and who sees it', @TestDashboard);
   Test('supervised threads: restarted with backoff, or reported, and the queue and scheduler survive', @TestSupervisor);
   Test('live props: a signed stream per page, stale props by name, partial reloads', @TestLive);
+  Test('verified routes: FillRoute, and App.Routes as the routes are', @TestVerifiedRoutes);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

@@ -27,9 +27,11 @@ type
   end;
 
 const
-  ConsoleCommands: array[0..26] of TConsoleCommand = (
+  ConsoleCommands: array[0..28] of TConsoleCommand = (
     (Name_: 'about';            Help: 'what this app is configured with'),
     (Name_: 'routes';           Help: 'the routing table'),
+    (Name_: 'routes:gen';       Help: 'write app/App.Routes.pas, a function per path'),
+    (Name_: 'routes:check';     Help: 'does App.Routes still match the routes'),
     (Name_: 'migrate';          Help: 'run pending migrations'),
     (Name_: 'migrate:status';   Help: 'what has run and what has not'),
     (Name_: 'migrate:rollback'; Help: 'roll back the last batch (--step=N)'),

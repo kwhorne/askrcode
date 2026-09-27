@@ -32,6 +32,16 @@ with the zero-major caveat that minor releases may break things until
   creates a row, and requires the first to show it without a reload.
 - **`InertiaWants(Component, Prop)`**, so a handler can skip computing a
   prop a partial reload did not ask for.
+- **Verified routes.** `askr routes:gen` writes `app/App.Routes.pas` with
+  one function per path, named after the route's name or its pattern:
+  `GadgetsIdEditPath(M.Id)` gives `/gadgets/7/edit`. Remove a route and
+  generate again, and every place that used it fails to build at that
+  line. `askr routes:check` exits 1 when the file no longer matches the
+  routes. `make:check` removes a route and requires the build to fail
+  where its path was used.
+- **`FillRoute(Pattern, Values)`**: a path with its parameters
+  percent-encoded. A slash in a parameter is refused, because the router
+  decodes before it splits and the link would reach another route.
 
 ## 0.18.0 — 2026-09-27
 

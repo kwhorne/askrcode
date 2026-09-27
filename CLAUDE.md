@@ -1385,6 +1385,26 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   verdien.** Det er grunnen til at siden er lukket utenfor utvikling, og
   det står i docs.
 
+## Verified routes
+
+* **`App.Routes` skrives av appbinæren, ikke av verktøyet.** Rutene er
+  kompilert inn i appen, så `routes:gen` og `routes:check` er
+  konsollkommandoer der, som `openapi --check`. Verktøyet bygger ikke før
+  det spør appen: `make:check` bygger selv først, ellers svarer binæren fra
+  forrige steg.
+* **Stien dekodes før den splittes**, så en `%2F` i en parameter blir to
+  segmenter og treffer en annen rute. Første utkast av `FillRoute`
+  kodet skråstreken og regnet med at den kom tilbake som én parameter.
+  Rundturstesten gjennom ruteren fant det. Nå avvises en skråstrek i en
+  parameter, mens en wildcard beholder sine.
+* **Én funksjon per sti, sortert på mønsteret.** Rekkefølgen rutene ble
+  lagt til i, endrer ingenting i fila. Det er testet ved å legge de samme
+  rutene til baklengs. Ellers ville `routes:check` meldt avvik for en
+  omflytting i `app.lpr`.
+* **Beviset er en bygging som feiler.** `make:check` bruker
+  `GadgetsIdEditPath(7)` i en egen kommando, fjerner ruten, genererer på
+  nytt og krever `Identifier not found "GadgetsIdEditPath"` i den fila.
+
 ## Live props
 
 * **Siden som ble vist, bestemmer hva den får lytte på.** `LiveOn`

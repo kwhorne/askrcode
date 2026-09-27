@@ -44,7 +44,7 @@ uses
   Askr.Norn.Introspect, Askr.Norn.Codegen,
   Askr.Http.Types, Askr.Http.Request, Askr.Http.Response, Askr.Http.Router,
   Askr.Queue, Askr.Scheduler, Askr.Cache, Askr.Auth.Token, Askr.OpenApi,
-  Askr.Console.Commands;
+  Askr.Console.Commands, Askr.Cli.RoutesUnit;
 
 type
   { A seeder is a class that fills the database. The same shape as a
@@ -978,6 +978,115 @@ begin
   end;
 end;
 
+{ ------------------------------------------------------ verified routes -- }
+
+function NeedRouter: TRouter;
+begin
+  if GRouter = nil then
+  begin
+    Err('No router is registered. Call SetConsoleRouter in app.lpr.');
+    Halt(1);
+  end;
+  Result := GRouter;
+end;
+
+{ The file as it is on disk, or '' when there is none. Exactly: a line
+  ending changed is a file changed. }
+function FileTextOrEmpty(const Path: string): string;
+var
+  F: TFileStream;
+begin
+  Result := '';
+  if not FileExists(Path) then
+    Exit;
+  F := TFileStream.Create(Path, fmOpenRead or fmShareDenyNone);
+  try
+    SetLength(Result, F.Size);
+    if F.Size > 0 then
+      F.ReadBuffer(Result[1], F.Size);
+  finally
+    F.Free;
+  end;
+end;
+
+procedure CmdRoutesGen;
+var
+  Text: string;
+  F: TFileStream;
+begin
+  Text := RoutesUnitText(NeedRouter);
+  if FileTextOrEmpty(RoutesUnitPath) = Text then
+  begin
+    Si(RoutesUnitPath + ' is up to date: ' +
+      IntToStr(Length(RoutesUnitFunctions(Text))) + ' path(s).');
+    Exit;
+  end;
+  ForceDirectories(ExtractFileDir(RoutesUnitPath));
+  F := TFileStream.Create(RoutesUnitPath, fmCreate);
+  try
+    if Text <> '' then
+      F.WriteBuffer(Text[1], Length(Text));
+  finally
+    F.Free;
+  end;
+  Si('Wrote ' + RoutesUnitPath + ': ' +
+    IntToStr(Length(RoutesUnitFunctions(Text))) + ' path(s). Build again:');
+  Si('a path that went is a compile error wherever it is used.');
+end;
+
+function InList(const Name: string; const L: TStringArray): Boolean;
+var
+  I: Integer;
+begin
+  for I := 0 to High(L) do
+    if L[I] = Name then
+      Exit(True);
+  Result := False;
+end;
+
+procedure CmdRoutesCheck;
+var
+  Want, Have: string;
+  WantF, HaveF: TStringArray;
+  I, N: Integer;
+begin
+  Want := RoutesUnitText(NeedRouter);
+  Have := FileTextOrEmpty(RoutesUnitPath);
+  if Have = '' then
+  begin
+    Err('There is no ' + RoutesUnitPath + '. Write it with: askr routes:gen');
+    Halt(1);
+  end;
+  if Have = Want then
+  begin
+    Si(RoutesUnitPath + ' matches the routes: ' +
+      IntToStr(Length(RoutesUnitFunctions(Want))) + ' path(s).');
+    Exit;
+  end;
+  WantF := RoutesUnitFunctions(Want);
+  HaveF := RoutesUnitFunctions(Have);
+  Err(RoutesUnitPath + ' no longer matches the routes:');
+  N := 0;
+  for I := 0 to High(WantF) do
+    if not InList(WantF[I], HaveF) then
+    begin
+      Err('  new   ' + WantF[I]);
+      Inc(N);
+    end;
+  for I := 0 to High(HaveF) do
+    if not InList(HaveF[I], WantF) then
+    begin
+      Err('  gone  ' + HaveF[I] + ' -- whatever uses it will not compile');
+      Inc(N);
+    end;
+  { Same names, other text: a pattern or a parameter moved under a name
+    that stayed. }
+  if N = 0 then
+    Err('  the same paths, with a pattern or a parameter changed');
+  Err('Write it again with: askr routes:gen');
+  Halt(1);
+end;
+
 { --------------------------------------------------------- api-tokens -- }
 
 { Splits --scopes=a,b,c. Commas, because a space would have to be quoted
@@ -1415,6 +1524,8 @@ procedure Dispatch_(const K: string);
 begin
   if K = 'about' then CmdAbout
   else if K = 'routes' then CmdRoutes
+  else if K = 'routes:gen' then CmdRoutesGen
+  else if K = 'routes:check' then CmdRoutesCheck
   else if K = 'migrate' then CmdMigrate(FlagValue('step', 0))
   else if K = 'migrate:status' then CmdMigrateStatus
   else if K = 'migrate:rollback' then CmdRollback(FlagValue('step', 1))

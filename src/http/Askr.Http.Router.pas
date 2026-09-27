@@ -110,6 +110,10 @@ type
     property Name: string read FName write FName;
     { The group it was added through, or nil. }
     property Group: TRouteGroup read FGroup;
+    { The pattern as parsed: /gadgets/:id/edit is a static, a param and a
+      static. For askr routes:gen. }
+    function SegmentCount: Integer;
+    function SegmentAt(Index: Integer): TSegment;
   end;
 
   TRouter = class
@@ -265,6 +269,18 @@ function MatchedRoute: TRoute;
   matched: a request for no route has nothing to be excused by. }
 function RouteExcludes(const What: string): Boolean;
 
+{ The path for Pattern with its parameters filled in, in order:
+
+      FillRoute('/gadgets/:id/edit', ['7'])    // /gadgets/7/edit
+
+  Each value is percent-encoded, and the router decodes it to the same
+  parameter. A slash cannot be in one: the path is decoded before it is
+  split, so an encoded slash splits it all the same, and the link would go
+  to another route. That is refused, as is an empty value and the wrong
+  count. A wildcard keeps its slashes. What App.Routes calls; see askr
+  routes:gen. }
+function FillRoute(const Pattern: string; const Values: array of string): string;
+
 implementation
 
 uses
@@ -340,6 +356,79 @@ begin
     end;
   finally
     Parts.Free;
+  end;
+end;
+
+function TRoute.SegmentCount: Integer;
+begin
+  Result := Length(FSegments);
+end;
+
+function TRoute.SegmentAt(Index: Integer): TSegment;
+begin
+  Result := FSegments[Index];
+end;
+
+{ Unreserved characters as they are, every other byte as %XX -- UTF-8
+  included, byte by byte. KeepSlash for a wildcard. }
+function EncodeSegment(const S: string; KeepSlash: Boolean): string;
+const
+  Hex = '0123456789ABCDEF';
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := '';
+  for I := 1 to Length(S) do
+  begin
+    C := S[I];
+    if (C in ['A'..'Z', 'a'..'z', '0'..'9', '-', '.', '_', '~']) or
+       (KeepSlash and (C = '/')) then
+      Result := Result + C
+    else
+      Result := Result + '%' + Hex[(Ord(C) shr 4) + 1] + Hex[(Ord(C) and 15) + 1];
+  end;
+end;
+
+function FillRoute(const Pattern: string; const Values: array of string): string;
+var
+  R: TRoute;
+  I, Used: Integer;
+begin
+  R := TRoute.Create(hmGet, Pattern);
+  try
+    Result := '';
+    Used := 0;
+    for I := 0 to High(R.FSegments) do
+      case R.FSegments[I].Kind of
+        skStatic:
+          Result := Result + '/' + R.FSegments[I].Text;
+        skParam, skWildcard:
+          begin
+            if Used > High(Values) then
+              raise ERouterError.CreateFmt('%s needs more values than the %d given',
+                [Pattern, Length(Values)]);
+            if Values[Used] = '' then
+              raise ERouterError.CreateFmt('%s: the value for :%s is empty, ' +
+                'and a path with an empty segment is another path',
+                [Pattern, R.FSegments[I].Text]);
+            if (R.FSegments[I].Kind = skParam) and (Pos('/', Values[Used]) > 0) then
+              raise ERouterError.CreateFmt('%s: the value for :%s has a slash in ' +
+                'it, and the router would read it as two segments -- a ' +
+                'wildcard (*%s) takes one', [Pattern, R.FSegments[I].Text,
+                R.FSegments[I].Text]);
+            Result := Result + '/' +
+              EncodeSegment(Values[Used], R.FSegments[I].Kind = skWildcard);
+            Inc(Used);
+          end;
+      end;
+    if Used <> Length(Values) then
+      raise ERouterError.CreateFmt('%s takes %d value(s), not %d',
+        [Pattern, Used, Length(Values)]);
+    if Result = '' then
+      Result := '/';
+  finally
+    R.Free;
   end;
 end;
 

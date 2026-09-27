@@ -956,6 +956,68 @@ EOF
   fi
   sed -i.bak 's| App.Console.Bad,$|,|; s|App.Console.Hello,,$|App.Console.Hello,|' "$work/shop/app.lpr"
   rm -f "$work/shop/app.lpr.bak" "$work/shop/app/Console/App.Console.Bad.pas"
+
+  # Verified routes: a path from App.Routes, and a build that fails where
+  # it is used once the route is gone. Files that exist are changed in the
+  # container: a rewrite from the host can reach it at its old length.
+  # Built first: the binary is the one with the bad command above, and the
+  # tool does not build before it asks the app.
+  in_box "$askr_bin build" shop >"$work/paths-build0.log" 2>&1 || true
+  code=0; out=$(in_box "$askr_bin routes:gen" shop 2>&1) || code=$?
+  if [ $code -eq 0 ] &&
+     grep -q 'function GadgetsIdEditPath(Id: Int64): string; overload;' "$work/shop/app/App.Routes.pas" 2>/dev/null; then
+    ok "askr routes:gen writes App.Routes, a function per path"
+  else
+    bad "askr routes:gen writes App.Routes" "exit $code: $(echo "$out" | tail -3)"
+  fi
+  code=0; out=$(in_box "$askr_bin routes:check" shop 2>&1) || code=$?
+  [ $code -eq 0 ] && ok "and routes:check agrees with it" || bad "routes:check agrees straight after" "exit $code: $out"
+  cat > "$work/shop/app/Console/App.Console.Paths.pas" <<'PAS'
+unit App.Console.Paths;
+
+{$mode Delphi}{$H+}
+
+interface
+
+implementation
+
+uses
+  Askr.Console, App.Routes;
+
+function ShowPath(const A: TConsoleArgs): Integer;
+begin
+  WriteLn(GadgetsIdEditPath(7));
+  Result := 0;
+end;
+
+initialization
+  RegisterCommand('hello:path', 'a path from App.Routes', @ShowPath, False);
+end.
+PAS
+  in_box "sed -i 's|App.Console.Hello,\$|App.Console.Hello, App.Console.Paths,|' app.lpr" shop >/dev/null 2>&1 || true
+  code=0; in_box "$askr_bin build" shop >"$work/paths-build.log" 2>&1 || code=$?
+  out=$(in_box "$askr_bin hello:path" shop 2>&1) || true
+  [ $code -eq 0 ] && [ "$out" = "/gadgets/7/edit" ] &&
+    ok "code that uses GadgetsIdEditPath(7) builds, and gets /gadgets/7/edit" ||
+    bad "a path from App.Routes" "build exit $code, then: $out"
+
+  ctl=app/Http/App.Http.GadgetsController.pas
+  in_box "cp $ctl $ctl.orig && sed -i '/gadgets\/:id\/edit/d' $ctl" shop >/dev/null 2>&1 || true
+  in_box "$askr_bin build" shop >"$work/paths-build2.log" 2>&1 || true
+  code=0; out=$(in_box "$askr_bin routes:check" shop 2>&1) || code=$?
+  [ $code -eq 1 ] && echo "$out" | grep -q 'gone  GadgetsIdEditPath' &&
+    ok "with the route gone, routes:check exits 1 and names the path" ||
+    bad "routes:check notices a route that went" "exit $code: $out"
+  in_box "$askr_bin routes:gen" shop >/dev/null 2>&1 || true
+  code=0; in_box "$askr_bin build" shop >"$work/paths-build3.log" 2>&1 || code=$?
+  if [ $code -ne 0 ] && grep -q 'App.Console.Paths.pas.*GadgetsIdEditPath' "$work/paths-build3.log"; then
+    ok "and once it is written again, the build fails at the line that used it"
+  else
+    bad "the build fails where the gone path was used" \
+      "exit $code: $(grep -E 'rror|Fatal' "$work/paths-build3.log" | head -3)"
+  fi
+  in_box "mv $ctl.orig $ctl && rm -f app/Console/App.Console.Paths.pas && sed -i 's| App.Console.Paths,||' app.lpr && $askr_bin routes:gen" \
+    shop >/dev/null 2>&1 || true
 }
 
 make_check_socket() {

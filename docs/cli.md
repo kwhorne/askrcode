@@ -292,6 +292,8 @@ so it belongs in CI. See [OpenAPI](openapi.md).
 |---|---|
 | `askr about` | Environment, config files, database, routes, queue, schedule |
 | `askr routes` | The routing table, sorted by specificity |
+| `askr routes:gen` | Writes `app/App.Routes.pas`, a function per path ([verified routes](routing.md#verified-routes)) |
+| `askr routes:check` | Exits 1 when `App.Routes` no longer matches the routes |
 | `askr config [--values]` | Every key, and which layer it came from |
 | `askr env` | The current `APP_ENV` |
 | `askr list` | The commands this binary answers to |

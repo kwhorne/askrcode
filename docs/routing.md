@@ -64,7 +64,60 @@ R.Get('/customers/:id', Customers.Show);
 R.AsName('customers.show');
 ```
 
-`AsName` names the route registered last. `askr routes` lists them.
+`AsName` names the route registered last. `askr routes` lists them, and
+[verified routes](#verified-routes) name their functions after them.
+
+## Verified routes
+
+A link to a route that is gone is a 404 somebody finds in production. With
+verified routes it is a compile error at the line that has the link.
+
+```sh
+askr routes:gen      # writes app/App.Routes.pas
+askr routes:check    # exits 1 when it no longer matches the routes
+```
+
+`App.Routes` has one function per path:
+
+```pascal
+uses App.Routes;
+
+Result := InertiaRedirect(GadgetsIdEditPath(M.Id));   { /gadgets/7/edit }
+Result := Redirect(DocsShowPath('routing'));           { /docs/routing }
+```
+
+Remove the route from `app.lpr` and run `askr routes:gen` again, and the
+function goes with it. Every place that used it then fails to build:
+
+```
+App.Http.Gadgets.pas(88,31) Error: Identifier not found "GadgetsIdEditPath"
+```
+
+The idea is Phoenix's verified routes, done by the Pascal compiler.
+
+- **The function is named after the route's name** when it has one:
+  `R.AsName('docs.show')` gives `DocsShowPath`. Otherwise it is named
+  after the pattern: `/gadgets/:id/edit` gives `GadgetsIdEditPath`, and
+  `/` gives `RootPath`. When two patterns would share a name, the one that
+  sorts later gets a number.
+- **There is one function per path, not per route.** `GET` and `PATCH` on
+  `/gadgets/:id` are the same path.
+- **A parameter is a string.** A parameter called `id`, or ending in
+  `_id`, also has an `Int64` overload, so `M.Id` goes straight in.
+- **Values are percent-encoded**, and the router decodes them back to the
+  same parameter. A slash in a parameter is refused, because the path is
+  decoded before it is split and the link would reach another route. A
+  wildcard (`*path`) keeps its slashes.
+- **The file depends on the routes and nothing else**, so generating it
+  twice gives the same bytes. Commit it, and run `askr routes:check` in CI:
+  a route changed without generating again is what it catches.
+
+`FillRoute('/gadgets/:id/edit', ['7'])` is what the functions call, and it
+can be called directly. It checks the number of values and encodes them,
+but a pattern written by hand is not checked against anything.
+
+The routes are compiled into the app, so `routes:gen` and `routes:check`
+are commands of the app binary. Build before running them.
 
 ## 404 and 405
 
