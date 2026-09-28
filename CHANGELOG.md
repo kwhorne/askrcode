@@ -14,6 +14,12 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+## 0.20.0 — 2026-09-28
+
+Streams, websockets and live props behind a load balancer. A broadcast on
+one app process now reaches the pages connected to another, through the
+app's own database, under ids every process shares.
+
 ### Added
 
 - **Broadcasts across processes.** `Askr.Broadcast.Db`, turned on with

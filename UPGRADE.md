@@ -8,6 +8,22 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.20.0
+
+Nothing breaks. Without a relay, `Broadcast` numbers and delivers as it
+did, within the process.
+
+Broadcasting through the database is wired only into projects made from
+0.20.0 on. To add it to one made earlier, put `Askr.Broadcast.Db` in the
+uses of `app.lpr` and
+
+```pascal
+SetBroadcasts(BroadcastsFromConfig(DbPool));
+```
+
+after `UseSessions(R)`. It changes nothing until `BROADCAST_DRIVER=database`
+is set; then it makes the table `askr_broadcasts` on first use.
+
 ## 0.19.0
 
 **`routes:gen` and `routes:check` are commands every app has now.** An app
