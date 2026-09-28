@@ -18,7 +18,7 @@ uses
   Askr.Urd.Driver, Askr.Urd.Pg, Askr.Urd.Pool,
   Askr.Queue, Askr.Queue.Db,
   Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Norn.Schema, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json,
-  Askr.Testing, Askr.Core.Telemetry;
+  Askr.Testing, Askr.Core.Telemetry, Askr.Http.Stream, Askr.Broadcast.Db;
 
 var
   Passed: Integer = 0;
@@ -428,6 +428,18 @@ end;
 
 {$I session_db.inc}
 
+procedure BroadcastStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure BroadcastOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I broadcast_db.inc}
+
 procedure PivotDelen;
 var
   C: TDbConnection;
@@ -503,6 +515,7 @@ begin
     QueuePart(Dsn);
     PivotDelen;
     SessionRacePart(Dsn);
+    BroadcastDbPart(Dsn, True);
   except
     on E: EDbError do
       if (Pos('could not connect', LowerCase(E.Message)) > 0) or

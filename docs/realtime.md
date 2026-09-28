@@ -165,12 +165,63 @@ Streams and websockets belong to the process: `Broadcast` reaches every one,
 whichever server opened it, and stopping a server closes them all. A process
 runs one server.
 
+## Across processes
+
+With several app processes behind a load balancer, a browser connected to
+one hears only what that one broadcast, unless broadcasts go through the
+database:
+
+```sh
+BROADCAST_DRIVER=database
+```
+
+<!-- check
+var
+  DbPool: TDbPool;
+-->
+
+```pascal
+uses Askr.Broadcast.Db;
+
+SetBroadcasts(BroadcastsFromConfig(DbPool));   { askr new writes this }
+```
+
+Each broadcast is then a row in `askr_broadcasts` in the app's database,
+and every process reads what the others wrote, a tenth of a second apart.
+No Redis, for the same reason the durable queue and the database sessions
+have none.
+
+- **The row's id is the event's id.** A browser that reconnects to another
+  process sends `Last-Event-ID`, and is replayed from the same numbers,
+  because every process delivered every event under the id the database
+  gave it.
+- **The process that broadcasts delivers at once**, under the id it got
+  back. It does not wait for its own poll, and it skips its own row when
+  the poll comes round.
+- **An id can commit after a larger one.** Two inserts at once take 10 and
+  11, and 11 can commit first. An id a poll skipped is asked for again, by
+  number, for five seconds, so it is delivered when it commits. A
+  rollback leaves a hole that is never filled, and after five seconds it
+  stops being asked for.
+- **In a request, the row goes in on the request's own connection**, as the
+  database sessions do, since a second connection from the same pool
+  would deadlock. If that transaction rolls back, the other processes never
+  hear it, and this one already did.
+- **The table is made on first use**, so the app starts with the database
+  down, and rows older than ten minutes are swept.
+
+`./askr broadcast:check` holds it: two app processes on SQLite, Postgres
+and MySQL. A stream on one hears what the other broadcast, the sender's
+own stream hears it once, and a reconnect to the other process is
+replayed from the id it got from the first. The same scenario with the
+memory driver is the control, and must fail.
+
 ## What is not here
 
-**Broadcasting across processes.** `Broadcast` reaches the streams and
-websockets of this process. Behind a load balancer with several processes,
-a browser connected to one does not hear what the other broadcast — send events through the
-durable queue to every process, or run one process.
+**A broker.** Across processes, broadcasts go through the app's database,
+a tenth of a second behind. That suits a page telling its viewers that
+something changed. It does not suit thousands of messages a second: every
+process reads every row, and there is no fan-out cheaper than that here.
 
 **Compression.** `permessage-deflate` is not offered, so a websocket
 message goes as it is. Nothing is lost by it but bandwidth, and it keeps

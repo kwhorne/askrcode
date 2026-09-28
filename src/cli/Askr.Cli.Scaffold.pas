@@ -550,7 +550,7 @@ begin
     '  Askr.Core.Lang, Askr.Locale,' + #10 +
     '  Askr.Http.Cors, Askr.Http.RateLimit,' + #10 +
     '  Askr.Inertia,' + #10 +
-    '  Askr.Dashboard, Askr.Live,' + #10 +
+    '  Askr.Dashboard, Askr.Live, Askr.Broadcast.Db,' + #10 +
     { Written on every build from askr.toml and askr.lock: the plugins'
       units. Empty until there is one. }
     '  Askr.Plugins, App.Plugins,' + #10 +
@@ -694,6 +694,10 @@ begin
     '    same logins. SESSION_LIFETIME is in seconds. }' + #10 +
     '  SetSessions(SessionsFromConfig(DbPool));' + #10 +
     '  UseSessions(R);' + #10 +
+    '  { Broadcasts -- streams, websockets and live props -- reach this' + #10 +
+    '    process only, unless BROADCAST_DRIVER=database: then every node' + #10 +
+    '    hears what any of them sent, through the database above. }' + #10 +
+    '  SetBroadcasts(BroadcastsFromConfig(DbPool));' + #10 +
     '  { The language: the visitor''s choice, kept in the session, then' + #10 +
     '    Accept-Language, then app.locale. After UseSessions, which keeps' + #10 +
     '    the choice. }' + #10 +
@@ -1013,6 +1017,10 @@ begin
     '# SESSION_DRIVER=memory' + #10 +
     '# SESSION_LIFETIME=7200' + #10 +
     #10 +
+    '# memory | database. memory reaches the streams and websockets of' + #10 +
+    '# this process only; database reaches every node on DATABASE_URL.' + #10 +
+    '# BROADCAST_DRIVER=memory' + #10 +
+    #10 +
     '# log | resend | smtp | null. log writes to a file instead of' + #10 +
     '# sending, which is what you want in development.' + #10 +
     'MAIL_TRANSPORT=log' + #10 +
@@ -1043,6 +1051,8 @@ begin
     'TEST_DATABASE_URL=' + #10 +
     '# memory | database' + #10 +
     'SESSION_DRIVER=memory' + #10 +
+    '# memory | database' + #10 +
+    'BROADCAST_DRIVER=memory' + #10 +
     #10 +
     '# log | resend | smtp | null' + #10 +
     'MAIL_TRANSPORT=log' + #10 +

@@ -113,7 +113,8 @@ and the page asks once.
   does not reconnect after a 403, so a tab left open for two days stops
   listening quietly instead of asking every three seconds. The next visit
   gets a new URL.
-- **It reaches this process.** `PropsChanged` is a `Broadcast`, and a
-  broadcast reaches the streams of the process that sent it. With several
-  processes behind a load balancer, a page connected to one does not hear
-  what another changed. See [Real time](realtime.md#what-is-not-here).
+- **Across processes it needs the database driver.** `PropsChanged` is a
+  `Broadcast`, and by default a broadcast reaches the streams of the
+  process that sent it. With `BROADCAST_DRIVER=database`, a page on any
+  process hears what changed on another. See
+  [Real time](realtime.md#across-processes).

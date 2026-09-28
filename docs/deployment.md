@@ -230,7 +230,10 @@ processes behind a load balancer each have their own. For the queue, use the
 are then kept in the app's database, a login on one process is a login on
 all of them, and a deploy does not sign anybody out — see
 [Sessions](sessions.md). With the default memory driver you need sticky
-sessions, and a restart signs everyone out.
+sessions, and a restart signs everyone out. For streams, websockets and
+live props, set `BROADCAST_DRIVER=database`: a broadcast on one process is
+then heard on all of them, under ids they share. See
+[Real time](realtime.md#across-processes).
 
 The cache has no shared store. That is a real limit, written down rather
 than discovered.

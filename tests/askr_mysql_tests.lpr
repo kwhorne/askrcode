@@ -20,7 +20,7 @@ uses
   Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect,
   Askr.Queue, Askr.Queue.Db,
   Askr.Core.Json, Askr.Session, Askr.Session.Db, Askr.Urd.Model, Askr.Urd.Query, Askr.Urd.Json,
-  Askr.Testing, Askr.Core.Telemetry;
+  Askr.Testing, Askr.Core.Telemetry, Askr.Http.Stream, Askr.Broadcast.Db;
 
 type
   { One migration that touches everything the introspection has to
@@ -260,6 +260,18 @@ begin
 end;
 
 {$I session_db.inc}
+
+procedure BroadcastStart(const Name: string);
+begin
+  Start(Name);
+end;
+
+procedure BroadcastOk(const What: string; Cond: Boolean);
+begin
+  Ok(What, Cond);
+end;
+
+{$I broadcast_db.inc}
 
 procedure PivotDelen;
 var
@@ -702,6 +714,7 @@ begin
   QueuePart(Dsn);
   PivotDelen;
   SessionRacePart(Dsn);
+  BroadcastDbPart(Dsn, True);
 end;
 
 begin

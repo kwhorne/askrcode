@@ -23,6 +23,7 @@ rekkefølge; denne fila er bare det man må vite for å endre koden her.
 ./askr storage:check # S3-disken mot versitygw, som sjekker hver signatur
 ./askr plugin:check  # en fikstur-plugin fra en git-tagg inn i binæren, og det som skal stoppe
 ./askr docs:check    # hvert Pascal-eksempel i docs/ og hvert program i examples/ gjennom fpc
+./askr broadcast:check # to app-prosesser på samme base: en strøm på B hører det A sendte
 ```
 
 `./askr` er byggskriptet for rammeverket. CLI-en fra PRD-en er noe annet: et
@@ -1385,6 +1386,31 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
 * **En setning bygget med verdien spleiset inn i teksten vises med
   verdien.** Det er grunnen til at siden er lukket utenfor utvikling, og
   det står i docs.
+
+## Broadcast på tvers av prosesser
+
+* **Radens id er hendelsens id.** Med den lokale telleren fikk samme
+  hendelse ulike numre på to prosesser, og en nettleser som koblet seg til
+  den andre med `Last-Event-ID` fikk replay fra feil sted. Nå leverer hver
+  prosess under id-en databasen ga, og porten sjekker at id-en er lik på
+  begge og at en reconnect til den andre spilles av fra B sin id.
+* **Avsenderen leverer med én gang og hopper over sin egen rad.**
+  Mutasjonen som fjernet hoppet ga hver hendelse to ganger på avsenderen;
+  porten teller at A hører den én gang.
+* **En id kan committe etter en større.** Et insert som holdes åpent i en
+  transaksjon tar 10 mens 11 committer først. Pollen noterer hullet og
+  spør etter 10 ved nummer i fem sekunder. Testen gjør nettopp det på
+  Postgres og MySQL; SQLite har én skriver, og der kan det ikke skje.
+* **Uten relay nummereres og leveres en broadcast under samme lås**, som
+  før. Første utkast splittet dem, og da kunne to broadcasts nå en strøm i
+  omvendt rekkefølge av id-ene.
+* **Postgres- og MySQL-suitene skriver `FEIL`, ikke `FAIL`.** En
+  mutasjonsharness som lette etter `FAIL`, meldte seks overlevende som
+  alle var fanget. Og en ny fil er ikke i git: `git checkout` gjenoppretter
+  den ikke, så en mutasjon i den må settes tilbake for hånd.
+* **Et klipp mellom to markører må ha markører som står én gang.**
+  `function OpenStreams: Integer;` står både i interface og implementation,
+  og et klipp fra `Broadcast` til den første av dem kopierte halve uniten.
 
 ## Docs som bevis
 

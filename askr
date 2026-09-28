@@ -1847,6 +1847,231 @@ EOF
   fi
 }
 
+# The gate for broadcasts in the database. Written in English like
+# cmd_mcp_check.
+#
+# Two app processes on one database are two nodes. A stream open on B has
+# to hear what A broadcast; A's own stream hears it once, not a second
+# time through its own poll; and a browser that reconnects to A with the
+# id it got from B is replayed what it missed, because the ids are the
+# database's. The same scenario runs with the memory driver, where B must
+# NOT hear A -- without that control a green run could be a gate that
+# cannot see the difference.
+cmd_broadcast_check() {
+  prepare
+  fail=0
+  ok()   { echo "  ok    $1"; }
+  bad()  { echo "  FAIL  $1"; shift; [ $# -gt 0 ] && printf '        %s\n' "$@"; fail=1; }
+
+  if ! docker ps --format '{{.Names}}' | grep -qx askr-postgres ||
+     ! docker ps --format '{{.Names}}' | grep -qx askr-mysql; then
+    echo "broadcast:check needs Postgres and MySQL. Run: ./askr db:up" >&2
+    return 1
+  fi
+  ensure_image
+
+  bc_bin="$BUILD/broadcastcheck-bin"
+  bc_units="$BUILD/broadcastcheck-units"
+  work="$BUILD/broadcastcheck"
+  mkdir -p "$bc_bin" "$bc_units" "$work"
+  flags=$(echo "$FPCFLAGS" | sed "s|-FU$UNITS|-FU$bc_units|; s|-FE$BIN|-FE$bc_bin|" |
+          sed "s|$ROOT|/work|g" | sed 's/-WM11.0//')
+  in_box() {
+    docker run --rm --network "$DB_NET" $DOCKER_PLATFORM -v "$ROOT":/work \
+      -e ASKR_HOME=/work -w "/work/${work#$ROOT/}${2:+/$2}" "$IMAGE" sh -c "$1"
+  }
+  askr_bin="/work/${bc_bin#$ROOT/}/askr"
+
+  echo "Building the askr tool for the container ..."
+  if ! docker run --rm $DOCKER_PLATFORM -v "$ROOT":/work -w /work "$IMAGE" \
+       fpc $flags cli/askr.lpr >"$work/cli.log" 2>&1; then
+    bad "the tool builds" "$(grep -iE 'error|fatal' "$work/cli.log" | head -3)"
+    return 1
+  fi
+
+  out=$(in_box "rm -rf site && $askr_bin new site --no-auth" 2>&1) || true
+  if [ ! -f "$work/site/askr.toml" ]; then
+    bad "a project is scaffolded" "$(echo "$out" | tail -3)"
+    return 1
+  fi
+  # A feed and a way to say something on it, as a unit the app uses. The
+  # new file is written from the host; the files that exist are changed in
+  # the container, where a host rewrite can arrive at its old length.
+  mkdir -p "$work/site/app/Http"
+  cat > "$work/site/app/Http/App.Http.BroadcastCheck.pas" <<'PAS'
+unit App.Http.BroadcastCheck;
+
+{$mode Delphi}{$H+}
+
+interface
+
+uses
+  Askr.Http.Request, Askr.Http.Response, Askr.Http.Router;
+
+procedure BroadcastCheckRoutes(R: TRouter);
+
+implementation
+
+uses
+  Askr.Http.Stream;
+
+function Feed(Req: TRequest): TResponse;
+begin
+  Result := StreamEvents(['news']);
+end;
+
+function Say(Req: TRequest): TResponse;
+begin
+  Broadcast('news', 'said', Req.Query('text').ToString);
+  Result := RespondText('said');
+end;
+
+procedure BroadcastCheckRoutes(R: TRouter);
+begin
+  R.Get('/check/feed', Feed);
+  R.Get('/check/say', Say);
+end;
+
+end.
+PAS
+  in_box "sed -i 's|^  App.Migrations, App.Seeders,\$|  App.Migrations, App.Seeders, App.Http.BroadcastCheck,|; s|^  R.Get(.\/demo., Home.Demo);\$|&\n  BroadcastCheckRoutes(R);|' app.lpr && sed -i 's|^version = .*|path = \"/work\"|; s|^path = .*|path = \"/work\"|' askr.toml" site >/dev/null 2>&1 || true
+  if in_box "$askr_bin build" site >"$work/build.log" 2>&1 &&
+     grep -q 'BroadcastCheckRoutes(R);' "$work/site/app.lpr"; then
+    ok "a project with a feed is scaffolded and builds"
+  else
+    bad "the project builds" "$(grep -E 'rror|Fatal' "$work/build.log" | head -6)"
+    return 1
+  fi
+
+  docker exec askr-postgres psql -q -U askr -d askr_dev \
+    -c "DROP DATABASE IF EXISTS askr_bc" -c "CREATE DATABASE askr_bc" >/dev/null
+  docker exec askr-mysql mysql -uroot -paskr -e \
+    "DROP DATABASE IF EXISTS askr_bc; CREATE DATABASE askr_bc CHARACTER SET utf8mb4; GRANT ALL ON askr_bc.* TO 'askr'@'%';" \
+    2>/dev/null
+
+  port_a=${ASKR_BROADCAST_PORT_A:-8371}
+  port_b=${ASKR_BROADCAST_PORT_B:-8372}
+  a="http://127.0.0.1:$port_a"
+  b="http://127.0.0.1:$port_b"
+  cname=askr-broadcastcheck
+
+  # Both processes in one container, as in session:check: two processes
+  # share no memory, which is the property, and a SQLite file stays on one
+  # kernel.
+  start_nodes() {
+    docker rm -f $cname >/dev/null 2>&1
+    docker run -d --name $cname --network "$DB_NET" $DOCKER_PLATFORM \
+      -p "$port_a:$port_a" -p "$port_b:$port_b" \
+      -e BROADCAST_DRIVER="$2" -e DATABASE_URL="$1" \
+      -v "$ROOT":/work -w "/work/${work#$ROOT/}/site" "$IMAGE" \
+      sh -c "./.build/bin/app $port_a 0.0.0.0 & ./.build/bin/app $port_b 0.0.0.0 & wait" >/dev/null
+    n=0
+    until curl -s -o /dev/null "$a/" && curl -s -o /dev/null "$b/"; do
+      n=$((n + 1))
+      if [ $n -gt 80 ]; then
+        bad "both nodes answer" "$(docker logs $cname 2>&1 | tail -4)"
+        return 1
+      fi
+      sleep 0.25
+    done
+  }
+  # A stream held open for a few seconds, into a file. Never a non-zero
+  # exit: curl ends on its own timeout, which is how it is meant to end.
+  listen() {  # $1 = base url, $2 = file, $3 = Last-Event-ID or ''
+    rm -f "$2"
+    if [ -n "$3" ]; then
+      ( curl -sN --max-time 4 -H "Last-Event-ID: $3" "$1/check/feed" > "$2" 2>/dev/null || true ) &
+    else
+      ( curl -sN --max-time 4 "$1/check/feed" > "$2" 2>/dev/null || true ) &
+    fi
+  }
+  said() { curl -s -o /dev/null "$1/check/say?text=$2" || true; }
+  # Waits up to three seconds for $2 in file $1.
+  heard() {
+    n=0
+    while [ $n -lt 30 ]; do
+      grep -q "^data: $2\$" "$1" 2>/dev/null && return 0
+      n=$((n + 1)); sleep 0.1
+    done
+    return 1
+  }
+  count_in() { grep -c "^data: $2\$" "$1" 2>/dev/null || true; }
+  id_of() { grep -B2 "^data: $2\$" "$1" | grep '^id: ' | head -1 | cut -c5-; }
+
+  for dsn in \
+      "sqlite:storage/broadcasts.sqlite" \
+      "postgresql://askr:askr@askr-postgres:5432/askr_bc" \
+      "mysql://askr:askr@askr-mysql:3306/askr_bc"; do
+    dialect=${dsn%%:*}
+    echo
+    echo "- $dialect"
+    [ "$dialect" = sqlite ] && in_box "rm -f storage/broadcasts.sqlite*" site >/dev/null 2>&1
+    start_nodes "$dsn" database || continue
+    # A node hears from the moment its poll first reads the table, which
+    # it does as it starts; a moment for both.
+    sleep 1
+
+    listen "$b" "$work/b-$dialect.txt" ""
+    listen "$a" "$work/a-$dialect.txt" ""
+    sleep 0.5
+    said "$a" "first-$dialect"
+    if heard "$work/b-$dialect.txt" "first-$dialect"; then
+      ok "a stream on B hears what A broadcast"
+    else
+      bad "a stream on B hears what A broadcast" "B got: $(tr '\n' ' ' < "$work/b-$dialect.txt" | cut -c1-200)"
+    fi
+    heard "$work/a-$dialect.txt" "first-$dialect" || true
+    sleep 0.5
+    n_a=$(count_in "$work/a-$dialect.txt" "first-$dialect")
+    [ "$n_a" = "1" ] && ok "A's own stream hears it once, not again through its own poll" ||
+      bad "A's own stream hears it once" "$n_a times"
+    id_a=$(id_of "$work/a-$dialect.txt" "first-$dialect")
+    id_b=$(id_of "$work/b-$dialect.txt" "first-$dialect")
+    [ -n "$id_a" ] && [ "$id_a" = "$id_b" ] && ok "under the same id on both, $id_a" ||
+      bad "the same id on both" "A: '$id_a', B: '$id_b'"
+
+    # Said on B while nobody listens; a browser that saw the first event
+    # on B reconnects to A and is replayed the one it missed.
+    wait
+    said "$b" "missed-$dialect"
+    sleep 0.5
+    listen "$a" "$work/replay-$dialect.txt" "$id_b"
+    if heard "$work/replay-$dialect.txt" "missed-$dialect" &&
+       [ "$(count_in "$work/replay-$dialect.txt" "first-$dialect")" = "0" ]; then
+      ok "reconnecting to A with B's id replays what came after it, and nothing before"
+    else
+      bad "a reconnect to another node replays from the same numbers" \
+        "got: $(tr '\n' ' ' < "$work/replay-$dialect.txt" | cut -c1-200)"
+    fi
+    wait
+    docker rm -f $cname >/dev/null 2>&1
+  done
+
+  # The control: the same with each process broadcasting to itself.
+  echo
+  echo "- memory, as the control"
+  start_nodes "sqlite:storage/broadcasts.sqlite" memory || return 1
+  listen "$b" "$work/b-memory.txt" ""
+  sleep 0.5
+  said "$a" "first-memory"
+  sleep 1.5
+  wait
+  if grep -q "^data: first-memory\$" "$work/b-memory.txt" 2>/dev/null; then
+    bad "with the memory driver, B does not hear A" "it did: the gate cannot see the difference"
+  else
+    ok "with the memory driver, B does not hear A -- so the gate can tell"
+  fi
+  docker rm -f $cname >/dev/null 2>&1
+
+  echo
+  if [ $fail -ne 0 ]; then
+    echo "broadcast:check failed."
+    return 1
+  fi
+  echo "broadcast:check holds: on SQLite, Postgres and MySQL, a broadcast on one node reaches"
+  echo "the streams of another, once, under an id every node shares."
+}
+
 # The gate for sessions in the database. Written in English like
 # cmd_mcp_check.
 #
@@ -3604,6 +3829,7 @@ case "${1:-}" in
   auth:check) shift; cmd_auth_check "$@" ;;
   qr:check) shift; cmd_qr_check "$@" ;;
   docs:check) shift; cmd_docs_check "$@" ;;
+  broadcast:check) shift; cmd_broadcast_check "$@" ;;
   ws:check) shift; cmd_ws_check "$@" ;;
   storage:check) shift; cmd_storage_check "$@" ;;
   plugin:check) shift; cmd_plugin_check "$@" ;;

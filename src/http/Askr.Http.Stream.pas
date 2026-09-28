@@ -71,6 +71,23 @@ type
 
 procedure AddBroadcastSink(Sink: TBroadcastSink);
 
+type
+  { Where a broadcast is written so other processes hear it, and the id it
+    was given there. Askr.Broadcast.Db is one. With a relay, the id is the
+    relay's, so a browser that reconnects to another process with
+    Last-Event-ID is replayed from the same numbers. }
+  TBroadcastRelay = function(const Channel, Event, Data: string): Int64 of object;
+
+{ nil goes back to broadcasting within the process, with its own ids. Set
+  it at startup, before the first broadcast: ids from before it are from
+  another counter. }
+procedure SetBroadcastRelay(Relay: TBroadcastRelay);
+
+{ An event another process broadcast, delivered here under the id it was
+  given there: to the streams on its channel, to the sinks, and to the
+  history a reconnecting stream is replayed from. For a relay. }
+procedure DeliverBroadcast(Id: Int64; const Channel, Event, Data: string);
+
 { The server's side. }
 function StreamSlotFree: Boolean;
 { Takes over the socket and the TLS connection, if there is one: the
@@ -124,6 +141,7 @@ var
   GHeartbeatMs: Integer = 15000;
   GMaxStreams: Integer = 1000;
   GReplay: Integer = 500;
+  GRelay: TBroadcastRelay = nil;
 
 procedure AddBroadcastSink(Sink: TBroadcastSink);
 var
@@ -217,44 +235,84 @@ begin
   Result := Result + #10;
 end;
 
-procedure Broadcast(const Channel, Event, Data: string);
+{ Under GLock: the history and the streams. }
+procedure PostLocked(Id: Int64; const Channel, Event, Data: string);
 var
   I, N: Integer;
   Text_: string;
+begin
+  Text_ := Frame(Id, Event, Data);
+  { Kept for a stream that reconnects, the oldest going first. }
+  N := Length(GHistory);
+  if (GReplay > 0) and (N >= GReplay) then
+  begin
+    for I := 1 to N - 1 do
+      GHistory[I - 1] := GHistory[I];
+    Dec(N);
+    SetLength(GHistory, N);
+  end;
+  if GReplay > 0 then
+  begin
+    SetLength(GHistory, N + 1);
+    GHistory[N].Id := Id;
+    GHistory[N].Channel := Channel;
+    GHistory[N].Text_ := Text_;
+  end;
+  for I := 0 to GStreams.Count - 1 do
+    if TStreamThread(GStreams[I]).Listens(Channel) then
+      TStreamThread(GStreams[I]).Post(Text_);
+end;
+
+{ Outside the lock: a sink takes locks of its own. }
+procedure ToSinks(Id: Int64; const Channel, Event, Data: string);
+var
+  I: Integer;
+begin
+  for I := 0 to High(GSinks) do
+    GSinks[I](Id, Channel, Event, Data);
+end;
+
+procedure SetBroadcastRelay(Relay: TBroadcastRelay);
+begin
+  GRelay := Relay;
+end;
+
+procedure Broadcast(const Channel, Event, Data: string);
+var
   Id: Int64;
 begin
   if not ValidChannel(Channel) then
     raise EStreamError.CreateFmt('"%s" is not a channel name', [Channel]);
+  { Written first, and delivered here at once under the id it was given:
+    this process's streams do not wait for its own poll. }
+  if Assigned(GRelay) then
+  begin
+    Id := GRelay(Channel, Event, Data);
+    DeliverBroadcast(Id, Channel, Event, Data);
+    Exit;
+  end;
+  { Numbered and posted under one lock, so two broadcasts at once reach
+    every stream in the order of their ids. }
   GLock.Acquire;
   try
     Inc(GNextId);
     Id := GNextId;
-    Text_ := Frame(Id, Event, Data);
-    { Kept for a stream that reconnects, the oldest going first. }
-    N := Length(GHistory);
-    if (GReplay > 0) and (N >= GReplay) then
-    begin
-      for I := 1 to N - 1 do
-        GHistory[I - 1] := GHistory[I];
-      Dec(N);
-      SetLength(GHistory, N);
-    end;
-    if GReplay > 0 then
-    begin
-      SetLength(GHistory, N + 1);
-      GHistory[N].Id := Id;
-      GHistory[N].Channel := Channel;
-      GHistory[N].Text_ := Text_;
-    end;
-    for I := 0 to GStreams.Count - 1 do
-      if TStreamThread(GStreams[I]).Listens(Channel) then
-        TStreamThread(GStreams[I]).Post(Text_);
+    PostLocked(Id, Channel, Event, Data);
   finally
     GLock.Release;
   end;
-  { Outside the lock: a sink takes locks of its own. }
-  for I := 0 to High(GSinks) do
-    GSinks[I](Id, Channel, Event, Data);
+  ToSinks(Id, Channel, Event, Data);
+end;
+
+procedure DeliverBroadcast(Id: Int64; const Channel, Event, Data: string);
+begin
+  GLock.Acquire;
+  try
+    PostLocked(Id, Channel, Event, Data);
+  finally
+    GLock.Release;
+  end;
+  ToSinks(Id, Channel, Event, Data);
 end;
 
 function OpenStreams: Integer;

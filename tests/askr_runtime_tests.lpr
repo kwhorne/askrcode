@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream, Askr.Cli.RoutesUnit;
+  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream, Askr.Cli.RoutesUnit, Askr.Broadcast.Db;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -4004,6 +4004,27 @@ begin
 end;
 
 {$I session_db.inc}
+
+procedure BroadcastStart(const Name: string);
+begin
+end;
+
+procedure BroadcastOk(const What: string; Cond: Boolean);
+begin
+  AssertTrue(Cond, What);
+end;
+
+{$I broadcast_db.inc}
+
+{ On a file, for the reason the session race is: two connections to
+  sqlite::memory: are two databases. SQLite has one writer, so ids commit
+  in order and the held-insert case is not one it can have. }
+procedure TestBroadcastDb;
+begin
+  ForceDirectories('.build');
+  DeleteFile('.build/broadcast.sqlite');
+  BroadcastDbPart('sqlite:.build/broadcast.sqlite', False);
+end;
 
 { On a file: two connections to sqlite::memory: are two databases, and the
   other request's insert would land in the wrong one. }
@@ -14254,6 +14275,7 @@ begin
   Test('supervised threads: restarted with backoff, or reported, and the queue and scheduler survive', @TestSupervisor);
   Test('live props: a signed stream per page, stale props by name, partial reloads', @TestLive);
   Test('verified routes: FillRoute, and App.Routes as the routes are', @TestVerifiedRoutes);
+  Test('broadcasts through the database reach another process, under the same id', @TestBroadcastDb);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

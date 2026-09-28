@@ -14,6 +14,19 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **Broadcasts across processes.** `Askr.Broadcast.Db`, turned on with
+  `BROADCAST_DRIVER=database`: each broadcast is a row in the app's
+  database, and every process reads what the others wrote, 100 ms apart.
+  Streams, websockets and live props on one node hear what another sent.
+  The row's id is the event's id, so a browser that reconnects to another
+  node is replayed from the same numbers. An id that commits after a
+  larger one is asked for again until it does. `askr new` writes
+  `SetBroadcasts(BroadcastsFromConfig(DbPool))`, on memory by default.
+  `./askr broadcast:check` runs two app processes on SQLite, Postgres and
+  MySQL, with the memory driver as the control.
+
 ## 0.19.0 — 2026-09-27
 
 The last three things from Phoenix. A page hears that its props went stale
