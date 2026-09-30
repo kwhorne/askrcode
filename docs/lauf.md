@@ -73,6 +73,9 @@ an Askr project. That is a real cost, and a narrow one.
 **Tokens.** `--color-surface`, `--color-fg`, `--color-accent` and the rest,
 semantic rather than literal. Override them in your `app.css` and the whole
 library follows.
+Lauf ships 162 ready-made sets of them — 9 grays by 18 accents, each
+checked for contrast in light and dark — and `askr theme stone teal`
+switches between them. See [Themes](themes.md).
 
 Dark mode lives in one place. No component writes a `dark:` class — if each
 one carried `bg-white dark:bg-zinc-900`, your palette would mean editing

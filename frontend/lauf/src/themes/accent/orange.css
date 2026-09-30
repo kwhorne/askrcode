@@ -1,0 +1,25 @@
+/* Lauf theme: orange, the accent.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: oklch(55.3% 0.195 38.402);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(47% 0.157 37.304);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: oklch(70.5% 0.213 47.604);
+    --color-accent-fg: oklch(14.5% 0 0);
+    --color-accent-content: oklch(75% 0.183 55.934);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: oklch(70.5% 0.213 47.604);
+  --color-accent-fg: oklch(14.5% 0 0);
+  --color-accent-content: oklch(75% 0.183 55.934);
+}

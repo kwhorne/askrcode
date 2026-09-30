@@ -76,7 +76,7 @@
         <Combobox.Item value={item.value} label={item.label} class={menuItem}>
           {#snippet children({ selected })}
             <span class="flex-1">{item.label}</span>
-            {#if selected}<Icon icon={Check} size="sm" class="text-accent" />{/if}
+            {#if selected}<Icon icon={Check} size="sm" class="text-accent-content" />{/if}
           {/snippet}
         </Combobox.Item>
       {:else}

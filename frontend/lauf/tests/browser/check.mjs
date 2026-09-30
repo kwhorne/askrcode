@@ -255,6 +255,48 @@ async function checkFindable(send, js) {
   return problems
 }
 
+// The generated themes, in the same Chrome and through the same axe. Every
+// accent once, each with a different gray, so the eighteen runs cover all
+// nine grays, in light and dark. What the Node test measures in arithmetic
+// is measured here as Chrome paints it, after its own gamut mapping.
+const THEME_DIR = join(here, '..', '..', 'src', 'themes')
+
+async function checkThemes(send, js) {
+  const manifest = JSON.parse(readFileSync(join(THEME_DIR, 'themes.json'), 'utf8'))
+  const grays = Object.keys(manifest.grays)
+  const accents = Object.keys(manifest.accents)
+  const results = []
+  await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false })
+  for (let i = 0; i < accents.length; i++) {
+    const gray = grays[i % grays.length]
+    const accent = accents[i]
+    const css = readFileSync(join(THEME_DIR, `${gray}.css`), 'utf8') +
+      readFileSync(join(THEME_DIR, 'accent', `${accent}.css`), 'utf8')
+    for (const mode of ['light', 'dark']) {
+      await send('Page.navigate', { url: URL_BASE })
+      await wait(1200)
+      const before = await js(`getComputedStyle(document.body).backgroundColor`)
+      await js(`document.head.insertAdjacentHTML('beforeend', ${JSON.stringify('<style>' + css + '</style>')});
+        document.documentElement.setAttribute('data-theme', '${mode}'); true`)
+      await wait(150)
+      const after = await js(`getComputedStyle(document.body).backgroundColor`)
+      const want = await js(`getComputedStyle(document.documentElement).getPropertyValue('--color-surface').trim()`)
+      await js(axeSource + '; true')
+      const found = JSON.parse(await js(`axe.run(document, {
+        resultTypes: ['violations'],
+        rules: { region: { enabled: false } }
+      }).then(r => JSON.stringify(r.violations.map(v => v.id + ': ' +
+        v.nodes.slice(0, 2).map(n => n.target.join(' ')).join(', '))))`))
+      // The theme has to have taken hold: its surface is the page's, or
+      // the run measured the default theme under another name.
+      const expected = manifest.grays[gray][mode === 'light' ? 'light' : 'dark'].surface
+      const took = want === expected
+      results.push({ name: `${gray}+${accent} ${mode}`, found, took, bg: after, before })
+    }
+  }
+  return results
+}
+
 async function main() {
   mkdirSync(SHOTS, { recursive: true })
   const { ws, send, js } = await connect()
@@ -325,6 +367,19 @@ async function main() {
     for (const f of editorProblems) console.log(`    ${f}`)
   }
 
+  const themeResults = await checkThemes(send, js)
+  for (const r of themeResults) {
+    if (!r.took) {
+      brudd += 1
+      console.log(`\nFAIL  theme ${r.name}: the theme did not take hold (background ${r.bg})`)
+    }
+    if (r.found.length) {
+      brudd += r.found.length
+      console.log(`\nFAIL  theme ${r.name}`)
+      for (const f of r.found) console.log(`    ${f}`)
+    }
+  }
+
   const findableProblems = await checkFindable(send, js)
   if (findableProblems.length) {
     brudd += findableProblems.length
@@ -335,6 +390,8 @@ async function main() {
   console.log('')
   console.log(`  ${editorProblems.length === 0 ? 'ok  ' : 'FEIL'} ${'editor undo'.padEnd(16)} Cmd+Z after Bold keeps the text`)
   console.log(`  ${findableProblems.length === 0 ? 'ok  ' : 'FEIL'} ${'tabs findable'.padEnd(16)} Chrome accepts hidden="until-found"`)
+  const themesOk = themeResults.filter((r) => r.took && r.found.length === 0).length
+  console.log(`  ${themesOk === themeResults.length ? 'ok  ' : 'FEIL'} ${'themes'.padEnd(16)} ${themesOk} of ${themeResults.length} runs, every accent and every gray, light and dark`)
   for (const r of rader) {
     console.log(`  ${r.brudd === 0 ? 'ok  ' : 'FEIL'} ${r.navn.padEnd(16)} bakgrunn ${r.bg.padEnd(22)} ${r.brudd} brudd`)
   }

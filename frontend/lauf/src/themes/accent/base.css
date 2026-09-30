@@ -1,0 +1,25 @@
+/* Lauf theme: base, the accent in the gray itself.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: var(--color-fg);
+  --color-accent-fg: var(--color-surface);
+  --color-accent-content: var(--color-fg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: var(--color-fg);
+    --color-accent-fg: var(--color-surface);
+    --color-accent-content: var(--color-fg);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: var(--color-fg);
+  --color-accent-fg: var(--color-surface);
+  --color-accent-content: var(--color-fg);
+}

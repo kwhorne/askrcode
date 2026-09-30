@@ -13,7 +13,7 @@
 
   const colors = {
     neutral: 'bg-line/50 text-muted border-line',
-    accent: 'bg-accent/15 text-accent border-accent/30',
+    accent: 'bg-accent/15 text-accent-content border-accent/30',
     danger: 'bg-danger/15 text-danger border-danger/30',
   }
 

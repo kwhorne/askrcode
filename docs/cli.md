@@ -85,11 +85,12 @@ one that did nothing.
 
 | Command | What it does
 |---|---|
-| `askr new <name> [--auth\|--no-auth]` | Create a project; asks about sign-in when run from a terminal |
+| `askr new <name> [--auth\|--no-auth] [--theme=gray/accent]` | Create a project; asks about sign-in when run from a terminal |
 | `askr build [--target web\|desktop]` | Compile it |
 | `askr serve [port]` | Dev server with hot reload |
 | `askr test` | Build and run the app's test suite |
 | `askr version` | The tool's version, and the framework this project builds against |
+| `askr theme [gray accent\|askr]` | Show or change the Lauf theme in `frontend/src/app.css` — see [Themes](themes.md) |
 
 ### Versions
 

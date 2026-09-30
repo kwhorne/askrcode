@@ -9,16 +9,25 @@
  * at det er rollen som er stabil og verdien som byttes.
  *
  * En app importerer denne etter Tailwind, og overstyrer det den vil ha annerledes.
+ *
+ * Dette er temaet «askr», standarden. De andre ligger i themes/ og skrives av
+ * scripts/themes.mjs: en gråtone og en aksent, importert etter denne fila.
  */
 
 @theme {
   --color-surface: #fbfaf8;
   --color-raised: #ffffff;
   --color-fg: #23201c;
-  --color-muted: #6f675d;
+  --color-muted: #6b6359;
   --color-line: #e6e0d8;
   --color-accent: #7a5c3e;
   --color-accent-fg: #fbfaf8;
+  /* The accent as text on the surface: a link, a check mark. Not always the
+     accent itself, which may be too light to read -- a yellow button is
+     fine, yellow text on white is not. Here it is the accent, so an app
+     that overrides only --color-accent gets its links in that colour too;
+     the themes set both. */
+  --color-accent-content: var(--color-accent);
   --color-danger: #b3261e;
   --color-danger-fg: #ffffff;
 
@@ -46,6 +55,7 @@
     --color-line: #2f2a21;
     --color-accent: #c9a274;
     --color-accent-fg: #17150f;
+    --color-accent-content: var(--color-accent);
     --color-danger: #f2b8b5;
     --color-danger-fg: #17150f;
   }
@@ -59,6 +69,7 @@
   --color-line: #2f2a21;
   --color-accent: #c9a274;
   --color-accent-fg: #17150f;
+  --color-accent-content: var(--color-accent);
   --color-danger: #f2b8b5;
   --color-danger-fg: #17150f;
 }

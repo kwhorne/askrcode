@@ -51,6 +51,21 @@ It handles three states, not two. An explicit choice stamps
 OS, and `[data-theme="dark"]` is repeated after it so the toggle wins in both
 directions.
 
+### Ready-made themes
+
+A gray and an accent, imported after `theme.css`:
+
+```css
+@import '@askrcode/lauf/themes/stone.css';
+@import '@askrcode/lauf/themes/accent/teal.css';
+```
+
+9 grays and 18 accents, any with any, each shade chosen by measured
+contrast. `scripts/themes.mjs` writes them from Tailwind's palette and
+`tests/themes.test.js` measures every combination as written. In an Askr
+app, `askr theme stone teal` writes those two lines for you. The rules, and
+why light-mode yellow is ochre, are in [`docs/themes.md`](../../docs/themes.md).
+
 ## `cn`
 
 ```js

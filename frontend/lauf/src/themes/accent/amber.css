@@ -1,0 +1,25 @@
+/* Lauf theme: amber, the accent.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: oklch(55.5% 0.163 48.998);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(47.3% 0.137 46.201);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: oklch(76.9% 0.188 70.08);
+    --color-accent-fg: oklch(14.5% 0 0);
+    --color-accent-content: oklch(82.8% 0.189 84.429);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: oklch(76.9% 0.188 70.08);
+  --color-accent-fg: oklch(14.5% 0 0);
+  --color-accent-content: oklch(82.8% 0.189 84.429);
+}

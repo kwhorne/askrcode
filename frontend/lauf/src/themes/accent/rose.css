@@ -1,0 +1,25 @@
+/* Lauf theme: rose, the accent.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: oklch(51.4% 0.222 16.935);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(45.5% 0.188 13.697);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: oklch(64.5% 0.246 16.439);
+    --color-accent-fg: oklch(14.5% 0 0);
+    --color-accent-content: oklch(71.2% 0.194 13.428);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: oklch(64.5% 0.246 16.439);
+  --color-accent-fg: oklch(14.5% 0 0);
+  --color-accent-content: oklch(71.2% 0.194 13.428);
+}

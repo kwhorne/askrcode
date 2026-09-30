@@ -14,6 +14,34 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+### Added
+
+- **Themes for Lauf.** 9 grays and 18 accents from Tailwind's palette,
+  any gray with any accent, light and dark: two `@import`s after Lauf's
+  own tokens. Every shade is chosen by measured contrast — text at 4.5:1,
+  the accent 3:1 from every gray's surfaces because it is also the focus
+  ring — and held there three times: a test over all 162 combinations,
+  light and dark, as written; axe with contrast in Chrome over a sample of 36; and a
+  generated app's pages in a theme `askr theme` chose. Written by
+  `frontend/lauf/scripts/themes.mjs`, with `themes.json` listing every
+  value. See [Themes](docs/themes.md).
+- **`askr theme`** shows the theme and switches it: `askr theme stone
+  teal`, and `askr theme askr` for Lauf's own. It edits only what is
+  between two markers in `frontend/src/app.css`, and without them writes
+  nothing and prints the lines. `askr new --theme=stone/teal` starts
+  there.
+- **`--color-accent-content`**, the accent as text on the surface. Links
+  in `Editor`, the check in `Autocomplete` and the text of an accent
+  `Badge` use it: a yellow button is readable, yellow text on white is
+  not. Lauf's default is `var(--color-accent)`, so an app that overrides
+  only the accent keeps its links in that colour.
+
+### Changed
+
+- Lauf's own muted text is a shade darker (`#6b6359`, was `#6f675d`). It
+  read at 4.39:1 on the tint under a tab's count; the themes' test found
+  it.
+
 ## 0.20.0 — 2026-09-28
 
 Streams, websockets and live props behind a load balancer. A broadcast on

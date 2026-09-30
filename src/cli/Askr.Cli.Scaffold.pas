@@ -21,7 +21,12 @@ type
   TNewDatabase = (ndSqlite, ndMySql);
 
 procedure NewProject(const ParentDir, Name: string;
-  WithAuth: Boolean = False; Database: TNewDatabase = ndSqlite);
+  WithAuth: Boolean = False; Database: TNewDatabase = ndSqlite;
+  const ThemeGray: string = ''; const ThemeAccent: string = '');
+
+{ frontend/src/app.css as askr new writes it, with the theme's two imports
+  between askr theme's markers -- none for Lauf's own. }
+function AppCssText(const ThemeGray, ThemeAccent: string): string;
 { The database name a project called Name gets: my-shop is my_shop, since
   a hyphen in a MySQL database name has to be quoted everywhere. }
 function DatabaseNameFor(const Name: string): string;
@@ -93,7 +98,7 @@ uses
   { In implementation, not in interface: Askr.Cli.Auth uses Emit and
     UpdateIndex from here, and Pascal allows the circle only when at least
     one of them is here. }
-  Askr.Cli.Auth, Askr.Urd.Model;
+  Askr.Cli.Auth, Askr.Urd.Model, Askr.Cli.Themes;
 
 const
   Q = '''';
@@ -457,8 +462,29 @@ begin
   end;
 end;
 
+function AppCssText(const ThemeGray, ThemeAccent: string): string;
+const
+  Q = '''';
+begin
+  Result :=
+    '@import ' + Q + 'tailwindcss' + Q + ';' + #10 +
+    '@import ' + Q + '@askrcode/lauf/theme.css' + Q + ';' + #10 +
+    '/* A theme is a gray and an accent after Lauf''s own tokens. Change it' + #10 +
+    '   with: askr theme stone teal -- or askr theme askr for Lauf''s own. */' + #10 +
+    ThemeBlock(ThemeGray, ThemeAccent) +
+    '@source ' + Q + '../node_modules/@askrcode/lauf/src' + Q + ';' + #10 + #10 +
+    '/* The tokens are semantic. Override them here for your own look;' + #10 +
+    '   dark mode follows along, because no component writes dark:. */' + #10 +
+    'body {' + #10 +
+    '  background: var(--color-surface);' + #10 +
+    '  color: var(--color-fg);' + #10 +
+    '  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;' + #10 +
+    '}' + #10;
+end;
+
 procedure NewProject(const ParentDir, Name: string;
-  WithAuth: Boolean; Database: TNewDatabase);
+  WithAuth: Boolean; Database: TNewDatabase;
+  const ThemeGray, ThemeAccent: string);
 var
   Root, Framework, LaufDep, Pin: string;
 begin
@@ -893,17 +919,7 @@ begin
   { Tailwind does not look into node_modules by itself. Without @source
     every class Lauf uses is missing from the stylesheet, and the components
     come out without styling with nothing to say why. }
-  Emit(Root + '/frontend/src/app.css',
-    '@import ' + Q + 'tailwindcss' + Q + ';' + #10 +
-    '@import ' + Q + '@askrcode/lauf/theme.css' + Q + ';' + #10 +
-    '@source ' + Q + '../node_modules/@askrcode/lauf/src' + Q + ';' + #10 + #10 +
-    '/* The tokens are semantic. Override them here for your own look;' + #10 +
-    '   dark mode follows along, because no component writes dark:. */' + #10 +
-    'body {' + #10 +
-    '  background: var(--color-surface);' + #10 +
-    '  color: var(--color-fg);' + #10 +
-    '  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;' + #10 +
-    '}' + #10);
+  Emit(Root + '/frontend/src/app.css', AppCssText(ThemeGray, ThemeAccent));
 
   Emit(Root + '/frontend/src/Layout.svelte',
     '<script>' + #10 +

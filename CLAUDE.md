@@ -938,6 +938,11 @@ som virker. Probe-en bytter til Sonnet 5 for det ene steget.
   påstanden om at sidene virker i en nettleser. En port som melder grønt
   for noe den ikke kjørte, er samme feil som en suite som melder grønt på
   kode som ikke kompilerer.
+* **`localhost` i Chrome er `::1` først.** Sidene laster Vite fra
+  `localhost:5173`, porten sjekket bare at 127.0.0.1:5173 var ledig, og en
+  Vite fra et helt annet prosjekt på `[::1]:5173` svarte 404 på hvert
+  skript. Ingen side ble tegnet, og ni feil sa ingenting om sidene. Portens
+  Chrome har `--host-resolver-rules="MAP localhost 127.0.0.1"` nå.
 * **Én nøkkelordliste**, `IsPascalKeyword` i `Askr.Norn.Codegen`. Den gamle
   i Norn hadde 41 av 67, `make model` hadde sin egen lengre, og en kolonne
   som het `until` ga en schema-unit som ikke kompilerte.
@@ -2567,6 +2572,61 @@ Frontend-biblioteket i `frontend/lauf/`. Konseptet og rekkefølgen står i
   Pascal gir `YYYY-MM-DD`, og det er formen som skal gå rett inn og rett ut.
 * Bits' `Command` filtrerer på `value` og `keywords`, ikke på teksten i
   elementet. `CommandItem` legger derfor `label` i `keywords` selv.
+
+## Temaer
+
+* **Et tema er en gråtone og en aksent, to filer, og de blandes fritt.**
+  9 × 18, fra Tailwinds palett, som Flux. En aksentfil rører aldri en
+  gråtones tokens — testen krever at den bare har `accent`, `accent-fg` og
+  `accent-content` — og det er det som gjør at alle kombinasjonene finnes
+  uten å skrives ut. `base` er skrevet i gråtonens egne tokens, så den
+  følger den som importeres.
+* **Verdiene er OKLCH-literaler kopiert inn, ikke `var(--color-stone-50)`.**
+  Tailwind v4 kan kaste palettvariabler ingen utility bruker, og da ville
+  et tema pekt på noe som ikke finnes. Filene er ulagdelte og importeres
+  etter `theme.css`, hvis `@theme` havner i `theme`-laget — derfor vinner
+  de.
+* **Hver nyanse velges ved måling, og regelen står i generatoren.**
+  4,6 og 3,1, ikke 4,5 og 3: `src/color.js` klipper per kanal der en
+  nettleser senker kroma, og de to kan skille i andre desimal. Aksenten
+  må stå 3:1 mot **alle** gråtoners flater, fordi den er fokusringen og
+  fyllet i en avkrysset boks. Derfor er gul i lys modus `yellow-700`, og
+  det står i docs som noe som ikke finnes — ikke som en feil.
+* **Hvit før svart, i hvilken som helst nyanse.** Første utkast gikk
+  nyanse for nyanse og tok den første teksten som leste, og da fikk teal
+  svart tekst på 500 i stedet for hvit på 700. Løkka er tekstfarge ytterst.
+* **Chrome fant det testen ikke så: dempet tekst på en farget bakgrunn.**
+  Tallet på en fane ligger på `line/70` og `fg/10`, og i gray, stone og
+  taupe var 500 under kravet der mens flatene besto. Regelen og testen tar
+  begge fargetonene nå, og Laufs egen `muted` ble mørkere av samme grunn
+  (4,39 → 4,66). Lekegrinda viser ikke piller med tall, så Chrome-porten
+  dekker ikke `fg/10` selv; testen gjør.
+* **Testen leser filene, ikke generatorens tall.** Det en app importerer,
+  er det som holdes mot kontrasten. `--check` holder filene mot generatoren
+  i tillegg, så en håndredigering feiler.
+* **`lauf:check` beviser at temaet slo inn før axe kjører.** Den leser
+  `--color-surface` tilbake og sammenligner med manifestet; uten det kunne
+  36 grønne kjøringer vært 36 av Laufs eget tema. `make:check` gjør det
+  samme etter `askr theme taupe amber` på en generert app.
+* **`--color-accent-content` er `var(--color-accent)` i Laufs eget tema.**
+  Komponentene som skrev `text-accent` skriver `text-accent-content` nå, og
+  med en fast verdi der ville en app som overstyrte bare aksenten fått
+  lenkene i Laufs brune. Temaene setter den selv.
+* **En sammensatt komponent brukt bare i en lat chunk havner i den
+  delte.** `Tabs.Panel` og `Sidebar.Item` henges på med `Object.assign` i
+  `index.js`, og den modulen deles av alle chunkene — så tilordningen, og
+  Bits' tabs med den, ble liggende i nettstedets `main` da bare
+  `/themes` brukte dem: 19 kB på hver side. Funnet med sourcemaps, ikke
+  ved lesing. Temasida bruker ikke Tabs; å flytte påhengingen inn i
+  komponentens egen modul er en egen jobb.
+* **Fargeregningen er `@askrcode/lauf/color`**, ikke i hovedinngangen.
+  Nettstedet viser de målte tallene for kombinasjonen som er valgt, og de
+  må være de samme tallene generatoren valgte etter.
+* **`askr theme` redigerer bare mellom to markører**, og uten dem skriver
+  den ingenting og skriver ut linjene — samme regel som `make auth` og
+  `mcp:install`. Markørene må stå én gang hver, i rekkefølge. Navnelistene
+  i `Askr.Cli.Themes` holdes mot `themes.json` begge veier, i den
+  rekkefølgen manifestet har, fordi nettstedet tegner fargeprøvene i den.
 
 ## Editor
 

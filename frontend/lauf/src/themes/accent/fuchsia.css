@@ -1,0 +1,25 @@
+/* Lauf theme: fuchsia, the accent.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: oklch(59.1% 0.293 322.896);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(45.2% 0.211 324.591);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: oklch(59.1% 0.293 322.896);
+    --color-accent-fg: #fff;
+    --color-accent-content: oklch(74% 0.238 322.16);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: oklch(59.1% 0.293 322.896);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(74% 0.238 322.16);
+}

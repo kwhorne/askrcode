@@ -38,6 +38,16 @@ if (process.env.AXE_EXPECT_ROWS && (!g || !mk)) {
   console.log('  FAIL  there is no gadget or no maker, so their pages are not checked')
   process.exit(1)
 }
+// With AXE_THEME=<gray>, the app has had `askr theme` run on it, and each
+// page must be in that gray: a theme that never reached the page would
+// otherwise pass as Lauf's own.
+const theme = process.env.AXE_THEME
+  ? JSON.parse(readFileSync(join(here, '../../frontend/lauf/src/themes/themes.json'), 'utf8')).grays[process.env.AXE_THEME]
+  : null
+if (process.env.AXE_THEME && !theme) {
+  console.log(`  FAIL  there is no gray called ${process.env.AXE_THEME}`)
+  process.exit(1)
+}
 let bad = 0
 for (const [w, h] of [[1280, 1000], [390, 900]])
   for (const scheme of ['light', 'dark']) {
@@ -56,6 +66,11 @@ for (const [w, h] of [[1280, 1000], [390, 900]])
       }
       if (!rendered) { bad++; console.log(`  FAIL  ${path} ${w} ${scheme}: the page never rendered`); continue }
       await wait(200)
+      if (theme) {
+        const surface = await js(`getComputedStyle(document.documentElement).getPropertyValue('--color-surface').trim()`)
+        const want = scheme === 'dark' ? theme.dark.surface : theme.light.surface
+        if (surface !== want) { bad++; console.log(`  FAIL  ${path} ${w} ${scheme}: the surface is ${surface}, not ${process.env.AXE_THEME}'s ${want}`); continue }
+      }
       await js(axe)
       const r = await js(`axe.run(document, { resultTypes: ['violations'] }).then((r) => r.violations.map((v) => v.id + ' (' + v.impact + '): ' + v.nodes.slice(0,2).map((n) => n.target.join(' ')).join(' | ')))`)
       const wide = await js(`document.documentElement.scrollWidth > window.innerWidth`)

@@ -1,0 +1,25 @@
+/* Lauf theme: indigo, the accent.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: oklch(51.1% 0.262 276.966);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(51.1% 0.262 276.966);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: oklch(67.3% 0.182 276.935);
+    --color-accent-fg: oklch(14.5% 0 0);
+    --color-accent-content: oklch(78.5% 0.115 274.713);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: oklch(67.3% 0.182 276.935);
+  --color-accent-fg: oklch(14.5% 0 0);
+  --color-accent-content: oklch(78.5% 0.115 274.713);
+}

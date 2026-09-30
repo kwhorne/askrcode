@@ -50,6 +50,7 @@ queue uses the database you already have. See [Deployment](deployment.md).
 | [File storage](storage.md) | A directory or S3, the same way, and a link to a private file |
 | [Inertia and Svelte](inertia.md) | Server-driven pages without an API |
 | [Lauf](lauf.md) | The frontend layer: components, forms, the data grid |
+| [Themes](themes.md) | A gray and an accent, chosen by contrast, and `askr theme` |
 
 ## APIs
 

@@ -269,7 +269,7 @@
     '[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 ' +
     '[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 ' +
     '[&_li]:my-0.5 ' +
-    '[&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 ' +
+    '[&_a]:text-accent-content [&_a]:underline [&_a]:underline-offset-2 ' +
     '[&_code]:rounded [&_code]:bg-line/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em] ' +
     '[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-control [&_pre]:bg-line/40 [&_pre]:p-3 ' +
     '[&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-xs ' +

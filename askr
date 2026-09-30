@@ -1212,7 +1212,12 @@ make_check_browser() {
     -v "$ROOT":/work -w "/work/${work#$ROOT/}/shop" "$IMAGE" \
     sh -c "./.build/bin/app $web_port 0.0.0.0" >/dev/null
   profile=$(mktemp -d)
+  # The pages load Vite from localhost:5173, and Chrome tries ::1 first.
+  # The check above asks 127.0.0.1, so another project's Vite on [::1]:5173
+  # answered every script with a 404 and no page rendered -- nine failures
+  # that said nothing about the pages. localhost is 127.0.0.1 here.
   "$chrome" --headless --disable-gpu --remote-debugging-port=9224 \
+    --host-resolver-rules="MAP localhost 127.0.0.1" \
     --user-data-dir="$profile" about:blank >/dev/null 2>&1 &
   chrome_pid=$!
   n=0
@@ -1244,6 +1249,20 @@ make_check_browser() {
       ok "and with rows, their pages and their forms: contrast included, light and dark, 1280 and 390 px ($(grep -c '^  ok' "$work/web-axe.log") pages)"
     else
       bad "axe finds nothing on the pages" "$(grep -E 'FAIL' -A2 "$work/web-axe.log" | head -14)"
+    fi
+    # The same pages in a theme askr theme chose: the edit reaches the
+    # app.css Vite serves, and every page is still readable in it. Taupe
+    # and amber, because taupe's muted text was the one that failed on a
+    # tint, and amber is the light accent that needs dark text.
+    theme_code=0
+    in_box "$askr_bin theme taupe amber" shop >"$work/web-theme.log" 2>&1 || theme_code=$?
+    if [ "$theme_code" -ne 0 ] || ! grep -q "themes/accent/amber.css" "$front/src/app.css"; then
+      bad "askr theme taupe amber edits app.css" "$(tail -3 "$work/web-theme.log")"
+    elif AXE_THEME=taupe AXE_EXPECT_ROWS=1 BASE="http://localhost:$web_port" CDP=http://127.0.0.1:9224 \
+         node "$ROOT/tools/make-check/axe.mjs" >"$work/web-axe-theme.log" 2>&1; then
+      ok "and after askr theme taupe amber, in that theme ($(grep -c '^  ok' "$work/web-axe-theme.log") pages)"
+    else
+      bad "axe finds nothing in the taupe/amber theme" "$(grep -E 'FAIL' -A2 "$work/web-axe-theme.log" | head -14)"
     fi
   fi
   kill "$vite_pid" "$chrome_pid" 2>/dev/null

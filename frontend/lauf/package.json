@@ -26,10 +26,13 @@
       "default": "./src/inertia/index.js"
     },
     "./theme.css": "./src/theme.css",
+    "./themes/*": "./src/themes/*",
+    "./color": "./src/color.js",
     "./icons/*": "./src/icons/*/index.js"
   },
   "scripts": {
     "icons": "node scripts/generate-icons.mjs",
+    "themes": "node scripts/themes.mjs",
     "prepare": "node scripts/generate-icons.mjs",
     "test": "vitest run",
     "play": "vite build --config playground/vite.config.js && vite preview --config playground/vite.config.js --port 4173"

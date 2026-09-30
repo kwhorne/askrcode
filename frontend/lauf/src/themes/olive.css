@@ -1,0 +1,37 @@
+/* Lauf theme: olive, the gray.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-surface: oklch(98.8% 0.003 106.5);
+  --color-raised: #fff;
+  --color-fg: oklch(22.8% 0.013 107.4);
+  --color-muted: oklch(46.6% 0.025 107.3);
+  --color-line: oklch(93% 0.007 106.5);
+  --color-danger: oklch(50.5% 0.213 27.518);
+  --color-danger-fg: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-surface: oklch(15.3% 0.006 107.1);
+    --color-raised: oklch(22.8% 0.013 107.4);
+    --color-fg: oklch(96.6% 0.005 106.5);
+    --color-muted: oklch(73.7% 0.021 106.9);
+    --color-line: oklch(28.6% 0.016 107.4);
+    --color-danger: oklch(70.4% 0.191 22.216);
+    --color-danger-fg: oklch(15.3% 0.006 107.1);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-surface: oklch(15.3% 0.006 107.1);
+  --color-raised: oklch(22.8% 0.013 107.4);
+  --color-fg: oklch(96.6% 0.005 106.5);
+  --color-muted: oklch(73.7% 0.021 106.9);
+  --color-line: oklch(28.6% 0.016 107.4);
+  --color-danger: oklch(70.4% 0.191 22.216);
+  --color-danger-fg: oklch(15.3% 0.006 107.1);
+}

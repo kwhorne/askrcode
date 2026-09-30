@@ -18,6 +18,7 @@ uses
   Askr.Run, Askr.Cli.Project, Askr.Cli.Serve, Askr.Cli.Scaffold,
   Askr.Cli.Auth, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Cli.Mcp, Askr.Cli.Diag, Askr.Cli.Docs,
   Askr.Console.Commands, Askr.Cli.Fields, Askr.Cli.Resource, Askr.Cli.Lang,
+  Askr.Cli.Themes,
   Askr.Urd.Driver, Askr.Norn.Introspect,
   Askr.Core.Arena, Askr.Core.Json, Askr.Core.Text;
 
@@ -187,7 +188,8 @@ procedure Bruk;
 begin
   Si('askr ' + AskrVersion);
   Si('');
-  Si('  askr new <name>          new project; --auth, --database=mysql');
+  Si('  askr new <name>          new project; --auth, --database=mysql, --theme=stone/teal');
+  Si('  askr theme [gray accent] which Lauf theme the app imports');
   Si('  askr serve [port]        dev server with hot reload');
   Si('  askr build [--target web|desktop]');
   Si('  askr routes              show the routing table');
@@ -800,6 +802,98 @@ end;
 { --database=sqlite, the default, or --database=mysql. Postgres works as
   well as either, and is a line to uncomment in .env: a flag for each would
   be a promise to keep the same for every one. }
+{ --theme=stone/teal, or none for Lauf's own. A name there is no theme for
+  stops askr new before it writes anything. }
+procedure WantsTheme(out Gray, Accent: string);
+var
+  Why: string;
+begin
+  Gray := '';
+  Accent := '';
+  if FlagText('theme') = '' then
+    Exit;
+  if not ParseTheme(FlagText('theme'), Gray, Accent, Why) then
+  begin
+    Si('askr new: ' + Why);
+    Halt(1);
+  end;
+end;
+
+{ askr theme: which Lauf theme frontend/src/app.css imports, and a new one
+  between its markers. See Askr.Cli.Themes. }
+function CmdTheme(P: TProject): Integer;
+var
+  Path, Css, NewCss, Gray, Accent, Why, Wanted: string;
+  L: TStringList;
+  I: Integer;
+begin
+  Path := IncludeTrailingPathDelimiter(P.Root) + 'frontend' + PathDelim + 'src' +
+    PathDelim + 'app.css';
+  if not FileExists(Path) then
+  begin
+    Si('askr theme: there is no ' + Path + '. A theme is imported there.');
+    Exit(1);
+  end;
+  L := TStringList.Create;
+  try
+    L.LoadFromFile(Path);
+    Css := L.Text;
+  finally
+    L.Free;
+  end;
+  Wanted := '';
+  for I := 2 to ParamCount do
+    if Copy(ParamStr(I), 1, 2) <> '--' then
+      Wanted := Trim(Wanted + ' ' + ParamStr(I));
+  if Wanted = '' then
+  begin
+    if CurrentTheme(Css) = '' then
+      Si('The theme markers are not in frontend/src/app.css, so askr theme cannot say which it is.')
+    else
+      Si('The theme is ' + CurrentTheme(Css) + '.');
+    Si('');
+    Si('  askr theme <gray> <accent>, or askr theme ' + DefaultTheme + ' for Lauf''s own.');
+    Wanted := '';
+    for I := 0 to High(ThemeGrays) do
+      Wanted := Wanted + ' ' + ThemeGrays[I];
+    Si('  grays:   ' + Trim(Wanted));
+    Wanted := '';
+    for I := 0 to High(ThemeAccents) do
+      Wanted := Wanted + ' ' + ThemeAccents[I];
+    Si('  accents: ' + Trim(Wanted));
+    Si('');
+    Si('  See them at https://askrcode.com/themes');
+    Exit(0);
+  end;
+  if not ParseTheme(Wanted, Gray, Accent, Why) then
+  begin
+    Si('askr theme: ' + Why);
+    Exit(1);
+  end;
+  if not ApplyTheme(Css, Gray, Accent, NewCss, Why) then
+  begin
+    Si('askr theme: ' + Why + ' Nothing was written.');
+    Si('Put these in frontend/src/app.css, after @askrcode/lauf/theme.css:');
+    Si('');
+    Write(ThemeBlock(Gray, Accent));
+    Exit(1);
+  end;
+  if NewCss = Css then
+  begin
+    Si('The theme is ' + CurrentTheme(Css) + ' already.');
+    Exit(0);
+  end;
+  L := TStringList.Create;
+  try
+    L.Text := NewCss;
+    L.SaveToFile(Path);
+  finally
+    L.Free;
+  end;
+  Si('The theme is ' + CurrentTheme(NewCss) + ' now, in frontend/src/app.css.');
+  Result := 0;
+end;
+
 function WantsDatabase: TNewDatabase;
 var
   V: string;
@@ -1753,6 +1847,7 @@ var
   LangReport: TStringArray;
   LangOk: Boolean;
   I: Integer;
+  ThemeGray, ThemeAccent: string;
 begin
  try
   Kommando := LowerCase(ParamStr(1));
@@ -1794,7 +1889,9 @@ begin
       Si('Usage: askr new <name>');
       Halt(1);
     end;
-    NewProject(GetCurrentDir, ParamStr(2), WantsAuth, WantsDatabase);
+    WantsTheme(ThemeGray, ThemeAccent);
+    NewProject(GetCurrentDir, ParamStr(2), WantsAuth, WantsDatabase,
+      ThemeGray, ThemeAccent);
     Exit;
   end;
 
@@ -1883,6 +1980,8 @@ begin
       CmdMake(P)
     else if Kommando = 'test' then
       CmdTest(P)
+    else if Kommando = 'theme' then
+      Halt(CmdTheme(P))
     else if Kommando = 'config' then
     begin
       { Kjøres fra prosjektrota, slik at .env og askr.toml finnes der de

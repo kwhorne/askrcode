@@ -25,7 +25,7 @@ uses
   Askr.Auth, Askr.Auth.Token, Askr.Signed, Askr.Qr, Askr.Events, Askr.Notify, Askr.Notify.Db, Askr.Notify.Slack, Askr.Notify.Sms, Askr.Factory, Askr.Storage, Askr.Http.Multipart, Askr.Mail, Askr.Mail.Resend, Askr.Ai, Askr.Inertia,
   Askr.Testing,
   Askr.Core.Version, Askr.Image, Askr.Image.Vips, Askr.Cli.Diag, Askr.Cli.Mcp, Askr.Cli.Docs, Askr.Cli.Fields, Askr.Cli.Scaffold, Askr.Cli.Auth, Askr.Cli.Lang, Askr.Cli.Plan, Askr.Cli.Resource, Askr.Cli.Project, Askr.Cli.Pkg, Askr.Cli.Plugins, Askr.Plugins, Askr.Console.Commands, Askr.Norn.Schema, Askr.Norn.Migration, Askr.Norn.Introspect, Askr.Norn.Codegen, Askr.Http.Robots, Askr.Http.Sitemap,
-  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream, Askr.Cli.RoutesUnit, Askr.Broadcast.Db;
+  DOM, XMLRead, Process, Askr.Core.Telemetry, Askr.Dashboard, Askr.Core.Supervisor, Askr.Live, Askr.Http.Stream, Askr.Cli.RoutesUnit, Askr.Broadcast.Db, Askr.Cli.Themes;
 
 { -------------------------------------------------------------- versjon -- }
 
@@ -9599,6 +9599,103 @@ begin
   raise Exception.Create('a broken meter');
 end;
 
+{ --------------------------------------------------------------- themes -- }
+
+{ The names in a JSON object's keys, as the manifest lists them. }
+function ManifestNames(const Json, Section: string): string;
+var
+  P, Depth, I: Integer;
+  S: string;
+begin
+  Result := '';
+  P := Pos('"' + Section + '": {', Json);
+  if P = 0 then
+    Exit;
+  P := P + Length('"' + Section + '": {');
+  Depth := 1;
+  I := P;
+  while (I <= Length(Json)) and (Depth > 0) do
+  begin
+    if Json[I] = '{' then
+      Inc(Depth)
+    else if Json[I] = '}' then
+      Dec(Depth)
+    else if (Json[I] = '"') and (Depth = 1) then
+    begin
+      S := Copy(Json, I + 1, MaxInt);
+      S := Copy(S, 1, Pos('"', S) - 1);
+      Result := Result + ' ' + S;
+      I := I + Length(S) + 1;
+    end;
+    Inc(I);
+  end;
+  Result := Trim(Result);
+end;
+
+procedure TestThemes;
+var
+  F: TStringList;
+  Json, Css, NewCss, Twice, Gray, Accent, Why, Mine: string;
+  I: Integer;
+begin
+  { The names here are the files Lauf has, both ways. }
+  F := TStringList.Create;
+  try
+    F.LoadFromFile('frontend/lauf/src/themes/themes.json');
+    Json := F.Text;
+  finally
+    F.Free;
+  end;
+  Mine := '';
+  for I := 0 to High(ThemeGrays) do
+    Mine := Trim(Mine + ' ' + ThemeGrays[I]);
+  AssertEqual(Mine, ManifestNames(Json, 'grays'), 'the grays are the ones Lauf has files for');
+  Mine := '';
+  for I := 0 to High(ThemeAccents) do
+    Mine := Trim(Mine + ' ' + ThemeAccents[I]);
+  AssertEqual(Mine, ManifestNames(Json, 'accents'), 'and so are the accents');
+
+  AssertTrue(ParseTheme('stone/teal', Gray, Accent, Why) and (Gray = 'stone') and (Accent = 'teal'),
+    'stone/teal is a gray and an accent');
+  AssertTrue(ParseTheme('Olive Rose', Gray, Accent, Why) and (Gray = 'olive') and (Accent = 'rose'),
+    'and so is Olive Rose, as askr theme olive rose gives it');
+  AssertTrue(ParseTheme('askr', Gray, Accent, Why) and (Gray = ''), 'askr is Lauf''s own, and no files');
+  AssertFalse(ParseTheme('stone/purpel', Gray, Accent, Why), 'an accent there is none of is refused');
+  AssertContains(Why, 'purple', 'naming the ones there are');
+  AssertFalse(ParseTheme('stone', Gray, Accent, Why), 'and a gray without an accent');
+
+  { What askr new writes, and what askr theme does to it. }
+  Css := AppCssText('', '');
+  AssertEqual(CurrentTheme(Css), 'askr', 'a new app is on Lauf''s own theme');
+  AssertTrue(Pos('@import ''@askrcode/lauf/theme.css'';' + #10, Css) <
+    Pos(ThemeStart, Css), 'the markers are after Lauf''s tokens, which the theme overrides');
+  Css := Css + '.mine { color: red; }' + #10;
+  AssertTrue(ApplyTheme(Css, 'stone', 'teal', NewCss, Why), 'a theme goes between the markers');
+  AssertEqual(CurrentTheme(NewCss), 'stone/teal', 'and is the theme after');
+  AssertContains(NewCss, '@import ''@askrcode/lauf/themes/stone.css'';' + #10 +
+    '@import ''@askrcode/lauf/themes/accent/teal.css'';' + #10 + ThemeEnd,
+    'as two imports, the gray first');
+  AssertEqual(Copy(NewCss, 1, Pos(ThemeStart, NewCss)), Copy(Css, 1, Pos(ThemeStart, Css)),
+    'what is before the markers is untouched');
+  AssertEqual(Copy(NewCss, Pos(ThemeEnd, NewCss), MaxInt), Copy(Css, Pos(ThemeEnd, Css), MaxInt),
+    'and what is after them, the app''s own lines with it');
+  ApplyTheme(NewCss, 'stone', 'teal', Twice, Why);
+  AssertEqual(Twice, NewCss, 'the same theme twice is the same file');
+  ApplyTheme(NewCss, '', '', Twice, Why);
+  AssertEqual(Twice, Css, 'and askr takes it back to where it was');
+  ApplyTheme(AppCssText('', ''), 'olive', 'rose', NewCss, Why);
+  AssertEqual(AppCssText('olive', 'rose'), NewCss,
+    'askr new --theme writes what askr theme would');
+
+  { Without the markers, nothing is written, and it says so. }
+  Css := StringReplace(AppCssText('', ''), ThemeEnd, '', []);
+  AssertFalse(ApplyTheme(Css, 'stone', 'teal', NewCss, Why), 'a missing marker is refused');
+  AssertEqual(NewCss, Css, 'with the file as it was');
+  AssertEqual(CurrentTheme(Css), '', 'and no theme it can name');
+  Css := AppCssText('', '') + ThemeStart + #10;
+  AssertFalse(ApplyTheme(Css, 'stone', 'teal', NewCss, Why), 'and so is a marker twice');
+end;
+
 { ------------------------------------------------------ verified routes -- }
 
 type
@@ -14276,6 +14373,7 @@ begin
   Test('live props: a signed stream per page, stale props by name, partial reloads', @TestLive);
   Test('verified routes: FillRoute, and App.Routes as the routes are', @TestVerifiedRoutes);
   Test('broadcasts through the database reach another process, under the same id', @TestBroadcastDb);
+  Test('themes: the names are Lauf''s files, and askr theme changes only its own lines', @TestThemes);
   Test('a plugin''s docs are searched and read beside the framework''s, by listed name only', @TestPluginDocs);
 
   Group('Storage');

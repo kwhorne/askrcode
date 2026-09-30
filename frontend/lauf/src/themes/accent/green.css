@@ -1,0 +1,25 @@
+/* Lauf theme: green, the accent.
+ *
+ * Written by scripts/themes.mjs from Tailwind 4.3.3's palette, with
+ * every shade chosen by measured contrast. Do not edit: run the script.
+ * Import it after @askrcode/lauf/theme.css. */
+
+:root {
+  --color-accent: oklch(52.7% 0.154 150.069);
+  --color-accent-fg: #fff;
+  --color-accent-content: oklch(44.8% 0.119 151.328);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-accent: oklch(72.3% 0.219 149.579);
+    --color-accent-fg: oklch(14.5% 0 0);
+    --color-accent-content: oklch(79.2% 0.209 151.711);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-accent: oklch(72.3% 0.219 149.579);
+  --color-accent-fg: oklch(14.5% 0 0);
+  --color-accent-content: oklch(79.2% 0.209 151.711);
+}
