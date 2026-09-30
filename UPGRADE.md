@@ -8,6 +8,23 @@ upgrade you debug afterwards.
 One heading per release, newest first. Only things that can break your
 code belong here — everything else is in the commit log.
 
+## 0.21.0
+
+Nothing breaks in an app that overrides Lauf's tokens on `:root`, which is
+where `app.css` sets them.
+
+Links in `Editor`, the check in `Autocomplete` and the text of an accent
+`Badge` now read `--color-accent-content` instead of `--color-accent`.
+Lauf's default for it is `var(--color-accent)`, resolved on `:root`. If
+you set `--color-accent` on some element further down to recolour one
+part of a page, set `--color-accent-content` there too, or those three
+keep the page's accent.
+
+`askr theme` needs the two theme markers in `frontend/src/app.css`, which
+projects made before 0.21.0 do not have. Run it, and it prints the lines
+to put in; or add the two `@import`s from [Themes](docs/themes.md) by
+hand.
+
 ## 0.20.0
 
 Nothing breaks. Without a relay, `Broadcast` numbers and delivers as it

@@ -14,6 +14,11 @@ with the zero-major caveat that minor releases may break things until
 
 ## Unreleased
 
+## 0.21.0 — 2026-09-30
+
+Themes for Lauf: a gray and an accent, any of 9 with any of 18, every
+shade chosen by measured contrast, and `askr theme` to switch between them.
+
 ### Added
 
 - **Themes for Lauf.** 9 grays and 18 accents from Tailwind's palette,
